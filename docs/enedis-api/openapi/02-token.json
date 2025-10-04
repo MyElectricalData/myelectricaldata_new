@@ -1,0 +1,280 @@
+{
+  "swagger": "2.0",
+  "host": "gw.ext.prod-sandbox.api.enedis.fr",
+  "basePath": "/oauth2/v3",
+  "schemes": ["https"],
+  "info": {
+    "description": "Cette autorisation est matérialisée par un jeton d’accès, aussi nommé token, qui doit être présenté par l’application lors de chaque appel d’une API du catalogue. L’API d’autorisation vous permet de récupérer un jeton d’accès aux API du catalogue auxquelles vous avez souscrit.\nEnedis a choisi d’implémenter le protocole OAUTH 2.0 pour gérer l’accès à ses API, plus précisément par le scénario d’autorisation d’accès serveur à serveur (Client Credentials Grant Flow). \n\n\n\n\n La version de cette API (v3) correspond à un alignement au standard Oauth2.",
+    "version": "3.0",
+    "title": "Authorisation Standard Oauth2",
+    "contact": {}
+  },
+  "paths": {
+    "/oauth2/v3/revoke": {
+      "post": {
+        "summary": "",
+        "description": "Permet de révoquer un jeton.",
+        "consumes": ["application/x-www-form-urlencoded"],
+        "produces": ["text/html"],
+        "parameters": [
+          {
+            "name": "Content-Type",
+            "in": "header",
+            "required": true,
+            "type": "string",
+            "description": "Format du body de la requête",
+            "x-example": "application/x-www-form-urlencoded"
+          },
+          {
+            "name": "Host",
+            "in": "header",
+            "required": true,
+            "type": "string",
+            "description": "Nom du serveur du service provider",
+            "x-example": "server.example.com"
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "type": "string",
+            "description": "Identifiant de l'application cliente, sous la forme de Basic ou digest authentication. \n Basic authentication vaut base64_encoded(Client_ID:Client_secret). Est obligatoire si les paramètres client_id et client_secret ne sont pas transmis.",
+            "x-example": "Basic QVBQX0lEOkFQUF9QV0Q"
+          },
+          {
+            "name": "User-Agent",
+            "in": "header",
+            "required": false,
+            "type": "string",
+            "description": "Description de l'équipement qui a émis la requete (hardware/software)",
+            "x-example": "User-Agent: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)"
+          },
+          {
+            "name": "token",
+            "in": "formData",
+            "required": true,
+            "type": "string",
+            "description": "Identifiant du jeton à supprimer dans le cas d'une suppression unitaire.",
+            "x-example": "2YotnFZFEjr1zCsicMWpAA"
+          },
+          {
+            "name": "token_type_hint",
+            "in": "formData",
+            "required": false,
+            "type": "string",
+            "description": "Type du jeton à supprimer",
+            "enum": ["access_token"],
+            "x-example": "access_token"
+          },
+          {
+            "name": "client_id",
+            "in": "formData",
+            "required": false,
+            "type": "string",
+            "description": "Identifiant de l'application cliente pour laquelle on veut supprimer les tokens.",
+            "x-example": "Qc1ZEYAnhcXqObRJbZh6M9ISgByua7wd"
+          },
+          {
+            "name": "client_secret",
+            "in": "formData",
+            "required": false,
+            "type": "string",
+            "description": "Identifiant secret de l'application cliente pour laquelle on veut supprimer les tokens. Ce paramètre est obligatoire si l'authentification est de type secret et que l'authentification n'est pas faite par basic authentication",
+            "x-example": ""
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invalidation du Token effective ou Token inexistant"
+          },
+          "400": {
+            "description": "Erreur dans le format de la requête",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l'erreur retourné par le système.",
+                  "enum": [
+                    "invalid_request",
+                    "invalid_client",
+                    "invalid_grant",
+                    "invalid_scope",
+                    "unauthorized_client",
+                    "unsupported_grant_type",
+                    "unsupported_token_type"
+                  ]
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l'erreur correspondant au code.",
+                  "enum": [
+                    "The request is missing a required parameter, includes an unsupported parameter value (other than grant type), repeats a parameter, includes multiple credentials, utilizes more than one mechanism for authenticating the client, or is otherwise malformed",
+                    "Client authentication failed (e.g., unknown client, no client authentication included, or unsupported authentication method)",
+                    "The provided authorization grant (e.g. authorization code, resource owner credentials) or refresh token is invalid, expired, revoked, does not match the redirection URI used in the authorization request, or was issued to another client.",
+                    "The requested scope is invalid, unknown, malformed, or exceeds the scope granted by the resource owner",
+                    "The authenticated client is not authorized to use this authorization grant type",
+                    "The authorization grant type is not supported by the authorization server",
+                    "The authorization server does not support the revocation of the presented token type",
+                    "Le Content-Type doit être application/x-www-form-urlencoded",
+                    "empty header bad request format partial or incorrect data",
+                    "Valid authentication credentials are mandatory to access the resource"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La requête n'est pas autorisée"
+          },
+          "415": {
+            "description": "Unsupported Media Type - Format de requête non supporté"
+          },
+          "500": {
+            "description": "Erreur Serveur - Une erreur est survenue lors du traitement de la requête par le serveur"
+          },
+          "503": {
+            "description": "Service Unavailable - Le serveur est momentanément inaccessible"
+          }
+        }
+      }
+    },
+    "/oauth2/v3/token": {
+      "post": {
+        "summary": "",
+        "description": "Permet de demander la génération d'un jeton selon la méthode Client Credential.",
+        "consumes": ["application/x-www-form-urlencoded"],
+        "produces": ["text/html"],
+        "parameters": [
+          {
+            "name": "Content-Type",
+            "in": "header",
+            "required": true,
+            "type": "string",
+            "description": "Format du body de la requête",
+            "x-example": "application/x-www-form-urlencoded"
+          },
+          {
+            "name": "Host",
+            "in": "header",
+            "required": true,
+            "type": "string",
+            "description": "Nom du serveur du service provider",
+            "x-example": "server.example.com"
+          },
+          {
+            "name": "User-Agent",
+            "in": "header",
+            "required": false,
+            "type": "string",
+            "description": "Description de l'équipement qui a émis la requete (hardware/software)",
+            "x-example": "User-Agent: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)"
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "type": "string",
+            "description": "Identifiant de l'application cliente, sous la forme de Basic ou digest authentication. \n Basic authentication vaut base64_encoded(Client_ID:Client_secret). Est obligatoire si les paramètres client_id et client_secret ne sont pas transmis.",
+            "x-example": "Basic QVBQX0lEOkFQUF9QV0Q"
+          },
+          {
+            "name": "grant_type",
+            "in": "formData",
+            "required": true,
+            "type": "string",
+            "description": "Défini le type d'autorisation utilisé.",
+            "enum": ["client_credentials"]
+          },
+          {
+            "name": "client_id",
+            "in": "formData",
+            "required": false,
+            "type": "string",
+            "description": "Identifiant unique de l’application consommatrice d’API. Doit être valorisé si le header Authorize n'est pas transmis.",
+            "x-example": "Cd4yimJ7tTBRYuR8ETBuIKAdjFgM"
+          },
+          {
+            "name": "client_secret",
+            "in": "formData",
+            "required": false,
+            "type": "string",
+            "description": "Le code unique de l’application consommatrice d’API, associé au client_id. Doit être valorisé si le header Authorize n'est pas transmis.",
+            "x-example": "czZCaGRSa3F0MzpnWDFmQmF0M2JW"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requête traitée avec succès.",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "access_token": {
+                  "type": "string",
+                  "description": "Le jeton d'accès JWT généré pour consommer les API",
+                  "example": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsIng1dCI6Ik5HRTNaVEkwWVRnMk1HRm1ZVFppTWpCak16WXlNRE0wTkRrM1lXRXpNVGRtT0RSbU1UWmhNUT09In0.eyJhdWQiOiJodHRwOlwvXC9vcmcud3NvMi5hcGltZ3RcL2dhdGV3YXkiLCJzdWIiOiJhcGlzdWJzY3JpYmVyQGNhcmJvbi5zdXBlciIsImFwcGxpY2F0aW9uIjp7Im93bmVyIjoiYXBpc3Vic2NyaWJlciIsInRpZXJRdW90YVR5cGUiOiJyZXF1ZXN0Q291bnQiLCJ0aWVyIjoiVW5saW1pdGVkIiwibmFtZSI6IkRlZmF1bHRBcHBsaWNhdGlvbiIsImlkIjoxLCJ1dWlkIjpudWxsfSwic2NvcGUiOiJhbV9hcHBsaWNhdGlvbl9zY29wZSBkZWZhdWx0IiwiaXNzIjoiaHR0cHM6XC9cL2VmdzljMHQxLjJremUwLnplMC5lcmQuZWRmLmZyOjgxODRcL29hdXRoMlwvdG9rZW4iLCJ0aWVySW5mbyI6eyJVbmxpbWl0ZWQiOnsidGllclF1b3RhVHlwZSI6InJlcXVlc3RDb3VudCIsInN0b3BPblF1b3RhUmVhY2giOnRydWUsInNwaWtlQXJyZXN0TGltaXQiOjAsInNwaWtlQXJyZXN0VW5pdCI6bnVsbH0sIkN1c3RvbSI6eyJ0aWVyUXVvdGFUeXBlIjoicmVxdWVzdENvdW50Iiwic3RvcE9uUXVvdGFSZWFjaCI6dHJ1ZSwic3Bpa2VBcnJlc3RMaW1pdCI6LTEsInNwaWtlQXJyZXN0VW5pdCI6Ik5BIn19LCJrZXl0eXBlIjoiUFJPRFVDVElPTiIsInN1YnNjcmliZWRBUElzIjpbeyJzdWJzY3JpYmVyVGVuYW50RG9tYWluIjoiY2FyYm9uLnN1cGVyIiwibmFtZSI6IlBpenphU2hhY2tBUEkiLCJjb250ZXh0IjoiXC9waXp6YXNoYWNrXC8xLjAuMCIsInB1Ymxpc2hlciI6ImFwaXB1Ymxpc2hlciIsInZlcnNpb24iOiIxLjAuMCIsInN1YnNjcmlwdGlvblRpZXIiOiJVbmxpbWl0ZWQifSx7InN1YnNjcmliZXJUZW5hbnREb21haW4iOiJjYXJib24uc3VwZXIiLCJuYW1lIjoicmVzZWF1IiwiY29udGV4dCI6IlwvZWxlY3RyaWNfZ3JpZFwvdjNcLzMuMCIsInB1Ymxpc2hlciI6ImFwaXB1Ymxpc2hlciIsInZlcnNpb24iOiIzLjAiLCJzdWJzY3JpcHRpb25UaWVyIjoiVW5saW1pdGVkIn0seyJzdWJzY3JpYmVyVGVuYW50RG9tYWluIjoiY2FyYm9uLnN1cGVyIiwibmFtZSI6IlRvcGljQVBJIiwiY29udGV4dCI6IlwvVG9waWNTZXJ2aWNlXC8xLjAuMCIsInB1Ymxpc2hlciI6ImFwaXB1Ymxpc2hlciIsInZlcnNpb24iOiIxLjAuMCIsInN1YnNjcmlwdGlvblRpZXIiOiJVbmxpbWl0ZWQifSx7InN1YnNjcmliZXJUZW5hbnREb21haW4iOiJjYXJib24uc3VwZXIiLCJuYW1lIjoic2VydmljZTFiaXMiLCJjb250ZXh0IjoiXC9zZXJ2aWNlMWJpc1wvMS4wLjAiLCJwdWJsaXNoZXIiOiJhcGlwdWJsaXNoZXIiLCJ2ZXJzaW9uIjoiMS4wLjAiLCJzdWJzY3JpcHRpb25UaWVyIjoiQ3VzdG9tIn1dLCJjb25zdW1lcktleSI6IlFPTE5PR3ZYTHQ5OE93X3B1aGZXbGZIeG1WQWEiLCJleHAiOjE2MzA2ODAyODYsImlhdCI6MTYzMDY3NjY4NiwianRpIjoiMWUwMWI1MzEtZGUyMS00YWM1LWI4MWItZTJhZDU3YWIzZjkxIn0.Q5bzRsI2JiPQA7KdJtnd_iSNBIOHQEyExHWGYFSVl-aK3KM8Fv1361hH7HlDUcp7ElGrc5v5ARS0j8-OqJiF8R_kJB7UOVn20VE3ZsYAzVxI3FXU6sEoBmZE7WHX1uwLAO1ClcuCw4zIDrckJgtpPxhWvN2LTd9ZKJVaXa2gxScHZM4Tc_HJqsPiqTIh6z_dNk0_al1P1b3_7hgP1bD6oysAz99dA7PF2w7WKOlfBPtHH89yfQA54XntLiRAdbl5t3KdFbn7r91R62iJ5i3kl_ogtwcoqwzK0ClAGev4OumPBFtaoNglgmaX8_rIG2-rhJwRqitiTeR_Kc5STtSXXA"
+                },
+                "token_type": {
+                  "type": "string",
+                  "description": "Donne le type de jeton généré. En général, le type du jeton est de type bearer",
+                  "example": "Bearer"
+                },
+                "expires_in": {
+                  "type": "string",
+                  "description": "La durée du jeton avant qu'il n'expire (en secondes)",
+                  "example": "12600"
+                },
+                "scope": {
+                  "type": "string",
+                  "description": "Portée du jeton d’accès JWT généré pour accéder à la ressource demandée.",
+                  "example": ""
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Erreur dans le format de la requête",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l'erreur retourné par le système.",
+                  "enum": [
+                    "invalid_request",
+                    "invalid_client",
+                    "invalid_grant",
+                    "invalid_scope",
+                    "unauthorized_client",
+                    "unsupported_grant_type"
+                  ]
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l'erreur correspondant au code.",
+                  "enum": [
+                    "The request is missing a required parameter, includes an unsupported parameter value (other than grant type), repeats a parameter, includes multiple credentials, utilizes more than one mechanism for authenticating the client, or is otherwise malformed",
+                    "Client authentication failed (e.g., unknown client, no client authentication included, or unsupported authentication method)",
+                    "The provided authorization grant (e.g. authorization code, resource owner credentials) or refresh token is invalid, expired, revoked, does not match the redirection URI used in the authorization request, or was issued to another client",
+                    "The requested scope is invalid, unknown, malformed, or exceeds the scope granted by the resource owner",
+                    "The authenticated client is not authorized to use this authorization grant type",
+                    "The authorization grant type is not supported by the authorization server"
+                  ]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported Media Type - Format de requête non supporté"
+          },
+          "500": {
+            "description": "Erreur Serveur - Une erreur est survenue lors du traitement de la requête par le serveur"
+          },
+          "503": {
+            "description": "Service Unavailable - Le serveur est momentanément inaccessible"
+          }
+        }
+      }
+    }
+  }
+}

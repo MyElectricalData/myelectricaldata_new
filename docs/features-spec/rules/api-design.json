@@ -1,0 +1,2230 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MyElectricalData",
+    "description": "MyElectricalData",
+    "contact": { "name": "m4dm4rtig4n", "url": "https://github.com/MyElectricalData/myelectricaldata/issues" },
+    "license": { "name": "Apache 2.0", "url": "https://www.apache.org/licenses/LICENSE-2.0.html" },
+    "version": "1.5.15"
+  },
+  "paths": {
+    "/ping": {
+      "get": {
+        "tags": ["Etat de santé"],
+        "summary": "Etat de santé de la passerelle MyElectricalData",
+        "description": "Etat de santé de la passerelle MyElectricalData.",
+        "operationId": "ping_ping_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResponseHealthCheck" } } }
+          }
+        }
+      }
+    },
+    "/admin/reset/{usage_point_id}": {
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Reset try count.",
+        "description": "Reset try count.",
+        "operationId": "reset_admin_reset__usage_point_id__delete",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": { "description": "Successful Response", "content": { "application/json": { "schema": {} } } },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "Admin endpoint only": [] }]
+      }
+    },
+    "/admin/rte/tempo/start/{start}/end/{end}": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Forcer le refresh du cache Tempo.",
+        "description": "Forcer le refresh du cache Tempo.",
+        "operationId": "cache_tempo_admin_rte_tempo_start__start__end__end__get",
+        "parameters": [
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": { "description": "Successful Response", "content": { "application/json": { "schema": {} } } },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "Admin endpoint only": [] }]
+      }
+    },
+    "/admin/rte/ecowatt": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Forcer le refresh du cache Ecowatt.",
+        "description": "Forcer le refresh du cache Ecowatt.",
+        "operationId": "cache_ecowatt_admin_rte_ecowatt_get",
+        "responses": {
+          "200": { "description": "Successful Response", "content": { "application/json": { "schema": {} } } }
+        },
+        "security": [{ "Admin endpoint only": [] }]
+      }
+    },
+    "/admin/edf/tempo/price": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Met à jour les prix des kwh Tempo.",
+        "description": "Met à jour les prix des kwh Tempo.",
+        "operationId": "cache_price_tempo_admin_edf_tempo_price_post",
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OptionsTempoPrice" } } },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "Successful Response", "content": { "application/json": { "schema": {} } } },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "Admin endpoint only": [] }]
+      }
+    },
+    "/cache/{usage_point_id}": {
+      "delete": {
+        "tags": ["Autre"],
+        "summary": "Supprime la totalité de votre cache.",
+        "description": "Supprime la totalité de votre cache.",
+        "operationId": "cache_delete_cache__usage_point_id__delete",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/routers__cache__response__main__ResponseDelete" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/valid_access/{usage_point_id}": {
+      "get": {
+        "tags": ["Check"],
+        "summary": "Renvoie l'état de santé de vote point de livraison sur MyElectricalData",
+        "description": "Renvoie l'état de santé de vote point de livraison sur MyElectricalData",
+        "operationId": "valid_access_valid_access__usage_point_id__get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResponseValidAccess" } } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/edf/tempo/days": {
+      "get": {
+        "tags": ["EDF"],
+        "summary": "Remonte les jours restant tempo.",
+        "description": "Remonte les jours restant tempo.",
+        "operationId": "tempo_days_edf_tempo_days_get",
+        "responses": {
+          "200": { "description": "Successful Response", "content": { "application/json": { "schema": {} } } }
+        }
+      }
+    },
+    "/edf/tempo/price": {
+      "get": {
+        "tags": ["EDF"],
+        "summary": "Remonte les tarifs tempo.",
+        "description": "Remonte les tarifs tempo.",
+        "operationId": "tempo_price_edf_tempo_price_get",
+        "responses": {
+          "200": { "description": "Successful Response", "content": { "application/json": { "schema": {} } } }
+        }
+      }
+    },
+    "/contracts/{usage_point_id}": {
+      "get": {
+        "tags": ["Données contractuelles"],
+        "summary": "Récupère les données contractuelles des points d'usage.",
+        "description": "Récupère les données contractuelles des points d'usage.",
+        "operationId": "contracts_contracts__usage_point_id__get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResponseContractRoot" } } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/contracts/{usage_point_id}/cache": {
+      "get": {
+        "tags": ["Données contractuelles avec Cache"],
+        "summary": "Récupère les données contractuelles des points d'usage. avec gestion du cache (cf. description)",
+        "description": "Récupère les données contractuelles des points d'usage.\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "contracts_contracts__usage_point_id__cache_get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResponseContractRoot" } } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      },
+      "delete": {
+        "tags": ["Données contractuelles"],
+        "summary": "Supprime le cache du endpoint. avec gestion du cache (cf. description)",
+        "description": "Supprime le cache du endpoint.\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "contracts_delete_contracts__usage_point_id__cache_delete",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/routers__enedis__response__customer__ResponseDelete" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/identity/{usage_point_id}": {
+      "get": {
+        "tags": ["Données contractuelles"],
+        "summary": "Récupère les données d'identité",
+        "description": "Récupère les données d'identité",
+        "operationId": "identity_identity__usage_point_id__get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResponseIdentityRoot" } } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/identity/{usage_point_id}/cache": {
+      "get": {
+        "tags": ["Données contractuelles avec Cache"],
+        "summary": "Récupère les données d'identité avec gestion du cache (cf. description)",
+        "description": "Récupère les données d'identité\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "identity_identity__usage_point_id__cache_get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResponseIdentityRoot" } } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      },
+      "delete": {
+        "tags": ["Données contractuelles"],
+        "summary": "Supprime le cache du endpoint. avec gestion du cache (cf. description)",
+        "description": "Supprime le cache du endpoint.\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "identity_delete_identity__usage_point_id__cache_delete",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/routers__enedis__response__customer__ResponseDelete" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/contact/{usage_point_id}": {
+      "get": {
+        "tags": ["Données contractuelles"],
+        "summary": "Récupérer les données de contact.",
+        "description": "Récupérer les données de contact.",
+        "operationId": "contact_contact__usage_point_id__get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResponseContactRoot" } } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/contact/{usage_point_id}/cache": {
+      "get": {
+        "tags": ["Données contractuelles avec Cache"],
+        "summary": "Récupérer les données de contact. avec gestion du cache (cf. description)",
+        "description": "Récupérer les données de contact.\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "contact_contact__usage_point_id__cache_get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResponseContactRoot" } } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      },
+      "delete": {
+        "tags": ["Données contractuelles"],
+        "summary": "Supprime le cache du endpoint. avec gestion du cache (cf. description)",
+        "description": "Supprime le cache du endpoint.\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "contract_delete_contact__usage_point_id__cache_delete",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/routers__enedis__response__customer__ResponseDelete" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/addresses/{usage_point_id}": {
+      "get": {
+        "tags": ["Données contractuelles"],
+        "summary": "Récupérer les adresses des points d'usage",
+        "description": "Récupérer les adresses des points d'usage",
+        "operationId": "addresses_addresses__usage_point_id__get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResponseAddressesRoot" } } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/addresses/{usage_point_id}/cache": {
+      "get": {
+        "tags": ["Données contractuelles avec Cache"],
+        "summary": "Récupérer les adresses des points d'usage avec gestion du cache (cf. description)",
+        "description": "Récupérer les adresses des points d'usage\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "addresses_addresses__usage_point_id__cache_get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResponseAddressesRoot" } } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      },
+      "delete": {
+        "tags": ["Données contractuelles"],
+        "summary": "Supprime le cache du endpoint. avec gestion du cache (cf. description)",
+        "description": "Supprime le cache du endpoint.\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "addresses_delete_addresses__usage_point_id__cache_delete",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/routers__enedis__response__customer__ResponseDelete" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/consumption_load_curve/{usage_point_id}/start/{start}/end/{end}/cache": {
+      "get": {
+        "tags": ["Consommation / Production avec Cache"],
+        "summary": "Récupère la puissance moyenne consommée quotidiennement, sur l'intervalle de mesure du compteur (par défaut 30 min)",
+        "description": "Cette sous ressource renvoie les valeurs correspondant à des journées de mesure de la courbe de charge de consommation d’un client pour chaque jour de la période demandée.\nLes valeurs retournées sont des puissances moyennes de consommation sur l’intervalle de mesure du compteur (par défaut 30 minutes).\nChaque valeur est horodatée. La courbe de charge s’obtient sur des journées complètes de minuit à minuit du jour suivant en heures locales.\n\n**LIMITATION D'ENEDIS** :\n- Il est possible de récupérer au maximum **24** mois d'historique.\n- La période de récupération ne peut être supérieur à **7** jours par demandes.",
+        "operationId": "consumption_load_curve_consumption_load_curve__usage_point_id__start__start__end__end__cache_get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ResponseConsumptionLoadCurve" } }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      },
+      "delete": {
+        "tags": ["Consommation / Production"],
+        "summary": "Supprime le cache du endpoint. avec gestion du cache (cf. description)",
+        "description": "Supprime le cache du endpoint.\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "contracts_delete_consumption_load_curve__usage_point_id__start__start__end__end__cache_delete",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": { "description": "Successful Response", "content": { "application/json": { "schema": {} } } },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/consumption_load_curve/{usage_point_id}/start/{start}/end/{end}": {
+      "get": {
+        "tags": ["Consommation / Production"],
+        "summary": "Récupère la puissance moyenne consommée quotidiennement, sur l'intervalle de mesure du compteur (par défaut 30 min)",
+        "description": "Cette sous ressource renvoie les valeurs correspondant à des journées de mesure de la courbe de charge de consommation d’un client pour chaque jour de la période demandée.\nLes valeurs retournées sont des puissances moyennes de consommation sur l’intervalle de mesure du compteur (par défaut 30 minutes).\nChaque valeur est horodatée. La courbe de charge s’obtient sur des journées complètes de minuit à minuit du jour suivant en heures locales.\n\n**LIMITATION D'ENEDIS** :\n- Il est possible de récupérer au maximum **24** mois d'historique.\n- La période de récupération ne peut être supérieur à **7** jours par demandes.",
+        "operationId": "consumption_load_curve_consumption_load_curve__usage_point_id__start__start__end__end__get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ResponseConsumptionLoadCurve" } }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/production_load_curve/{usage_point_id}/start/{start}/end/{end}/cache": {
+      "get": {
+        "tags": ["Consommation / Production avec Cache"],
+        "summary": "Récupère la puissance moyenne produite quotidiennement, sur l'intervalle de mesure du compteur (par défaut 30 min)",
+        "description": "Cette sous ressource renvoie les valeurs correspondant à des journées de mesure de la courbe de charge de production d’un client pour chaque jour de la période demandée.\nLes valeurs retournées sont des puissances moyennes de production sur l’intervalle de mesure du compteur (par défaut 30 minutes).\nChaque valeur est horodatée.\nLa courbe de charge s’obtient sur des journées complètes de minuit à minuit du jour suivant en heures locales.\n\n**LIMITATION D'ENEDIS** :\n- Il est possible de récupérer au maximum **24** mois d'historique.\n- La période de récupération ne peut être supérieur à **7** jours par demandes.",
+        "operationId": "production_load_curve_production_load_curve__usage_point_id__start__start__end__end__cache_get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ResponseConsumptionLoadCurve" } }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      },
+      "delete": {
+        "tags": ["Consommation / Production"],
+        "summary": "Supprime le cache du endpoint. avec gestion du cache (cf. description)",
+        "description": "Supprime le cache du endpoint.\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "production_load_curve_delete_production_load_curve__usage_point_id__start__start__end__end__cache_delete",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/routers__cache__response__main__ResponseDelete" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/production_load_curve/{usage_point_id}/start/{start}/end/{end}": {
+      "get": {
+        "tags": ["Consommation / Production"],
+        "summary": "Récupère la puissance moyenne produite quotidiennement, sur l'intervalle de mesure du compteur (par défaut 30 min)",
+        "description": "Cette sous ressource renvoie les valeurs correspondant à des journées de mesure de la courbe de charge de production d’un client pour chaque jour de la période demandée.\nLes valeurs retournées sont des puissances moyennes de production sur l’intervalle de mesure du compteur (par défaut 30 minutes).\nChaque valeur est horodatée.\nLa courbe de charge s’obtient sur des journées complètes de minuit à minuit du jour suivant en heures locales.\n\n**LIMITATION D'ENEDIS** :\n- Il est possible de récupérer au maximum **24** mois d'historique.\n- La période de récupération ne peut être supérieur à **7** jours par demandes.",
+        "operationId": "production_load_curve_production_load_curve__usage_point_id__start__start__end__end__get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ResponseConsumptionLoadCurve" } }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/daily_consumption_max_power/{usage_point_id}/start/{start}/end/{end}/cache": {
+      "get": {
+        "tags": ["Consommation / Production avec Cache"],
+        "summary": "Récupère la puissance maximale de consommation atteinte quotidiennement",
+        "description": "Cette sous ressource renvoie les valeurs correspondant à des puissances maximales de consommation (en W) atteintes quotidiennement pour chaque jour de la période demandée.\nChaque valeur est datée.\nLa courbe de charge s’obtient sur des journées complètes de minuit à minuit du jour suivant en heures locales.\n\n**LIMITATION D'ENEDIS** :\n- Il est possible de récupérer au maximum **36** mois d'historique soit **1095** jours",
+        "operationId": "daily_consumption_max_power_daily_consumption_max_power__usage_point_id__start__start__end__end__cache_get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ResponseDailyComsumptionMaxPower" } }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      },
+      "delete": {
+        "tags": ["Consommation / Production"],
+        "summary": "Supprime le cache du endpoint. avec gestion du cache (cf. description)",
+        "description": "Supprime le cache du endpoint.\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "daily_consumption_max_power_delete_daily_consumption_max_power__usage_point_id__start__start__end__end__cache_delete",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/routers__cache__response__main__ResponseDelete" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/daily_consumption_max_power/{usage_point_id}/start/{start}/end/{end}": {
+      "get": {
+        "tags": ["Consommation / Production"],
+        "summary": "Récupère la puissance maximale de consommation atteinte quotidiennement",
+        "description": "Cette sous ressource renvoie les valeurs correspondant à des puissances maximales de consommation (en W) atteintes quotidiennement pour chaque jour de la période demandée.\nChaque valeur est datée.\nLa courbe de charge s’obtient sur des journées complètes de minuit à minuit du jour suivant en heures locales.\n\n**LIMITATION D'ENEDIS** :\n- Il est possible de récupérer au maximum **36** mois d'historique soit **1095** jours",
+        "operationId": "daily_consumption_max_power_daily_consumption_max_power__usage_point_id__start__start__end__end__get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ResponseDailyComsumptionMaxPower" } }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/daily_consumption/{usage_point_id}/start/{start}/end/{end}/cache": {
+      "get": {
+        "tags": ["Consommation / Production avec Cache"],
+        "summary": "Récupère la consommation quotidienne",
+        "description": "Cette sous ressource renvoie les valeurs correspondant à la consommation quotidienne (en Wh) sur chaque jour de la période demandée.\nChaque valeur est daté.\n\n**LIMITATION D'ENEDIS** :\n- Il est possible de récupérer au maximum **36** mois d'historique soit **1095** jours",
+        "operationId": "daily_consumption_daily_consumption__usage_point_id__start__start__end__end__cache_get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResponseDailyConsumption" } } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      },
+      "delete": {
+        "tags": ["Consommation / Production"],
+        "summary": "Supprime le cache du endpoint. avec gestion du cache (cf. description)",
+        "description": "Supprime le cache du endpoint.\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "daily_consumption_delete_daily_consumption__usage_point_id__start__start__end__end__cache_delete",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/routers__cache__response__main__ResponseDelete" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/daily_consumption/{usage_point_id}/start/{start}/end/{end}": {
+      "get": {
+        "tags": ["Consommation / Production"],
+        "summary": "Récupère la consommation quotidienne",
+        "description": "Cette sous ressource renvoie les valeurs correspondant à la consommation quotidienne (en Wh) sur chaque jour de la période demandée.\nChaque valeur est daté.\n\n**LIMITATION D'ENEDIS** :\n- Il est possible de récupérer au maximum **36** mois d'historique soit **1095** jours",
+        "operationId": "daily_consumption_daily_consumption__usage_point_id__start__start__end__end__get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResponseDailyConsumption" } } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/daily_production/{usage_point_id}/start/{start}/end/{end}/cache": {
+      "get": {
+        "tags": ["Consommation / Production avec Cache"],
+        "summary": "Récupère la production quotidienne",
+        "description": "Cette sous ressource renvoie les valeurs correspondant à la production quotidienne (en Wh) sur chaque jour de la période demandée.\nChaque valeur est daté.\n\n**LIMITATION D'ENEDIS** :\n- Il est possible de récupérer au maximum **36** mois d'historique soit **1095** jours",
+        "operationId": "daily_production_daily_production__usage_point_id__start__start__end__end__cache_get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ResponseDailyProductionRoot" } }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      },
+      "delete": {
+        "tags": ["Consommation / Production"],
+        "summary": "Supprime le cache du endpoint. avec gestion du cache (cf. description)",
+        "description": "Supprime le cache du endpoint.\n\n**ATTENTION, La totalité des endpoints qui finissent par \"/cache\" stocke vos données (chiffrées) sur MyElectricalData.**\n\n**En utilisant ce endpoint, vous m'autorisez à stocker temporairement vos données pendant 30j.**",
+        "operationId": "daily_production_delete_daily_production__usage_point_id__start__start__end__end__cache_delete",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/routers__cache__response__main__ResponseDelete" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/daily_production/{usage_point_id}/start/{start}/end/{end}": {
+      "get": {
+        "tags": ["Consommation / Production"],
+        "summary": "Récupère la production quotidienne",
+        "description": "Cette sous ressource renvoie les valeurs correspondant à la production quotidienne (en Wh) sur chaque jour de la période demandée.\nChaque valeur est daté.\n\n**LIMITATION D'ENEDIS** :\n- Il est possible de récupérer au maximum **36** mois d'historique soit **1095** jours",
+        "operationId": "daily_production_daily_production__usage_point_id__start__start__end__end__get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          },
+          {
+            "description": "Début de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "Start", "description": "Début de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Début de la période de test.",
+                "value": "2025-09-22"
+              }
+            },
+            "name": "start",
+            "in": "path"
+          },
+          {
+            "description": "Fin de la période.",
+            "required": true,
+            "schema": { "type": "string", "title": "End", "description": "Fin de la période." },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Fin de la période de test.",
+                "value": "2025-09-29"
+              }
+            },
+            "name": "end",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ResponseDailyProductionRoot" } }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/reset/{usage_point_id}": {
+      "get": {
+        "tags": ["Compte"],
+        "summary": "Permet de générer un nouveau token.",
+        "description": "Permet de générer un nouveau token.",
+        "operationId": "reset_reset__usage_point_id__get",
+        "parameters": [
+          {
+            "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Usage Point Id",
+              "description": "Champ de **14** chiffres, ne pas retirer les potentiels 0 en début de chaine."
+            },
+            "examples": {
+              "normal": {
+                "summary": "A normal example",
+                "description": "Point de livraison de test.",
+                "value": "00000000000000"
+              }
+            },
+            "name": "usage_point_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": { "description": "Successful Response", "content": { "application/json": { "schema": {} } } },
+          "422": {
+            "description": "Validation Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": { "items": { "$ref": "#/components/schemas/ValidationError" }, "type": "array", "title": "Detail" }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "OptionsTempoPrice": {
+        "properties": {
+          "blue_hc": { "type": "string", "title": "Blue Hc", "default": "0.0" },
+          "blue_hp": { "type": "string", "title": "Blue Hp", "default": "0.0" },
+          "white_hc": { "type": "string", "title": "White Hc", "default": "0.0" },
+          "white_hp": { "type": "string", "title": "White Hp", "default": "0.0" },
+          "red_hc": { "type": "string", "title": "Red Hc", "default": "0.0" },
+          "red_hp": { "type": "string", "title": "Red Hp", "default": "0.0" }
+        },
+        "type": "object",
+        "title": "OptionsTempoPrice",
+        "description": "Management Zone POST data."
+      },
+      "ResponseAddressesContracts": {
+        "properties": {
+          "usage_point_id": { "type": "string", "title": "Usage Point Id" },
+          "usage_point_status": { "type": "string", "title": "Usage Point Status" },
+          "meter_type": { "type": "string", "title": "Meter Type" },
+          "usage_point_addresses": { "$ref": "#/components/schemas/ResponseAddressesUsagePoint" }
+        },
+        "type": "object",
+        "required": ["usage_point_addresses"],
+        "title": "ResponseAddressesContracts",
+        "description": "Response addresses contracts."
+      },
+      "ResponseAddressesGeoPoint": {
+        "properties": {
+          "latitude": { "type": "string", "title": "Latitude" },
+          "longitude": { "type": "string", "title": "Longitude" },
+          "altitude": { "type": "string", "title": "Altitude" }
+        },
+        "type": "object",
+        "title": "ResponseAddressesGeoPoint",
+        "description": "Response addresses geo point."
+      },
+      "ResponseAddressesItems": {
+        "properties": {
+          "customer_id": { "type": "string", "title": "Customer Id" },
+          "usage_points": {
+            "items": { "$ref": "#/components/schemas/ResponseAddressesUsagePoints" },
+            "type": "array",
+            "title": "Usage Points"
+          }
+        },
+        "type": "object",
+        "required": ["customer_id", "usage_points"],
+        "title": "ResponseAddressesItems",
+        "description": "Response addresses items."
+      },
+      "ResponseAddressesRoot": {
+        "properties": { "customer": { "$ref": "#/components/schemas/ResponseAddressesItems" } },
+        "type": "object",
+        "title": "ResponseAddressesRoot",
+        "description": "Response addresses root."
+      },
+      "ResponseAddressesUsagePoint": {
+        "properties": {
+          "street": { "type": "string", "title": "Street" },
+          "locality": { "type": "string", "title": "Locality" },
+          "postal_code": { "type": "string", "title": "Postal Code" },
+          "insee_code": { "type": "string", "title": "Insee Code" },
+          "city": { "type": "string", "title": "City" },
+          "country": { "type": "string", "title": "Country" },
+          "geo_points": {
+            "allOf": [{ "$ref": "#/components/schemas/ResponseAddressesGeoPoint" }],
+            "title": "Geo Points",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "title": "ResponseAddressesUsagePoint",
+        "description": "Response addresses usage point."
+      },
+      "ResponseAddressesUsagePoints": {
+        "properties": { "usage_point": { "$ref": "#/components/schemas/ResponseAddressesContracts" } },
+        "type": "object",
+        "required": ["usage_point"],
+        "title": "ResponseAddressesUsagePoints",
+        "description": "Response addresses usage points."
+      },
+      "ResponseConsumptionLoadCurve": {
+        "properties": { "meter_reading": { "$ref": "#/components/schemas/ResponseConsumptionLoadCurveMeterReading" } },
+        "type": "object",
+        "title": "ResponseConsumptionLoadCurve",
+        "description": "Response model for consumption load curve."
+      },
+      "ResponseConsumptionLoadCurveMeterReading": {
+        "properties": {
+          "usage_point_id": { "type": "string", "title": "Usage Point Id" },
+          "start": { "type": "string", "title": "Start" },
+          "end": { "type": "string", "title": "End" },
+          "quality": { "type": "string", "title": "Quality" },
+          "reading_type": { "$ref": "#/components/schemas/ResponseConsumptionLoadCurveMeterReadingReadingType" },
+          "interval_reading": {
+            "items": { "$ref": "#/components/schemas/ResponseConsumptionLoadCurveMeterReadingIntervalReading" },
+            "type": "array",
+            "title": "Interval Reading"
+          }
+        },
+        "type": "object",
+        "required": ["usage_point_id", "start", "end", "quality", "reading_type", "interval_reading"],
+        "title": "ResponseConsumptionLoadCurveMeterReading",
+        "description": "Response model for consumption load curve meter reading."
+      },
+      "ResponseConsumptionLoadCurveMeterReadingIntervalReading": {
+        "properties": {
+          "value": { "type": "string", "title": "Value" },
+          "date": { "type": "string", "title": "Date" },
+          "interval_length": { "type": "string", "title": "Interval Length" },
+          "measure_type": { "type": "string", "title": "Measure Type" }
+        },
+        "type": "object",
+        "required": ["value", "date", "interval_length", "measure_type"],
+        "title": "ResponseConsumptionLoadCurveMeterReadingIntervalReading",
+        "description": "Response model for consumption load curve meter reading interval reading."
+      },
+      "ResponseConsumptionLoadCurveMeterReadingReadingType": {
+        "properties": {
+          "measurement_kind": { "type": "string", "title": "Measurement Kind" },
+          "unit": { "type": "string", "title": "Unit" },
+          "aggregate": { "type": "string", "title": "Aggregate" }
+        },
+        "type": "object",
+        "required": ["measurement_kind", "unit", "aggregate"],
+        "title": "ResponseConsumptionLoadCurveMeterReadingReadingType",
+        "description": "Response model for consumption load curve meter reading reading type."
+      },
+      "ResponseContactContactData": {
+        "properties": {
+          "phone": { "type": "string", "title": "Phone" },
+          "email": { "type": "string", "title": "Email" }
+        },
+        "type": "object",
+        "title": "ResponseContactContactData",
+        "description": "Response contact contact data."
+      },
+      "ResponseContactRoot": {
+        "properties": {
+          "customer_id": { "type": "string", "title": "Customer Id" },
+          "contact_data": { "$ref": "#/components/schemas/ResponseContactContactData" }
+        },
+        "type": "object",
+        "title": "ResponseContactRoot",
+        "description": "Response contact root."
+      },
+      "ResponseContractContent": {
+        "properties": {
+          "customer_id": { "type": "string", "title": "Customer Id" },
+          "usage_points": {
+            "items": { "$ref": "#/components/schemas/ResponseContractUsagePoints" },
+            "type": "array",
+            "title": "Usage Points"
+          }
+        },
+        "type": "object",
+        "required": ["usage_points"],
+        "title": "ResponseContractContent",
+        "description": "Response contract content."
+      },
+      "ResponseContractContracts": {
+        "properties": {
+          "segment": { "type": "string", "title": "Segment" },
+          "subscribed_power": { "type": "string", "title": "Subscribed Power" },
+          "last_activation_date": { "type": "string", "title": "Last Activation Date" },
+          "distribution_tariff": { "type": "string", "title": "Distribution Tariff" },
+          "offpeak_hours": { "type": "string", "title": "Offpeak Hours" },
+          "contract_status": { "type": "string", "title": "Contract Status" },
+          "last_distribution_tariff_change_date": { "type": "string", "title": "Last Distribution Tariff Change Date" }
+        },
+        "type": "object",
+        "title": "ResponseContractContracts",
+        "description": "Response contract contracts."
+      },
+      "ResponseContractRoot": {
+        "properties": { "customer": { "$ref": "#/components/schemas/ResponseContractContent" } },
+        "type": "object",
+        "title": "ResponseContractRoot",
+        "description": "Response contract root."
+      },
+      "ResponseContractUsagePoint": {
+        "properties": {
+          "usage_point_id": { "type": "string", "title": "Usage Point Id" },
+          "usage_point_status": { "type": "string", "title": "Usage Point Status" },
+          "meter_type": { "type": "string", "title": "Meter Type" }
+        },
+        "type": "object",
+        "title": "ResponseContractUsagePoint",
+        "description": "Response contract usage point."
+      },
+      "ResponseContractUsagePoints": {
+        "properties": {
+          "usage_point": { "$ref": "#/components/schemas/ResponseContractUsagePoint" },
+          "contracts": { "$ref": "#/components/schemas/ResponseContractContracts" }
+        },
+        "type": "object",
+        "required": ["usage_point", "contracts"],
+        "title": "ResponseContractUsagePoints",
+        "description": "Response contract usage points."
+      },
+      "ResponseDailyComsumptionMaxPower": {
+        "properties": {
+          "meter_reading": { "$ref": "#/components/schemas/ResponseDailyComsumptionMaxPowerMeterReading" }
+        },
+        "type": "object",
+        "title": "ResponseDailyComsumptionMaxPower",
+        "description": "Response model for daily consumption max power."
+      },
+      "ResponseDailyComsumptionMaxPowerMeterReading": {
+        "properties": {
+          "usage_point_id": { "type": "string", "title": "Usage Point Id" },
+          "start": { "type": "string", "title": "Start" },
+          "end": { "type": "string", "title": "End" },
+          "quality": { "type": "string", "title": "Quality" },
+          "reading_type": { "$ref": "#/components/schemas/ResponseDailyComsumptionMaxPowerMeterReadingReadingType" },
+          "interval_reading": {
+            "items": { "$ref": "#/components/schemas/ResponseDailyComsumptionMaxPowerMeterReadingIntervalReading" },
+            "type": "array",
+            "title": "Interval Reading"
+          }
+        },
+        "type": "object",
+        "required": ["usage_point_id", "start", "end", "quality", "reading_type", "interval_reading"],
+        "title": "ResponseDailyComsumptionMaxPowerMeterReading",
+        "description": "Response model for daily consumption max power meter reading."
+      },
+      "ResponseDailyComsumptionMaxPowerMeterReadingIntervalReading": {
+        "properties": {
+          "value": { "type": "string", "title": "Value" },
+          "date": { "type": "string", "title": "Date" }
+        },
+        "type": "object",
+        "required": ["value", "date"],
+        "title": "ResponseDailyComsumptionMaxPowerMeterReadingIntervalReading",
+        "description": "Response model for daily consumption max power meter reading interval reading."
+      },
+      "ResponseDailyComsumptionMaxPowerMeterReadingReadingType": {
+        "properties": {
+          "measurement_kind": { "type": "string", "title": "Measurement Kind" },
+          "measuring_period": { "type": "string", "title": "Measuring Period" },
+          "unit": { "type": "string", "title": "Unit" },
+          "aggregate": { "type": "string", "title": "Aggregate" }
+        },
+        "type": "object",
+        "required": ["measurement_kind", "measuring_period", "unit", "aggregate"],
+        "title": "ResponseDailyComsumptionMaxPowerMeterReadingReadingType",
+        "description": "Response model for daily consumption max power meter reading reading type."
+      },
+      "ResponseDailyConsumption": {
+        "properties": { "meter_reading": { "$ref": "#/components/schemas/ResponseDailyConsumptionMeterReading" } },
+        "type": "object",
+        "title": "ResponseDailyConsumption",
+        "description": "Response model for daily consumption."
+      },
+      "ResponseDailyConsumptionMeterReading": {
+        "properties": {
+          "usage_point_id": { "type": "string", "title": "Usage Point Id" },
+          "start": { "type": "string", "title": "Start" },
+          "end": { "type": "string", "title": "End" },
+          "quality": { "type": "string", "title": "Quality" },
+          "reading_type": { "$ref": "#/components/schemas/ResponseDailyConsumptionMeterReadingReadingType" },
+          "interval_reading": {
+            "items": { "$ref": "#/components/schemas/ResponseDailyConsumptionMeterReadingIntervalReading" },
+            "type": "array",
+            "title": "Interval Reading"
+          }
+        },
+        "type": "object",
+        "required": ["usage_point_id", "start", "end", "quality", "reading_type", "interval_reading"],
+        "title": "ResponseDailyConsumptionMeterReading",
+        "description": "Response model for daily consumption meter reading."
+      },
+      "ResponseDailyConsumptionMeterReadingIntervalReading": {
+        "properties": {
+          "value": { "type": "string", "title": "Value" },
+          "date": { "type": "string", "title": "Date" }
+        },
+        "type": "object",
+        "required": ["value", "date"],
+        "title": "ResponseDailyConsumptionMeterReadingIntervalReading",
+        "description": "Response model for daily consumption meter reading interval reading."
+      },
+      "ResponseDailyConsumptionMeterReadingReadingType": {
+        "properties": {
+          "measurement_kind": { "type": "string", "title": "Measurement Kind" },
+          "measuring_period": { "type": "string", "title": "Measuring Period" },
+          "unit": { "type": "string", "title": "Unit" },
+          "aggregate": { "type": "string", "title": "Aggregate" }
+        },
+        "type": "object",
+        "required": ["measurement_kind", "measuring_period", "unit", "aggregate"],
+        "title": "ResponseDailyConsumptionMeterReadingReadingType",
+        "description": "Response model for daily consumption meter reading reading type."
+      },
+      "ResponseDailyProduction": {
+        "properties": {
+          "usage_point_id": { "type": "string", "title": "Usage Point Id" },
+          "start": { "type": "string", "title": "Start" },
+          "end": { "type": "string", "title": "End" },
+          "quality": { "type": "string", "title": "Quality" },
+          "reading_type": { "$ref": "#/components/schemas/ResponseDailyProductionReadingType" },
+          "interval_reading": {
+            "items": { "$ref": "#/components/schemas/ResponseDailyProductionIntervalReading" },
+            "type": "array",
+            "title": "Interval Reading"
+          }
+        },
+        "type": "object",
+        "required": ["usage_point_id", "start", "end", "quality", "reading_type", "interval_reading"],
+        "title": "ResponseDailyProduction",
+        "description": "Response model for daily production."
+      },
+      "ResponseDailyProductionIntervalReading": {
+        "properties": {
+          "value": { "type": "string", "title": "Value" },
+          "date": { "type": "string", "title": "Date" }
+        },
+        "type": "object",
+        "required": ["value", "date"],
+        "title": "ResponseDailyProductionIntervalReading",
+        "description": "Response model for daily production interval reading."
+      },
+      "ResponseDailyProductionReadingType": {
+        "properties": {
+          "measurement_kind": { "type": "string", "title": "Measurement Kind" },
+          "measuring_period": { "type": "string", "title": "Measuring Period" },
+          "unit": { "type": "string", "title": "Unit" },
+          "aggregate": { "type": "string", "title": "Aggregate" }
+        },
+        "type": "object",
+        "required": ["measurement_kind", "measuring_period", "unit", "aggregate"],
+        "title": "ResponseDailyProductionReadingType",
+        "description": "Response model for daily production reading type."
+      },
+      "ResponseDailyProductionRoot": {
+        "properties": { "meter_reading": { "$ref": "#/components/schemas/ResponseDailyProduction" } },
+        "type": "object",
+        "title": "ResponseDailyProductionRoot",
+        "description": "Response model for daily production root."
+      },
+      "ResponseHealthCheck": {
+        "properties": {
+          "status": { "type": "boolean", "title": "Status" },
+          "information": { "type": "string", "title": "Information" },
+          "nb_client": { "type": "integer", "title": "Nb Client" },
+          "waiting_estimation": { "type": "string", "title": "Waiting Estimation", "default": "0.0s" }
+        },
+        "type": "object",
+        "required": ["status"],
+        "title": "ResponseHealthCheck",
+        "description": "Response model for health check."
+      },
+      "ResponseIdentityIdentity": {
+        "properties": { "natural_person": { "$ref": "#/components/schemas/ResponseIdentityNaturalPerson" } },
+        "type": "object",
+        "title": "ResponseIdentityIdentity",
+        "description": "Response identity identity."
+      },
+      "ResponseIdentityNaturalPerson": {
+        "properties": {
+          "title": { "type": "string", "title": "Title" },
+          "firstname": { "type": "string", "title": "Firstname" },
+          "lastname": { "type": "string", "title": "Lastname" }
+        },
+        "type": "object",
+        "title": "ResponseIdentityNaturalPerson",
+        "description": "Response identity natural person."
+      },
+      "ResponseIdentityRoot": {
+        "properties": {
+          "customer_id": { "type": "string", "title": "Customer Id" },
+          "identity": { "$ref": "#/components/schemas/ResponseIdentityIdentity" }
+        },
+        "type": "object",
+        "title": "ResponseIdentityRoot",
+        "description": "Response identity root."
+      },
+      "ResponseValidAccess": {
+        "properties": {
+          "valid": { "type": "boolean", "title": "Valid", "default": true },
+          "information": { "type": "string", "title": "Information", "default": "" },
+          "consent_expiration_date": { "type": "string", "format": "date-time", "title": "Consent Expiration Date" },
+          "call_number": { "type": "integer", "title": "Call Number" },
+          "quota_reached": { "type": "boolean", "title": "Quota Reached" },
+          "quota_limit": { "type": "integer", "title": "Quota Limit" },
+          "quota_reset_at": { "type": "string", "format": "date-time", "title": "Quota Reset At" },
+          "last_call": { "type": "string", "format": "date-time", "title": "Last Call" },
+          "ban": { "type": "boolean", "title": "Ban", "default": false }
+        },
+        "type": "object",
+        "required": [
+          "consent_expiration_date",
+          "call_number",
+          "quota_reached",
+          "quota_limit",
+          "quota_reset_at",
+          "last_call"
+        ],
+        "title": "ResponseValidAccess",
+        "description": "Response for valid_access."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": { "anyOf": [{ "type": "string" }, { "type": "integer" }] },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": { "type": "string", "title": "Message" },
+          "type": { "type": "string", "title": "Error Type" }
+        },
+        "type": "object",
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError"
+      },
+      "routers__cache__response__main__ResponseDelete": {
+        "properties": {
+          "usage_point_id": { "type": "string", "title": "Usage Point Id" },
+          "path": { "items": { "type": "string" }, "type": "array", "title": "Path" },
+          "purge": { "type": "boolean", "title": "Purge", "default": false }
+        },
+        "type": "object",
+        "title": "ResponseDelete",
+        "description": "Response model for cache deletion."
+      },
+      "routers__enedis__response__customer__ResponseDelete": {
+        "properties": {
+          "usage_point_id": { "type": "string", "title": "Usage Point Id" },
+          "path": { "type": "string", "title": "Path" },
+          "delete": { "type": "boolean", "title": "Delete", "default": false }
+        },
+        "type": "object",
+        "title": "ResponseDelete",
+        "description": "Response delete cache."
+      }
+    },
+    "securitySchemes": {
+      "Admin endpoint only": { "type": "apiKey", "in": "header", "name": "ADMIN_API_KEY" },
+      "APIKeyHeader": { "type": "apiKey", "in": "header", "name": "Authorization" }
+    }
+  }
+}
+

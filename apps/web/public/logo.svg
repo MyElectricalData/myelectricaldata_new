@@ -1,0 +1,20 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="95" fill="#3B82F6" opacity="0.1"/>
+
+  <!-- Lightning bolt (electricity) -->
+  <path d="M110 40L70 100H95L85 160L125 100H100L110 40Z" fill="#3B82F6"/>
+
+  <!-- Data chart bars (analysis) -->
+  <rect x="40" y="130" width="15" height="30" rx="2" fill="#10B981" opacity="0.8"/>
+  <rect x="60" y="115" width="15" height="45" rx="2" fill="#10B981" opacity="0.9"/>
+  <rect x="80" y="105" width="15" height="55" rx="2" fill="#10B981"/>
+
+  <rect x="105" y="120" width="15" height="40" rx="2" fill="#10B981" opacity="0.9"/>
+  <rect x="125" y="110" width="15" height="50" rx="2" fill="#10B981"/>
+  <rect x="145" y="125" width="15" height="35" rx="2" fill="#10B981" opacity="0.8"/>
+
+  <!-- Connection line (data flow) -->
+  <path d="M47.5 145C47.5 145 67.5 130 87.5 130C107.5 130 112.5 140 132.5 135C152.5 130 152.5 142.5 152.5 142.5"
+        stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-dasharray="5,5" opacity="0.6"/>
+</svg>

@@ -1,0 +1,32 @@
+services:
+  # Frontend en mode dev avec hot-reload Vite
+  frontend-dev:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.dev
+    container_name: myelectricaldata-frontend-dev
+    restart: unless-stopped
+    volumes:
+      - ./apps/web/src:/app/src
+      - ./apps/web/public:/app/public
+      - ./apps/web/index.html:/app/index.html
+      - ./apps/web/vite.config.ts:/app/vite.config.ts
+      - ./apps/web/tsconfig.json:/app/tsconfig.json
+      - ./apps/web/tsconfig.node.json:/app/tsconfig.node.json
+      - ./apps/web/tailwind.config.js:/app/tailwind.config.js
+      - ./apps/web/postcss.config.js:/app/postcss.config.js
+      # Ignore node_modules to avoid conflicts
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    networks:
+      - myelectricaldata
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    command: npm run dev -- --host 0.0.0.0
+    depends_on:
+      - backend
+
+networks:
+  myelectricaldata:
+    external: true

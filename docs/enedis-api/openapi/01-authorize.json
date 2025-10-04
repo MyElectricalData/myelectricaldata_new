@@ -1,0 +1,139 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "description": "Pour que votre application en production puisse accéder aux API de données de comptage et de données client, elle doit auparavant obtenir l'autorisation du client.\nIl nécessite l’authentification du client final auprès d'Enedis et son consentement libre, explicite et éclairé.\n\nCette ressource n'est disponible qu'en production avec l'URL : \n https://mon-compte-particulier.enedis.fr. ",
+    "version": "v1",
+    "title": "Authorize",
+    "contact": {}
+  },
+  "host": "mon-compte-particulier.enedis.fr",
+  "paths": {
+    "/dataconnect/v1/oauth2/authorize": {
+      "get": {
+        "summary": "Authorize",
+        "tags": ["Autorisation"],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "description": "Identifiant unique de l’application consommatrice d’API",
+            "x-example": "0101010101-xxxx-xxxx-xxxx-0101010101010101"
+          },
+          {
+            "name": "response_type",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "description": "Scénario d'autorisation demandé. Ce paramètre doit être renseigné avec la valeur code pour l'autorisation en code grant implémentée par Enedis",
+            "x-example": "code"
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "description": "Paramètre de sécurité permettant de maintenir l'état entre la requête et la redirection, d'une longueur maximale de 100 caractères. Dans le bac à sable, le chiffre présent au dernier caractère permet de simuler l'interrogation de différents clients du bac à sable.",
+            "x-example": "abcde0"
+          },
+          {
+            "name": "duration",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "description": "Durée du consentement, en jours, demandée par l'application, au format ISO 8601. Cette durée sera affichée au consommateur et ne peut excéder 3 ans.",
+            "x-example": "P1Y4M"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "description": "La réponse est renvoyée dans le navigateur à travers l'URL de redirection avec le code d'autorisation, l'état et le numéro de PDL demandé par le client. Par exemple : https://redirect_uri.com/redirect?code=cg0ooX32Nx45gpSkQR8LRCUx&state=abcd12e&usage_point_id=09775542606818"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l’erreur retourné par le système.",
+                  "example": "Invalid_request"
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l’erreur correspondant au code",
+                  "example": "Response type parameter is required"
+                },
+                "error_uri": {
+                  "type": "string",
+                  "description": "Lien vers les descriptions des erreurs",
+                  "example": ""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l’erreur retourné par le système.",
+                  "example": "access_denied"
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l’erreur correspondant au code",
+                  "example": ""
+                },
+                "error_uri": {
+                  "type": "string",
+                  "description": "Lien vers les descriptions des erreurs",
+                  "example": ""
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "example": "server error"
+                },
+                "error_description": {
+                  "type": "string",
+                  "example": "technical error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Internal Server Error",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "example": 503
+                },
+                "error_description": {
+                  "type": "string",
+                  "example": "Service unavailable for the moment. Please try later."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

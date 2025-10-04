@@ -1,0 +1,107 @@
+services:
+  # Reverse Proxy Caddy
+  caddy:
+    image: caddy:2-alpine
+    container_name: myelectricaldata-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - myelectricaldata
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: myelectricaldata-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - myelectricaldata
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # PostgreSQL (optionnel, activable via DATABASE_TYPE=postgresql)
+  postgres:
+    image: postgres:16-alpine
+    container_name: myelectricaldata-postgres
+    restart: unless-stopped
+    env_file:
+      - ./.env.api
+    environment:
+      POSTGRES_DB: myelectricaldata
+      POSTGRES_USER: myelectricaldata
+      POSTGRES_PASSWORD: mySecurePassword2025
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - myelectricaldata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myelectricaldata"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - postgres
+
+  # Backend FastAPI
+  backend:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: myelectricaldata-backend
+    restart: unless-stopped
+    env_file:
+      - ./.env.api
+    volumes:
+      - ./apps/api/data:/app/data
+      - ./apps/api/src:/app/src  # Hot reload en dev (optionnel)
+    networks:
+      - myelectricaldata
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend React/Vite
+  frontend:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: myelectricaldata-frontend
+    restart: unless-stopped
+    networks:
+      - myelectricaldata
+    depends_on:
+      - backend
+
+volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+
+networks:
+  myelectricaldata:
+    driver: bridge

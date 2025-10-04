@@ -1,0 +1,246 @@
+{
+  "swagger": "2.0",
+  "host": "gw.ext.prod-sandbox.api.enedis.fr",
+  "basePath": "/customers_upc/v5",
+  "schemes": ["https"],
+  "info": {
+    "title": "clients_contrats_pdl",
+    "description": "Cette API permet de donner accès aux données contractuelles des clients usagers qui ont consenti à les partager avec vous. Elle permet de récupérer les contrats du client 'contracts' (Points de livraison (PDL), puissance souscrite, segment).",
+    "version": "5.0"
+  },
+  "paths": {
+    "/usage_points/contracts": {
+      "get": {
+        "description": "Récupération des données contractuelles d'un client, dont le PDL est donné en paramètre.",
+        "summary": "Récupération des données contractuelles",
+        "parameters": [
+          {
+            "description": "Token Oauth délivré à l’application cliente.",
+            "required": true,
+            "in": "header",
+            "name": "Authorization",
+            "type": "string"
+          },
+          {
+            "description": "Format de réponse acceptable",
+            "required": false,
+            "in": "header",
+            "name": "Accept",
+            "type": "string"
+          },
+          {
+            "description": "Fomat du body de la requête (application/json ou application/xml)",
+            "required": false,
+            "in": "header",
+            "name": "Content-Type",
+            "type": "string"
+          },
+          {
+            "description": "Description de l’équipement qui a émis la requete (hardware/software)",
+            "required": false,
+            "in": "header",
+            "name": "User-Agent",
+            "type": "string"
+          },
+          {
+            "description": "Nom du serveur du service provider (client)",
+            "required": false,
+            "in": "header",
+            "name": "Host",
+            "type": "string"
+          },
+          {
+            "name": "usage_point_id",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "description": "PDL de l'usager dont on veut consulter les informations. Il n'est nécessaire de ne valoriser que le header ou le query parameter",
+            "x-example": "12345678910123",
+            "pattern": "[0-9]{14}",
+            "maxLength": 14
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status 200",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "customer": {
+                  "type": "object",
+                  "properties": {
+                    "customer_id": {
+                      "type": "string",
+                      "description": "Identifiant client",
+                      "example": "1358019319"
+                    },
+                    "usage_points": {
+                      "type": "array",
+                      "description": "Tableau contenant la liste des PDL de l'usager (ex: résidence principale, chambre de bonne, résidence secondaire...)",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "usage_point": {
+                            "required": ["usage_point_id"],
+                            "type": "object",
+                            "description": "Points de livraisons de l'usager",
+                            "properties": {
+                              "usage_point_id": {
+                                "type": "string",
+                                "description": "Identifiant unique du point de livraison ou numéro de PRM",
+                                "example": "12345678910123"
+                              },
+                              "usage_point_status": {
+                                "type": "string",
+                                "description": "Statut du compteur : communicant ou non. Correspond au niveauOuvertureServices",
+                                "enum": ["com", "no_com"]
+                              },
+                              "meter_type": {
+                                "type": "string",
+                                "description": "Type de compteur d’électricité installé, peut prendre les valeurs AMM (compteur Linky), CBE (compteur bleu électronique), EMC (compteur électro-mécanique), ICE4Q (ICE quatre cadrans), CJE (Compteur jaune électronique), CJCE (Compteur jaune électromécanique avec contrôleur électronique), CJDI (Compteur jaune électromécanique avec disjoncteur), CVE (Compteur vert électronique), CVT1 (Compteur vert électromécanique type 1 , CVT2 (Compteur vert électromécanique type 2), CVT3 (Compteur vert électromécanique type 3), CVST (Compteur vert électromécanique simplifié avec TC),  CVSS (Compteur vert électromécanique simplifié sans TC), ICE (ICE), PMEI (PME-PMI),  LINKY (Compteur Linky), SAPHIR (Compteur Saphir), SSCPT (Sans comptage)",
+                                "enum": [
+                                  "AMM",
+                                  "CBE",
+                                  "EMC",
+                                  "ICE4Q",
+                                  "CJE",
+                                  "CJCE",
+                                  "CJDI",
+                                  "CVE",
+                                  "CVT1",
+                                  "CVT2",
+                                  "CVT3",
+                                  "CVST",
+                                  "CVSS",
+                                  "ICE",
+                                  "PMEI",
+                                  "LINKY",
+                                  "SAPHIR",
+                                  "SSCPT"
+                                ],
+                                "example": "AMM"
+                              }
+                            }
+                          },
+                          "contracts": {
+                            "required": ["segment"],
+                            "type": "object",
+                            "properties": {
+                              "segment": {
+                                "type": "string",
+                                "description": "Catégorie/segment client : \n-C1 à C4 : entreprise\n- C5 : particulier",
+                                "example": "C5"
+                              },
+                              "subscribed_power": {
+                                "type": "string",
+                                "description": "Puissance souscrite, en kVA",
+                                "example": "9 kVA"
+                              },
+                              "last_activation_date": {
+                                "type": "string",
+                                "description": "Date de dernière mise en service",
+                                "example": "2013-08-14+01:00"
+                              },
+                              "distribution_tariff": {
+                                "type": "string",
+                                "description": "Indique le type de tarif (base ou HP/HC)",
+                                "example": "BTINFCUST"
+                              },
+                              "offpeak_hours": {
+                                "type": "string",
+                                "description": "Plage horaire (heure creuse/heure pleine).\nCorrespond à plagesHeuresCreuses",
+                                "example": "HC (23h00-7h30)"
+                              },
+                              "contract_type": {
+                                "type": "string",
+                                "description": "Type de contrat. Valeur possible :\n                    - CARD-S  : contrat d'accès au réseau de distribution en soutirage\n                    - CARD-I : contrat d'accès au réseau de distribution en injection\n                    - CRAE : contrat de raccordement, d'accès et d'exploitation\n                    - DECOMPT : contrat de décompte",
+                                "example": "CRAE"
+                              },
+                              "contract_status": {
+                                "type": "string",
+                                "description": "Etat contractuel",
+                                "example": "SERVC"
+                              },
+                              "last_distribution_tariff_change_date": {
+                                "type": "string",
+                                "description": "Date de dernière modification de la formule tarifaire d'acheminement",
+                                "example": "2017-05-25+01:00"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Erreur dans la formulation de la requête.",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l’erreur retourné par le système",
+                  "example": "invalid_request"
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l’erreur correspondant au code",
+                  "example": "usage_point_id parameter is required."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - L'application doit fournir un jeton valide pour accéder à la ressource"
+          },
+          "403": {
+            "description": "Forbidden - Les droits d'accès sont insuffisants pour accèder à la ressource.",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l’erreur retourné par le système",
+                  "example": "ADAM-DC-0008"
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l’erreur correspondant au code",
+                  "example": "No consent can be found for this customer and this usage point."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l’erreur retourné par le système.",
+                  "example": "STM-ERR-0000019"
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l’erreur correspondant au code.",
+                  "example": "Unknown or unauthorized user"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur Serveur - Une erreur est survenue lors du traitement de la requête par le serveur"
+          },
+          "503": {
+            "description": "Service Unavailable - Le serveur est momentanément inaccessible"
+          }
+        }
+      }
+    }
+  }
+}

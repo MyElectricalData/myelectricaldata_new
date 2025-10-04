@@ -1,0 +1,292 @@
+{
+  "swagger": "2.0",
+  "host": "gw.ext.prod-sandbox.api.enedis.fr",
+  "basePath": "/metering_data_clc/v5",
+  "schemes": ["https"],
+  "info": {
+    "title": "donnees_de_compt_elec_clc",
+    "description": "Cette API permet de récupérer la courbe de charge en soutirage pour le point de livraison de clients équipés de compteurs communicants Linky. L’accès à cette ressource est conditionnée par le recueil préalable du consentement du client par Enedis.",
+    "version": "5.0"
+  },
+  "paths": {
+    "/consumption_load_curve": {
+      "get": {
+        "description": "Permet de récupérer la courbe de charge en soutirage sur l'intervalle [start;end[ pour le point de livraison renseigné et la personne titulaire authentifiée, ou dont l'indentifiant est donné en paramètre.<br/>\nLa profondeur de données disponible en un appel est d'une semaine. \nLes valeurs retournées sont des puissances moyennes de consommation en W sur l'intervalle de mesure du compteur (par défaut 30mn). \nChaque valeur est horodatée. \nLa courbe de charge s’obtient sur des journées complètes de minuit à minuit du jour suivant en heures locales. \nUn appel peut porter sur des données datant au maximum de 24 mois et 15 jours avant la date d’appel.",
+        "summary": "Récupération de la courbe de charge en soutirage",
+        "parameters": [
+          {
+            "description": "Token Oauth délivré à l’application cliente.",
+            "required": true,
+            "in": "header",
+            "name": "Authorization",
+            "type": "string"
+          },
+          {
+            "description": "Format de réponse acceptable",
+            "required": false,
+            "in": "header",
+            "name": "Accept",
+            "type": "string"
+          },
+          {
+            "description": "Fomat du body de la requête (application/json ou application/xml)",
+            "required": false,
+            "in": "header",
+            "name": "Content-Type",
+            "type": "string"
+          },
+          {
+            "description": "Description de l’équipement qui a émis la requete (hardware/software)",
+            "required": false,
+            "in": "header",
+            "name": "User-Agent",
+            "type": "string"
+          },
+          {
+            "description": "Nom du serveur du service provider (client)",
+            "required": false,
+            "in": "header",
+            "name": "Host",
+            "type": "string"
+          },
+          {
+            "description": "Identifiant de la personne (physique ou morale) titulaire du point.",
+            "required": false,
+            "in": "query",
+            "name": "person_id",
+            "type": "string",
+            "pattern": "[0-9]{10}",
+            "maxLength": 10
+          },
+          {
+            "description": "Identifiant du point de livraison (PRM)",
+            "required": true,
+            "in": "query",
+            "name": "usage_point_id",
+            "type": "string",
+            "x-example": "16401220101758",
+            "pattern": "[0-9]{14}",
+            "maxLength": 14
+          },
+          {
+            "description": "Date de début de la plage demandée au format full-date de la RFC 3339, à savoir YYYY-MM-DD",
+            "required": true,
+            "in": "query",
+            "name": "start",
+            "type": "string",
+            "x-example": "2019-05-06",
+            "pattern": "[0-9-]{10}",
+            "maxLength": 10
+          },
+          {
+            "description": "Date de fin de la plage demandée au format full-date de la RFC 3339, à savoir YYYY-MM-DD",
+            "required": true,
+            "in": "query",
+            "name": "end",
+            "type": "string",
+            "x-example": "2019-05-12",
+            "pattern": "[0-9-]{10}",
+            "maxLength": 10
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "L'opération s'est déroulée avec succès.",
+            "schema": {
+              "required": ["meter_reading"],
+              "type": "object",
+              "properties": {
+                "meter_reading": {
+                  "required": [
+                    "end",
+                    "interval_reading",
+                    "quality",
+                    "start",
+                    "usage_point_id"
+                  ],
+                  "type": "object",
+                  "properties": {
+                    "usage_point_id": {
+                      "type": "string",
+                      "description": "Identifiant du point de livraison (PRM)",
+                      "example": "16401220101758"
+                    },
+                    "start": {
+                      "type": "string",
+                      "description": "Date de début de la plage renvoyée<br/>\nFormat YYYY-MM-DD",
+                      "example": "2019-05-06"
+                    },
+                    "end": {
+                      "type": "string",
+                      "description": "Date de fin de la plage renvoyée<br/>\nFormat YYYY-MM-DD",
+                      "example": "2019-05-12"
+                    },
+                    "quality": {
+                      "type": "string",
+                      "description": "Qualité de la donnée, brute ou corrigée",
+                      "enum": ["BRUT : Données brutes"],
+                      "example": "BRUT"
+                    },
+                    "reading_type": {
+                      "required": ["unit"],
+                      "type": "object",
+                      "properties": {
+                        "measurement_kind": {
+                          "type": "string",
+                          "description": "Type de mesure demandée. Valeurs possibles : none, energy, power, voltage. Pour ce cas : power",
+                          "example": "power"
+                        },
+                        "unit": {
+                          "type": "string",
+                          "description": "Unité des données de mesure",
+                          "enum": ["W"],
+                          "example": "W"
+                        },
+                        "aggregate": {
+                          "type": "string",
+                          "description": "Correspond au type de grandeur métier consultée. Valeurs possibles : none, average, maximum et sum. Pour cette grandeur : average",
+                          "example": "average"
+                        }
+                      }
+                    },
+                    "interval_reading": {
+                      "type": "array",
+                      "items": {
+                        "required": ["date", "interval_length", "value"],
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "description": "Valeur du point",
+                            "example": "540"
+                          },
+                          "date": {
+                            "type": "string",
+                            "description": "Horodate de la valeur (UTC)",
+                            "example": "2019-05-06 03:00:00"
+                          },
+                          "interval_length": {
+                            "type": "string",
+                            "description": "Pas de la donnée",
+                            "enum": [
+                              "PT5M : Pas de 5 minutes",
+                              "PT10M : Pas de 10 minutes",
+                              "PT15M : Pas de 15 minutes",
+                              "PT30M : Pas de 30 minutes",
+                              "PT60M : Pas de 60 minutes"
+                            ],
+                            "example": "PT30M"
+                          },
+                          "measure_type": {
+                            "type": "string",
+                            "description": "Qualifie le type de mesure",
+                            "enum": ["B : BRUT"],
+                            "example": "B"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Erreur dans le format de la requête",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l’erreur retourné par le système.",
+                  "enum": [
+                    "Invalid_request",
+                    "ADAM-ERR0123",
+                    "ADAM-ERR0125",
+                    "ADAM-ERR0126",
+                    "ADAM-ERR0061",
+                    "ADAM-ERR0075"
+                  ],
+                  "example": "Invalid_request"
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l’erreur correspondant au code.",
+                  "enum": [
+                    "Empty header, bad request format, partial or incorrect data",
+                    "usage_point_id parameter is required",
+                    "usage_point_id parameter must be 14 digits long",
+                    "Start date parameter is required",
+                    "Start date parameter must be in the format YYYY-MM-DD",
+                    "End date parameter is required",
+                    "End date parameter must be in the format YYYY-MM-DD",
+                    "The end date parameter must be earlier than the current date",
+                    "Start date should be before end date",
+                    "The requested period cannot be anterior to the meter's last activation date",
+                    "The start date must be greater than the history deadline",
+                    "The requested period must be less than 7 days for an access to the load curve",
+                    "The seeker is not recognized as the actual meter holder",
+                    "The customer objected to the load curve recording",
+                    "person_id parameter is required when the user is not an authentified customer"
+                  ],
+                  "example": "usage_point_id parameter is required"
+                },
+                "error_uri": {
+                  "type": "string",
+                  "description": "uri de la documentation API"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Unauthorized",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l'erreur retourné par le système.",
+                  "enum": ["unauthorized_user", "ADAM_DC_0008"],
+                  "example": "unauthorized_user"
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l'erreur correspondant au code.",
+                  "enum": [
+                    "No consent can be found for this customer and this usage point.",
+                    "user is not authorized to access this resource"
+                  ],
+                  "example": "user is not authorized to access this resource"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pas de ressource correspondant à la requête",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l'erreur retourné par le système.",
+                  "example": "no_data_found"
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l'erreur correspondant au code.",
+                  "example": "no measure found for this usage point"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur Serveur"
+          },
+          "503": {
+            "description": "Service indisponible"
+          }
+        }
+      }
+    }
+  }
+}

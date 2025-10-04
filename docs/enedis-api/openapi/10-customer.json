@@ -1,0 +1,198 @@
+{
+  "swagger": "2.0",
+  "host": "gw.ext.prod-sandbox.api.enedis.fr",
+  "basePath": "/customers_i/v5",
+  "schemes": ["https"],
+  "info": {
+    "title": "clients_donnees_identite",
+    "description": "Cette API permet de donner accès aux données contractuelles des clients usagers qui ont consenti à les partager avec vous. Elle permet de récupérer l'identité du client 'identity' (comme son prénom, son nom)",
+    "version": "5.0"
+  },
+  "paths": {
+    "/identity": {
+      "get": {
+        "description": "Récupération des données d'identité d'un client, dont le PDL est donné en paramètre.",
+        "summary": "Récupération des données d'identité",
+        "parameters": [
+          {
+            "description": "Token Oauth délivré à l’application cliente.",
+            "required": true,
+            "in": "header",
+            "name": "Authorization",
+            "type": "string"
+          },
+          {
+            "description": "Format de réponse acceptable",
+            "required": false,
+            "in": "header",
+            "name": "Accept",
+            "type": "string"
+          },
+          {
+            "description": "Fomat du body de la requête (application/json ou application/xml)",
+            "required": false,
+            "in": "header",
+            "name": "Content-Type",
+            "type": "string"
+          },
+          {
+            "description": "Description de l’équipement qui a émis la requete (hardware/software)",
+            "required": false,
+            "in": "header",
+            "name": "User-Agent",
+            "type": "string"
+          },
+          {
+            "description": "Nom du serveur du service provider (client)",
+            "required": false,
+            "in": "header",
+            "name": "Host",
+            "type": "string"
+          },
+          {
+            "name": "usage_point_id",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "description": "PDL de l'usager dont on veut consulter les informations. Il n'est nécessaire de ne valoriser que le header ou le query parameter",
+            "x-example": "12345678910123",
+            "pattern": "[0-9]{14}",
+            "maxLength": 14
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status 200",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "customer_id": {
+                  "type": "string",
+                  "description": "Identifiant client",
+                  "example": "1358019319"
+                },
+                "identity": {
+                  "type": "object",
+                  "properties": {
+                    "natural_person": {
+                      "required": ["firstname", "lastname"],
+                      "type": "object",
+                      "description": "Personne Physique",
+                      "properties": {
+                        "title": {
+                          "type": "string",
+                          "description": "Civilité",
+                          "example": "Mme"
+                        },
+                        "firstname": {
+                          "type": "string",
+                          "description": "Prénom",
+                          "example": "Sandra"
+                        },
+                        "lastname": {
+                          "type": "string",
+                          "description": "Nom",
+                          "example": "Thie"
+                        }
+                      }
+                    },
+                    "legal_entity": {
+                      "required": ["name"],
+                      "type": "object",
+                      "description": "Personne Morale",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "description": "Dénomination sociale"
+                        },
+                        "trading_name": {
+                          "type": "string",
+                          "description": "Nom commercial"
+                        },
+                        "business": {
+                          "type": "string",
+                          "description": "Activité"
+                        },
+                        "industry": {
+                          "type": "string",
+                          "description": "Secteur d'activité"
+                        },
+                        "siret_number": {
+                          "type": "string",
+                          "description": "Numéro de siret de l'établissement principal"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Erreur dans la formulation de la requête.",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l’erreur retourné par le système",
+                  "example": "invalid_request"
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l’erreur correspondant au code",
+                  "example": "usage_point_id parameter is required."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - L'application doit fournir un jeton valide pour accéder à la ressource"
+          },
+          "403": {
+            "description": "Forbidden - Les droits d'accès sont insuffisants pour accèder à la ressource.",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l’erreur retourné par le système",
+                  "example": "ADAM-DC-0008"
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l’erreur correspondant au code",
+                  "example": "No consent can be found for this customer and this usage point."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Code de l’erreur retourné par le système.",
+                  "example": "STM-ERR-0000019"
+                },
+                "error_description": {
+                  "type": "string",
+                  "description": "Description de l’erreur correspondant au code.",
+                  "example": "Unknown or unauthorized user"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur Serveur - Une erreur est survenue lors du traitement de la requête par le serveur"
+          },
+          "503": {
+            "description": "Service Unavailable - Le serveur est momentanément inaccessible"
+          }
+        }
+      }
+    }
+  }
+}

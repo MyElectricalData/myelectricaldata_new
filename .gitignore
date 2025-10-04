@@ -1,0 +1,71 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+apps/api/.env
+apps/web/.env
+
+# Garder les exemples .env.docker mais ignorer les versions locales modifiées
+# apps/api/.env.docker
+# apps/web/.env.docker
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.uv/
+
+# Node
+node_modules/
+dist/
+.cache/
+.parcel-cache/
+.vite/
+
+# Database
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+apps/api/data/*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
+
+# Build artifacts
+build/
+dist/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+coverage/
+
+# Caddy
+caddy_data/
+caddy_config/
+
+.env.api
+.env.web

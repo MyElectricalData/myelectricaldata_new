@@ -1,0 +1,40 @@
+myelectricaldata.fr {
+    # Certificat auto-signé pour le développement local
+    tls internal
+
+    # Routes API - proxy vers le backend FastAPI
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy backend:8000
+    }
+
+    handle /docs* {
+        reverse_proxy backend:8000
+    }
+
+    handle /openapi.json {
+        reverse_proxy backend:8000
+    }
+
+    handle /consent* {
+        reverse_proxy backend:8000
+    }
+
+    handle /redoc* {
+        reverse_proxy backend:8000
+    }
+
+    # Route par défaut - proxy vers le frontend
+    handle {
+        reverse_proxy frontend:80 {
+            header_up Cache-Control "no-cache, no-store, must-revalidate"
+        }
+        header Cache-Control "no-cache, no-store, must-revalidate"
+    }
+
+    # Logs
+    log {
+        output stdout
+        format console
+    }
+}
