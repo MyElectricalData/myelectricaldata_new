@@ -49,9 +49,28 @@ Le paramètre `interval_length` indique le pas de mesure et peut prendre les val
 - `PT30M` : pas de 30 minutes
 - `PT60M` : pas de 60 minutes
 
-Pour certains clients, la courbe peut être collectée à un pas de 10 minutes afin de faciliter des études réseau. Depuis septembre 2018, les compteurs posés mesurent par défaut la courbe au pas 1 heure et la stockent localement ; le client peut autoriser Enedis à collecter ces données. À compter de fin 2021, certains clients peuvent bénéficier d’un pas de 15 minutes dans le cadre de la mise en œuvre du règlement des écarts.
+Pour certains clients, la courbe peut être collectée à un pas de 10 minutes afin de faciliter des études réseau. Depuis septembre 2018, les compteurs posés mesurent par défaut la courbe au pas 1 heure et la stockent localement ; le client peut autoriser Enedis à collecter ces données. À compter de fin 2021, certains clients peuvent bénéficier d'un pas de 15 minutes dans le cadre de la mise en œuvre du règlement des écarts.
 
 > `measure_type = "B"` indique que les données Linky partagées via Data Connect sont des données brutes.
+
+#### Conversion des valeurs de puissance en énergie
+
+**Important** : Les valeurs retournées par l'API sont en **Watts (W)** et représentent la **puissance moyenne** sur l'intervalle de mesure. Pour calculer l'énergie consommée en **Wattheures (Wh)**, il faut appliquer la formule suivante :
+
+```
+Énergie (Wh) = Puissance (W) / (60 / interval_minutes)
+```
+
+Où `interval_minutes` est extrait de `interval_length` :
+- PT10M → 10 minutes → `Wh = W / 6`
+- PT15M → 15 minutes → `Wh = W / 4`
+- PT30M → 30 minutes → `Wh = W / 2`
+- PT60M → 60 minutes → `Wh = W / 1`
+
+**Exemple** : Pour une valeur de 1800 W sur un intervalle PT30M (30 minutes) :
+- Énergie = 1800 W / (60 / 30) = 1800 / 2 = 900 Wh = 0,9 kWh
+
+Cette conversion est nécessaire pour calculer correctement les consommations totales et les coûts associés.
 
 ### Consommation quotidienne
 

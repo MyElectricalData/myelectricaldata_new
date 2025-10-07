@@ -45,7 +45,9 @@ class TokenResponse(BaseModel):
 class PDLResponse(BaseModel):
     id: str
     usage_point_id: str
+    name: Optional[str] = None
     created_at: datetime
+    display_order: Optional[int] = None
     subscribed_power: Optional[int] = None
     offpeak_hours: Optional[dict] = None
 

@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import Layout from './components/Layout'
+import PermissionRoute from './components/PermissionRoute'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
@@ -14,6 +15,15 @@ import ResetPassword from './pages/ResetPassword'
 import Simulator from './pages/Simulator'
 import Contribute from './pages/Contribute'
 import AdminContributions from './pages/AdminContributions'
+import AdminOffers from './pages/AdminOffers'
+import AdminUsers from './pages/AdminUsers'
+import AdminTempo from './pages/AdminTempo'
+import AdminAddPDL from './pages/AdminAddPDL'
+import AdminRoles from './pages/AdminRoles'
+import Tempo from './pages/Tempo'
+import FAQ from './pages/FAQ'
+import NotFound from './pages/NotFound'
+import Forbidden from './pages/Forbidden'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -113,12 +123,58 @@ function App() {
         }
       />
       <Route
-        path="/admin"
+        path="/faq"
         element={
           <ProtectedRoute>
             <Layout>
-              <Admin />
+              <FAQ />
             </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/tempo"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <Tempo />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute>
+            <PermissionRoute resource="admin_dashboard">
+              <Layout>
+                <Admin />
+              </Layout>
+            </PermissionRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/users"
+        element={
+          <ProtectedRoute>
+            <PermissionRoute resource="users">
+              <Layout>
+                <AdminUsers />
+              </Layout>
+            </PermissionRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/tempo"
+        element={
+          <ProtectedRoute>
+            <PermissionRoute resource="tempo">
+              <Layout>
+                <AdminTempo />
+              </Layout>
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -126,9 +182,47 @@ function App() {
         path="/admin/contributions"
         element={
           <ProtectedRoute>
-            <Layout>
-              <AdminContributions />
-            </Layout>
+            <PermissionRoute resource="contributions">
+              <Layout>
+                <AdminContributions />
+              </Layout>
+            </PermissionRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/offers"
+        element={
+          <ProtectedRoute>
+            <PermissionRoute resource="offers">
+              <Layout>
+                <AdminOffers />
+              </Layout>
+            </PermissionRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/roles"
+        element={
+          <ProtectedRoute>
+            <PermissionRoute resource="roles">
+              <Layout>
+                <AdminRoles />
+              </Layout>
+            </PermissionRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/add-pdl"
+        element={
+          <ProtectedRoute>
+            <PermissionRoute resource="users">
+              <Layout>
+                <AdminAddPDL />
+              </Layout>
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -142,8 +236,12 @@ function App() {
       />
       <Route path="/verify-email" element={<VerifyEmail />} />
 
-      {/* 404 */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* Error pages */}
+      <Route path="/forbidden" element={<Forbidden />} />
+      <Route path="/404" element={<NotFound />} />
+
+      {/* 404 - catch all */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }

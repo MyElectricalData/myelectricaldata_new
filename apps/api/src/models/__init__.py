@@ -5,6 +5,8 @@ from .token import Token
 from .email_verification import EmailVerificationToken
 from .password_reset import PasswordResetToken
 from .energy_provider import EnergyProvider, EnergyOffer, OfferContribution
+from .tempo_day import TempoDay, TempoColor
+from .role import Role, Permission, role_permissions
 
 __all__ = [
     "Base",
@@ -16,4 +18,9 @@ __all__ = [
     "EnergyProvider",
     "EnergyOffer",
     "OfferContribution",
+    "TempoDay",
+    "TempoColor",
+    "Role",
+    "Permission",
+    "role_permissions",
 ]

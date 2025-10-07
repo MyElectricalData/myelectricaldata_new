@@ -13,6 +13,27 @@ export interface ErrorDetail {
   field?: string
 }
 
+export interface Role {
+  id: string
+  name: string
+  display_name: string
+  permissions?: Permission[]
+}
+
+export interface Permission {
+  id: string
+  name: string
+  display_name: string
+  description?: string
+  resource: string
+}
+
+export interface RoleWithPermissions extends Role {
+  description?: string
+  is_system: boolean
+  permissions: Permission[]
+}
+
 export interface User {
   id: string
   email: string
@@ -20,6 +41,7 @@ export interface User {
   is_active: boolean
   created_at: string
   is_admin?: boolean
+  role?: Role
 }
 
 export interface ClientCredentials {
@@ -35,7 +57,9 @@ export interface TokenResponse {
 export interface PDL {
   id: string
   usage_point_id: string
+  name?: string
   created_at: string
+  display_order?: number
   subscribed_power?: number
   offpeak_hours?: Record<string, string>
 }
@@ -60,6 +84,7 @@ export interface UserLogin {
 
 export interface PDLCreate {
   usage_point_id: string
+  name?: string
 }
 
 export interface OAuthAuthorizeParams {

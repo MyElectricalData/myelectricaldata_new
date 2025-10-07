@@ -21,12 +21,12 @@ class RateLimiterService:
         Returns:
             (is_allowed, current_count, limit)
         """
-        # Admins have unlimited API calls
-        if is_admin:
-            return True, 0, 999999
-
         key = self._get_daily_key(user_id, cache_used)
         limit = settings.USER_DAILY_LIMIT_WITH_CACHE if cache_used else settings.USER_DAILY_LIMIT_NO_CACHE
+
+        # Admins have unlimited API calls (but we still count them for stats)
+        if is_admin:
+            limit = 999999
 
         if not cache_service.redis_client:
             return True, 0, limit
@@ -35,11 +35,11 @@ class RateLimiterService:
         current = await cache_service.redis_client.get(key)
         current_count = int(current) if current else 0
 
-        # Check if limit exceeded
+        # Check if limit exceeded (admins won't reach this)
         if current_count >= limit:
             return False, current_count, limit
 
-        # Increment counter
+        # Increment counter (including for admins now, for statistics)
         new_count = current_count + 1
 
         # Set with TTL until end of day

@@ -15,6 +15,14 @@ class UserLogin(BaseModel):
 
 class PDLCreate(BaseModel):
     usage_point_id: str = Field(..., min_length=14, max_length=14, pattern=r"^\d{14}$")
+    name: Optional[str] = Field(None, max_length=100)
+
+
+class AdminPDLCreate(BaseModel):
+    """Admin-only: Add PDL to any user without consent"""
+    user_email: EmailStr
+    usage_point_id: str = Field(..., min_length=14, max_length=14, pattern=r"^\d{14}$")
+    name: Optional[str] = Field(None, max_length=100)
 
 
 class OAuthCallbackRequest(BaseModel):

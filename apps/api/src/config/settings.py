@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     ENEDIS_ENVIRONMENT: Literal["sandbox", "production"] = "sandbox"
     ENEDIS_REDIRECT_URI: str = "http://localhost:3000/oauth/callback"
 
+    # RTE API (for TEMPO calendar)
+    RTE_CLIENT_ID: str
+    RTE_CLIENT_SECRET: str
+    RTE_BASE_URL: str = "https://digital.iservices.rte-france.com"
+
     # API Security
     SECRET_KEY: str
     ALGORITHM: str = "HS256"

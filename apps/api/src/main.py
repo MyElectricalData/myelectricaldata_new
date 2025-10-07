@@ -1,19 +1,31 @@
 from contextlib import asynccontextmanager
-from datetime import datetime, UTC
+
 import httpx
-from fastapi import FastAPI, Request, status, Query, Depends
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import Depends, FastAPI, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from .config import settings
-from .models.database import init_db, get_db
-from .models import User
-from .services import cache_service
+
 from .adapters import enedis_adapter
-from .routers import accounts_router, pdl_router, oauth_router, enedis_router, admin_router, energy_offers_router
-from .schemas import HealthCheckResponse, APIResponse, ErrorDetail
+from .config import settings
+from .models import User
+from .models.database import get_db, init_db
+from .routers import (
+    accounts_router,
+    admin_router,
+    enedis_router,
+    energy_offers_router,
+    oauth_router,
+    pdl_router,
+    tempo_router,
+    roles_router,
+)
+from .schemas import APIResponse, ErrorDetail, HealthCheckResponse
+from .services import cache_service
+from .services.scheduler import start_background_tasks
 
 
 @asynccontextmanager
@@ -22,6 +34,9 @@ async def lifespan(app: FastAPI):
     # Startup
     await init_db()
     await cache_service.connect()
+
+    # Start background tasks (TEMPO cache refresh, etc.)
+    start_background_tasks()
 
     # Print configuration in debug mode
     if settings.DEBUG:
@@ -49,27 +64,24 @@ app = FastAPI(
     description="API Gateway for Enedis data access",
     version="1.5.15",
     lifespan=lifespan,
-    docs_url="/docs",
-    root_path="/api",  # Tell FastAPI it's mounted at /api
+    docs_url="/docs",  # Use default docs
+    root_path="/api",
     redoc_url="/redoc",
     servers=[
         {"url": "/api", "description": "API via proxy"},
         {"url": "http://localhost:8000", "description": "Backend direct"},
     ],
-    swagger_ui_parameters={
-        "persistAuthorization": True,
-    },
     swagger_ui_init_oauth={
         "clientId": "",
         "usePkceWithAuthorizationCodeGrant": False,
     },
 )
 
+# Mount static files for custom Swagger CSS
+app.mount("/static", StaticFiles(directory="/app/static"), name="static")
+
 # Trusted Host middleware to handle proxy headers
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=["myelectricaldata.fr", "localhost", "127.0.0.1", "backend"]
-)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["myelectricaldata.fr", "localhost", "127.0.0.1", "backend"])
 
 # CORS middleware
 app.add_middleware(
@@ -80,6 +92,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Middleware to fix redirect URLs when behind HTTPS proxy
 @app.middleware("http")
 async def fix_redirect_urls(request: Request, call_next):
@@ -88,12 +101,13 @@ async def fix_redirect_urls(request: Request, call_next):
 
     # If it's a redirect and we're behind HTTPS proxy
     if response.status_code in (301, 302, 303, 307, 308):
-        if 'location' in response.headers:
-            location = response.headers['location']
+        if "location" in response.headers:
+            location = response.headers["location"]
             original_location = location
 
             # Parse frontend URL from settings
             from urllib.parse import urlparse
+
             frontend_parsed = urlparse(settings.FRONTEND_URL)
             frontend_host = frontend_parsed.netloc
             frontend_scheme = frontend_parsed.scheme
@@ -102,33 +116,33 @@ async def fix_redirect_urls(request: Request, call_next):
                 print(f"[REDIRECT MIDDLEWARE] Original location: {location}")
 
             # Handle relative redirects (like /pdl/ from FastAPI trailing slash)
-            if location.startswith('/'):
+            if location.startswith("/"):
                 # It's a relative redirect - prepend scheme and host
-                location = f'{frontend_scheme}://{frontend_host}{location}'
+                location = f"{frontend_scheme}://{frontend_host}{location}"
                 if settings.DEBUG:
                     print(f"[REDIRECT MIDDLEWARE] Converted relative to absolute: {location}")
 
             # Force HTTPS if the frontend is HTTPS
-            if frontend_scheme == 'https':
+            if frontend_scheme == "https":
                 # Fix protocol
-                if location.startswith('http://'):
-                    location = location.replace('http://', 'https://', 1)
+                if location.startswith("http://"):
+                    location = location.replace("http://", "https://", 1)
                     if settings.DEBUG:
                         print(f"[REDIRECT MIDDLEWARE] Fixed protocol to HTTPS: {location}")
 
                 # Fix path - add /api prefix ONLY for API endpoints (not frontend routes like /dashboard)
-                if location.startswith(f'{frontend_scheme}://{frontend_host}/'):
-                    path = location.replace(f'{frontend_scheme}://{frontend_host}', '')
+                if location.startswith(f"{frontend_scheme}://{frontend_host}/"):
+                    path = location.replace(f"{frontend_scheme}://{frontend_host}", "")
                     # Only add /api prefix if:
                     # 1. It's missing
                     # 2. It's not a frontend route
                     # 3. It's not already an API route with /api
                     # Frontend routes: exact match for / or starts with /dashboard, /login, /register
                     is_frontend_route = (
-                        path == '/' or
-                        path.startswith('/dashboard') or
-                        path.startswith('/login') or
-                        path.startswith('/register')
+                        path == "/"
+                        or path.startswith("/dashboard")
+                        or path.startswith("/login")
+                        or path.startswith("/register")
                     )
 
                     if settings.DEBUG:
@@ -136,15 +150,15 @@ async def fix_redirect_urls(request: Request, call_next):
                         print(f"[REDIRECT MIDDLEWARE] Is frontend route: {is_frontend_route}")
                         print(f"[REDIRECT MIDDLEWARE] Starts with /api: {path.startswith('/api')}")
 
-                    if path and not path.startswith('/api') and not is_frontend_route:
-                        location = f'{frontend_scheme}://{frontend_host}/api{path}'
+                    if path and not path.startswith("/api") and not is_frontend_route:
+                        location = f"{frontend_scheme}://{frontend_host}/api{path}"
                         if settings.DEBUG:
                             print(f"[REDIRECT MIDDLEWARE] Added /api prefix: {location}")
 
             if settings.DEBUG and location != original_location:
                 print(f"[REDIRECT MIDDLEWARE] Final location: {location}")
 
-            response.headers['location'] = location
+            response.headers["location"] = location
 
     return response
 
@@ -157,7 +171,9 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
         success=False, error=ErrorDetail(code="INTERNAL_ERROR", message="An internal error occurred")
     )
 
-    return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=error_response.model_dump(mode='json'))
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=error_response.model_dump(mode="json")
+    )
 
 
 # Health check
@@ -174,6 +190,8 @@ app.include_router(oauth_router)
 app.include_router(enedis_router)
 app.include_router(admin_router)
 app.include_router(energy_offers_router)
+app.include_router(tempo_router)
+app.include_router(roles_router)
 
 
 # Consent callback endpoint
@@ -223,15 +241,15 @@ async def consent_callback(
             return RedirectResponse(url=f"{frontend_url}?consent_error={error_msg}")
 
         # Just create PDL - token will be managed globally via Client Credentials
-        print(f"[CONSENT] ===== TRAITEMENT DU PDL =====")
-        print(f"[CONSENT] Code ignoré (token géré globalement via Client Credentials)")
+        print("[CONSENT] ===== TRAITEMENT DU PDL =====")
+        print("[CONSENT] Code ignoré (token géré globalement via Client Credentials)")
 
         if not usage_point_id:
-            print(f"[CONSENT] ✗ Aucun usage_point_id fourni")
+            print("[CONSENT] ✗ Aucun usage_point_id fourni")
             return RedirectResponse(url=f"{frontend_url}?consent_error=no_usage_point_id")
 
         # Split multiple PDLs separated by semicolons
-        pdl_ids = [pdl.strip() for pdl in usage_point_id.split(';') if pdl.strip()]
+        pdl_ids = [pdl.strip() for pdl in usage_point_id.split(";") if pdl.strip()]
         usage_points_list = [{"usage_point_id": pdl_id} for pdl_id in pdl_ids]
 
         print(f"[CONSENT] PDL(s) à créer: {pdl_ids} (total: {len(pdl_ids)})")
@@ -239,7 +257,7 @@ async def consent_callback(
         created_count = 0
 
         # Create PDL only (token managed globally)
-        print(f"[CONSENT] ===== TRAITEMENT DES PDL =====")
+        print("[CONSENT] ===== TRAITEMENT DES PDL =====")
         for up in usage_points_list:
             usage_point_id = up.get("usage_point_id")
             print(f"[CONSENT] Traitement PDL: {usage_point_id}")
@@ -250,9 +268,8 @@ async def consent_callback(
 
             # Check if PDL already exists
             from .models import PDL
-            result = await db.execute(
-                select(PDL).where(PDL.user_id == user_id, PDL.usage_point_id == usage_point_id)
-            )
+
+            result = await db.execute(select(PDL).where(PDL.user_id == user_id, PDL.usage_point_id == usage_point_id))
             existing_pdl = result.scalar_one_or_none()
 
             if not existing_pdl:
@@ -265,14 +282,18 @@ async def consent_callback(
 
                 # Try to fetch contract info automatically
                 try:
-                    from .routers.enedis import get_valid_token
                     from .adapters import enedis_adapter
+                    from .routers.enedis import get_valid_token
 
                     access_token = await get_valid_token(usage_point_id, user, db)
                     if access_token:
                         contract_data = await enedis_adapter.get_contract(usage_point_id, access_token)
 
-                        if contract_data and "customer" in contract_data and "usage_points" in contract_data["customer"]:
+                        if (
+                            contract_data
+                            and "customer" in contract_data
+                            and "usage_points" in contract_data["customer"]
+                        ):
                             usage_points = contract_data["customer"]["usage_points"]
                             if usage_points and len(usage_points) > 0:
                                 usage_point = usage_points[0]
@@ -282,8 +303,12 @@ async def consent_callback(
 
                                     if "subscribed_power" in contract:
                                         power_str = str(contract["subscribed_power"])
-                                        new_pdl.subscribed_power = int(power_str.replace("kVA", "").replace(" ", "").strip())
-                                        print(f"[CONSENT] ✓ Puissance souscrite récupérée: {new_pdl.subscribed_power} kVA")
+                                        new_pdl.subscribed_power = int(
+                                            power_str.replace("kVA", "").replace(" ", "").strip()
+                                        )
+                                        print(
+                                            f"[CONSENT] ✓ Puissance souscrite récupérée: {new_pdl.subscribed_power} kVA"
+                                        )
 
                                     if "offpeak_hours" in contract:
                                         offpeak = contract["offpeak_hours"]
@@ -298,13 +323,17 @@ async def consent_callback(
                 print(f"[CONSENT] PDL existe déjà: {usage_point_id}")
 
         await db.commit()
-        print(f"[CONSENT] ✓ Commit effectué en base de données")
+        print("[CONSENT] ✓ Commit effectué en base de données")
 
         # Redirect to frontend dashboard with success message
-        print(f"[CONSENT] ===== FIN DU TRAITEMENT - SUCCES =====")
-        print(f"[CONSENT] Redirection vers: {frontend_url}?consent_success=true&pdl_count={len(usage_points_list)}&created_count={created_count}")
+        print("[CONSENT] ===== FIN DU TRAITEMENT - SUCCES =====")
+        print(
+            f"[CONSENT] Redirection vers: {frontend_url}?consent_success=true&pdl_count={len(usage_points_list)}&created_count={created_count}"
+        )
         print("=" * 60)
-        return RedirectResponse(url=f"{frontend_url}?consent_success=true&pdl_count={len(usage_points_list)}&created_count={created_count}")
+        return RedirectResponse(
+            url=f"{frontend_url}?consent_success=true&pdl_count={len(usage_points_list)}&created_count={created_count}"
+        )
 
     except httpx.HTTPStatusError as e:
         # Handle HTTP errors from Enedis API

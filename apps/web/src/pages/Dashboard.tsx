@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { pdlApi } from '@/api/pdl'
 import { authApi } from '@/api/auth'
 import { oauthApi } from '@/api/oauth'
-import { ExternalLink, CheckCircle, XCircle, RefreshCw, Copy } from 'lucide-react'
+import { ExternalLink, CheckCircle, XCircle, RefreshCw, Copy, ArrowUpDown, GripVertical, UserPlus } from 'lucide-react'
 import PDLDetails from '@/components/PDLDetails'
 import PDLCard from '@/components/PDLCard'
+import { useAuth } from '@/hooks/useAuth'
+import type { PDL } from '@/types/api'
 
 export default function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -16,7 +18,10 @@ export default function Dashboard() {
   const [copiedClientId, setCopiedClientId] = useState(false)
   const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null)
   const [selectedPdl, setSelectedPdl] = useState<string | null>(null)
+  const [sortOrder, setSortOrder] = useState<'name' | 'date' | 'id' | 'custom'>('custom')
+  const [draggedPdl, setDraggedPdl] = useState<PDL | null>(null)
   const queryClient = useQueryClient()
+  const { user } = useAuth()
 
   // Check for consent callback parameters
   useEffect(() => {
@@ -73,6 +78,13 @@ export default function Dashboard() {
 
   const deletePdlMutation = useMutation({
     mutationFn: (id: string) => pdlApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pdls'] })
+    },
+  })
+
+  const reorderPdlsMutation = useMutation({
+    mutationFn: (orders: Array<{ id: string; order: number }>) => pdlApi.reorderPdls(orders),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pdls'] })
     },
@@ -139,7 +151,60 @@ export default function Dashboard() {
   }
 
   const credentials = credentialsResponse?.success ? credentialsResponse.data : null
-  const pdls = pdlsResponse?.success ? pdlsResponse.data || [] : []
+  const pdls = pdlsResponse?.success && Array.isArray(pdlsResponse.data) ? pdlsResponse.data : []
+
+  const sortedPdls = useMemo(() => {
+    const pdlsCopy = [...pdls]
+
+    switch (sortOrder) {
+      case 'name':
+        return pdlsCopy.sort((a, b) => {
+          const nameA = (a.name || a.usage_point_id).toLowerCase()
+          const nameB = (b.name || b.usage_point_id).toLowerCase()
+          return nameA.localeCompare(nameB)
+        })
+      case 'id':
+        return pdlsCopy.sort((a, b) => a.usage_point_id.localeCompare(b.usage_point_id))
+      case 'date':
+        return pdlsCopy.sort((a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+      case 'custom':
+      default:
+        // Already sorted by display_order from backend
+        return pdlsCopy
+    }
+  }, [pdls, sortOrder])
+
+  const handleDragStart = (pdl: PDL) => {
+    setDraggedPdl(pdl)
+  }
+
+  const handleDragOver = (e: React.DragEvent, targetPdl: PDL) => {
+    e.preventDefault()
+    if (!draggedPdl || draggedPdl.id === targetPdl.id) return
+
+    const draggedIndex = sortedPdls.findIndex(p => p.id === draggedPdl.id)
+    const targetIndex = sortedPdls.findIndex(p => p.id === targetPdl.id)
+
+    if (draggedIndex === -1 || targetIndex === -1) return
+
+    const newPdls = [...sortedPdls]
+    newPdls.splice(draggedIndex, 1)
+    newPdls.splice(targetIndex, 0, draggedPdl)
+
+    // Update display order
+    const orders = newPdls.map((pdl, index) => ({
+      id: pdl.id,
+      order: index
+    }))
+
+    reorderPdlsMutation.mutate(orders)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedPdl(null)
+  }
 
   return (
     <div className="space-y-8">
@@ -300,16 +365,42 @@ export default function Dashboard() {
 
       {/* PDL Management */}
       <div className="card">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
           <h2 className="text-xl font-semibold">Points de livraison (PDL)</h2>
-          <button
-            onClick={handleStartConsent}
-            className="btn btn-primary text-sm flex items-center gap-1"
-            disabled={getOAuthUrlMutation.isPending}
-          >
-            <ExternalLink size={16} />
-            Consentement Enedis
-          </button>
+          <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+            {pdls.length > 1 && (
+              <div className="flex items-center gap-2 text-sm flex-1 sm:flex-initial">
+                <ArrowUpDown size={16} className="text-gray-500" />
+                <select
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value as 'name' | 'date' | 'id' | 'custom')}
+                  className="input text-sm py-1 px-2 flex-1 sm:flex-initial"
+                >
+                  <option value="custom">Ordre personnalisé</option>
+                  <option value="date">Date d'ajout</option>
+                  <option value="name">Nom</option>
+                  <option value="id">Numéro PDL</option>
+                </select>
+              </div>
+            )}
+            {user?.is_admin && (
+              <Link
+                to="/admin/add-pdl"
+                className="btn bg-amber-600 hover:bg-amber-700 text-white text-sm flex items-center gap-1 whitespace-nowrap"
+              >
+                <UserPlus size={16} />
+                Ajouter PDL (Admin)
+              </Link>
+            )}
+            <button
+              onClick={handleStartConsent}
+              className="btn btn-primary text-sm flex items-center gap-1 whitespace-nowrap"
+              disabled={getOAuthUrlMutation.isPending}
+            >
+              <ExternalLink size={16} />
+              Consentement Enedis
+            </button>
+          </div>
         </div>
 
         {pdlsLoading ? (
@@ -325,13 +416,27 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="space-y-3">
-            {pdls.map((pdl) => (
-              <PDLCard
+            {sortedPdls.map((pdl) => (
+              <div
                 key={pdl.id}
-                pdl={pdl}
-                onViewDetails={() => setSelectedPdl(pdl.usage_point_id)}
-                onDelete={() => deletePdlMutation.mutate(pdl.id)}
-              />
+                draggable={sortOrder === 'custom'}
+                onDragStart={() => handleDragStart(pdl)}
+                onDragOver={(e) => handleDragOver(e, pdl)}
+                onDragEnd={handleDragEnd}
+                className={`${sortOrder === 'custom' ? 'cursor-move' : ''} ${draggedPdl?.id === pdl.id ? 'opacity-50' : ''}`}
+              >
+                {sortOrder === 'custom' && (
+                  <div className="flex items-center gap-2 mb-1 text-gray-400">
+                    <GripVertical size={16} />
+                    <span className="text-xs">Glissez pour réorganiser</span>
+                  </div>
+                )}
+                <PDLCard
+                  pdl={pdl}
+                  onViewDetails={() => setSelectedPdl(pdl.usage_point_id)}
+                  onDelete={() => deletePdlMutation.mutate(pdl.id)}
+                />
+              </div>
             ))}
           </div>
         )}

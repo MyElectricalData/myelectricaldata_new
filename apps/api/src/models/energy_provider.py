@@ -38,6 +38,11 @@ class EnergyOffer(Base):
     hc_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for Heures Creuses
     hp_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for Heures Pleines
 
+    # Weekend pricing (for offers with different weekend rates)
+    base_price_weekend: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for BASE on weekends
+    hp_price_weekend: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for HP on weekends
+    hc_price_weekend: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for HC on weekends (optional)
+
     # Tempo prices (6 rates)
     tempo_blue_hc: Mapped[float | None] = mapped_column(Float, nullable=True)
     tempo_blue_hp: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -50,11 +55,27 @@ class EnergyOffer(Base):
     ejp_normal: Mapped[float | None] = mapped_column(Float, nullable=True)
     ejp_peak: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Seasonal pricing (for offers like Enercoop Flexi WATT 2 saisons)
+    hc_price_winter: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh HC hiver (nov-mars)
+    hp_price_winter: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh HP hiver
+    hc_price_summer: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh HC été (avril-oct)
+    hp_price_summer: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh HP été
+
+    # Peak day pricing (for offers like Enercoop Flexi WATT 2 saisons Pointe)
+    peak_day_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for special peak days
+
     # HC/HP schedules (JSON format: {"monday": "22:00-06:00", ...})
     hc_schedules: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # Power (kVA) - Subscription price varies by power
+    power_kva: Mapped[int | None] = mapped_column(nullable=True)  # 3, 6, 9, 12, 15, 18, 24, 30, 36 kVA
+
     # Price update tracking
     price_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Validity period for tariff history
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # Date from which this tariff is valid
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # Date until which this tariff is valid (NULL = current)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
@@ -89,6 +110,13 @@ class OfferContribution(Base):
 
     # HC/HP schedules
     hc_schedules: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Power (kVA) - Required as subscription price varies by power
+    power_kva: Mapped[int | None] = mapped_column(nullable=True)  # 3, 6, 9, 12, 15, 18, 24, 30, 36 kVA
+
+    # Documentation (REQUIRED)
+    price_sheet_url: Mapped[str] = mapped_column(String(1024), nullable=False)  # Lien vers la fiche des prix
+    screenshot_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)  # Screenshot de la fiche des prix (optionnel)
 
     # Admin review
     reviewed_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

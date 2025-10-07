@@ -17,6 +17,10 @@ export interface EnergyOffer {
   base_price?: number
   hc_price?: number
   hp_price?: number
+  // Weekend pricing
+  base_price_weekend?: number
+  hc_price_weekend?: number
+  hp_price_weekend?: number
   tempo_blue_hc?: number
   tempo_blue_hp?: number
   tempo_white_hc?: number
@@ -25,9 +29,21 @@ export interface EnergyOffer {
   tempo_red_hp?: number
   ejp_normal?: number
   ejp_peak?: number
+  // Seasonal pricing (Enercoop Flexi WATT 2 saisons)
+  hc_price_winter?: number
+  hp_price_winter?: number
+  hc_price_summer?: number
+  hp_price_summer?: number
+  // Peak day pricing (Enercoop Flexi WATT 2 saisons Pointe)
+  peak_day_price?: number
   hc_schedules?: Record<string, string>
+  power_kva?: number
   price_updated_at?: string
+  // Validity period for tariff history
+  valid_from?: string
+  valid_to?: string
   created_at?: string
+  is_active?: boolean
 }
 
 export interface ContributionData {
@@ -44,6 +60,10 @@ export interface ContributionData {
     base_price?: number
     hc_price?: number
     hp_price?: number
+    // Weekend pricing
+    base_price_weekend?: number
+    hc_price_weekend?: number
+    hp_price_weekend?: number
     tempo_blue_hc?: number
     tempo_blue_hp?: number
     tempo_white_hc?: number
@@ -52,8 +72,18 @@ export interface ContributionData {
     tempo_red_hp?: number
     ejp_normal?: number
     ejp_peak?: number
+    // Seasonal pricing
+    hc_price_winter?: number
+    hp_price_winter?: number
+    hc_price_summer?: number
+    hp_price_summer?: number
+    // Peak day pricing
+    peak_day_price?: number
   }
   hc_schedules?: Record<string, string>
+  power_kva?: number // Power in kVA (3, 6, 9, 12, 15, 18, 24, 30, 36)
+  price_sheet_url: string // REQUIRED: Lien vers la fiche des prix
+  screenshot_url?: string // OPTIONAL: Screenshot de la fiche des prix
 }
 
 export interface Contribution {
@@ -97,5 +127,22 @@ export const energyApi = {
 
   rejectContribution: async (contributionId: string, reason?: string) => {
     return apiClient.post(`energy/contributions/${contributionId}/reject`, { reason })
+  },
+
+  // Admin - Manage offers
+  updateOffer: async (offerId: string, data: Partial<EnergyOffer>) => {
+    return apiClient.put(`energy/offers/${offerId}`, data)
+  },
+
+  deleteOffer: async (offerId: string) => {
+    return apiClient.delete(`energy/offers/${offerId}`)
+  },
+
+  deleteProvider: async (providerId: string) => {
+    return apiClient.delete(`energy/providers/${providerId}`)
+  },
+
+  updateProvider: async (providerId: string, data: Partial<EnergyProvider>) => {
+    return apiClient.put(`energy/providers/${providerId}`, data)
   },
 }

@@ -12,6 +12,8 @@ interface PDLCardProps {
 
 export default function PDLCard({ pdl, onViewDetails, onDelete }: PDLCardProps) {
   const [isEditing, setIsEditing] = useState(false)
+  const [isEditingName, setIsEditingName] = useState(false)
+  const [editedName, setEditedName] = useState(pdl.name || '')
   const [editedPower, setEditedPower] = useState(pdl.subscribed_power?.toString() || '')
   const [editedOffpeak, setEditedOffpeak] = useState(
     pdl.offpeak_hours ? JSON.stringify(pdl.offpeak_hours, null, 2) : ''
@@ -31,6 +33,14 @@ export default function PDLCard({ pdl, onViewDetails, onDelete }: PDLCardProps) 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pdls'] })
       setIsEditing(false)
+    },
+  })
+
+  const updateNameMutation = useMutation({
+    mutationFn: (name: string) => pdlApi.updateName(pdl.id, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pdls'] })
+      setIsEditingName(false)
     },
   })
 
@@ -59,13 +69,71 @@ export default function PDLCard({ pdl, onViewDetails, onDelete }: PDLCardProps) 
     setIsEditing(false)
   }
 
+  const handleSaveName = () => {
+    updateNameMutation.mutate(editedName)
+  }
+
+  const handleCancelName = () => {
+    setEditedName(pdl.name || '')
+    setIsEditingName(false)
+  }
+
   return (
     <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
-          <p className="font-mono font-medium text-lg">{pdl.usage_point_id}</p>
-          <p className="text-sm text-gray-500">
+          {isEditingName ? (
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="text"
+                value={editedName}
+                onChange={(e) => setEditedName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSaveName()
+                  } else if (e.key === 'Escape') {
+                    handleCancelName()
+                  }
+                }}
+                className="input flex-1 text-sm"
+                placeholder="Nom du PDL (optionnel)"
+                autoFocus
+              />
+              <button
+                onClick={handleSaveName}
+                disabled={updateNameMutation.isPending}
+                className="p-1 hover:bg-green-100 dark:hover:bg-green-900/30 text-green-600 rounded"
+                title="Enregistrer"
+              >
+                <Save size={16} />
+              </button>
+              <button
+                onClick={handleCancelName}
+                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                title="Annuler"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                {pdl.name || pdl.usage_point_id}
+              </p>
+              <button
+                onClick={() => setIsEditingName(true)}
+                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                title="Modifier le nom"
+              >
+                <Edit2 size={14} />
+              </button>
+            </div>
+          )}
+          {pdl.name && (
+            <p className="font-mono font-medium text-sm text-gray-600 dark:text-gray-400">{pdl.usage_point_id}</p>
+          )}
+          <p className="text-xs text-gray-500">
             Ajouté le {new Date(pdl.created_at).toLocaleDateString('fr-FR')}
           </p>
         </div>
@@ -187,7 +255,12 @@ export default function PDLCard({ pdl, onViewDetails, onDelete }: PDLCardProps) 
       )}
       {updateContractMutation.isError && (
         <div className="mt-2 text-xs text-red-600 dark:text-red-400">
-          Erreur lors de la mise à jour
+          Erreur lors de la mise à jour du contrat
+        </div>
+      )}
+      {updateNameMutation.isError && (
+        <div className="mt-2 text-xs text-red-600 dark:text-red-400">
+          Erreur lors de la mise à jour du nom
         </div>
       )}
     </div>

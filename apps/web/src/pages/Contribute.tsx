@@ -1,18 +1,26 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Users, CheckCircle, Clock, XCircle, List, Zap } from 'lucide-react'
+import { Users, CheckCircle, Clock, XCircle, List, Zap, Upload, FileJson } from 'lucide-react'
 import { energyApi, type EnergyProvider, type ContributionData, type EnergyOffer } from '@/api/energy'
-import { pdlApi } from '@/api/pdl'
 
 export default function Contribute() {
   const queryClient = useQueryClient()
+  const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null)
+  const [showJsonImport, setShowJsonImport] = useState(false)
+  const [jsonImportData, setJsonImportData] = useState('')
+  const [importProgress, setImportProgress] = useState<{current: number, total: number, errors: string[]} | null>(null)
+  const [showAllContributions, setShowAllContributions] = useState(false)
+  const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({})
 
   // Fetch providers
   const { data: providersData } = useQuery({
     queryKey: ['energy-providers'],
     queryFn: async () => {
       const response = await energyApi.getProviders()
-      return response.data as EnergyProvider[]
+      if (response.success && Array.isArray(response.data)) {
+        return response.data as EnergyProvider[]
+      }
+      return []
     },
   })
 
@@ -21,7 +29,10 @@ export default function Contribute() {
     queryKey: ['my-contributions'],
     queryFn: async () => {
       const response = await energyApi.getMyContributions()
-      return response.data
+      if (response.success && Array.isArray(response.data)) {
+        return response.data
+      }
+      return []
     },
   })
 
@@ -30,14 +41,11 @@ export default function Contribute() {
     queryKey: ['energy-offers'],
     queryFn: async () => {
       const response = await energyApi.getOffers()
-      return Array.isArray(response.data) ? response.data as EnergyOffer[] : []
+      if (response.success && Array.isArray(response.data)) {
+        return response.data as EnergyOffer[]
+      }
+      return []
     },
-  })
-
-  // Fetch user's PDLs to get subscribed power
-  const { data: pdlsResponse } = useQuery({
-    queryKey: ['pdls'],
-    queryFn: () => pdlApi.list(),
   })
 
   // Form state
@@ -53,24 +61,37 @@ export default function Contribute() {
   const [filterProvider, setFilterProvider] = useState<string>('all')
   const [filterPower, setFilterPower] = useState<string>('all')
 
-  // Auto-set power filter based on user's PDL subscribed power (only once)
-  useEffect(() => {
-    if (pdlsResponse?.success && filterPower === 'all') {
-      const pdls = pdlsResponse.data || []
-      if (Array.isArray(pdls) && pdls.length > 0) {
-        const firstPdl = pdls[0]
-        if (firstPdl.subscribed_power) {
-          setFilterPower(firstPdl.subscribed_power.toString())
-        }
-      }
-    }
-  }, [pdlsResponse, filterPower])
-
   // Pricing
   const [subscriptionPrice, setSubscriptionPrice] = useState('')
   const [basePrice, setBasePrice] = useState('')
   const [hcPrice, setHcPrice] = useState('')
   const [hpPrice, setHpPrice] = useState('')
+
+  // TEMPO pricing
+  const [tempoBlueHc, setTempoBlueHc] = useState('')
+  const [tempoBlueHp, setTempoBlueHp] = useState('')
+  const [tempoWhiteHc, setTempoWhiteHc] = useState('')
+  const [tempoWhiteHp, setTempoWhiteHp] = useState('')
+  const [tempoRedHc, setTempoRedHc] = useState('')
+  const [tempoRedHp, setTempoRedHp] = useState('')
+
+  // EJP pricing
+  const [ejpNormal, setEjpNormal] = useState('')
+  const [ejpPeak, setEjpPeak] = useState('')
+
+  // Seasonal pricing (Enercoop Flexi WATT 2 saisons)
+  const [hcPriceWinter, setHcPriceWinter] = useState('')
+  const [hpPriceWinter, setHpPriceWinter] = useState('')
+  const [hcPriceSummer, setHcPriceSummer] = useState('')
+  const [hpPriceSummer, setHpPriceSummer] = useState('')
+  const [peakDayPrice, setPeakDayPrice] = useState('')
+
+  // Power
+  const [powerKva, setPowerKva] = useState('')
+
+  // Documentation (required)
+  const [priceSheetUrl, setPriceSheetUrl] = useState('')
+  const [screenshotUrl, setScreenshotUrl] = useState('')
 
   // Submit mutation
   const submitMutation = useMutation({
@@ -79,11 +100,19 @@ export default function Contribute() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
-      alert('Contribution soumise avec succès ! Les administrateurs vont la vérifier.')
+      setNotification({
+        type: 'success',
+        message: 'Contribution soumise avec succès ! Les administrateurs vont la vérifier.'
+      })
+      setTimeout(() => setNotification(null), 5000)
       resetForm()
     },
     onError: (error: any) => {
-      alert(`Erreur: ${error.message || 'Une erreur est survenue'}`)
+      setNotification({
+        type: 'error',
+        message: `Erreur: ${error.message || 'Une erreur est survenue'}`
+      })
+      setTimeout(() => setNotification(null), 5000)
     },
   })
 
@@ -95,6 +124,22 @@ export default function Contribute() {
     setBasePrice('')
     setHcPrice('')
     setHpPrice('')
+    setTempoBlueHc('')
+    setTempoBlueHp('')
+    setTempoWhiteHc('')
+    setTempoWhiteHp('')
+    setTempoRedHc('')
+    setTempoRedHp('')
+    setEjpNormal('')
+    setEjpPeak('')
+    setHcPriceWinter('')
+    setHpPriceWinter('')
+    setHcPriceSummer('')
+    setHpPriceSummer('')
+    setPeakDayPrice('')
+    setPowerKva('')
+    setPriceSheetUrl('')
+    setScreenshotUrl('')
     setProviderName('')
     setProviderWebsite('')
     setSelectedProviderId('')
@@ -103,17 +148,57 @@ export default function Contribute() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
+    const pricingData: any = {
+      subscription_price: parseFloat(subscriptionPrice) || 0,
+    }
+
+    // Add pricing based on offer type
+    if (offerType === 'BASE') {
+      pricingData.base_price = basePrice ? parseFloat(basePrice) : undefined
+    } else if (offerType === 'BASE_WEEKEND') {
+      pricingData.base_price = basePrice ? parseFloat(basePrice) : undefined
+      pricingData.base_price_weekend = hcPrice ? parseFloat(hcPrice) : undefined
+    } else if (offerType === 'HC_HP') {
+      pricingData.hc_price = hcPrice ? parseFloat(hcPrice) : undefined
+      pricingData.hp_price = hpPrice ? parseFloat(hpPrice) : undefined
+    } else if (offerType === 'HC_NUIT_WEEKEND' || offerType === 'HC_WEEKEND') {
+      // HC + weekend (weekend est déjà inclus dans HC)
+      pricingData.hc_price = hcPrice ? parseFloat(hcPrice) : undefined
+      pricingData.hp_price = hpPrice ? parseFloat(hpPrice) : undefined
+    } else if (offerType === 'SEASONAL') {
+      // Seasonal pricing (winter/summer)
+      pricingData.hc_price_winter = hcPriceWinter ? parseFloat(hcPriceWinter) : undefined
+      pricingData.hp_price_winter = hpPriceWinter ? parseFloat(hpPriceWinter) : undefined
+      pricingData.hc_price_summer = hcPriceSummer ? parseFloat(hcPriceSummer) : undefined
+      pricingData.hp_price_summer = hpPriceSummer ? parseFloat(hpPriceSummer) : undefined
+    } else if (offerType === 'TEMPO') {
+      pricingData.tempo_blue_hc = tempoBlueHc ? parseFloat(tempoBlueHc) : undefined
+      pricingData.tempo_blue_hp = tempoBlueHp ? parseFloat(tempoBlueHp) : undefined
+      pricingData.tempo_white_hc = tempoWhiteHc ? parseFloat(tempoWhiteHc) : undefined
+      pricingData.tempo_white_hp = tempoWhiteHp ? parseFloat(tempoWhiteHp) : undefined
+      pricingData.tempo_red_hc = tempoRedHc ? parseFloat(tempoRedHc) : undefined
+      pricingData.tempo_red_hp = tempoRedHp ? parseFloat(tempoRedHp) : undefined
+    } else if (offerType === 'EJP') {
+      pricingData.ejp_normal = ejpNormal ? parseFloat(ejpNormal) : undefined
+      pricingData.ejp_peak = ejpPeak ? parseFloat(ejpPeak) : undefined
+    }
+
+    // Add seasonal pricing if provided
+    if (hcPriceWinter) pricingData.hc_price_winter = parseFloat(hcPriceWinter)
+    if (hpPriceWinter) pricingData.hp_price_winter = parseFloat(hpPriceWinter)
+    if (hcPriceSummer) pricingData.hc_price_summer = parseFloat(hcPriceSummer)
+    if (hpPriceSummer) pricingData.hp_price_summer = parseFloat(hpPriceSummer)
+    if (peakDayPrice) pricingData.peak_day_price = parseFloat(peakDayPrice)
+
     const contributionData: ContributionData = {
       contribution_type: contributionType,
       offer_name: offerName,
       offer_type: offerType,
       description: description || undefined,
-      pricing_data: {
-        subscription_price: parseFloat(subscriptionPrice) || 0,
-        base_price: basePrice ? parseFloat(basePrice) : undefined,
-        hc_price: hcPrice ? parseFloat(hcPrice) : undefined,
-        hp_price: hpPrice ? parseFloat(hpPrice) : undefined,
-      },
+      pricing_data: pricingData,
+      power_kva: powerKva ? parseInt(powerKva) : undefined,
+      price_sheet_url: priceSheetUrl,
+      screenshot_url: screenshotUrl || undefined,
     }
 
     if (contributionType === 'NEW_PROVIDER') {
@@ -124,6 +209,53 @@ export default function Contribute() {
     }
 
     submitMutation.mutate(contributionData)
+  }
+
+  const handleJsonImport = async () => {
+    try {
+      const data = JSON.parse(jsonImportData)
+      const contributions = Array.isArray(data) ? data : [data]
+
+      setImportProgress({ current: 0, total: contributions.length, errors: [] })
+      const errors: string[] = []
+
+      for (let i = 0; i < contributions.length; i++) {
+        try {
+          await energyApi.submitContribution(contributions[i])
+          setImportProgress({ current: i + 1, total: contributions.length, errors })
+        } catch (error: any) {
+          const errorMsg = `Offre ${i + 1} (${contributions[i].offer_name}): ${error.message || 'Erreur inconnue'}`
+          errors.push(errorMsg)
+          setImportProgress({ current: i + 1, total: contributions.length, errors })
+        }
+      }
+
+      if (errors.length === 0) {
+        setNotification({
+          type: 'success',
+          message: `${contributions.length} contribution(s) importée(s) avec succès !`
+        })
+      } else {
+        setNotification({
+          type: 'error',
+          message: `Import terminé avec ${errors.length} erreur(s). Vérifiez les détails ci-dessous.`
+        })
+      }
+
+      setTimeout(() => setNotification(null), 5000)
+      queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
+
+      if (errors.length === 0) {
+        setJsonImportData('')
+        setShowJsonImport(false)
+      }
+    } catch (error: any) {
+      setNotification({
+        type: 'error',
+        message: `Erreur de parsing JSON: ${error.message}`
+      })
+      setTimeout(() => setNotification(null), 5000)
+    }
   }
 
   const getStatusIcon = (status: string) => {
@@ -149,17 +281,286 @@ export default function Contribute() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="w-full">
+      {/* Notification Toast */}
+      {notification && (
+        <div className={`mb-6 p-4 rounded-lg flex items-center gap-3 ${
+          notification.type === 'success'
+            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+        }`}>
+          {notification.type === 'success' ? (
+            <CheckCircle className="text-green-600 dark:text-green-400" size={24} />
+          ) : (
+            <XCircle className="text-red-600 dark:text-red-400" size={24} />
+          )}
+          <p className={`flex-1 ${
+            notification.type === 'success'
+              ? 'text-green-800 dark:text-green-200'
+              : 'text-red-800 dark:text-red-200'
+          }`}>
+            {notification.message}
+          </p>
+          <button
+            onClick={() => setNotification(null)}
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-          <Users className="text-primary-600 dark:text-primary-400" size={32} />
-          Contribuer à la base de données
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Aidez la communauté en ajoutant ou mettant à jour les offres tarifaires des fournisseurs d'énergie.
-          Les administrateurs vérifieront votre contribution avant publication.
-        </p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+              <Users className="text-primary-600 dark:text-primary-400" size={32} />
+              Contribuer à la base de données
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400">
+              Aidez la communauté en ajoutant ou mettant à jour les offres tarifaires des fournisseurs d'énergie.
+              Les administrateurs vérifieront votre contribution avant publication.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowJsonImport(!showJsonImport)}
+            className="btn btn-secondary flex items-center gap-2"
+          >
+            <FileJson size={20} />
+            Import JSON
+          </button>
+        </div>
       </div>
+
+      {/* My Contributions - Compact at top */}
+      {Array.isArray(myContributions) && myContributions.length > 0 && (
+        <div className="card mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <List size={20} />
+              Mes contributions ({myContributions.length})
+            </h2>
+            {myContributions.length > 1 && (
+              <button
+                onClick={() => setShowAllContributions(!showAllContributions)}
+                className="text-sm text-primary-600 dark:text-primary-400 hover:underline"
+              >
+                {showAllContributions ? 'Réduire' : `Voir toutes (${myContributions.length})`}
+              </button>
+            )}
+          </div>
+
+          {/* Latest contribution always visible */}
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-900/50">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  {getStatusIcon(myContributions[0].status)}
+                  <h3 className="font-semibold">{myContributions[0].offer_name}</h3>
+                  <span className="text-sm text-gray-500">({myContributions[0].offer_type})</span>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Soumise le {new Date(myContributions[0].created_at).toLocaleDateString('fr-FR')}
+                </p>
+                {myContributions[0].review_comment && (
+                  <p className="text-sm mt-2 text-red-600 dark:text-red-400">
+                    Commentaire : {myContributions[0].review_comment}
+                  </p>
+                )}
+              </div>
+              <span
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  myContributions[0].status === 'approved'
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                    : myContributions[0].status === 'rejected'
+                    ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                    : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                }`}
+              >
+                {getStatusText(myContributions[0].status)}
+              </span>
+            </div>
+          </div>
+
+          {/* Other contributions - collapsible */}
+          {showAllContributions && myContributions.length > 1 && (
+            <div className="mt-4 space-y-3">
+              {myContributions.slice(1).map((contribution: any) => (
+                <div
+                  key={contribution.id}
+                  className="border border-gray-200 dark:border-gray-700 rounded-lg p-4"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        {getStatusIcon(contribution.status)}
+                        <h3 className="font-semibold">{contribution.offer_name}</h3>
+                        <span className="text-sm text-gray-500">({contribution.offer_type})</span>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Soumise le {new Date(contribution.created_at).toLocaleDateString('fr-FR')}
+                      </p>
+                      {contribution.review_comment && (
+                        <p className="text-sm mt-2 text-red-600 dark:text-red-400">
+                          Commentaire : {contribution.review_comment}
+                        </p>
+                      )}
+                    </div>
+                    <span
+                      className={`px-3 py-1 rounded-full text-sm font-medium ${
+                        contribution.status === 'approved'
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                          : contribution.status === 'rejected'
+                          ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                          : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                      }`}
+                    >
+                      {getStatusText(contribution.status)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* JSON Import Section */}
+      {showJsonImport && (
+        <div className="card mb-8">
+          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <Upload size={24} />
+            Import JSON - Plusieurs offres
+          </h2>
+
+          <div className="space-y-4">
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-lg">
+              <h3 className="font-semibold mb-2 text-blue-900 dark:text-blue-100">📋 Structure du fichier JSON</h3>
+              <p className="text-sm text-blue-800 dark:text-blue-200 mb-3">
+                Vous pouvez importer une ou plusieurs offres en utilisant un tableau JSON. Voici la structure complète :
+              </p>
+              <details className="text-xs">
+                <summary className="cursor-pointer font-medium mb-2">Voir l'exemple complet</summary>
+                <pre className="bg-white dark:bg-gray-900 p-3 rounded overflow-auto text-xs">
+{`[
+  {
+    "contribution_type": "NEW_OFFER",
+    "existing_provider_id": "uuid-du-fournisseur",
+    "offer_name": "Offre BASE Weekend",
+    "offer_type": "BASE_WEEKEND",
+    "description": "Description optionnelle",
+    "power_kva": 6,
+    "pricing_data": {
+      "subscription_price": 12.60,
+      "base_price": 0.2516,
+      "base_price_weekend": 0.2000
+    },
+    "price_sheet_url": "https://...",
+    "screenshot_url": "https://... (optionnel)"
+  },
+  {
+    "contribution_type": "NEW_OFFER",
+    "existing_provider_id": "uuid-du-fournisseur",
+    "offer_name": "Offre HC/HP",
+    "offer_type": "HC_HP",
+    "power_kva": 6,
+    "pricing_data": {
+      "subscription_price": 13.50,
+      "hc_price": 0.2068,
+      "hp_price": 0.2700
+    },
+    "price_sheet_url": "https://..."
+  }
+]`}
+                </pre>
+              </details>
+
+              <div className="mt-3 space-y-2 text-sm text-blue-800 dark:text-blue-200">
+                <p className="font-semibold">Champs obligatoires :</p>
+                <ul className="list-disc list-inside pl-2 space-y-1">
+                  <li><code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">contribution_type</code> : "NEW_PROVIDER" ou "NEW_OFFER"</li>
+                  <li><code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">offer_name</code> : Nom de l'offre</li>
+                  <li><code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">offer_type</code> : BASE, BASE_WEEKEND, HC_HP, HC_NUIT_WEEKEND, HC_WEEKEND, SEASONAL, TEMPO, EJP</li>
+                  <li><code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">power_kva</code> : 3, 6, 9, 12, 15, 18, 24, 30 ou 36</li>
+                  <li><code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">pricing_data.subscription_price</code> : Prix abonnement (€/mois)</li>
+                  <li><code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">price_sheet_url</code> : URL de la fiche des prix</li>
+                </ul>
+
+                <p className="font-semibold mt-3">Types de tarification (pricing_data) :</p>
+                <ul className="list-disc list-inside pl-2 space-y-1">
+                  <li><strong>BASE</strong> : base_price</li>
+                  <li><strong>BASE_WEEKEND</strong> : base_price, base_price_weekend</li>
+                  <li><strong>HC_HP</strong> : hc_price, hp_price</li>
+                  <li><strong>HC_HP avec weekend</strong> : hc_price, hp_price, hc_price_weekend, hp_price_weekend</li>
+                  <li><strong>SEASONAL</strong> : hc_price_winter, hp_price_winter, hc_price_summer, hp_price_summer</li>
+                  <li><strong>TEMPO</strong> : tempo_blue_hc, tempo_blue_hp, tempo_white_hc, tempo_white_hp, tempo_red_hc, tempo_red_hp</li>
+                  <li><strong>EJP</strong> : ejp_normal, ejp_peak</li>
+                </ul>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Collez votre JSON ici :</label>
+              <textarea
+                value={jsonImportData}
+                onChange={(e) => setJsonImportData(e.target.value)}
+                className="input font-mono text-xs"
+                rows={15}
+                placeholder='[{"contribution_type": "NEW_OFFER", ...}]'
+              />
+            </div>
+
+            {importProgress && (
+              <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded">
+                <div className="mb-2">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>Progression : {importProgress.current} / {importProgress.total}</span>
+                    <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                    <div
+                      className="bg-primary-600 h-2 rounded-full transition-all"
+                      style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                    ></div>
+                  </div>
+                </div>
+                {importProgress.errors.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-sm font-medium text-red-600 dark:text-red-400 mb-2">Erreurs :</p>
+                    <ul className="text-xs space-y-1 text-red-600 dark:text-red-400">
+                      {importProgress.errors.map((error, i) => (
+                        <li key={i}>• {error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleJsonImport}
+                className="btn btn-primary"
+                disabled={!jsonImportData || importProgress !== null}
+              >
+                Importer les offres
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowJsonImport(false)
+                  setJsonImportData('')
+                  setImportProgress(null)
+                }}
+                className="btn"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Contribution Form */}
       <div className="card mb-8">
@@ -232,7 +633,7 @@ export default function Contribute() {
                 required
               >
                 <option value="">Sélectionnez un fournisseur</option>
-                {providersData?.map((provider) => (
+                {Array.isArray(providersData) && providersData.map((provider) => (
                   <option key={provider.id} value={provider.id}>
                     {provider.name}
                   </option>
@@ -242,7 +643,7 @@ export default function Contribute() {
           )}
 
           {/* Offer Details */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium mb-2">
                 Nom de l'offre <span className="text-red-500">*</span>
@@ -267,9 +668,35 @@ export default function Contribute() {
                 required
               >
                 <option value="BASE">BASE</option>
+                <option value="BASE_WEEKEND">BASE Week-end (tarif unique + week-end réduit)</option>
                 <option value="HC_HP">Heures Creuses / Heures Pleines</option>
+                <option value="HC_NUIT_WEEKEND">HC Nuit & Week-end (23h-6h + week-end)</option>
+                <option value="HC_WEEKEND">HC Week-end (HC PDL + week-end)</option>
+                <option value="SEASONAL">SEASONAL (Tarifs saisonniers hiver/été)</option>
                 <option value="TEMPO">TEMPO</option>
                 <option value="EJP">EJP</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Puissance (kVA) <span className="text-red-600">*</span>
+              </label>
+              <select
+                value={powerKva}
+                onChange={(e) => setPowerKva(e.target.value)}
+                className="input"
+                required
+              >
+                <option value="">Sélectionnez...</option>
+                <option value="3">3 kVA</option>
+                <option value="6">6 kVA</option>
+                <option value="9">9 kVA</option>
+                <option value="12">12 kVA</option>
+                <option value="15">15 kVA</option>
+                <option value="18">18 kVA</option>
+                <option value="24">24 kVA</option>
+                <option value="30">30 kVA</option>
+                <option value="36">36 kVA</option>
               </select>
             </div>
           </div>
@@ -289,68 +716,438 @@ export default function Contribute() {
           <div className="border-t pt-6">
             <h3 className="text-lg font-semibold mb-4">Tarification</h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Abonnement (toujours affiché) */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">
+                Abonnement (€/mois) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                value={subscriptionPrice}
+                onChange={(e) => setSubscriptionPrice(e.target.value)}
+                className="input"
+                required
+                placeholder="12.60"
+              />
+            </div>
+
+            {/* BASE */}
+            {offerType === 'BASE' && (
               <div>
                 <label className="block text-sm font-medium mb-2">
-                  Abonnement (€/mois) <span className="text-red-500">*</span>
+                  Prix BASE (€/kWh) <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
-                  step="0.01"
-                  value={subscriptionPrice}
-                  onChange={(e) => setSubscriptionPrice(e.target.value)}
+                  step="0.00001"
+                  value={basePrice}
+                  onChange={(e) => setBasePrice(e.target.value)}
                   className="input"
                   required
-                  placeholder="12.60"
+                  placeholder="0.2516"
                 />
               </div>
+            )}
 
-              {offerType === 'BASE' && (
+            {/* BASE_WEEKEND */}
+            {offerType === 'BASE_WEEKEND' && (
+              <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Prix BASE (€/kWh)
+                    Prix BASE semaine (€/kWh) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.00001"
+                    value={basePrice}
+                    onChange={(e) => setBasePrice(e.target.value)}
+                    className="input"
+                    required
+                    placeholder="0.2516"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Prix BASE week-end (€/kWh)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.00001"
+                    value={hcPrice}
+                    onChange={(e) => setHcPrice(e.target.value)}
+                    className="input"
+                    placeholder="0.2000"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Prix réduit pour le week-end</p>
+                </div>
+              </div>
+            )}
+
+            {/* HC_HP */}
+            {offerType === 'HC_HP' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Prix Heures Creuses (€/kWh) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.00001"
+                    value={hcPrice}
+                    onChange={(e) => setHcPrice(e.target.value)}
+                    className="input"
+                    required
+                    placeholder="0.2068"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Prix Heures Pleines (€/kWh) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.00001"
+                    value={hpPrice}
+                    onChange={(e) => setHpPrice(e.target.value)}
+                    className="input"
+                    required
+                    placeholder="0.2700"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* HC_NUIT_WEEKEND */}
+            {offerType === 'HC_NUIT_WEEKEND' && (
+              <div className="space-y-4">
+                <p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded">
+                  💡 HC de nuit (23h-6h) en semaine + tout le week-end en HC
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Prix HC (€/kWh) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.00001"
+                      value={hcPrice}
+                      onChange={(e) => setHcPrice(e.target.value)}
+                      className="input"
+                      required
+                      placeholder="0.2068"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">23h-6h semaine + tout week-end</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Prix HP (€/kWh) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.00001"
+                      value={hpPrice}
+                      onChange={(e) => setHpPrice(e.target.value)}
+                      className="input"
+                      required
+                      placeholder="0.2700"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">6h-23h semaine uniquement</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* HC_WEEKEND */}
+            {offerType === 'HC_WEEKEND' && (
+              <div className="space-y-4">
+                <p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded">
+                  💡 HC selon configuration PDL en semaine + tout le week-end en HC
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Prix HC (€/kWh) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.00001"
+                      value={hcPrice}
+                      onChange={(e) => setHcPrice(e.target.value)}
+                      className="input"
+                      required
+                      placeholder="0.2068"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">HC PDL semaine + tout week-end</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Prix HP (€/kWh) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.00001"
+                      value={hpPrice}
+                      onChange={(e) => setHpPrice(e.target.value)}
+                      className="input"
+                      required
+                      placeholder="0.2700"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">HP semaine uniquement</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SEASONAL */}
+            {offerType === 'SEASONAL' && (
+              <div className="space-y-4">
+                <p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded">
+                  💡 Tarifs différents en hiver (nov-mars) et été (avr-oct)
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-4">
+                    <h4 className="font-semibold text-blue-700 dark:text-blue-300">❄️ Hiver (Nov-Mars)</h4>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        HC Hiver (€/kWh) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.00001"
+                        value={hcPriceWinter}
+                        onChange={(e) => setHcPriceWinter(e.target.value)}
+                        className="input"
+                        required
+                        placeholder="0.31128"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        HP Hiver (€/kWh) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.00001"
+                        value={hpPriceWinter}
+                        onChange={(e) => setHpPriceWinter(e.target.value)}
+                        className="input"
+                        required
+                        placeholder="0.22942"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <h4 className="font-semibold text-amber-700 dark:text-amber-300">☀️ Été (Avr-Oct)</h4>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        HC Été (€/kWh) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.00001"
+                        value={hcPriceSummer}
+                        onChange={(e) => setHcPriceSummer(e.target.value)}
+                        className="input"
+                        required
+                        placeholder="0.19397"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        HP Été (€/kWh) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.00001"
+                        value={hpPriceSummer}
+                        onChange={(e) => setHpPriceSummer(e.target.value)}
+                        className="input"
+                        required
+                        placeholder="0.13166"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="border-t pt-4">
+                  <label className="block text-sm font-medium mb-2">
+                    ⚡ Prix Jour de Pointe (€/kWh) - Optionnel
+                  </label>
+                  <input
+                    type="number"
+                    step="0.00001"
+                    value={peakDayPrice}
+                    onChange={(e) => setPeakDayPrice(e.target.value)}
+                    className="input"
+                    placeholder="0.51928"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Si l'offre propose une option "jours de pointe" (max 15 jours/an)
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {offerType === 'TEMPO' && (
+              <div className="mt-4 space-y-4">
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-3">Jours Bleus (300 jours/an)</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Heures Creuses (€/kWh)</label>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={tempoBlueHc}
+                        onChange={(e) => setTempoBlueHc(e.target.value)}
+                        className="input"
+                        placeholder="0.1296"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Heures Pleines (€/kWh)</label>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={tempoBlueHp}
+                        onChange={(e) => setTempoBlueHp(e.target.value)}
+                        className="input"
+                        placeholder="0.1609"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg">
+                  <h4 className="font-semibold text-gray-800 dark:text-gray-300 mb-3">Jours Blancs (43 jours/an)</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Heures Creuses (€/kWh)</label>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={tempoWhiteHc}
+                        onChange={(e) => setTempoWhiteHc(e.target.value)}
+                        className="input"
+                        placeholder="0.1486"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Heures Pleines (€/kWh)</label>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={tempoWhiteHp}
+                        onChange={(e) => setTempoWhiteHp(e.target.value)}
+                        className="input"
+                        placeholder="0.1894"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+                  <h4 className="font-semibold text-red-800 dark:text-red-300 mb-3">Jours Rouges (22 jours/an)</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Heures Creuses (€/kWh)</label>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={tempoRedHc}
+                        onChange={(e) => setTempoRedHc(e.target.value)}
+                        className="input"
+                        placeholder="0.1568"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Heures Pleines (€/kWh)</label>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={tempoRedHp}
+                        onChange={(e) => setTempoRedHp(e.target.value)}
+                        className="input"
+                        placeholder="0.7562"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {offerType === 'EJP' && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Prix Normal (343 jours, €/kWh)
                   </label>
                   <input
                     type="number"
                     step="0.0001"
-                    value={basePrice}
-                    onChange={(e) => setBasePrice(e.target.value)}
+                    value={ejpNormal}
+                    onChange={(e) => setEjpNormal(e.target.value)}
                     className="input"
-                    placeholder="0.2516"
+                    placeholder="0.1234"
                   />
                 </div>
-              )}
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Prix Pointe (22 jours, €/kWh)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={ejpPeak}
+                    onChange={(e) => setEjpPeak(e.target.value)}
+                    className="input"
+                    placeholder="0.6789"
+                  />
+                </div>
+              </div>
+            )}
 
-              {offerType === 'HC_HP' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">
-                      Prix Heures Creuses (€/kWh)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.0001"
-                      value={hcPrice}
-                      onChange={(e) => setHcPrice(e.target.value)}
-                      className="input"
-                      placeholder="0.2068"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">
-                      Prix Heures Pleines (€/kWh)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.0001"
-                      value={hpPrice}
-                      onChange={(e) => setHpPrice(e.target.value)}
-                      className="input"
-                      placeholder="0.2700"
-                    />
-                  </div>
-                </>
-              )}
+          </div>
+
+          {/* Documentation (Required) */}
+          <div className="border-t pt-6">
+            <h3 className="text-lg font-semibold mb-4">Documentation <span className="text-red-500">*</span></h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Pour valider votre contribution, nous avons besoin d'une source officielle du fournisseur.
+            </p>
+
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Lien vers la fiche des prix <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="url"
+                  value={priceSheetUrl}
+                  onChange={(e) => setPriceSheetUrl(e.target.value)}
+                  className="input"
+                  required
+                  placeholder="https://particulier.edf.fr/tarif-bleu/..."
+                />
+                <p className="text-xs text-gray-500 mt-1">URL officielle du fournisseur présentant les tarifs</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Screenshot ou PDF (optionnel)
+                </label>
+                <input
+                  type="url"
+                  value={screenshotUrl}
+                  onChange={(e) => setScreenshotUrl(e.target.value)}
+                  className="input"
+                  placeholder="https://imgur.com/... ou lien direct vers un screenshot"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Hébergez votre capture d'écran sur Imgur, Dropbox, Google Drive, ou tout autre service et collez le lien direct
+                </p>
+              </div>
             </div>
           </div>
 
@@ -417,7 +1214,7 @@ export default function Contribute() {
               className="input"
             >
               <option value="all">Tous les fournisseurs</option>
-              {providersData?.map((provider) => (
+              {Array.isArray(providersData) && providersData.map((provider) => (
                 <option key={provider.id} value={provider.id}>
                   {provider.name}
                 </option>
@@ -446,16 +1243,16 @@ export default function Contribute() {
           </div>
         </div>
 
-        {offersData && offersData.length > 0 ? (
+        {Array.isArray(offersData) && offersData.length > 0 ? (
           <div className="space-y-6">
-            {providersData?.map((provider) => {
+            {Array.isArray(providersData) && providersData.map((provider) => {
               // Filter by provider
               if (filterProvider !== 'all' && provider.id !== filterProvider) {
                 return null
               }
 
               // Get provider offers and filter by power
-              let providerOffers = offersData.filter((offer) => offer.provider_id === provider.id)
+              let providerOffers = (offersData || []).filter((offer) => offer.provider_id === provider.id)
 
               // Filter by power
               if (filterPower !== 'all') {
@@ -471,27 +1268,41 @@ export default function Contribute() {
 
               if (providerOffers.length === 0) return null
 
+              const isExpanded = expandedProviders[provider.id] ?? false
+              const displayedOffers = isExpanded ? providerOffers : providerOffers.slice(0, 3)
+
               return (
                 <div key={provider.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                  <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                    <Zap className="text-primary-600" size={20} />
-                    {provider.name}
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {providerOffers.map((offer) => (
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <Zap className="text-primary-600 dark:text-primary-400" size={20} />
+                      {provider.name}
+                      <span className="text-sm text-gray-500">({providerOffers.length} offre{providerOffers.length > 1 ? 's' : ''})</span>
+                    </h3>
+                    {providerOffers.length > 3 && (
+                      <button
+                        onClick={() => setExpandedProviders(prev => ({ ...prev, [provider.id]: !prev[provider.id] }))}
+                        className="text-sm text-primary-600 dark:text-primary-400 hover:underline"
+                      >
+                        {isExpanded ? 'Réduire' : `Voir toutes (${providerOffers.length})`}
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {displayedOffers.map((offer) => (
                       <div
                         key={offer.id}
-                        className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700"
+                        className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-700"
                       >
-                        <div className="mb-3">
-                          <h4 className="font-semibold text-sm mb-1">{offer.name}</h4>
-                          <span className="text-xs px-2 py-1 bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-300 rounded">
+                        <div className="mb-2">
+                          <h4 className="font-medium text-sm mb-1">{offer.name}</h4>
+                          <span className="text-xs px-2 py-0.5 bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-300 rounded">
                             {offer.offer_type}
                           </span>
                         </div>
-                        <div className="space-y-1 text-sm">
+                        <div className="space-y-1 text-xs">
                           <div className="flex justify-between">
-                            <span className="text-gray-600 dark:text-gray-400">Abonnement :</span>
+                            <span className="text-gray-600 dark:text-gray-400">Abo. :</span>
                             <span className="font-medium">{offer.subscription_price.toFixed(2)} €/mois</span>
                           </div>
                           {offer.offer_type === 'BASE' && offer.base_price && (
@@ -575,7 +1386,7 @@ export default function Contribute() {
       </div>
 
       {/* My Contributions */}
-      {myContributions && myContributions.length > 0 && (
+      {Array.isArray(myContributions) && myContributions.length > 0 && (
         <div className="card">
           <h2 className="text-2xl font-bold mb-6">Mes contributions</h2>
           <div className="space-y-4">

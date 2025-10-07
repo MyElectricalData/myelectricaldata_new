@@ -13,11 +13,9 @@ export default function Landing() {
       <header className="bg-white dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <Link to="/" className="flex items-center space-x-3">
-              <img src="/logo.svg" alt="MyElectricalData" className="h-10 w-10" />
-              <span className="text-xl font-bold text-primary-600 dark:text-primary-400 hidden md:inline">
-                MyElectricalData
-              </span>
+            <Link to="/" className="flex items-center">
+              <img src="/logo-full.png" alt="MyElectricalData - Vos données Linky chez vous" className="h-12 w-auto hidden sm:block" />
+              <img src="/logo.svg" alt="MyElectricalData" className="h-10 w-10 sm:hidden" />
             </Link>
 
             <nav className="flex items-center space-x-2 sm:space-x-4">

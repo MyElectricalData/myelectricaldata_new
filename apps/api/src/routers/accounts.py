@@ -4,8 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta, UTC
 import secrets
 import httpx
-from ..models import User, PDL, Token, EmailVerificationToken, PasswordResetToken
+from ..models import User, PDL, Token, EmailVerificationToken, PasswordResetToken, Role
 from ..models.database import get_db
+from sqlalchemy.orm import selectinload
 from ..schemas import (
     UserCreate,
     UserLogin,
@@ -208,17 +209,50 @@ async def get_current_user_info(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Get current user information"""
+    # Reload user with role and permissions relationships
+    result = await db.execute(
+        select(User)
+        .where(User.id == current_user.id)
+        .options(selectinload(User.role).selectinload(Role.permissions))
+    )
+    user = result.scalar_one()
+
     user_response = UserResponse(
-        id=current_user.id,
-        email=current_user.email,
-        client_id=current_user.client_id,
-        is_active=current_user.is_active,
-        created_at=current_user.created_at,
+        id=user.id,
+        email=user.email,
+        client_id=user.client_id,
+        is_active=user.is_active,
+        created_at=user.created_at,
     )
 
-    # Add is_admin field
+    # Add is_admin field and role
     user_data = user_response.model_dump()
-    user_data['is_admin'] = settings.is_admin(current_user.email)
+    user_data['is_admin'] = settings.is_admin(user.email)
+
+    # Add role information with permissions
+    if user.role:
+        user_data['role'] = {
+            'id': user.role.id,
+            'name': user.role.name,
+            'display_name': user.role.display_name,
+            'permissions': [
+                {
+                    'id': perm.id,
+                    'name': perm.name,
+                    'display_name': perm.display_name,
+                    'resource': perm.resource,
+                }
+                for perm in user.role.permissions
+            ]
+        }
+    else:
+        # Default to visitor role if no role assigned
+        user_data['role'] = {
+            'id': None,
+            'name': 'visitor',
+            'display_name': 'Visiteur',
+            'permissions': []
+        }
 
     return APIResponse(success=True, data=user_data)
 

@@ -54,7 +54,24 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-    profiles:
+
+  # pgAdmin - Interface web PostgreSQL
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: myelectricaldata-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@localhost.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "5050:80"
+    networks:
+      - myelectricaldata
+    depends_on:
       - postgres
 
   # Backend FastAPI
@@ -68,7 +85,6 @@ services:
       - ./.env.api
     volumes:
       - ./apps/api/data:/app/data
-      - ./apps/api/src:/app/src  # Hot reload en dev (optionnel)
     networks:
       - myelectricaldata
     depends_on:
@@ -100,6 +116,8 @@ volumes:
   redis_data:
     driver: local
   postgres_data:
+    driver: local
+  pgadmin_data:
     driver: local
 
 networks:

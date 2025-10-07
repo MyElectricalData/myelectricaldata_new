@@ -5,7 +5,8 @@ from pydantic import BaseModel
 from ..models import User, PDL
 from ..models.database import get_db
 from ..schemas import PDLCreate, PDLResponse, APIResponse, ErrorDetail
-from ..middleware import get_current_user
+from ..schemas.requests import AdminPDLCreate
+from ..middleware import get_current_user, require_admin, require_permission
 from ..routers.enedis import get_valid_token
 from ..adapters import enedis_adapter
 
@@ -17,20 +18,39 @@ class PDLUpdateContract(BaseModel):
     offpeak_hours: dict | None = None
 
 
+class PDLUpdateName(BaseModel):
+    name: str | None = None
+
+
+class PDLOrderItem(BaseModel):
+    id: str
+    order: int
+
+
+class PDLUpdateOrder(BaseModel):
+    pdl_orders: list[PDLOrderItem]
+
+
 @router.get("/", response_model=APIResponse)
 async def list_pdls(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """List all PDLs for current user"""
     print(f"[PDL] list_pdls called for user: {current_user.email}")
-    result = await db.execute(select(PDL).where(PDL.user_id == current_user.id))
+    result = await db.execute(
+        select(PDL)
+        .where(PDL.user_id == current_user.id)
+        .order_by(PDL.display_order.asc().nulls_last(), PDL.created_at.desc())
+    )
     pdls = result.scalars().all()
 
     pdl_responses = [
         PDLResponse(
             id=pdl.id,
             usage_point_id=pdl.usage_point_id,
+            name=pdl.name,
             created_at=pdl.created_at,
+            display_order=pdl.display_order,
             subscribed_power=pdl.subscribed_power,
             offpeak_hours=pdl.offpeak_hours,
         )
@@ -57,7 +77,7 @@ async def create_pdl(
         )
 
     # Create PDL
-    pdl = PDL(user_id=current_user.id, usage_point_id=pdl_data.usage_point_id)
+    pdl = PDL(user_id=current_user.id, usage_point_id=pdl_data.usage_point_id, name=pdl_data.name)
 
     db.add(pdl)
     await db.commit()
@@ -97,6 +117,7 @@ async def create_pdl(
     pdl_response = PDLResponse(
         id=pdl.id,
         usage_point_id=pdl.usage_point_id,
+        name=pdl.name,
         created_at=pdl.created_at,
         subscribed_power=pdl.subscribed_power,
         offpeak_hours=pdl.offpeak_hours,
@@ -116,7 +137,9 @@ async def get_pdl(
     if not pdl:
         return APIResponse(success=False, error=ErrorDetail(code="PDL_NOT_FOUND", message="PDL not found"))
 
-    pdl_response = PDLResponse(id=pdl.id, usage_point_id=pdl.usage_point_id, created_at=pdl.created_at)
+    pdl_response = PDLResponse(
+        id=pdl.id, usage_point_id=pdl.usage_point_id, name=pdl.name, created_at=pdl.created_at
+    )
 
     return APIResponse(success=True, data=pdl_response.model_dump())
 
@@ -136,6 +159,35 @@ async def delete_pdl(
     await db.commit()
 
     return APIResponse(success=True, data={"message": "PDL deleted successfully"})
+
+
+@router.patch("/{pdl_id}/name", response_model=APIResponse)
+async def update_pdl_name(
+    pdl_id: str,
+    name_data: PDLUpdateName,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Update PDL custom name"""
+    result = await db.execute(select(PDL).where(PDL.id == pdl_id, PDL.user_id == current_user.id))
+    pdl = result.scalar_one_or_none()
+
+    if not pdl:
+        return APIResponse(success=False, error=ErrorDetail(code="PDL_NOT_FOUND", message="PDL not found"))
+
+    pdl.name = name_data.name
+
+    await db.commit()
+    await db.refresh(pdl)
+
+    return APIResponse(
+        success=True,
+        data={
+            "id": pdl.id,
+            "usage_point_id": pdl.usage_point_id,
+            "name": pdl.name,
+        },
+    )
 
 
 @router.patch("/{pdl_id}/contract", response_model=APIResponse)
@@ -170,6 +222,73 @@ async def update_pdl_contract(
             "offpeak_hours": pdl.offpeak_hours,
         },
     )
+
+
+@router.patch("/reorder", response_model=APIResponse)
+async def reorder_pdls(
+    order_data: PDLUpdateOrder,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Update display order for multiple PDLs"""
+    print(f"[REORDER] Received data: {order_data}")
+    for item in order_data.pdl_orders:
+        result = await db.execute(select(PDL).where(PDL.id == item.id, PDL.user_id == current_user.id))
+        pdl = result.scalar_one_or_none()
+
+        if pdl:
+            pdl.display_order = item.order
+
+    await db.commit()
+
+    return APIResponse(success=True, data={"message": "PDL order updated successfully"})
+
+
+@router.post("/admin/add", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
+async def admin_add_pdl(
+    pdl_data: AdminPDLCreate,
+    current_user: User = Depends(require_permission('users')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Admin-only: Add a PDL to any user without consent (requires users permission)"""
+    # Find target user by email
+    result = await db.execute(select(User).where(User.email == pdl_data.user_email))
+    target_user = result.scalar_one_or_none()
+
+    if not target_user:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(code="USER_NOT_FOUND", message=f"User with email {pdl_data.user_email} not found")
+        )
+
+    # Check if PDL already exists for this user
+    result = await db.execute(
+        select(PDL).where(PDL.user_id == target_user.id, PDL.usage_point_id == pdl_data.usage_point_id)
+    )
+    existing_pdl = result.scalar_one_or_none()
+
+    if existing_pdl:
+        return APIResponse(
+            success=False, error=ErrorDetail(code="PDL_EXISTS", message="This PDL is already registered for this user")
+        )
+
+    # Create PDL for target user
+    pdl = PDL(user_id=target_user.id, usage_point_id=pdl_data.usage_point_id, name=pdl_data.name)
+
+    db.add(pdl)
+    await db.commit()
+    await db.refresh(pdl)
+
+    pdl_response = PDLResponse(
+        id=pdl.id,
+        usage_point_id=pdl.usage_point_id,
+        name=pdl.name,
+        created_at=pdl.created_at,
+        subscribed_power=pdl.subscribed_power,
+        offpeak_hours=pdl.offpeak_hours,
+    )
+
+    return APIResponse(success=True, data=pdl_response.model_dump())
 
 
 @router.post("/{pdl_id}/fetch-contract", response_model=APIResponse)

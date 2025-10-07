@@ -5,7 +5,7 @@ from datetime import datetime, UTC
 from ..models import User, EnergyProvider, EnergyOffer, OfferContribution
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
-from ..middleware import get_current_user
+from ..middleware import get_current_user, require_permission, require_action
 from ..services.email import email_service
 from ..config import settings
 
@@ -34,12 +34,30 @@ async def list_providers(db: AsyncSession = Depends(get_db)) -> APIResponse:
 
 
 @router.get("/offers", response_model=APIResponse)
-async def list_offers(provider_id: str | None = None, db: AsyncSession = Depends(get_db)) -> APIResponse:
-    """List all active energy offers, optionally filtered by provider"""
+async def list_offers(
+    provider_id: str | None = None,
+    include_history: bool = False,
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """List all active energy offers, optionally filtered by provider
+
+    By default, returns only offers valid for the current period (valid_to IS NULL or valid_to >= NOW)
+    Set include_history=true to get all offers including historical ones
+    """
     query = select(EnergyOffer).where(EnergyOffer.is_active == True)
+
+    # Filter by current period only (unless include_history is True)
+    if not include_history:
+        now = datetime.now(UTC)
+        query = query.where(
+            (EnergyOffer.valid_to == None) | (EnergyOffer.valid_to >= now)
+        )
 
     if provider_id:
         query = query.where(EnergyOffer.provider_id == provider_id)
+
+    # Order by valid_from DESC to show most recent first
+    query = query.order_by(EnergyOffer.valid_from.desc())
 
     result = await db.execute(query)
     offers = result.scalars().all()
@@ -57,6 +75,9 @@ async def list_offers(provider_id: str | None = None, db: AsyncSession = Depends
                 "base_price": o.base_price,
                 "hc_price": o.hc_price,
                 "hp_price": o.hp_price,
+                "base_price_weekend": o.base_price_weekend,
+                "hc_price_weekend": o.hc_price_weekend,
+                "hp_price_weekend": o.hp_price_weekend,
                 "tempo_blue_hc": o.tempo_blue_hc,
                 "tempo_blue_hp": o.tempo_blue_hp,
                 "tempo_white_hc": o.tempo_white_hc,
@@ -65,8 +86,16 @@ async def list_offers(provider_id: str | None = None, db: AsyncSession = Depends
                 "tempo_red_hp": o.tempo_red_hp,
                 "ejp_normal": o.ejp_normal,
                 "ejp_peak": o.ejp_peak,
+                "hc_price_winter": o.hc_price_winter,
+                "hp_price_winter": o.hp_price_winter,
+                "hc_price_summer": o.hc_price_summer,
+                "hp_price_summer": o.hp_price_summer,
+                "peak_day_price": o.peak_day_price,
                 "hc_schedules": o.hc_schedules,
+                "power_kva": o.power_kva,
                 "price_updated_at": o.price_updated_at.isoformat() if o.price_updated_at else None,
+                "valid_from": o.valid_from.isoformat() if o.valid_from else None,
+                "valid_to": o.valid_to.isoformat() if o.valid_to else None,
                 "created_at": o.created_at.isoformat() if o.created_at else None,
             }
             for o in offers
@@ -83,6 +112,13 @@ async def create_contribution(
     print(f"[CONTRIBUTION] New contribution from user: {current_user.email}")
     print(f"[CONTRIBUTION] Data: {contribution_data}")
 
+    # Validate required fields
+    if not contribution_data.get("price_sheet_url"):
+        return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="Le lien vers la fiche des prix est obligatoire"))
+
+    if not contribution_data.get("power_kva"):
+        return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="La puissance (kVA) est obligatoire"))
+
     # Create contribution
     contribution = OfferContribution(
         contributor_user_id=current_user.id,
@@ -97,6 +133,9 @@ async def create_contribution(
         description=contribution_data.get("description"),
         pricing_data=contribution_data.get("pricing_data", {}),
         hc_schedules=contribution_data.get("hc_schedules"),
+        power_kva=contribution_data.get("power_kva"),
+        price_sheet_url=contribution_data["price_sheet_url"],
+        screenshot_url=contribution_data.get("screenshot_url"),
     )
 
     db.add(contribution)
@@ -145,10 +184,8 @@ async def list_my_contributions(current_user: User = Depends(get_current_user), 
 
 # Admin endpoints
 @router.get("/contributions/pending", response_model=APIResponse)
-async def list_pending_contributions(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> APIResponse:
-    """List all pending contributions (Admin only)"""
-    if not current_user.is_admin:
-        return APIResponse(success=False, error=ErrorDetail(code="FORBIDDEN", message="Admin access required"))
+async def list_pending_contributions(current_user: User = Depends(require_permission('contributions')), db: AsyncSession = Depends(get_db)) -> APIResponse:
+    """List all pending contributions (requires contributions permission)"""
 
     result = await db.execute(select(OfferContribution).where(OfferContribution.status == "pending"))
     contributions = result.scalars().all()
@@ -159,6 +196,18 @@ async def list_pending_contributions(current_user: User = Depends(get_current_us
         contributor_result = await db.execute(select(User).where(User.id == c.contributor_user_id))
         contributor = contributor_result.scalar_one_or_none()
 
+        # Get existing provider info if exists
+        existing_provider = None
+        if c.existing_provider_id:
+            provider_result = await db.execute(select(EnergyProvider).where(EnergyProvider.id == c.existing_provider_id))
+            existing_provider = provider_result.scalar_one_or_none()
+
+        # Get existing offer info if exists
+        existing_offer = None
+        if c.existing_offer_id:
+            offer_result = await db.execute(select(EnergyOffer).where(EnergyOffer.id == c.existing_offer_id))
+            existing_offer = offer_result.scalar_one_or_none()
+
         data.append(
             {
                 "id": c.id,
@@ -166,12 +215,45 @@ async def list_pending_contributions(current_user: User = Depends(get_current_us
                 "contribution_type": c.contribution_type,
                 "status": c.status,
                 "provider_name": c.provider_name,
+                "provider_website": c.provider_website,
                 "existing_provider_id": c.existing_provider_id,
+                "existing_provider": {
+                    "id": existing_provider.id,
+                    "name": existing_provider.name,
+                    "logo_url": existing_provider.logo_url,
+                    "website": existing_provider.website,
+                } if existing_provider else None,
+                "existing_offer_id": c.existing_offer_id,
+                "existing_offer": {
+                    "id": existing_offer.id,
+                    "name": existing_offer.name,
+                    "offer_type": existing_offer.offer_type,
+                    "description": existing_offer.description,
+                    "subscription_price": existing_offer.subscription_price,
+                    "base_price": existing_offer.base_price,
+                    "hc_price": existing_offer.hc_price,
+                    "hp_price": existing_offer.hp_price,
+                    "tempo_blue_hc": existing_offer.tempo_blue_hc,
+                    "tempo_blue_hp": existing_offer.tempo_blue_hp,
+                    "tempo_white_hc": existing_offer.tempo_white_hc,
+                    "tempo_white_hp": existing_offer.tempo_white_hp,
+                    "tempo_red_hc": existing_offer.tempo_red_hc,
+                    "tempo_red_hp": existing_offer.tempo_red_hp,
+                    "ejp_normal": existing_offer.ejp_normal,
+                    "ejp_peak": existing_offer.ejp_peak,
+                    "hc_schedules": existing_offer.hc_schedules,
+                    "power_kva": existing_offer.power_kva,
+                    "valid_from": existing_offer.valid_from.isoformat() if existing_offer.valid_from else None,
+                    "valid_to": existing_offer.valid_to.isoformat() if existing_offer.valid_to else None,
+                } if existing_offer else None,
                 "offer_name": c.offer_name,
                 "offer_type": c.offer_type,
                 "description": c.description,
                 "pricing_data": c.pricing_data,
                 "hc_schedules": c.hc_schedules,
+                "power_kva": c.power_kva,
+                "price_sheet_url": c.price_sheet_url,
+                "screenshot_url": c.screenshot_url,
                 "created_at": c.created_at.isoformat(),
             }
         )
@@ -181,11 +263,9 @@ async def list_pending_contributions(current_user: User = Depends(get_current_us
 
 @router.post("/contributions/{contribution_id}/approve", response_model=APIResponse)
 async def approve_contribution(
-    contribution_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    contribution_id: str, current_user: User = Depends(require_permission('contributions')), db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
-    """Approve a contribution and create/update provider/offer (Admin only)"""
-    if not current_user.is_admin:
-        return APIResponse(success=False, error=ErrorDetail(code="FORBIDDEN", message="Admin access required"))
+    """Approve a contribution and create/update provider/offer (requires contributions permission)"""
 
     result = await db.execute(select(OfferContribution).where(OfferContribution.id == contribution_id))
     contribution = result.scalar_one_or_none()
@@ -282,12 +362,10 @@ async def approve_contribution(
 async def reject_contribution(
     contribution_id: str,
     reason: str | None = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('contributions')),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
-    """Reject a contribution (Admin only)"""
-    if not current_user.is_admin:
-        return APIResponse(success=False, error=ErrorDetail(code="FORBIDDEN", message="Admin access required"))
+    """Reject a contribution (requires contributions permission)"""
 
     result = await db.execute(select(OfferContribution).where(OfferContribution.id == contribution_id))
     contribution = result.scalar_one_or_none()
@@ -306,6 +384,188 @@ async def reject_contribution(
     await db.commit()
 
     return APIResponse(success=True, data={"message": "Contribution rejected"})
+
+
+# Admin endpoints - Manage offers
+@router.put("/offers/{offer_id}", response_model=APIResponse)
+async def update_offer(
+    offer_id: str,
+    offer_data: dict,
+    current_user: User = Depends(require_action('offers', 'edit')),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Update an existing energy offer (requires offers.edit permission)"""
+
+    result = await db.execute(select(EnergyOffer).where(EnergyOffer.id == offer_id))
+    offer = result.scalar_one_or_none()
+
+    if not offer:
+        return APIResponse(success=False, error=ErrorDetail(code="NOT_FOUND", message="Offer not found"))
+
+    try:
+        # Update fields
+        if "name" in offer_data:
+            offer.name = offer_data["name"]
+        if "offer_type" in offer_data:
+            offer.offer_type = offer_data["offer_type"]
+        if "description" in offer_data:
+            offer.description = offer_data["description"]
+        if "subscription_price" in offer_data:
+            offer.subscription_price = offer_data["subscription_price"]
+        if "base_price" in offer_data:
+            offer.base_price = offer_data["base_price"]
+        if "hc_price" in offer_data:
+            offer.hc_price = offer_data["hc_price"]
+        if "hp_price" in offer_data:
+            offer.hp_price = offer_data["hp_price"]
+        if "tempo_blue_hc" in offer_data:
+            offer.tempo_blue_hc = offer_data["tempo_blue_hc"]
+        if "tempo_blue_hp" in offer_data:
+            offer.tempo_blue_hp = offer_data["tempo_blue_hp"]
+        if "tempo_white_hc" in offer_data:
+            offer.tempo_white_hc = offer_data["tempo_white_hc"]
+        if "tempo_white_hp" in offer_data:
+            offer.tempo_white_hp = offer_data["tempo_white_hp"]
+        if "tempo_red_hc" in offer_data:
+            offer.tempo_red_hc = offer_data["tempo_red_hc"]
+        if "tempo_red_hp" in offer_data:
+            offer.tempo_red_hp = offer_data["tempo_red_hp"]
+        if "ejp_normal" in offer_data:
+            offer.ejp_normal = offer_data["ejp_normal"]
+        if "ejp_peak" in offer_data:
+            offer.ejp_peak = offer_data["ejp_peak"]
+        if "is_active" in offer_data:
+            offer.is_active = offer_data["is_active"]
+
+        offer.updated_at = datetime.now(UTC)
+        offer.price_updated_at = datetime.now(UTC)
+
+        await db.commit()
+        await db.refresh(offer)
+
+        return APIResponse(success=True, data={"message": "Offer updated successfully", "offer_id": offer.id})
+
+    except Exception as e:
+        await db.rollback()
+        print(f"[OFFER UPDATE ERROR] {str(e)}")
+        import traceback
+
+        traceback.print_exc()
+        return APIResponse(success=False, error=ErrorDetail(code="SERVER_ERROR", message=str(e)))
+
+
+@router.delete("/offers/{offer_id}", response_model=APIResponse)
+async def delete_offer(
+    offer_id: str, current_user: User = Depends(require_action('offers', 'delete')), db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Delete an energy offer (requires offers.delete permission)"""
+
+    result = await db.execute(select(EnergyOffer).where(EnergyOffer.id == offer_id))
+    offer = result.scalar_one_or_none()
+
+    if not offer:
+        return APIResponse(success=False, error=ErrorDetail(code="NOT_FOUND", message="Offer not found"))
+
+    try:
+        await db.delete(offer)
+        await db.commit()
+
+        return APIResponse(success=True, data={"message": "Offer deleted successfully"})
+
+    except Exception as e:
+        await db.rollback()
+        print(f"[OFFER DELETE ERROR] {str(e)}")
+        import traceback
+
+        traceback.print_exc()
+        return APIResponse(success=False, error=ErrorDetail(code="SERVER_ERROR", message=str(e)))
+
+
+@router.put("/providers/{provider_id}", response_model=APIResponse)
+async def update_provider(
+    provider_id: str,
+    update_data: dict,
+    current_user: User = Depends(require_action('offers', 'edit')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Update an energy provider (requires offers.edit permission)"""
+
+    result = await db.execute(select(EnergyProvider).where(EnergyProvider.id == provider_id))
+    provider = result.scalar_one_or_none()
+
+    if not provider:
+        return APIResponse(success=False, error=ErrorDetail(code="NOT_FOUND", message="Provider not found"))
+
+    try:
+        # Update allowed fields
+        if "name" in update_data:
+            provider.name = update_data["name"]
+        if "website" in update_data:
+            provider.website = update_data["website"]
+        if "logo_url" in update_data:
+            provider.logo_url = update_data["logo_url"]
+
+        provider.updated_at = datetime.now(UTC)
+        await db.commit()
+        await db.refresh(provider)
+
+        return APIResponse(
+            success=True,
+            data={
+                "id": str(provider.id),
+                "name": provider.name,
+                "website": provider.website,
+                "logo_url": provider.logo_url,
+            }
+        )
+
+    except Exception as e:
+        await db.rollback()
+        print(f"[PROVIDER UPDATE ERROR] {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return APIResponse(success=False, error=ErrorDetail(code="DATABASE_ERROR", message="Failed to update provider"))
+
+
+@router.delete("/providers/{provider_id}", response_model=APIResponse)
+async def delete_provider(
+    provider_id: str, current_user: User = Depends(require_action('offers', 'delete')), db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Delete an energy provider and all its offers (requires offers.delete permission)"""
+
+    result = await db.execute(select(EnergyProvider).where(EnergyProvider.id == provider_id))
+    provider = result.scalar_one_or_none()
+
+    if not provider:
+        return APIResponse(success=False, error=ErrorDetail(code="NOT_FOUND", message="Provider not found"))
+
+    try:
+        # Delete all offers for this provider first
+        offers_result = await db.execute(select(EnergyOffer).where(EnergyOffer.provider_id == provider_id))
+        offers = offers_result.scalars().all()
+
+        for offer in offers:
+            await db.delete(offer)
+
+        # Then delete the provider
+        await db.delete(provider)
+        await db.commit()
+
+        return APIResponse(
+            success=True,
+            data={
+                "message": "Provider and all its offers deleted successfully",
+                "deleted_offers_count": len(offers)
+            }
+        )
+
+    except Exception as e:
+        await db.rollback()
+        print(f"[PROVIDER DELETE ERROR] {str(e)}")
+        import traceback
+
+        traceback.print_exc()
+        return APIResponse(success=False, error=ErrorDetail(code="SERVER_ERROR", message=str(e)))
 
 
 async def send_contribution_notification(contribution: OfferContribution, contributor: User, db: AsyncSession):

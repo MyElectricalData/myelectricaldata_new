@@ -1,7 +1,37 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Users, CheckCircle, XCircle, Calendar, User, Package, DollarSign } from 'lucide-react'
+import { Users, CheckCircle, XCircle, Calendar, User, Package, DollarSign, ExternalLink, Image, Zap } from 'lucide-react'
 import { energyApi } from '@/api/energy'
+
+interface ExistingProvider {
+  id: string
+  name: string
+  logo_url?: string
+  website?: string
+}
+
+interface ExistingOffer {
+  id: string
+  name: string
+  offer_type: string
+  description?: string
+  subscription_price: number
+  base_price?: number
+  hc_price?: number
+  hp_price?: number
+  tempo_blue_hc?: number
+  tempo_blue_hp?: number
+  tempo_white_hc?: number
+  tempo_white_hp?: number
+  tempo_red_hc?: number
+  tempo_red_hp?: number
+  ejp_normal?: number
+  ejp_peak?: number
+  hc_schedules?: Record<string, string>
+  power_kva?: number
+  valid_from?: string
+  valid_to?: string
+}
 
 interface PendingContribution {
   id: string
@@ -9,7 +39,11 @@ interface PendingContribution {
   contribution_type: string
   status: string
   provider_name?: string
+  provider_website?: string
   existing_provider_id?: string
+  existing_provider?: ExistingProvider
+  existing_offer_id?: string
+  existing_offer?: ExistingOffer
   offer_name: string
   offer_type: string
   description?: string
@@ -18,6 +52,9 @@ interface PendingContribution {
     base_price?: number
     hc_price?: number
     hp_price?: number
+    base_price_weekend?: number
+    hc_price_weekend?: number
+    hp_price_weekend?: number
     tempo_blue_hc?: number
     tempo_blue_hp?: number
     tempo_white_hc?: number
@@ -26,8 +63,16 @@ interface PendingContribution {
     tempo_red_hp?: number
     ejp_normal?: number
     ejp_peak?: number
+    hc_price_winter?: number
+    hp_price_winter?: number
+    hc_price_summer?: number
+    hp_price_summer?: number
+    peak_day_price?: number
   }
   hc_schedules?: Record<string, string>
+  power_kva?: number
+  price_sheet_url: string
+  screenshot_url?: string
   created_at: string
 }
 
@@ -35,13 +80,16 @@ export default function AdminContributions() {
   const queryClient = useQueryClient()
   const [selectedContribution, setSelectedContribution] = useState<PendingContribution | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [showApproveModal, setShowApproveModal] = useState(false)
+  const [showRejectModal, setShowRejectModal] = useState(false)
+  const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null)
 
   // Fetch pending contributions
   const { data: contributions, isLoading } = useQuery({
     queryKey: ['admin-pending-contributions'],
     queryFn: async () => {
       const response = await energyApi.getPendingContributions()
-      return response.data as PendingContribution[]
+      return Array.isArray(response.data) ? (response.data as PendingContribution[]) : []
     },
   })
 
@@ -52,11 +100,15 @@ export default function AdminContributions() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-pending-contributions'] })
-      alert('Contribution approuvée avec succès !')
+      setNotification({ type: 'success', message: 'Contribution approuvée avec succès !' })
+      setTimeout(() => setNotification(null), 5000)
       setSelectedContribution(null)
+      setShowApproveModal(false)
     },
     onError: (error: any) => {
-      alert(`Erreur: ${error.message || 'Une erreur est survenue'}`)
+      setNotification({ type: 'error', message: `Erreur: ${error.message || 'Une erreur est survenue'}` })
+      setTimeout(() => setNotification(null), 5000)
+      setShowApproveModal(false)
     },
   })
 
@@ -67,24 +119,36 @@ export default function AdminContributions() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-pending-contributions'] })
-      alert('Contribution rejetée.')
+      setNotification({ type: 'success', message: 'Contribution rejetée.' })
+      setTimeout(() => setNotification(null), 5000)
       setSelectedContribution(null)
       setRejectReason('')
+      setShowRejectModal(false)
     },
     onError: (error: any) => {
-      alert(`Erreur: ${error.message || 'Une erreur est survenue'}`)
+      setNotification({ type: 'error', message: `Erreur: ${error.message || 'Une erreur est survenue'}` })
+      setTimeout(() => setNotification(null), 5000)
+      setShowRejectModal(false)
     },
   })
 
-  const handleApprove = (contributionId: string) => {
-    if (confirm('Êtes-vous sûr de vouloir approuver cette contribution ?')) {
-      approveMutation.mutate(contributionId)
+  const handleApprove = () => {
+    setShowApproveModal(true)
+  }
+
+  const confirmApprove = () => {
+    if (selectedContribution) {
+      approveMutation.mutate(selectedContribution.id)
     }
   }
 
-  const handleReject = (contributionId: string) => {
-    if (confirm('Êtes-vous sûr de vouloir rejeter cette contribution ?')) {
-      rejectMutation.mutate({ id: contributionId, reason: rejectReason || undefined })
+  const handleReject = () => {
+    setShowRejectModal(true)
+  }
+
+  const confirmReject = () => {
+    if (selectedContribution) {
+      rejectMutation.mutate({ id: selectedContribution.id, reason: rejectReason || undefined })
     }
   }
 
@@ -114,14 +178,20 @@ export default function AdminContributions() {
     switch (type) {
       case 'BASE':
         return 'BASE'
+      case 'BASE_WEEKEND':
+        return 'BASE avec tarif week-end'
       case 'HC_HP':
         return 'Heures Creuses / Heures Pleines'
+      case 'HC_HP_WEEKEND':
+        return 'HC/HP avec tarif week-end'
+      case 'HC_HP_SEASONAL':
+        return 'HC/HP avec tarifs saisonniers'
       case 'TEMPO':
         return 'TEMPO'
       case 'EJP':
         return 'EJP'
       default:
-        return type
+        return type.replace(/_/g, ' ')
     }
   }
 
@@ -134,7 +204,112 @@ export default function AdminContributions() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="w-full">
+      {/* Toast Notification */}
+      {notification && (
+        <div className={`fixed top-4 right-4 z-50 max-w-md p-4 rounded-lg shadow-lg flex items-center gap-3 ${
+          notification.type === 'success'
+            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+        }`}>
+          {notification.type === 'success' ? (
+            <CheckCircle className="text-green-600 dark:text-green-400" size={24} />
+          ) : (
+            <XCircle className="text-red-600 dark:text-red-400" size={24} />
+          )}
+          <p className={`flex-1 ${
+            notification.type === 'success'
+              ? 'text-green-800 dark:text-green-200'
+              : 'text-red-800 dark:text-red-200'
+          }`}>
+            {notification.message}
+          </p>
+          <button
+            onClick={() => setNotification(null)}
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Approve Modal */}
+      {showApproveModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <CheckCircle className="text-green-600 dark:text-green-400" size={24} />
+              Approuver la contribution
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Êtes-vous sûr de vouloir approuver cette contribution ? L'offre sera ajoutée/mise à jour dans la base de données.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowApproveModal(false)}
+                className="btn"
+                disabled={approveMutation.isPending}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmApprove}
+                className="btn btn-primary"
+                disabled={approveMutation.isPending}
+              >
+                {approveMutation.isPending ? 'Approbation...' : 'Confirmer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Modal */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <XCircle className="text-red-600 dark:text-red-400" size={24} />
+              Rejeter la contribution
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              Êtes-vous sûr de vouloir rejeter cette contribution ?
+            </p>
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">
+                Raison du rejet (optionnel)
+              </label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                className="input w-full"
+                rows={3}
+                placeholder="Expliquez pourquoi cette contribution est rejetée..."
+              />
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowRejectModal(false)
+                  setRejectReason('')
+                }}
+                className="btn"
+                disabled={rejectMutation.isPending}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmReject}
+                className="btn bg-red-600 hover:bg-red-700 text-white"
+                disabled={rejectMutation.isPending}
+              >
+                {rejectMutation.isPending ? 'Rejet...' : 'Confirmer le rejet'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
           <Users className="text-primary-600 dark:text-primary-400" size={32} />
@@ -177,6 +352,14 @@ export default function AdminContributions() {
                 </span>
               </div>
 
+              {/* DEBUG - affiche les données brutes */}
+              <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded text-xs">
+                <details>
+                  <summary className="cursor-pointer font-medium">Debug: Données brutes</summary>
+                  <pre className="mt-2 overflow-auto">{JSON.stringify(contribution.pricing_data, null, 2)}</pre>
+                </details>
+              </div>
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Provider Info */}
                 <div>
@@ -186,20 +369,78 @@ export default function AdminContributions() {
                   </h3>
                   <div className="space-y-2 text-sm">
                     {contribution.contribution_type === 'NEW_PROVIDER' && contribution.provider_name ? (
-                      <div>
-                        <span className="font-medium">Nouveau fournisseur :</span>
-                        <span className="ml-2">{contribution.provider_name}</span>
-                      </div>
+                      <>
+                        <div>
+                          <span className="font-medium">Nouveau fournisseur :</span>
+                          <span className="ml-2">{contribution.provider_name}</span>
+                        </div>
+                        {contribution.provider_website && (
+                          <div>
+                            <span className="font-medium">Site web :</span>
+                            <a
+                              href={contribution.provider_website}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-2 text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1"
+                            >
+                              {contribution.provider_website}
+                              <ExternalLink size={14} />
+                            </a>
+                          </div>
+                        )}
+                      </>
+                    ) : contribution.existing_provider ? (
+                      <>
+                        <div>
+                          <span className="font-medium">Fournisseur existant :</span>
+                          <span className="ml-2">{contribution.existing_provider.name}</span>
+                        </div>
+                        {contribution.existing_provider.website && (
+                          <div>
+                            <span className="font-medium">Site web :</span>
+                            <a
+                              href={contribution.existing_provider.website}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-2 text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1"
+                            >
+                              {contribution.existing_provider.website}
+                              <ExternalLink size={14} />
+                            </a>
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div>
                         <span className="font-medium">Fournisseur existant</span>
                         <span className="ml-2 text-gray-500">(ID: {contribution.existing_provider_id})</span>
                       </div>
                     )}
+                    {contribution.existing_offer && contribution.contribution_type === 'UPDATE_OFFER' && (
+                      <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700">
+                        <div className="font-medium mb-2">Offre actuelle à modifier :</div>
+                        <div className="text-xs space-y-1 text-gray-600 dark:text-gray-400">
+                          <div><span className="font-medium">Nom :</span> {contribution.existing_offer.name}</div>
+                          {contribution.existing_offer.description && (
+                            <div><span className="font-medium">Description :</span> {contribution.existing_offer.description}</div>
+                          )}
+                          {contribution.existing_offer.power_kva && (
+                            <div><span className="font-medium">Puissance :</span> {contribution.existing_offer.power_kva} kVA</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     <div>
                       <span className="font-medium">Type d'offre :</span>
                       <span className="ml-2">{getOfferTypeLabel(contribution.offer_type)}</span>
                     </div>
+                    {contribution.power_kva && (
+                      <div className="flex items-center gap-2">
+                        <Zap size={16} className="text-yellow-600 dark:text-yellow-400" />
+                        <span className="font-medium">Puissance souscrite :</span>
+                        <span className="ml-2">{contribution.power_kva} kVA</span>
+                      </div>
+                    )}
                     {contribution.description && (
                       <div>
                         <span className="font-medium">Description :</span>
@@ -213,32 +454,155 @@ export default function AdminContributions() {
                 <div>
                   <h3 className="font-semibold mb-3 flex items-center gap-2">
                     <DollarSign size={18} />
-                    Tarification
+                    Tarification proposée
                   </h3>
+                  {contribution.contribution_type === 'UPDATE_OFFER' && contribution.existing_offer && (
+                    <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+                      <div className="text-xs font-medium mb-2 text-blue-800 dark:text-blue-300">Prix actuels :</div>
+                      <div className="space-y-1 text-xs text-blue-700 dark:text-blue-300">
+                        <div className="flex justify-between">
+                          <span>Abonnement :</span>
+                          <span>{formatSubscription(contribution.existing_offer.subscription_price)}</span>
+                        </div>
+                        {contribution.existing_offer.base_price && (
+                          <div className="flex justify-between">
+                            <span>Prix BASE :</span>
+                            <span>{formatPrice(contribution.existing_offer.base_price)}</span>
+                          </div>
+                        )}
+                        {contribution.existing_offer.hc_price && (
+                          <div className="flex justify-between">
+                            <span>HC :</span>
+                            <span>{formatPrice(contribution.existing_offer.hc_price)}</span>
+                          </div>
+                        )}
+                        {contribution.existing_offer.hp_price && (
+                          <div className="flex justify-between">
+                            <span>HP :</span>
+                            <span>{formatPrice(contribution.existing_offer.hp_price)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="font-medium">Abonnement :</span>
-                      <span>{formatSubscription(contribution.pricing_data.subscription_price)}</span>
+                      <span className={contribution.contribution_type === 'UPDATE_OFFER' && contribution.existing_offer && contribution.existing_offer.subscription_price !== contribution.pricing_data.subscription_price ? 'text-orange-600 dark:text-orange-400 font-semibold' : ''}>
+                        {formatSubscription(contribution.pricing_data.subscription_price)}
+                      </span>
                     </div>
 
-                    {contribution.offer_type === 'BASE' && (
-                      <div className="flex justify-between">
-                        <span>Prix BASE :</span>
-                        <span>{formatPrice(contribution.pricing_data.base_price)}</span>
-                      </div>
-                    )}
-
-                    {contribution.offer_type === 'HC_HP' && (
+                    {/* BASE pricing - always check data, not just type */}
+                    {contribution.pricing_data.base_price && (
                       <>
-                        <div className="flex justify-between">
-                          <span>Prix Heures Creuses :</span>
-                          <span>{formatPrice(contribution.pricing_data.hc_price)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Prix Heures Pleines :</span>
-                          <span>{formatPrice(contribution.pricing_data.hp_price)}</span>
+                        <div className="font-medium mt-2">Semaine :</div>
+                        <div className="flex justify-between pl-4">
+                          <span>Prix BASE :</span>
+                          <span className={contribution.contribution_type === 'UPDATE_OFFER' && contribution.existing_offer && contribution.existing_offer.base_price !== contribution.pricing_data.base_price ? 'text-orange-600 dark:text-orange-400 font-semibold' : ''}>
+                            {formatPrice(contribution.pricing_data.base_price)}
+                          </span>
                         </div>
                       </>
+                    )}
+
+                    {/* Weekend pricing for BASE */}
+                    {contribution.pricing_data.base_price_weekend && (
+                      <>
+                        <div className="font-medium mt-2">Week-end :</div>
+                        <div className="flex justify-between pl-4">
+                          <span>Prix BASE :</span>
+                          <span>{formatPrice(contribution.pricing_data.base_price_weekend)}</span>
+                        </div>
+                      </>
+                    )}
+
+                    {/* HC/HP pricing - always check data */}
+                    {(contribution.pricing_data.hc_price || contribution.pricing_data.hp_price) && (
+                      <>
+                        <div className="font-medium mt-2">Semaine :</div>
+                        {contribution.pricing_data.hc_price && (
+                          <div className="flex justify-between pl-4">
+                            <span>Prix Heures Creuses :</span>
+                            <span className={contribution.contribution_type === 'UPDATE_OFFER' && contribution.existing_offer && contribution.existing_offer.hc_price !== contribution.pricing_data.hc_price ? 'text-orange-600 dark:text-orange-400 font-semibold' : ''}>
+                              {formatPrice(contribution.pricing_data.hc_price)}
+                            </span>
+                          </div>
+                        )}
+                        {contribution.pricing_data.hp_price && (
+                          <div className="flex justify-between pl-4">
+                            <span>Prix Heures Pleines :</span>
+                            <span className={contribution.contribution_type === 'UPDATE_OFFER' && contribution.existing_offer && contribution.existing_offer.hp_price !== contribution.pricing_data.hp_price ? 'text-orange-600 dark:text-orange-400 font-semibold' : ''}>
+                              {formatPrice(contribution.pricing_data.hp_price)}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Weekend pricing for HC/HP */}
+                    {(contribution.pricing_data.hc_price_weekend || contribution.pricing_data.hp_price_weekend) && (
+                      <>
+                        <div className="font-medium mt-2">Week-end :</div>
+                        {contribution.pricing_data.hc_price_weekend && (
+                          <div className="flex justify-between pl-4">
+                            <span>Prix Heures Creuses :</span>
+                            <span>{formatPrice(contribution.pricing_data.hc_price_weekend)}</span>
+                          </div>
+                        )}
+                        {contribution.pricing_data.hp_price_weekend && (
+                          <div className="flex justify-between pl-4">
+                            <span>Prix Heures Pleines :</span>
+                            <span>{formatPrice(contribution.pricing_data.hp_price_weekend)}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Seasonal pricing - Hiver */}
+                    {(contribution.pricing_data.hc_price_winter || contribution.pricing_data.hp_price_winter) && (
+                      <>
+                        <div className="font-medium mt-2">Hiver :</div>
+                        {contribution.pricing_data.hc_price_winter && (
+                          <div className="flex justify-between pl-4">
+                            <span>Prix HC Hiver :</span>
+                            <span>{formatPrice(contribution.pricing_data.hc_price_winter)}</span>
+                          </div>
+                        )}
+                        {contribution.pricing_data.hp_price_winter && (
+                          <div className="flex justify-between pl-4">
+                            <span>Prix HP Hiver :</span>
+                            <span>{formatPrice(contribution.pricing_data.hp_price_winter)}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Seasonal pricing - Été */}
+                    {(contribution.pricing_data.hc_price_summer || contribution.pricing_data.hp_price_summer) && (
+                      <>
+                        <div className="font-medium mt-2">Été :</div>
+                        {contribution.pricing_data.hc_price_summer && (
+                          <div className="flex justify-between pl-4">
+                            <span>Prix HC Été :</span>
+                            <span>{formatPrice(contribution.pricing_data.hc_price_summer)}</span>
+                          </div>
+                        )}
+                        {contribution.pricing_data.hp_price_summer && (
+                          <div className="flex justify-between pl-4">
+                            <span>Prix HP Été :</span>
+                            <span>{formatPrice(contribution.pricing_data.hp_price_summer)}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Peak day pricing */}
+                    {contribution.pricing_data.peak_day_price && (
+                      <div className="flex justify-between mt-2">
+                        <span className="font-medium">Prix jour de pointe :</span>
+                        <span>{formatPrice(contribution.pricing_data.peak_day_price)}</span>
+                      </div>
                     )}
 
                     {contribution.offer_type === 'TEMPO' && (
@@ -304,58 +668,75 @@ export default function AdminContributions() {
                 </div>
               </div>
 
+              {/* Documentation Section */}
+              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <ExternalLink size={18} />
+                  Documentation et preuves
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-sm font-medium">Fiche des prix :</span>
+                    <a
+                      href={contribution.price_sheet_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-2 text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1 text-sm"
+                    >
+                      Voir la fiche
+                      <ExternalLink size={14} />
+                    </a>
+                  </div>
+                  {contribution.screenshot_url && (
+                    <div>
+                      <span className="text-sm font-medium flex items-center gap-2 mb-2">
+                        <Image size={16} />
+                        Capture d'écran :
+                      </span>
+                      <a
+                        href={contribution.screenshot_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block"
+                      >
+                        <img
+                          src={contribution.screenshot_url}
+                          alt="Capture d'écran de la fiche des prix"
+                          className="max-w-full h-auto rounded-lg border border-gray-300 dark:border-gray-700 hover:opacity-90 transition-opacity"
+                          style={{ maxHeight: '300px' }}
+                        />
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Actions */}
               <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                {selectedContribution?.id === contribution.id ? (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">
-                        Raison du rejet (optionnel)
-                      </label>
-                      <textarea
-                        value={rejectReason}
-                        onChange={(e) => setRejectReason(e.target.value)}
-                        className="input"
-                        rows={3}
-                        placeholder="Expliquez pourquoi cette contribution est rejetée..."
-                      />
-                    </div>
-                    <div className="flex gap-4">
-                      <button
-                        onClick={() => handleApprove(contribution.id)}
-                        className="btn btn-primary flex items-center gap-2"
-                        disabled={approveMutation.isPending}
-                      >
-                        <CheckCircle size={18} />
-                        {approveMutation.isPending ? 'Approbation...' : 'Approuver'}
-                      </button>
-                      <button
-                        onClick={() => handleReject(contribution.id)}
-                        className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
-                        disabled={rejectMutation.isPending}
-                      >
-                        <XCircle size={18} />
-                        {rejectMutation.isPending ? 'Rejet...' : 'Rejeter'}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedContribution(null)
-                          setRejectReason('')
-                        }}
-                        className="btn"
-                      >
-                        Annuler
-                      </button>
-                    </div>
-                  </div>
-                ) : (
+                <div className="flex gap-4">
                   <button
-                    onClick={() => setSelectedContribution(contribution)}
-                    className="btn btn-primary"
+                    onClick={() => {
+                      setSelectedContribution(contribution)
+                      handleApprove()
+                    }}
+                    className="btn btn-primary flex items-center gap-2"
+                    disabled={approveMutation.isPending}
                   >
-                    Gérer cette contribution
+                    <CheckCircle size={18} />
+                    Approuver
                   </button>
-                )}
+                  <button
+                    onClick={() => {
+                      setSelectedContribution(contribution)
+                      handleReject()
+                    }}
+                    className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
+                    disabled={rejectMutation.isPending}
+                  >
+                    <XCircle size={18} />
+                    Rejeter
+                  </button>
+                </div>
               </div>
             </div>
           ))}
