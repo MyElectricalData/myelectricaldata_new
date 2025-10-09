@@ -1,13 +1,16 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, HTTPException, Path
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from datetime import datetime, UTC
+import logging
 from ..models import User, PDL
 from ..models.database import get_db
-from ..middleware import require_admin, require_permission
+from ..middleware import require_admin, require_permission, get_current_user
 from ..schemas import APIResponse
 from ..services import rate_limiter, cache_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -57,7 +60,7 @@ async def list_users(
 
 @router.post("/users/{user_id}/reset-quota", response_model=APIResponse)
 async def reset_user_quota(
-    user_id: str,
+    user_id: str = Path(..., description="User ID (UUID)", openapi_examples={"user_uuid": {"summary": "User UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
     current_user: User = Depends(require_permission('users')),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
@@ -86,7 +89,7 @@ async def reset_user_quota(
 
 @router.delete("/users/{user_id}/clear-cache", response_model=APIResponse)
 async def clear_user_cache(
-    user_id: str,
+    user_id: str = Path(..., description="User ID (UUID)", openapi_examples={"user_uuid": {"summary": "User UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
     current_user: User = Depends(require_permission('users')),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
@@ -288,3 +291,43 @@ async def get_global_stats(
             "date": today
         }
     )
+
+
+@router.post("/cache/ecowatt/refresh", response_model=APIResponse)
+async def refresh_ecowatt_cache(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Refresh EcoWatt cache with latest data from RTE
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    # Check rate limit
+    endpoint_path = request.scope.get("route").path if request.scope.get("route") else request.url.path
+    is_allowed, current_count, limit = await rate_limiter.increment_and_check(
+        current_user.id, False, current_user.is_admin, endpoint_path
+    )
+    if not is_allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: {current_count}/{limit} requests today"
+        )
+
+    # Import here to avoid circular import
+    from ..services.rte import rte_service
+
+    try:
+        # Update EcoWatt cache
+        updated_count = await rte_service.update_ecowatt_cache(db)
+
+        return APIResponse(
+            success=True,
+            data={"count": updated_count},
+            message=f"Cache EcoWatt mis à jour avec {updated_count} signaux"
+        )
+    except Exception as e:
+        logger.error(f"Error refreshing EcoWatt cache: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

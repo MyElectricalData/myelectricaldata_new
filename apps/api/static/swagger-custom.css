@@ -110,3 +110,18 @@
 .swagger-ui svg.arrow {
   transform: scale(1.4) !important;
 }
+
+/* Reduce top spacing in Swagger UI */
+.swagger-ui .information-container {
+  margin-top: 1em !important;
+  padding-top: 0.5em !important;
+}
+
+.swagger-ui .info {
+  margin-top: 0 !important;
+  padding-top: 0.5em !important;
+}
+
+.swagger-ui .wrapper {
+  padding-top: 1em !important;
+}

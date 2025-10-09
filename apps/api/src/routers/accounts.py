@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Form, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Body, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta, UTC
@@ -31,7 +31,32 @@ router = APIRouter(prefix="/accounts", tags=["Accounts"])
 
 
 @router.post("/signup", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
-async def signup(user_data: UserCreate, db: AsyncSession = Depends(get_db)) -> APIResponse:
+async def signup(
+    user_data: UserCreate = Body(
+        ...,
+        openapi_examples={
+            "standard_user": {
+                "summary": "Standard user registration",
+                "description": "Create a new user account with email and password",
+                "value": {
+                    "email": "user@example.com",
+                    "password": "SecurePassword123!",
+                    "turnstile_token": "0.abc123..."
+                }
+            },
+            "without_captcha": {
+                "summary": "Without captcha (dev mode)",
+                "description": "Registration without captcha token",
+                "value": {
+                    "email": "dev@example.com",
+                    "password": "DevPassword123!",
+                    "turnstile_token": None
+                }
+            }
+        }
+    ),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
     """Create a new user account"""
     # Verify Turnstile captcha if enabled
     if settings.REQUIRE_CAPTCHA:
@@ -118,7 +143,22 @@ async def signup(user_data: UserCreate, db: AsyncSession = Depends(get_db)) -> A
 
 
 @router.post("/login", response_model=APIResponse)
-async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)) -> APIResponse:
+async def login(
+    credentials: UserLogin = Body(
+        ...,
+        openapi_examples={
+            "user_login": {
+                "summary": "User login",
+                "description": "Login with email and password to get JWT token",
+                "value": {
+                    "email": "user@example.com",
+                    "password": "SecurePassword123!"
+                }
+            }
+        }
+    ),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
     """Login and get access token"""
     result = await db.execute(select(User).where(User.email == credentials.email))
     user = result.scalar_one_or_none()
@@ -285,7 +325,20 @@ async def delete_account(
 
 
 @router.get("/verify-email", response_model=APIResponse)
-async def verify_email(token: str, db: AsyncSession = Depends(get_db)) -> APIResponse:
+async def verify_email(
+    token: str = Query(
+        ...,
+        description="Email verification token",
+        openapi_examples={
+            "verification_token": {
+                "summary": "Verification token",
+                "description": "Token received in verification email",
+                "value": "abc123def456ghi789jkl012mno345pqr678"
+            }
+        }
+    ),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
     """Verify user email with token"""
     # Find verification token
     result = await db.execute(select(EmailVerificationToken).where(EmailVerificationToken.token == token))
@@ -322,7 +375,19 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)) -> APIRes
 
 
 @router.post("/resend-verification", response_model=APIResponse)
-async def resend_verification(email: str, db: AsyncSession = Depends(get_db)) -> APIResponse:
+async def resend_verification(
+    email: str = Body(
+        ...,
+        embed=True,
+        openapi_examples={
+            "resend": {
+                "summary": "Resend verification",
+                "value": "user@example.com"
+            }
+        }
+    ),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
     """Resend verification email"""
     # Find user
     result = await db.execute(select(User).where(User.email == email))

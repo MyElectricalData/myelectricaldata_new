@@ -15,6 +15,58 @@
     @apply bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100;
     @apply transition-colors duration-200;
   }
+
+  /* Custom Scrollbar Styles */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(203 213 225) transparent;
+  }
+
+  .dark * {
+    scrollbar-color: rgb(71 85 105) transparent;
+  }
+
+  /* Webkit Browsers (Chrome, Safari, Edge) */
+  *::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: rgb(203 213 225);
+    border-radius: 6px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgb(148 163 184);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  /* Dark Mode Scrollbar */
+  .dark *::-webkit-scrollbar-thumb {
+    background: rgb(71 85 105);
+    border-radius: 6px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .dark *::-webkit-scrollbar-thumb:hover {
+    background: rgb(100 116 139);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  /* Corner where scrollbars meet */
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
 
 @layer components {

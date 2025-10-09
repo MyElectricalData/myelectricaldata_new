@@ -51,7 +51,15 @@ export default function AdminTempo() {
       }
     },
     onError: (error: any) => {
-      const errorMsg = error?.message || 'Erreur lors de la mise à jour du cache TEMPO'
+      // Check if it's a permission error (403 or specific error message)
+      const isPermissionError = error?.response?.status === 403 ||
+                                error?.message?.toLowerCase().includes('permission') ||
+                                error?.message?.toLowerCase().includes('autorisé')
+
+      const errorMsg = isPermissionError
+        ? "Vous n'avez pas la permission de rafraîchir le cache Tempo. Contactez un administrateur pour obtenir la permission 'admin.tempo.refresh'."
+        : error?.message || 'Erreur lors de la mise à jour du cache Tempo'
+
       setNotification({
         type: 'error',
         message: errorMsg

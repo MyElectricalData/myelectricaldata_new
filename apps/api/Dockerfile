@@ -15,8 +15,8 @@ COPY pyproject.toml .
 COPY uv.lock* ./
 COPY README.md .
 
-# Install dependencies using uv
-RUN uv sync --frozen
+# Install dependencies using uv into system python
+RUN uv pip install --system -r pyproject.toml
 
 # Copy application code
 COPY . .
@@ -24,5 +24,5 @@ COPY . .
 # Expose port
 EXPOSE 8000
 
-# Start the application
-CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start the application directly with uvicorn (no uv run)
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

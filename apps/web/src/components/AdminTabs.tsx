@@ -10,10 +10,12 @@ interface Tab {
 const tabs: Tab[] = [
   { name: 'Tableau de bord', path: '/admin' },
   { name: 'Gestion des utilisateurs', path: '/admin/users', permission: 'users' },
-  { name: 'Gestion Tempo', path: '/admin/tempo', permission: 'tempo' },
+  { name: 'Gestion Tempo', path: '/admin/tempo' },
+  { name: 'Gestion EcoWatt', path: '/admin/ecowatt' },
   { name: 'Gestion des contributions', path: '/admin/contributions', permission: 'contributions' },
   { name: 'Gestion des offres', path: '/admin/offers', permission: 'offers' },
   { name: 'Gestion des rôles', path: '/admin/roles', permission: 'roles' },
+  { name: 'Logs', path: '/admin/logs', permission: 'admin_dashboard' },
 ]
 
 export default function AdminTabs() {

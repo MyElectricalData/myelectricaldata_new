@@ -24,6 +24,7 @@ curl -X POST "https://myelectricaldata.fr/api/accounts/token" \
 ```
 
 Réponse :
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",

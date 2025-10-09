@@ -13,11 +13,13 @@ DATABASE_URL=sqlite+aiosqlite:///./data/myelectricaldata.db
 ```
 
 **Avantages :**
+
 - Simple, pas de serveur supplémentaire
 - Parfait pour le développement et les petites installations
 - Fichier unique dans `apps/api/data/`
 
 **Commandes :**
+
 ```bash
 # Démarrer avec SQLite (par défaut)
 docker compose up -d
@@ -30,6 +32,7 @@ Pour une utilisation en production avec plus de performances et de fonctionnalit
 ### Configuration
 
 1. Modifier `.env.api` :
+
 ```bash
 # Commenter SQLite
 # DATABASE_URL=sqlite+aiosqlite:///./data/myelectricaldata.db
@@ -39,6 +42,7 @@ DATABASE_URL=postgresql+asyncpg://myelectricaldata:VOTRE_MOT_DE_PASSE@postgres:5
 ```
 
 2. Modifier `docker-compose.yml` pour définir le mot de passe PostgreSQL :
+
 ```yaml
 postgres:
   environment:
@@ -48,6 +52,7 @@ postgres:
 **Important :** Le mot de passe dans `DATABASE_URL` et dans `docker-compose.yml` doivent correspondre.
 
 3. Démarrer PostgreSQL avec le profil dédié :
+
 ```bash
 # Démarrer tous les services + PostgreSQL
 docker compose --profile postgres up -d
@@ -57,6 +62,7 @@ docker compose --profile postgres up -d --build
 ```
 
 **Avantages :**
+
 - Meilleur pour la production
 - Performances accrues avec beaucoup d'utilisateurs
 - Fonctionnalités avancées (JSONB, full-text search, etc.)
@@ -76,9 +82,11 @@ docker compose --profile postgres up -d --build
 2. Modifier `.env.api` pour pointer vers PostgreSQL
 3. Modifier `docker-compose.yml` avec le mot de passe
 4. Si vous changez de mot de passe PostgreSQL, vous devez **supprimer le volume** :
+
    ```bash
    docker compose --profile postgres down -v
    ```
+
 5. Redémarrer avec `docker compose --profile postgres up -d`
 6. Les tables seront créées automatiquement au démarrage
 

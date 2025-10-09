@@ -18,9 +18,13 @@ import AdminContributions from './pages/AdminContributions'
 import AdminOffers from './pages/AdminOffers'
 import AdminUsers from './pages/AdminUsers'
 import AdminTempo from './pages/AdminTempo'
+import AdminEcoWatt from './pages/AdminEcoWatt'
 import AdminAddPDL from './pages/AdminAddPDL'
 import AdminRoles from './pages/AdminRoles'
+import AdminLogs from './pages/AdminLogs'
 import Tempo from './pages/Tempo'
+import EcoWatt from './pages/EcoWatt'
+import Consumption from './pages/Consumption'
 import FAQ from './pages/FAQ'
 import ApiDocs from './pages/ApiDocs'
 import ApiAuth from './pages/ApiAuth'
@@ -165,6 +169,26 @@ function App() {
         }
       />
       <Route
+        path="/ecowatt"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <EcoWatt />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/consumption"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <Consumption />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/admin"
         element={
           <ProtectedRoute>
@@ -192,9 +216,19 @@ function App() {
         path="/admin/tempo"
         element={
           <ProtectedRoute>
-            <PermissionRoute resource="tempo">
+            <Layout>
+              <AdminTempo />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/ecowatt"
+        element={
+          <ProtectedRoute>
+            <PermissionRoute resource="admin_dashboard">
               <Layout>
-                <AdminTempo />
+                <AdminEcoWatt />
               </Layout>
             </PermissionRoute>
           </ProtectedRoute>
@@ -231,6 +265,18 @@ function App() {
             <PermissionRoute resource="roles">
               <Layout>
                 <AdminRoles />
+              </Layout>
+            </PermissionRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/logs"
+        element={
+          <ProtectedRoute>
+            <PermissionRoute resource="admin_dashboard">
+              <Layout>
+                <AdminLogs />
               </Layout>
             </PermissionRoute>
           </ProtectedRoute>

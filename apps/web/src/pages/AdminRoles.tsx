@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { rolesApi } from '@/api/roles'
 import { Shield, CheckCircle, XCircle, Save } from 'lucide-react'
@@ -209,21 +210,30 @@ export default function AdminRoles() {
               </p>
 
               <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
-                <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
-                  Permissions ({role.permissions.length})
-                </p>
-                <div className="space-y-1">
-                  {role.permissions.length === 0 ? (
-                    <p className="text-xs text-gray-500 italic">Aucune permission</p>
-                  ) : (
-                    role.permissions.map((perm) => (
-                      <div key={perm.id} className="text-xs flex items-start gap-2">
-                        <CheckCircle size={14} className="text-green-500 flex-shrink-0 mt-0.5" />
-                        <span>{perm.display_name}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
+                {role.name === 'admin' ? (
+                  <div className="text-xs text-gray-600 dark:text-gray-400 italic">
+                    <p>✓ Accès complet à toutes les fonctionnalités</p>
+                    <p className="mt-1 text-xs">Les permissions ne sont pas listées car l'administrateur a tous les droits.</p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                      Permissions ({role.permissions.length})
+                    </p>
+                    <div className="space-y-1">
+                      {role.permissions.length === 0 ? (
+                        <p className="text-xs text-gray-500 italic">Aucune permission</p>
+                      ) : (
+                        role.permissions.map((perm) => (
+                          <div key={perm.id} className="text-xs flex items-start gap-2">
+                            <CheckCircle size={14} className="text-green-500 flex-shrink-0 mt-0.5" />
+                            <span>{perm.display_name}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -231,8 +241,8 @@ export default function AdminRoles() {
       )}
 
       {/* Edit Modal */}
-      {editingRole && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setEditingRole(null)}>
+      {editingRole && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={{ zIndex: 9999 }} onClick={() => setEditingRole(null)}>
           <div className="bg-white dark:bg-gray-800 rounded-lg max-w-5xl w-full max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header - Fixed */}
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
@@ -318,7 +328,8 @@ export default function AdminRoles() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       </div>
     </div>

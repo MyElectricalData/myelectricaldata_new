@@ -1,22 +1,4 @@
 services:
-  # Reverse Proxy Caddy
-  caddy:
-    image: caddy:2-alpine
-    container_name: myelectricaldata-caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"  # HTTP/3
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - backend
-      - frontend
-    networks:
-      - myelectricaldata
 
   # Redis
   redis:
@@ -39,7 +21,7 @@ services:
     image: postgres:16-alpine
     container_name: myelectricaldata-postgres
     restart: unless-stopped
-    env_file:
+    env_file :
       - ./.env.api
     environment:
       POSTGRES_DB: myelectricaldata
@@ -83,12 +65,22 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env.api
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WATCHFILES_FORCE_POLLING=true
+      - WATCHFILES_POLL_INTERVAL=1000
     volumes:
       - ./apps/api/data:/app/data
+      - ./apps/api/src:/app/src
+      - ./apps/api/static:/app/static
+      - backend_logs:/logs
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
     networks:
       - myelectricaldata
     depends_on:
       - redis
+    ports:
+      - "8081:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping')"]
       interval: 30s
@@ -100,9 +92,21 @@ services:
   frontend:
     build:
       context: ./apps/web
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: myelectricaldata-frontend
     restart: unless-stopped
+    volumes:
+      - ./apps/web/src:/app/src
+      - ./apps/web/public:/app/public
+      - ./apps/web/index.html:/app/index.html
+      - ./apps/web/vite.config.ts:/app/vite.config.ts
+      - ./apps/web/tsconfig.json:/app/tsconfig.json
+      - ./apps/web/tsconfig.node.json:/app/tsconfig.node.json
+      - ./apps/web/tailwind.config.js:/app/tailwind.config.js
+      - ./apps/web/postcss.config.js:/app/postcss.config.js
+      - /app/node_modules
+    ports:
+      - "8000:5173"
     networks:
       - myelectricaldata
     depends_on:
@@ -118,6 +122,8 @@ volumes:
   postgres_data:
     driver: local
   pgadmin_data:
+    driver: local
+  backend_logs:
     driver: local
 
 networks:

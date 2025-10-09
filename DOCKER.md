@@ -95,9 +95,9 @@ docker compose logs -f caddy
 
 ### 3. Accéder à l'application
 
-- **Frontend** : https://myelectricaldata.fr
-- **API** : https://myelectricaldata.fr/api
-- **Documentation API** : https://myelectricaldata.fr/docs
+- **Frontend** : <https://myelectricaldata.fr>
+- **API** : <https://myelectricaldata.fr/api>
+- **Documentation API** : <https://myelectricaldata.fr/docs>
 
 ⚠️ **Important** : Assure-toi que `myelectricaldata.fr` pointe vers `127.0.0.1` dans ton `/etc/hosts` :
 
@@ -154,9 +154,11 @@ docker compose exec backend sh -c "cp /app/data/myelectricaldata.db /app/data/ba
 ### Variables d'environnement
 
 #### Backend (`apps/api/.env`)
+
 Toutes les variables d'environnement du backend sont chargées depuis `apps/api/.env`.
 
 #### Frontend
+
 Le frontend utilise `VITE_API_BASE_URL=/api` qui est défini au moment du build. Pour le modifier :
 
 ```yaml
@@ -164,7 +166,7 @@ Le frontend utilise `VITE_API_BASE_URL=/api` qui est défini au moment du build.
 frontend:
   build:
     args:
-      - VITE_API_BASE_URL=/api  # Modifier ici
+      - VITE_API_BASE_URL=/api # Modifier ici
 ```
 
 ### Caddy
@@ -199,12 +201,14 @@ docker compose restart caddy
 Caddy génère automatiquement des certificats auto-signés pour `myelectricaldata.fr`.
 
 Ton navigateur affichera un avertissement de sécurité. C'est normal en développement local. Tu peux :
+
 - Cliquer sur "Avancé" → "Continuer vers le site"
 - Ou importer le certificat Caddy dans ton système
 
 ### Production
 
 En production, Caddy génère automatiquement des certificats Let's Encrypt valides si :
+
 1. `myelectricaldata.fr` pointe vers ton serveur (DNS configuré)
 2. Les ports 80 et 443 sont accessibles depuis Internet
 3. Le domaine est un vrai domaine (pas juste dans `/etc/hosts`)
@@ -325,5 +329,6 @@ docker compose up -d
 ## 🆘 Support
 
 Pour plus d'aide :
-- Documentation Caddy : https://caddyserver.com/docs
-- Documentation Docker Compose : https://docs.docker.com/compose/
+
+- Documentation Caddy : <https://caddyserver.com/docs>
+- Documentation Docker Compose : <https://docs.docker.com/compose/>

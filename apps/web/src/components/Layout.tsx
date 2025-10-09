@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Home, LogOut, Moon, Sun, Heart, Shield, BookOpen, Calculator, Users, Menu, X, Calendar, ChevronLeft, ChevronRight, HelpCircle, UserCircle } from 'lucide-react'
+import { Home, LogOut, Moon, Sun, Heart, Shield, BookOpen, Calculator, Users, Menu, X, Calendar, ChevronLeft, ChevronRight, HelpCircle, UserCircle, Zap, TrendingUp } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useThemeStore } from '@/stores/themeStore'
@@ -18,9 +18,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // Menu items
   const menuItems = [
     { to: '/dashboard', icon: Home, label: 'Tableau de bord' },
+    { to: '/consumption', icon: TrendingUp, label: 'Consommation' },
     { to: '/simulator', icon: Calculator, label: 'Simulateur' },
     { to: '/contribute', icon: Users, label: 'Contribuer' },
     { to: '/tempo', icon: Calendar, label: 'Tempo' },
+    { to: '/ecowatt', icon: Zap, label: 'EcoWatt' },
   ]
 
   return (
@@ -325,14 +327,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Main Content */}
         <main className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
-          <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-6 max-w-[1920px]">
-            {user && (
-              <div className="mb-6">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Connecté en tant que <span className="font-medium">{user.email}</span>
-                </p>
-              </div>
-            )}
+          <div className={`container mx-auto px-3 sm:px-4 lg:px-6 max-w-[1920px] ${location.pathname.startsWith('/admin') || location.pathname.startsWith('/api-docs') ? 'pt-3 pb-6' : 'py-6'}`}>
             {children}
 
             {/* Spacer to push footer down */}

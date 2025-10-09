@@ -4,11 +4,6 @@ import type { APIResponse } from '@/types/api'
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 const DEBUG = import.meta.env.VITE_DEBUG === 'true'
 
-// Force HTTPS for production
-if (typeof window !== 'undefined' && window.location.protocol === 'https:' && API_BASE_URL.startsWith('http://')) {
-  console.error('WARNING: API_BASE_URL is HTTP but page is HTTPS. This will cause Mixed Content errors.')
-}
-
 class APIClient {
   private client: AxiosInstance
 
@@ -23,10 +18,8 @@ class APIClient {
       console.log('=' .repeat(60))
     }
 
-    // Ensure HTTPS in production
-    let finalBaseURL = API_BASE_URL.startsWith('/') && typeof window !== 'undefined'
-      ? `${window.location.protocol}//${window.location.host}${API_BASE_URL}`
-      : API_BASE_URL
+    // Use API_BASE_URL as-is (already contains protocol and port)
+    let finalBaseURL = API_BASE_URL
 
     // Ensure baseURL ends with / for proper URL joining
     if (!finalBaseURL.endsWith('/')) {
@@ -38,6 +31,8 @@ class APIClient {
       headers: {
         'Content-Type': 'application/json',
       },
+      // Force HTTP adapter to prevent browser from upgrading to HTTPS
+      adapter: 'xhr',
     })
 
     // Request interceptor to add auth token
@@ -78,7 +73,7 @@ class APIClient {
         url: url,
         fullUrl: this.client.defaults.baseURL + url
       })
-    }
+    }    
     const response = await this.client.get<APIResponse<T>>(url, { params })
     return response.data
   }

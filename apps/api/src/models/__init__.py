@@ -6,7 +6,9 @@ from .email_verification import EmailVerificationToken
 from .password_reset import PasswordResetToken
 from .energy_provider import EnergyProvider, EnergyOffer, OfferContribution
 from .tempo_day import TempoDay, TempoColor
+from .ecowatt import EcoWatt
 from .role import Role, Permission, role_permissions
+from .refresh_tracker import RefreshTracker
 
 __all__ = [
     "Base",
@@ -20,7 +22,9 @@ __all__ = [
     "OfferContribution",
     "TempoDay",
     "TempoColor",
+    "EcoWatt",
     "Role",
     "Permission",
     "role_permissions",
+    "RefreshTracker",
 ]

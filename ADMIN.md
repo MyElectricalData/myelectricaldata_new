@@ -11,6 +11,7 @@ ADMIN_EMAILS=admin@example.com,another.admin@example.com
 ```
 
 **Caractéristiques** :
+
 - Support de plusieurs administrateurs (séparés par des virgules)
 - Vérification insensible à la casse
 - Un utilisateur doit avoir un compte pour accéder au panel admin
@@ -26,6 +27,7 @@ Le panel admin est accessible à : `https://myelectricaldata.fr/admin`
 ### 1. Statistiques globales
 
 Affichage en temps réel :
+
 - **Nombre total d'utilisateurs**
 - **Nombre total de PDL** (Points De Livraison)
 - **Total d'appels API** effectués
@@ -33,6 +35,7 @@ Affichage en temps réel :
 ### 2. Liste des utilisateurs
 
 Tableau détaillé avec :
+
 - **Email** de l'utilisateur
 - **Client ID** pour identification
 - **Nombre de PDL** associés
@@ -43,6 +46,7 @@ Tableau détaillé avec :
 ### 3. Gestion des quotas
 
 Chaque utilisateur dispose d'un bouton **"Reset Quota"** permettant de :
+
 - Réinitialiser le compteur de requêtes sans cache
 - Réinitialiser le compteur de requêtes avec cache
 - Donner immédiatement accès aux quotas complets
@@ -67,6 +71,7 @@ Le panel se rafraîchit automatiquement toutes les **30 secondes** pour afficher
 Liste tous les utilisateurs avec leurs statistiques.
 
 **Réponse** :
+
 ```json
 {
   "success": true,
@@ -93,6 +98,7 @@ Liste tous les utilisateurs avec leurs statistiques.
 Réinitialise les quotas journaliers d'un utilisateur.
 
 **Réponse** :
+
 ```json
 {
   "success": true,
@@ -105,6 +111,7 @@ Réinitialise les quotas journaliers d'un utilisateur.
 Retourne les statistiques globales de la plateforme.
 
 **Réponse** :
+
 ```json
 {
   "success": true,

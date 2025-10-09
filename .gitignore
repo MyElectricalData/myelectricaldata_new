@@ -69,3 +69,5 @@ caddy_config/
 
 .env.api
 .env.web
+
+tmp/

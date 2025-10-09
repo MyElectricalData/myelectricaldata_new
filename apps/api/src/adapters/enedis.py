@@ -129,6 +129,18 @@ class EnedisAdapter:
                 print(f"[ENEDIS API ERROR] Response headers: {dict(e.response.headers)}")
                 print(f"[ENEDIS API ERROR] Response body: {e.response.text}")
                 print("=" * 80)
+
+            # Parse JSON error from Enedis (e.g., ADAM-ERR0123)
+            try:
+                error_json = e.response.json()
+                if "error" in error_json:
+                    # Create a custom exception with Enedis error details
+                    error_msg = f"{error_json.get('error')}: {error_json.get('error_description', 'Unknown error')}"
+                    raise ValueError(error_msg) from e
+            except (KeyError, TypeError):
+                # Failed to parse JSON, continue with original exception
+                pass
+
             raise
         except Exception as e:
             if settings.DEBUG:

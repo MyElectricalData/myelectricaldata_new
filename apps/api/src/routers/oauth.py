@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, UTC
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Path
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,8 +41,8 @@ async def get_authorize_url(
 
 @router.get("/callback", response_model=APIResponse)
 async def oauth_callback(
-    code: str = Query(..., description="Authorization code from Enedis"),
-    state: str = Query(..., description="State parameter containing user_id:usage_point_id"),
+    code: str = Query(..., description="Authorization code from Enedis", openapi_examples={"auth_code": {"summary": "Authorization code", "value": "abc123xyz789"}}),
+    state: str = Query(..., description="State parameter containing user_id:usage_point_id", openapi_examples={"state_example": {"summary": "State parameter", "value": "550e8400-e29b-41d4-a716-446655440000:12345678901234"}}),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Handle OAuth callback from Enedis"""
@@ -121,7 +121,9 @@ async def oauth_callback(
 
 @router.post("/refresh/{usage_point_id}", response_model=APIResponse)
 async def refresh_token(
-    usage_point_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}}),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Refresh access token for a usage point"""
     # Verify PDL ownership

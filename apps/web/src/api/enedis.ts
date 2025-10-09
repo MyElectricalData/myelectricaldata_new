@@ -7,6 +7,7 @@ export interface EnedisDataParams extends Record<string, unknown> {
   use_cache?: boolean
 }
 
+
 export const enedisApi = {
   getConsumptionDaily: async (usagePointId: string, params: EnedisDataParams) => {
     return apiClient.get(`enedis/consumption/daily/${usagePointId}`, params)

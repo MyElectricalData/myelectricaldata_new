@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { enedisApi } from '@/api/enedis'
 import { X, Home, FileText, Loader2, Zap, TrendingUp, Battery, Sun, BarChart3 } from 'lucide-react'
@@ -78,12 +79,12 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
   const isTesting = testConsumptionDaily.isPending || testConsumptionDetail.isPending ||
                      testMaxPower.isPending || testProductionDaily.isPending || testProductionDetail.isPending
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+  return createPortal(
+    <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/50" style={{ zIndex: 9999 }}>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative">
         {/* Header */}
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Détails du PDL</h2>
+          <h2 className="text-xl font-semibold">Détails du Point de livraison</h2>
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"
@@ -110,14 +111,14 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
 
           {!isLoading && (
             <>
-              {/* Address */}
-              {addressData?.success && addressData.data && (
-                <div className="card">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Home className="text-primary-600" size={20} />
-                    <h3 className="font-semibold">Adresse</h3>
-                  </div>
-                  <div className="space-y-2 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {addressData?.success && addressData.data ? (
+                  <div className="card">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Home className="text-primary-600" size={20} />
+                      <h3 className="font-semibold">Adresse</h3>
+                    </div>
+                    <div className="space-y-2 text-sm">
                     {(() => {
                       const data = addressData.data as any
                       const usagePoint = data?.customer?.usage_points?.[0]?.usage_point
@@ -180,18 +181,17 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
                         </>
                       )
                     })()}
+                    </div>
                   </div>
-                </div>
-              )}
+                ) : null}
 
-              {/* Contract */}
-              {contractData?.success && contractData.data && (
-                <div className="card">
-                  <div className="flex items-center gap-2 mb-3">
-                    <FileText className="text-primary-600" size={20} />
-                    <h3 className="font-semibold">Contrat</h3>
-                  </div>
-                  <div className="space-y-2 text-sm">
+                {contractData?.success && contractData.data ? (
+                  <div className="card">
+                    <div className="flex items-center gap-2 mb-3">
+                      <FileText className="text-primary-600" size={20} />
+                      <h3 className="font-semibold">Contrat</h3>
+                    </div>
+                    <div className="space-y-2 text-sm">
                     {(() => {
                       const data = contractData.data as any
                       const contract = data?.customer?.usage_points?.[0]?.contracts
@@ -253,11 +253,11 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
                         </>
                       )
                     })()}
+                    </div>
                   </div>
-                </div>
-              )}
+                ) : null}
+              </div>
 
-              {/* Errors */}
               {!contractData?.success && (
                 <div className="card bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
                   <p className="text-red-800 dark:text-red-200 text-sm">
@@ -381,6 +381,7 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

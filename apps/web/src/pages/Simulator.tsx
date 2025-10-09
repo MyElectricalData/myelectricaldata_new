@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Calculator, AlertCircle, Loader2, ChevronDown, ChevronUp, FileDown } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
 import { enedisApi } from '@/api/enedis'
 import { energyApi, type EnergyProvider, type EnergyOffer } from '@/api/energy'
@@ -141,11 +141,12 @@ export default function Simulator() {
   // Selected PDL
   const [selectedPdl, setSelectedPdl] = useState<string>('')
 
+  const queryClient = useQueryClient()
+
   // Simulation state
   const [isSimulating, setIsSimulating] = useState(false)
   const [simulationResult, setSimulationResult] = useState<any>(null)
-  const [loadingProgress, setLoadingProgress] = useState<string[]>([])
-  const [currentProgress, setCurrentProgress] = useState({ current: 0, total: 0 })
+  const [fetchProgress, setFetchProgress] = useState<{current: number, total: number, phase: string}>({current: 0, total: 0, phase: ''})
   const [simulationError, setSimulationError] = useState<string | null>(null)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
@@ -171,8 +172,7 @@ export default function Simulator() {
 
     setIsSimulating(true)
     setSimulationResult(null)
-    setLoadingProgress([])
-    setCurrentProgress({ current: 0, total: 0 })
+    setFetchProgress({current: 0, total: 0, phase: ''})
     setSimulationError(null)
 
     try {
@@ -216,34 +216,71 @@ export default function Simulator() {
         }
       }
 
-      setCurrentProgress({ current: 0, total: periods.length })
-      setLoadingProgress((prev) => [...prev, `📊 ${periods.length} périodes de 7 jours à récupérer`])
+      setFetchProgress({ current: 0, total: periods.length, phase: 'Récupération des données de consommation...' })
 
       console.log(`Fetching ${periods.length} periods of consumption data`)
 
       // Récupérer les données pour chaque période
       const allData: any[] = []
+      let stoppedEarly = false
+      let earliestDataDate: string | null = null
+
       for (let i = 0; i < periods.length; i++) {
         const period = periods[i]
-        const progressMsg = `⏳ Récupération période ${i + 1}/${periods.length} (${period.start} → ${period.end})`
-        setLoadingProgress((prev) => [...prev, progressMsg])
-        setCurrentProgress({ current: i + 1, total: periods.length })
+        setFetchProgress({
+          current: i + 1,
+          total: periods.length,
+          phase: `${period.start} → ${period.end} (${i + 1}/${periods.length})`
+        })
 
         console.log(`Fetching period ${i + 1}/${periods.length}: ${period.start} to ${period.end}`)
 
-        const response = await enedisApi.getConsumptionDetail(selectedPdl, {
-          start: period.start,
-          end: period.end,
-          use_cache: true,
-        })
+        // Check if data is already in React Query cache
+        const cacheKey = ['consumption-detail', selectedPdl, period.start, period.end]
+        let response = queryClient.getQueryData(cacheKey) as any
+
+        if (response) {
+          console.log(`✅ [Cache HIT] Using cached data for ${period.start} → ${period.end}`)
+        }
+
+        if (!response) {
+          console.log(`❌ [Cache MISS] Fetching from API for ${period.start} → ${period.end}`)
+          // Not in cache, fetch from API and cache it
+          response = await queryClient.fetchQuery({
+            queryKey: cacheKey,
+            queryFn: () => enedisApi.getConsumptionDetail(selectedPdl, {
+              start: period.start,
+              end: period.end,
+              use_cache: true,
+            }),
+            staleTime: 7 * 24 * 60 * 60 * 1000,
+          })
+        }
 
         if (!response.success || !response.data) {
-          // Check if it's a rate limit error
+          // Check error type
           const errorCode = response.error?.code
+          const errorMessage = response.error?.message || ''
+
+          console.log('[Simulator] API Error detected:', { errorCode, errorMessage, response })
+
+          // Check for Enedis error ADAM-ERR0123 (period before meter activation)
+          if (errorMessage.includes('ADAM-ERR0123') || errorMessage.includes('anterior to the meter')) {
+            console.log(`⚠️ Stopping simulation at ${period.start} - meter not activated yet. Processing data already collected.`)
+            stoppedEarly = true
+            if (allData.length > 0 && !earliestDataDate) {
+              // Track the earliest period with data
+              earliestDataDate = period.end
+            }
+            break // Stop fetching but process what we have
+          }
+
+          // Check for rate limit error
           if (errorCode === 'RATE_LIMIT_EXCEEDED') {
             throw new Error(`Quota d'appels API dépassé. Vous avez atteint la limite quotidienne d'appels à l'API Enedis. Veuillez réessayer demain ou contactez l'administrateur pour augmenter votre quota.`)
           }
-          throw new Error(`Impossible de récupérer les données pour la période ${period.start} - ${period.end}. ${response.error?.message || ''}`)
+
+          throw new Error(`Impossible de récupérer les données pour la période ${period.start} - ${period.end}. ${errorMessage}`)
         }
 
         // Log the number of points in this period
@@ -252,15 +289,13 @@ export default function Simulator() {
         console.log(`Period ${i + 1}/${periods.length} (${period.start} to ${period.end}): ${pointsCount} points`)
 
         allData.push(response.data)
-        setLoadingProgress((prev) => [...prev, `✅ Période ${i + 1}/${periods.length} récupérée`])
       }
 
-      setLoadingProgress((prev) => [...prev, '🧮 Calcul des simulations en cours...'])
+      setFetchProgress({ current: periods.length, total: periods.length, phase: 'Calcul des simulations en cours...' })
 
       // Fetch TEMPO colors for the period
       let tempoColors: TempoDay[] = []
       try {
-        setLoadingProgress((prev) => [...prev, '🎨 Récupération des couleurs TEMPO...'])
         const tempoResponse = await tempoApi.getDays(
           yearStart.toISOString().split('T')[0],
           endDate.toISOString().split('T')[0]
@@ -269,11 +304,9 @@ export default function Simulator() {
         if (tempoResponse.success && Array.isArray(tempoResponse.data)) {
           tempoColors = tempoResponse.data
           console.log('[TEMPO API] First 3 days:', JSON.stringify(tempoColors.slice(0, 3), null, 2))
-          setLoadingProgress((prev) => [...prev, `✅ ${tempoColors.length} couleurs TEMPO récupérées`])
         }
       } catch (error) {
         console.warn('Could not fetch TEMPO colors:', error)
-        setLoadingProgress((prev) => [...prev, '⚠️ Couleurs TEMPO non disponibles, calcul TEMPO simplifié'])
       }
 
       // Get subscribed power from selected PDL
@@ -292,8 +325,6 @@ export default function Simulator() {
           })
         : offersData || []
 
-      setLoadingProgress((prev) => [...prev, `📋 ${filteredOffers.length} offres à simuler`])
-
       if (filteredOffers.length === 0) {
         throw new Error('Aucune offre disponible pour la puissance souscrite de votre PDL')
       }
@@ -307,12 +338,10 @@ export default function Simulator() {
         throw new Error('Aucun résultat de simulation généré')
       }
 
-      setLoadingProgress((prev) => [...prev, '✅ Simulation terminée !'])
       setSimulationResult(result)
     } catch (error: any) {
       console.error('Simulation error:', error)
       const errorMessage = error.message || 'Erreur inconnue'
-      setLoadingProgress((prev) => [...prev, `❌ Erreur: ${errorMessage}`])
       setSimulationError(`Erreur lors de la simulation: ${errorMessage}`)
     } finally {
       setIsSimulating(false)
@@ -351,7 +380,7 @@ export default function Simulator() {
             const hour = timePart ? parseInt(timePart.split(':')[0]) : 0
 
             // Get interval_length for this reading (PT30M, PT60M, etc.)
-            const intervalLength = reading.interval_length || 'PT30M'
+            const intervalLength = reading.interval_length || 'sont à '
             const intervalMatch = intervalLength.match(/PT(\d+)M/)
             const intervalMinutes = intervalMatch ? parseInt(intervalMatch[1]) : 30
 
@@ -732,17 +761,24 @@ export default function Simulator() {
 
   if (!pdlsData || pdlsData.length === 0) {
     return (
-      <div className="w-full">
-        <div className="bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 dark:border-yellow-700 rounded-lg p-6">
-          <div className="flex items-center gap-3">
-            <AlertCircle className="text-yellow-600 dark:text-yellow-400" size={24} />
-            <div>
-              <h3 className="font-semibold text-yellow-800 dark:text-yellow-300">Aucun PDL configuré</h3>
-              <p className="text-yellow-700 dark:text-yellow-400">
-                Vous devez d'abord ajouter un point de livraison (PDL) depuis votre tableau de bord.
-              </p>
-            </div>
-          </div>
+      <div className="space-y-6">
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2 text-gray-900 dark:text-gray-100">
+            <Calculator className="text-primary-600 dark:text-primary-400" size={28} />
+            Simulateur tarifaire
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Comparez les offres d'énergie et trouvez la meilleure pour votre consommation
+          </p>
+        </div>
+        <div className="card p-8 text-center">
+          <p className="text-gray-600 dark:text-gray-400">
+            Aucun PDL disponible.{' '}
+            <a href="/dashboard" className="text-primary-600 dark:text-primary-400 hover:underline">
+              Veuillez ajouter un point de livraison depuis votre tableau de bord.
+            </a>
+          </p>
         </div>
       </div>
     )
@@ -1311,9 +1347,7 @@ export default function Simulator() {
           {isSimulating ? (
             <span className="flex items-center justify-center gap-2">
               <Loader2 className="animate-spin" size={20} />
-              {currentProgress.total > 0
-                ? `Chargement ${currentProgress.current}/${currentProgress.total}...`
-                : 'Simulation en cours...'}
+              Récupération en cours...
             </span>
           ) : (
             'Lancer la simulation'
@@ -1321,40 +1355,29 @@ export default function Simulator() {
         </button>
 
         {/* Loading Progress */}
-        {isSimulating && loadingProgress.length > 0 && (
-          <div className="mt-6 card bg-gray-50 dark:bg-gray-800/50">
-            <h3 className="font-semibold mb-3 flex items-center gap-2">
-              <Loader2 className="animate-spin text-primary-600" size={20} />
-              Progression du chargement
-            </h3>
-            <div className="space-y-1 max-h-64 overflow-y-auto">
-              {[...loadingProgress].reverse().map((message, index) => (
-                <div
-                  key={index}
-                  className="text-sm text-gray-700 dark:text-gray-300 font-mono py-1"
-                >
-                  {message}
+        {isSimulating && fetchProgress.total > 0 && (
+          <div className="mt-6 card p-8">
+            <div className="flex flex-col items-center justify-center gap-4">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+              <p className="text-gray-600 dark:text-gray-400">
+                Chargement des données de consommation... Cela peut prendre quelques minutes.
+              </p>
+              <div className="w-full max-w-md">
+                <div className="mb-2 flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                  <span>{fetchProgress.phase}</span>
+                  <span>{Math.round((fetchProgress.current / fetchProgress.total) * 100)}%</span>
                 </div>
-              ))}
-            </div>
-            {currentProgress.total > 0 && (
-              <div className="mt-4">
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Progression</span>
-                  <span className="font-medium">
-                    {Math.round((currentProgress.current / currentProgress.total) * 100)}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                   <div
-                    className="bg-primary-600 h-2.5 rounded-full transition-all duration-300"
-                    style={{
-                      width: `${(currentProgress.current / currentProgress.total) * 100}%`,
-                    }}
+                    className="bg-primary-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${(fetchProgress.current / fetchProgress.total) * 100}%` }}
                   ></div>
                 </div>
+                <p className="text-sm text-gray-500 dark:text-gray-500 mt-2 text-center">
+                  ({fetchProgress.current}/{fetchProgress.total} requêtes API)
+                </p>
               </div>
-            )}
+            </div>
           </div>
         )}
 

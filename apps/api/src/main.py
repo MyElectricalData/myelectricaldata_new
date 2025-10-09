@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 
 import httpx
 from fastapi import Depends, FastAPI, Query, Request, status
@@ -11,17 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .adapters import enedis_adapter
 from .config import settings
+from .logging_config import setup_logging
 from .models import User
 from .models.database import get_db, init_db
 from .routers import (
     accounts_router,
     admin_router,
+    ecowatt_router,
     enedis_router,
     energy_offers_router,
+    logs_router,
     oauth_router,
     pdl_router,
-    tempo_router,
     roles_router,
+    tempo_router,
 )
 from .schemas import APIResponse, ErrorDetail, HealthCheckResponse
 from .services import cache_service
@@ -31,6 +35,9 @@ from .services.scheduler import start_background_tasks
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
+    # Setup logging first
+    setup_logging()
+
     # Startup
     await init_db()
     await cache_service.connect()
@@ -191,7 +198,9 @@ app.include_router(enedis_router)
 app.include_router(admin_router)
 app.include_router(energy_offers_router)
 app.include_router(tempo_router)
+app.include_router(ecowatt_router)
 app.include_router(roles_router)
+app.include_router(logs_router)
 
 
 # Consent callback endpoint

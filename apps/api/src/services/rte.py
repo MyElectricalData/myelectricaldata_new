@@ -1,16 +1,17 @@
-"""RTE API Service for TEMPO calendar data"""
+"""RTE API Service for TEMPO calendar and EcoWatt data"""
 import httpx
-from datetime import datetime, timedelta, UTC
-from typing import List, Dict, Any
+from datetime import datetime, timedelta, UTC, date
+from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from zoneinfo import ZoneInfo
 from ..config import settings
 from ..models import TempoDay, TempoColor
+from ..models.ecowatt import EcoWatt, EcoWattCreate
 
 
 class RTEService:
-    """Service to fetch and cache TEMPO calendar data from RTE API"""
+    """Service to fetch and cache TEMPO calendar and EcoWatt data from RTE API"""
 
     def __init__(self):
         self.base_url = settings.RTE_BASE_URL
@@ -18,8 +19,11 @@ class RTEService:
         self.client_secret = settings.RTE_CLIENT_SECRET
         self.token_url = f"{self.base_url}/token/oauth/"
         self.tempo_url = f"{self.base_url}/open_api/tempo_like_supply_contract/v1/tempo_like_calendars"
+        self.ecowatt_url = f"{self.base_url}/open_api/ecowatt/v5/signals"
         self._access_token: str | None = None
         self._token_expires_at: datetime | None = None
+        self._last_ecowatt_fetch: datetime | None = None
+        self._ecowatt_fetch_min_interval = timedelta(minutes=15)  # Min 15 minutes between API calls
 
     async def _get_access_token(self) -> str:
         """Get OAuth2 access token for RTE API"""
@@ -245,6 +249,182 @@ class RTEService:
         result = await db.execute(delete(TempoDay).where(TempoDay.date < cutoff_date))
         await db.commit()
         return result.rowcount
+
+    # ========== EcoWatt Methods ==========
+
+    async def fetch_ecowatt_signals(self) -> Dict[str, Any]:
+        """
+        Fetch EcoWatt signals from RTE API
+
+        Returns:
+            Dictionary containing EcoWatt signals
+        """
+        token = await self._get_access_token()
+
+        print(f"[RTE API] Requesting EcoWatt data...")
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                self.ecowatt_url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/json",
+                },
+            )
+            print(f"[RTE API] EcoWatt response status: {response.status_code}")
+
+            if response.status_code != 200:
+                print(f"[RTE API] EcoWatt error response: {response.text}")
+
+            response.raise_for_status()
+            data = response.json()
+
+            print(f"[RTE API] Received EcoWatt signals")
+            return data
+
+    async def update_ecowatt_cache(self, db: AsyncSession) -> int:
+        """
+        Update EcoWatt signals cache in database
+
+        Args:
+            db: Database session
+
+        Returns:
+            Number of signals updated
+        """
+        try:
+            # Check if we need to wait before making another API call (rate limiting)
+            now = datetime.now(UTC)
+            if self._last_ecowatt_fetch:
+                time_since_last_fetch = now - self._last_ecowatt_fetch
+                if time_since_last_fetch < self._ecowatt_fetch_min_interval:
+                    remaining = self._ecowatt_fetch_min_interval - time_since_last_fetch
+                    print(f"[RTE] EcoWatt API rate limit: last fetch was {time_since_last_fetch.total_seconds():.0f}s ago, need to wait {remaining.total_seconds():.0f}s more")
+                    return 0
+
+            # Fetch EcoWatt data from RTE API
+            ecowatt_data = await self.fetch_ecowatt_signals()
+
+            # Update last fetch timestamp
+            self._last_ecowatt_fetch = now
+
+            if not ecowatt_data or "signals" not in ecowatt_data:
+                print("[RTE] No EcoWatt signals received")
+                return 0
+
+            signals = ecowatt_data["signals"]
+            updated_count = 0
+
+            for signal in signals:
+                try:
+                    # Extract signal data and convert to UTC naive datetime
+                    generation_datetime = datetime.fromisoformat(signal["GenerationFichier"]).astimezone(UTC).replace(tzinfo=None)
+                    periode = datetime.fromisoformat(signal["jour"]).astimezone(UTC).replace(tzinfo=None)
+
+                    # Extract hourly values and map them to hours (pas = hour)
+                    # Initialize with 24 hours, default value 0
+                    hourly_values = [0] * 24
+                    for hour_data in signal.get("values", []):
+                        pas = hour_data["pas"]  # pas 0 = minuit, pas 1 = 1h, etc.
+                        hvalue = hour_data["hvalue"]
+                        if 0 <= pas <= 23:
+                            hourly_values[pas] = hvalue
+
+                    # Determine hdebut and hfin from actual data
+                    signal_values = signal.get("values", [])
+                    hdebut = min((v["pas"] for v in signal_values), default=0)
+                    hfin = max((v["pas"] for v in signal_values), default=23)
+
+                    # Prepare data for database
+                    ecowatt_create = {
+                        "generation_datetime": generation_datetime,
+                        "periode": periode,
+                        "hdebut": hdebut,
+                        "hfin": hfin,
+                        "pas": 60,  # Always 60 minutes (1 hour step)
+                        "dvalue": signal["dvalue"],
+                        "message": signal.get("message", ""),
+                        "values": hourly_values  # Array of 24 values indexed by hour
+                    }
+
+                    # Check if signal for this day already exists
+                    result = await db.execute(
+                        select(EcoWatt).where(EcoWatt.periode == periode)
+                    )
+                    existing = result.scalar_one_or_none()
+
+                    if existing:
+                        # Update existing record
+                        for key, value in ecowatt_create.items():
+                            setattr(existing, key, value)
+                        existing.updated_at = datetime.now(UTC).replace(tzinfo=None)
+                    else:
+                        # Create new record
+                        ecowatt = EcoWatt(**ecowatt_create)
+                        db.add(ecowatt)
+
+                    updated_count += 1
+
+                except Exception as e:
+                    print(f"Error processing EcoWatt signal {signal}: {e}")
+                    continue
+
+            await db.commit()
+            print(f"[RTE] Updated {updated_count} EcoWatt signals")
+            return updated_count
+
+        except Exception as e:
+            await db.rollback()
+            print(f"[RTE] Error updating EcoWatt cache: {e}")
+            import traceback
+            traceback.print_exc()
+            return 0
+
+    async def get_ecowatt_signals(
+        self, db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None
+    ) -> List[EcoWatt]:
+        """
+        Get EcoWatt signals from database cache
+
+        Args:
+            db: Database session
+            start_date: Optional start date filter
+            end_date: Optional end date filter
+
+        Returns:
+            List of EcoWatt objects
+        """
+        query = select(EcoWatt).order_by(EcoWatt.periode)
+
+        if start_date:
+            query = query.where(EcoWatt.periode >= start_date)
+        if end_date:
+            query = query.where(EcoWatt.periode <= end_date)
+
+        result = await db.execute(query)
+        return result.scalars().all()
+
+    async def get_ecowatt_signal(self, db: AsyncSession, target_date: date) -> Optional[EcoWatt]:
+        """
+        Get EcoWatt signal for a specific date
+
+        Args:
+            db: Database session
+            target_date: Date to query
+
+        Returns:
+            EcoWatt object or None
+        """
+        # Convert date to datetime for comparison
+        target_datetime = datetime.combine(target_date, datetime.min.time())
+
+        result = await db.execute(
+            select(EcoWatt).where(
+                EcoWatt.periode >= target_datetime,
+                EcoWatt.periode < target_datetime + timedelta(days=1)
+            )
+        )
+        return result.scalar_one_or_none()
 
 
 # Singleton instance

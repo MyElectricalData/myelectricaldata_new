@@ -28,24 +28,14 @@ export default defineConfig(({ mode }) => {
       }
     },
     server: {
-      port: 443,
+      port: 5173,
       host: '0.0.0.0',
-      https: {
-        key: readFileSync(resolve(__dirname, 'localhost-key.pem')),
-        cert: readFileSync(resolve(__dirname, 'localhost.pem')),
+      watch: {
+        usePolling: true,
+        interval: 1000,
       },
-      proxy: {
-        '/api': {
-          target: backendUrl,
-          changeOrigin: true,
-          secure: false,
-          rewrite: (path) => path.replace(/^\/api/, ''),
-        },
-        '^/(docs|openapi.json|consent|redoc)': {
-          target: backendUrl,
-          changeOrigin: true,
-          secure: false,
-        },
+      hmr: {
+        clientPort: 8000,
       },
     },
     test: {

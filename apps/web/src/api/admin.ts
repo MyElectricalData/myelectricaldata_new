@@ -16,4 +16,16 @@ export const adminApi = {
   getGlobalStats: async () => {
     return apiClient.get('admin/stats')
   },
+
+  getLogs: async (level?: string, lines?: number) => {
+    const params: Record<string, string | number> = {}
+    if (level) params.level = level
+    if (lines) params.lines = lines
+    return apiClient.get('admin/logs', params)
+  },
+}
+
+export const getAdminLogs = async (level?: string, lines?: number) => {
+  const response = await adminApi.getLogs(level, lines)
+  return response.data
 }

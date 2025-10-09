@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path, Body
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -104,8 +104,8 @@ async def list_permissions(
 
 @router.put("/{role_id}/permissions", response_model=APIResponse)
 async def update_role_permissions(
-    role_id: str,
-    permission_ids: list[str],
+    role_id: str = Path(..., description="Role ID (UUID)", openapi_examples={"role_uuid": {"summary": "Role UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    permission_ids: list[str] = Body(..., embed=True, openapi_examples={"permissions": {"summary": "Permission IDs", "value": ["550e8400-e29b-41d4-a716-446655440001", "550e8400-e29b-41d4-a716-446655440002"]}}),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
@@ -164,8 +164,8 @@ async def update_role_permissions(
 
 @router.put("/users/{user_id}/role", response_model=APIResponse)
 async def update_user_role(
-    user_id: str,
-    request_data: dict,
+    user_id: str = Path(..., description="User ID (UUID)", openapi_examples={"user_uuid": {"summary": "User UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    request_data: dict = Body(..., openapi_examples={"assign_role": {"summary": "Assign role to user", "value": {"role_id": "550e8400-e29b-41d4-a716-446655440001"}}}),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:

@@ -1,5 +1,5 @@
 from datetime import datetime, UTC
-from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
+from fastapi import APIRouter, Depends, Query, HTTPException, status, Request, Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import User, Token, PDL
@@ -9,7 +9,15 @@ from ..middleware import get_current_user
 from ..adapters import enedis_adapter
 from ..services import cache_service, rate_limiter
 
-router = APIRouter(prefix="/enedis", tags=["Enedis Data"])
+router = APIRouter(
+    prefix="/enedis",
+    tags=["Enedis Data"],
+    responses={
+        401: {"description": "Unauthorized - Invalid or missing authentication"},
+        403: {"description": "Forbidden - PDL does not belong to user"},
+        429: {"description": "Rate limit exceeded"},
+    },
+)
 
 
 async def verify_pdl_ownership(usage_point_id: str, user: User, db: AsyncSession) -> bool:
@@ -119,10 +127,66 @@ async def get_valid_token(usage_point_id: str, user: User, db: AsyncSession) -> 
 @router.get("/consumption/daily/{usage_point_id}", response_model=APIResponse)
 async def get_consumption_daily(
     request: Request,
-    usage_point_id: str,
-    start: str = Query(..., description="Start date (YYYY-MM-DD)"),
-    end: str = Query(..., description="End date (YYYY-MM-DD)"),
-    use_cache: bool = Query(False, description="Use cached data if available"),
+    usage_point_id: str = Path(
+        ...,
+        description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.",
+        openapi_examples={
+            "standard_pdl": {
+                "summary": "PDL Standard",
+                "description": "Un identifiant PDL typique à 14 chiffres",
+                "value": "12345678901234"
+            },
+            "test_pdl": {
+                "summary": "PDL Test",
+                "description": "PDL de test pour le développement",
+                "value": "00000000000000"
+            }
+        }
+    ),
+    start: str = Query(
+        ...,
+        description="Start date (YYYY-MM-DD)",
+        openapi_examples={
+            "current_year": {
+                "summary": "Start of 2024",
+                "value": "2024-01-01"
+            },
+            "recent_month": {
+                "summary": "Start of current month",
+                "value": "2024-10-01"
+            }
+        }
+    ),
+    end: str = Query(
+        ...,
+        description="End date (YYYY-MM-DD)",
+        openapi_examples={
+            "current_year": {
+                "summary": "End of 2024",
+                "value": "2024-12-31"
+            },
+            "recent_month": {
+                "summary": "End of current month",
+                "value": "2024-10-31"
+            }
+        }
+    ),
+    use_cache: bool = Query(
+        False,
+        description="Use cached data if available",
+        openapi_examples={
+            "with_cache": {
+                "summary": "Use cache",
+                "description": "Retrieve from cache if available (recommended)",
+                "value": True
+            },
+            "without_cache": {
+                "summary": "Fresh data",
+                "description": "Fetch fresh data from Enedis API",
+                "value": False
+            }
+        }
+    ),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -165,10 +229,38 @@ async def get_consumption_daily(
 @router.get("/consumption/detail/{usage_point_id}", response_model=APIResponse)
 async def get_consumption_detail(
     request: Request,
-    usage_point_id: str,
-    start: str = Query(..., description="Start date (YYYY-MM-DD)"),
-    end: str = Query(..., description="End date (YYYY-MM-DD)"),
-    use_cache: bool = Query(False, description="Use cached data if available"),
+    usage_point_id: str = Path(
+        ...,
+        description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.",
+        openapi_examples={
+            "standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"},
+            "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}
+        }
+    ),
+    start: str = Query(
+        ...,
+        description="Start date (YYYY-MM-DD)",
+        openapi_examples={
+            "current_year": {"summary": "Start of 2024", "value": "2024-01-01"},
+            "recent_week": {"summary": "Week start", "value": "2024-10-01"}
+        }
+    ),
+    end: str = Query(
+        ...,
+        description="End date (YYYY-MM-DD)",
+        openapi_examples={
+            "current_year": {"summary": "End of 2024", "value": "2024-12-31"},
+            "recent_week": {"summary": "Week end", "value": "2024-10-07"}
+        }
+    ),
+    use_cache: bool = Query(
+        False,
+        description="Use cached data if available",
+        openapi_examples={
+            "with_cache": {"summary": "Use cache", "value": True},
+            "without_cache": {"summary": "Fresh data", "value": False}
+        }
+    ),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -211,10 +303,10 @@ async def get_consumption_detail(
 @router.get("/power/{usage_point_id}", response_model=APIResponse)
 async def get_max_power(
     request: Request,
-    usage_point_id: str,
-    start: str = Query(..., description="Start date (YYYY-MM-DD)"),
-    end: str = Query(..., description="End date (YYYY-MM-DD)"),
-    use_cache: bool = Query(False, description="Use cached data if available"),
+    usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
+    start: str = Query(..., description="Start date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "Start of 2024", "value": "2024-01-01"}, "recent_month": {"summary": "Month start", "value": "2024-10-01"}}),
+    end: str = Query(..., description="End date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "End of 2024", "value": "2024-12-31"}, "recent_month": {"summary": "Month end", "value": "2024-10-31"}}),
+    use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -253,10 +345,10 @@ async def get_max_power(
 @router.get("/production/daily/{usage_point_id}", response_model=APIResponse)
 async def get_production_daily(
     request: Request,
-    usage_point_id: str,
-    start: str = Query(..., description="Start date (YYYY-MM-DD)"),
-    end: str = Query(..., description="End date (YYYY-MM-DD)"),
-    use_cache: bool = Query(False, description="Use cached data if available"),
+    usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
+    start: str = Query(..., description="Start date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "Start of 2024", "value": "2024-01-01"}, "recent_month": {"summary": "Month start", "value": "2024-10-01"}}),
+    end: str = Query(..., description="End date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "End of 2024", "value": "2024-12-31"}, "recent_month": {"summary": "Month end", "value": "2024-10-31"}}),
+    use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -295,10 +387,10 @@ async def get_production_daily(
 @router.get("/production/detail/{usage_point_id}", response_model=APIResponse)
 async def get_production_detail(
     request: Request,
-    usage_point_id: str,
-    start: str = Query(..., description="Start date (YYYY-MM-DD)"),
-    end: str = Query(..., description="End date (YYYY-MM-DD)"),
-    use_cache: bool = Query(False, description="Use cached data if available"),
+    usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
+    start: str = Query(..., description="Start date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "Start of 2024", "value": "2024-01-01"}, "recent_week": {"summary": "Week start", "value": "2024-10-01"}}),
+    end: str = Query(..., description="End date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "End of 2024", "value": "2024-12-31"}, "recent_week": {"summary": "Week end", "value": "2024-10-07"}}),
+    use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -338,8 +430,8 @@ async def get_production_detail(
 @router.get("/contract/{usage_point_id}", response_model=APIResponse)
 async def get_contract(
     request: Request,
-    usage_point_id: str,
-    use_cache: bool = Query(False, description="Use cached data if available"),
+    usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
+    use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -386,8 +478,8 @@ async def get_contract(
 @router.get("/address/{usage_point_id}", response_model=APIResponse)
 async def get_address(
     request: Request,
-    usage_point_id: str,
-    use_cache: bool = Query(False, description="Use cached data if available"),
+    usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
+    use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -426,8 +518,8 @@ async def get_address(
 @router.get("/customer/{usage_point_id}", response_model=APIResponse)
 async def get_customer(
     request: Request,
-    usage_point_id: str,
-    use_cache: bool = Query(False, description="Use cached data if available"),
+    usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
+    use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -466,8 +558,8 @@ async def get_customer(
 @router.get("/contact/{usage_point_id}", response_model=APIResponse)
 async def get_contact(
     request: Request,
-    usage_point_id: str,
-    use_cache: bool = Query(False, description="Use cached data if available"),
+    usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
+    use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -506,7 +598,9 @@ async def get_contact(
 # Cache management
 @router.delete("/cache/{usage_point_id}", response_model=APIResponse)
 async def delete_cache(
-    usage_point_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Delete all cached data for a usage point"""
     # Verify PDL ownership

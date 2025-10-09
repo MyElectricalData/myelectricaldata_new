@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, UTC
@@ -35,8 +35,8 @@ async def list_providers(db: AsyncSession = Depends(get_db)) -> APIResponse:
 
 @router.get("/offers", response_model=APIResponse)
 async def list_offers(
-    provider_id: str | None = None,
-    include_history: bool = False,
+    provider_id: str | None = Query(None, description="Filter by provider ID", openapi_examples={"provider_uuid": {"summary": "Provider UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    include_history: bool = Query(False, description="Include historical offers", openapi_examples={"with_history": {"summary": "Include history", "value": True}, "current_only": {"summary": "Current offers only", "value": False}}),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """List all active energy offers, optionally filtered by provider

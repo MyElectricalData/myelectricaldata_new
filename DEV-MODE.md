@@ -11,15 +11,16 @@ Le mode développement permet de modifier le frontend et voir les changements **
 ```
 
 Ou manuellement :
+
 ```bash
 docker compose -f docker-compose.dev.yml up --build
 ```
 
 ### Accès
 
-- **Frontend (dev)**: http://localhost:5173 (avec hot-reload ✨)
-- **Backend API**: http://localhost:8000
-- **Production**: https://myelectricaldata.fr (continue de fonctionner)
+- **Frontend (dev)**: <http://localhost:5173> (avec hot-reload ✨)
+- **Backend API**: <http://localhost:8000>
+- **Production**: <https://myelectricaldata.fr> (continue de fonctionner)
 
 ### Arrêter le mode dev
 
@@ -28,6 +29,7 @@ docker compose -f docker-compose.dev.yml up --build
 ```
 
 Ou manuellement :
+
 ```bash
 docker compose -f docker-compose.dev.yml down
 ```
@@ -43,6 +45,7 @@ Si vous préférez rebuilder manuellement le frontend de production :
 ```
 
 Ou manuellement :
+
 ```bash
 docker compose build --no-cache frontend && docker compose up -d --force-recreate frontend
 ```
@@ -60,12 +63,15 @@ docker compose build --no-cache frontend && docker compose up -d --force-recreat
 ## 🔧 Troubleshooting
 
 ### Le hot-reload ne fonctionne pas
+
 - Vérifiez que les volumes sont bien montés : `docker compose -f docker-compose.dev.yml config`
 - Redémarrez le container : `docker compose -f docker-compose.dev.yml restart frontend-dev`
 
 ### Port 5173 déjà utilisé
+
 - Arrêtez l'autre processus ou changez le port dans `docker-compose.dev.yml`
 
 ### Les changements n'apparaissent pas
+
 - Videz le cache du navigateur (Ctrl+Shift+R ou Cmd+Shift+R)
 - Vérifiez les logs : `docker compose -f docker-compose.dev.yml logs -f frontend-dev`

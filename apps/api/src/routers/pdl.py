@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Path, Body
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -35,7 +35,12 @@ class PDLUpdateOrder(BaseModel):
 async def list_pdls(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
-    """List all PDLs for current user"""
+    """
+    Liste tous vos points de livraison (PDL)
+
+    ✨ **Utilisez cet endpoint en premier** pour récupérer vos `usage_point_id`
+    à utiliser dans les autres endpoints de l'API Enedis.
+    """
     print(f"[PDL] list_pdls called for user: {current_user.email}")
     result = await db.execute(
         select(PDL)
@@ -62,7 +67,23 @@ async def list_pdls(
 
 @router.post("/", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
 async def create_pdl(
-    pdl_data: PDLCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    pdl_data: PDLCreate = Body(
+        ...,
+        openapi_examples={
+            "standard": {
+                "summary": "Standard PDL",
+                "description": "Create a PDL with a standard 14-digit identifier",
+                "value": {"usage_point_id": "12345678901234", "name": "Mon compteur principal"}
+            },
+            "secondary": {
+                "summary": "Secondary PDL",
+                "description": "Add a secondary property PDL",
+                "value": {"usage_point_id": "98765432109876", "name": "Résidence secondaire"}
+            }
+        }
+    ),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Add a new PDL to current user"""
     # Check if PDL already exists for this user
@@ -128,7 +149,15 @@ async def create_pdl(
 
 @router.get("/{pdl_id}", response_model=APIResponse)
 async def get_pdl(
-    pdl_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    pdl_id: str = Path(
+        ...,
+        description="PDL ID (UUID)",
+        openapi_examples={
+            "example_uuid": {"summary": "Example UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}
+        }
+    ),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Get a specific PDL"""
     result = await db.execute(select(PDL).where(PDL.id == pdl_id, PDL.user_id == current_user.id))
@@ -146,7 +175,9 @@ async def get_pdl(
 
 @router.delete("/{pdl_id}", response_model=APIResponse)
 async def delete_pdl(
-    pdl_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    pdl_id: str = Path(..., description="PDL ID (UUID)", openapi_examples={"example_uuid": {"summary": "Example UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Delete a PDL"""
     result = await db.execute(select(PDL).where(PDL.id == pdl_id, PDL.user_id == current_user.id))
@@ -163,8 +194,8 @@ async def delete_pdl(
 
 @router.patch("/{pdl_id}/name", response_model=APIResponse)
 async def update_pdl_name(
-    pdl_id: str,
-    name_data: PDLUpdateName,
+    pdl_id: str = Path(..., description="PDL ID (UUID)", openapi_examples={"example_uuid": {"summary": "Example UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    name_data: PDLUpdateName = Body(..., openapi_examples={"update_name": {"summary": "Update name", "value": {"name": "Nouveau nom de compteur"}}}),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -192,8 +223,24 @@ async def update_pdl_name(
 
 @router.patch("/{pdl_id}/contract", response_model=APIResponse)
 async def update_pdl_contract(
-    pdl_id: str,
-    contract_data: PDLUpdateContract,
+    pdl_id: str = Path(..., description="PDL ID (UUID)", openapi_examples={"example_uuid": {"summary": "Example UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    contract_data: PDLUpdateContract = Body(
+        ...,
+        openapi_examples={
+            "update_power": {
+                "summary": "Update subscribed power",
+                "value": {"subscribed_power": 6, "offpeak_hours": None}
+            },
+            "update_offpeak": {
+                "summary": "Update off-peak hours",
+                "value": {"subscribed_power": None, "offpeak_hours": {"default": "22h30-06h30"}}
+            },
+            "update_both": {
+                "summary": "Update both",
+                "value": {"subscribed_power": 9, "offpeak_hours": {"default": "02h00-07h00"}}
+            }
+        }
+    ),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -226,7 +273,21 @@ async def update_pdl_contract(
 
 @router.patch("/reorder", response_model=APIResponse)
 async def reorder_pdls(
-    order_data: PDLUpdateOrder,
+    order_data: PDLUpdateOrder = Body(
+        ...,
+        openapi_examples={
+            "reorder_example": {
+                "summary": "Reorder PDLs",
+                "description": "Update display order for multiple PDLs",
+                "value": {
+                    "pdl_orders": [
+                        {"id": "550e8400-e29b-41d4-a716-446655440000", "order": 0},
+                        {"id": "550e8400-e29b-41d4-a716-446655440001", "order": 1}
+                    ]
+                }
+            }
+        }
+    ),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -246,7 +307,20 @@ async def reorder_pdls(
 
 @router.post("/admin/add", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
 async def admin_add_pdl(
-    pdl_data: AdminPDLCreate,
+    pdl_data: AdminPDLCreate = Body(
+        ...,
+        openapi_examples={
+            "admin_create": {
+                "summary": "Admin create PDL",
+                "description": "Admin creates PDL for a user",
+                "value": {
+                    "user_email": "user@example.com",
+                    "usage_point_id": "12345678901234",
+                    "name": "PDL créé par admin"
+                }
+            }
+        }
+    ),
     current_user: User = Depends(require_permission('users')),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
@@ -293,7 +367,9 @@ async def admin_add_pdl(
 
 @router.post("/{pdl_id}/fetch-contract", response_model=APIResponse)
 async def fetch_contract_from_enedis(
-    pdl_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    pdl_id: str = Path(..., description="PDL ID (UUID)", openapi_examples={"example_uuid": {"summary": "Example UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Fetch contract information from Enedis API and update PDL"""
     result = await db.execute(select(PDL).where(PDL.id == pdl_id, PDL.user_id == current_user.id))

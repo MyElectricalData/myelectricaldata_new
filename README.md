@@ -40,36 +40,41 @@ The easiest way to run the entire application is using Docker Compose.
 ### Quick Start
 
 1. **Configure environment variables**:
+
    ```bash
    cp .env.example .env
    # Edit .env with your configuration
    ```
 
 2. **Build the containers**:
+
    ```bash
    docker compose build
    ```
 
 3. **Start the services**:
+
    ```bash
    docker compose up
    ```
 
    Or run in detached mode:
+
    ```bash
    docker compose up -d
    ```
 
 4. **Access the applications**:
-   - API: http://localhost:8000
-   - API Documentation: http://localhost:8000/docs
-   - Web UI: http://localhost:3000
+   - API: <http://localhost:8000>
+   - API Documentation: <http://localhost:8000/docs>
+   - Web UI: <http://localhost:3000>
 
 ## 🌐 Production Deployment
 
-For production on https://myelectricaldata.fr:
+For production on <https://myelectricaldata.fr>:
 
 1. **Configure environment variables**:
+
    ```bash
    # Backend (.env)
    FRONTEND_URL=https://myelectricaldata.fr
@@ -83,12 +88,14 @@ For production on https://myelectricaldata.fr:
    ```
 
 2. **Setup Nginx reverse proxy** (see `nginx.conf.example`):
+
    - Frontend: Serve React static files at `/`
    - Backend: Reverse proxy to FastAPI at `/api`
 
 3. **SSL/TLS**: Use Let's Encrypt for HTTPS certificates
 
 4. **Build frontend**:
+
    ```bash
    cd apps/web
    npm run build
@@ -96,6 +103,7 @@ For production on https://myelectricaldata.fr:
    ```
 
 5. **Run backend**:
+
    ```bash
    cd apps/api
    uv run uvicorn src.main:app --host 127.0.0.1 --port 8000
@@ -111,27 +119,32 @@ For production on https://myelectricaldata.fr:
 ### Docker Commands
 
 - **View logs**:
+
   ```bash
   docker compose logs -f
   ```
 
 - **View logs for specific service**:
+
   ```bash
   docker compose logs -f api
   docker compose logs -f web
   ```
 
 - **Stop the services**:
+
   ```bash
   docker compose down
   ```
 
 - **Rebuild after changes**:
+
   ```bash
   docker compose up --build
   ```
 
 - **Remove all containers and volumes**:
+
   ```bash
   docker compose down -v
   ```
@@ -151,6 +164,7 @@ Located in `apps/web/`. See [apps/web/README.md](apps/web/README.md) for detaile
 Configuration is managed through environment variables. Copy `.env.example` to `.env` and adjust values as needed:
 
 ### Backend (API)
+
 - `DATABASE_URL`: URL de connexion à la base de données (SQLite ou PostgreSQL, auto-détecté)
 - `REDIS_URL`: Redis cache URL
 - `ENEDIS_CLIENT_ID`: Client ID fourni par Enedis
@@ -162,10 +176,11 @@ Configuration is managed through environment variables. Copy `.env.example` to `
 - `USER_DAILY_LIMIT_NO_CACHE`: Quota journalier sans cache (défaut: 50)
 - `USER_DAILY_LIMIT_WITH_CACHE`: Quota journalier avec cache (défaut: 1000)
 - `ADMIN_EMAILS`: Adresses email des administrateurs (séparées par des virgules)
-- `FRONTEND_URL`: URL du frontend (production: https://myelectricaldata.fr)
-- `BACKEND_URL`: URL du backend (production: https://myelectricaldata.fr/api)
+- `FRONTEND_URL`: URL du frontend (production: <https://myelectricaldata.fr>)
+- `BACKEND_URL`: URL du backend (production: <https://myelectricaldata.fr/api>)
 
 ### Frontend (Web)
+
 - `VITE_API_BASE_URL`: URL de l'API backend
   - Production: `https://myelectricaldata.fr/api`
   - Development: `http://localhost:8000`
@@ -183,18 +198,21 @@ Voir [SECURITY.md](apps/api/SECURITY.md) pour plus de détails.
 ## 📚 Documentation
 
 ### Spécifications fonctionnelles
+
 - [02-account.md](docs/features-spec/02-account.md) : Gestion des comptes et authentification
 - [05-gateway.md](docs/features-spec/05-gateway.md) : Passerelle API et consentement Enedis
 - [10-cache.md](docs/features-spec/10-cache.md) : Système de cache et rate limiting
 - [11-database.md](docs/features-spec/11-database.md) : Support multi-database (SQLite/PostgreSQL)
 
 ### Guides d'utilisation
+
 - [AUTHENTICATION.md](AUTHENTICATION.md) : Guide d'authentification OAuth2 et quotas
 - [ADMIN.md](ADMIN.md) : Panel administrateur et gestion des utilisateurs
 - [DATABASE.md](DATABASE.md) : Configuration SQLite et PostgreSQL
 - [DOCKER.md](DOCKER.md) : Déploiement Docker
 
 ### Références techniques
+
 - [docs/enedis-api/](docs/enedis-api/) : Documentation des API Enedis
 - [apps/api/SECURITY.md](apps/api/SECURITY.md) : Sécurité et isolation des données
 - **API Documentation** : Swagger UI disponible à `/docs` avec support OAuth2 Client Credentials
@@ -205,5 +223,7 @@ Both services include health checks:
 
 - API health: `curl http://localhost:8000/ping`
 - Web health: `curl http://localhost:3000`
+
 # myelectricaldata_new
+
 # myelectricaldata_new

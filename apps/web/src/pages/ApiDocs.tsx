@@ -9,6 +9,7 @@ export default function ApiDocs() {
   // Get the access token from localStorage
   const accessToken = useMemo(() => localStorage.getItem('access_token'), [])
   const { isDark } = useThemeStore()
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081'
 
   useEffect(() => {
     // Hide the "Explore" link and customize Swagger UI colors
@@ -25,6 +26,18 @@ export default function ApiDocs() {
       .swagger-ui .info .title,
       .swagger-ui .info .description {
         display: none !important;
+      }
+
+      /* Remove the entire info section spacing */
+      .swagger-ui .info {
+        margin: 0 !important;
+        padding: 0 !important;
+        display: none !important;
+      }
+
+      /* Remove top padding from main wrapper */
+      .swagger-ui .wrapper {
+        padding-top: 0 !important;
       }
     `
 
@@ -827,12 +840,12 @@ export default function ApiDocs() {
       </div>
 
       {/* OAuth 2.0 Authentication Block - Compact version at the top */}
-      <div className="mb-4">
-        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 rounded-lg">
+      <div className="mb-3">
+        <div className="p-2 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 rounded-lg">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Key className="text-blue-600 dark:text-blue-400 flex-shrink-0" size={20} />
-              <div>
+            <div className="flex items-center gap-2">
+              <Key className="text-blue-600 dark:text-blue-400 flex-shrink-0" size={18} />
+              <div className="text-sm">
                 <span className="font-semibold text-blue-900 dark:text-blue-100">
                   🔐 Authentification OAuth 2.0 pour vos applications
                 </span>
@@ -843,9 +856,9 @@ export default function ApiDocs() {
             </div>
             <Link
               to="/api-docs/auth"
-              className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
             >
-              <Key size={16} />
+              <Key size={14} />
               Guide complet
             </Link>
           </div>
@@ -853,17 +866,16 @@ export default function ApiDocs() {
       </div>
 
       {/* Authentication Notice - Green block */}
-      <div className="mb-6">
-        <div className="p-4 bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 rounded-lg">
-          <div className="flex items-start gap-3">
-            <Key className="text-green-600 dark:text-green-400 flex-shrink-0 mt-1" size={24} />
-            <div>
-              <h3 className="font-semibold text-green-900 dark:text-green-100 mb-2">
+      <div className="mb-4">
+        <div className="p-2 bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 rounded-lg">
+          <div className="flex items-start gap-2">
+            <Key className="text-green-600 dark:text-green-400 flex-shrink-0" size={18} />
+            <div className="text-sm">
+              <h3 className="font-semibold text-green-900 dark:text-green-100 mb-1">
                 ✅ Vous êtes déjà authentifié
               </h3>
               <p className="text-green-800 dark:text-green-200">
-                Vous êtes actuellement connecté avec votre compte. Vous n'avez pas besoin de vous authentifier à nouveau dans le Swagger ci-dessous -
-                vous pouvez directement tester les endpoints de l'API en cliquant sur "Try it out".
+                Vous êtes actuellement connecté. Vous pouvez directement tester les endpoints en cliquant sur "Try it out".
               </p>
             </div>
           </div>
@@ -873,7 +885,7 @@ export default function ApiDocs() {
       <div className="card flex-1 overflow-hidden">
         <div className="h-full overflow-auto">
           <SwaggerUI
-            url="/api/openapi.json"
+            url={`${apiBaseUrl}/openapi.json`}
             docExpansion="list"
             defaultModelsExpandDepth={1}
             displayRequestDuration={true}
