@@ -8,6 +8,10 @@ from ..schemas import APIResponse, ErrorDetail, CacheDeleteResponse
 from ..middleware import get_current_user
 from ..adapters import enedis_adapter
 from ..services import cache_service, rate_limiter
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/enedis",
@@ -112,10 +116,10 @@ async def get_valid_token(usage_point_id: str, user: User, db: AsyncSession) -> 
                     )
                     token = result.scalar_one_or_none()
                     if not token:
-                        print(f"[TOKEN ERROR] Failed to fetch token after race condition")
+                        logger.error(f"[TOKEN ERROR] Failed to fetch token after race condition")
                         return None
         except Exception as e:
-            print(f"[TOKEN ERROR] Failed to get client credentials token: {str(e)}")
+            logger.error(f"[TOKEN ERROR] Failed to get client credentials token: {str(e)}")
             import traceback
             traceback.print_exc()
             return None
@@ -456,12 +460,12 @@ async def get_contract(
             return APIResponse(success=True, data=cached_data)
 
     try:
-        print(f"[ENEDIS CONTRACT] Fetching contract for usage_point_id: {usage_point_id}")
-        print(f"[ENEDIS CONTRACT] Using cache: {use_cache}")
+        logger.info(f"[ENEDIS CONTRACT] Fetching contract for usage_point_id: {usage_point_id}")
+        logger.info(f"[ENEDIS CONTRACT] Using cache: {use_cache}")
 
         data = await enedis_adapter.get_contract(usage_point_id, access_token)
 
-        print(f"[ENEDIS CONTRACT] Successfully fetched contract data")
+        logger.info(f"[ENEDIS CONTRACT] Successfully fetched contract data")
 
         # Cache result
         if use_cache:
@@ -469,7 +473,7 @@ async def get_contract(
 
         return APIResponse(success=True, data=data)
     except Exception as e:
-        print(f"[ENEDIS CONTRACT ERROR] Error fetching contract: {type(e).__name__}: {str(e)}")
+        logger.error(f"[ENEDIS CONTRACT ERROR] Error fetching contract: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
         return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message=str(e)))

@@ -1,6 +1,10 @@
 import httpx
 from ..config import settings
+import logging
 
+
+
+logger = logging.getLogger(__name__)
 
 class EmailService:
     """Service for sending emails via Mailgun"""
@@ -35,7 +39,7 @@ class EmailService:
                 response.raise_for_status()
                 return True
         except Exception as e:
-            print(f"[EMAIL] Failed to send email to {to_email}: {str(e)}")
+            logger.error(f"[EMAIL] Failed to send email to {to_email}: {str(e)}")
             return False
 
     async def send_verification_email(self, to_email: str, verification_url: str) -> bool:

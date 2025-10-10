@@ -9,6 +9,10 @@ from ..schemas.requests import AdminPDLCreate
 from ..middleware import get_current_user, require_admin, require_permission
 from ..routers.enedis import get_valid_token
 from ..adapters import enedis_adapter
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pdl", tags=["PDL Management"])
 
@@ -41,7 +45,7 @@ async def list_pdls(
     ✨ **Utilisez cet endpoint en premier** pour récupérer vos `usage_point_id`
     à utiliser dans les autres endpoints de l'API Enedis.
     """
-    print(f"[PDL] list_pdls called for user: {current_user.email}")
+    logger.info(f"[PDL] list_pdls called for user: {current_user.email}")
     result = await db.execute(
         select(PDL)
         .where(PDL.user_id == current_user.id)
@@ -133,7 +137,7 @@ async def create_pdl(
                         await db.refresh(pdl)
     except Exception as e:
         # Don't fail PDL creation if contract fetch fails
-        print(f"[CREATE PDL] Could not fetch contract info: {e}")
+        logger.warning(f"[CREATE PDL] Could not fetch contract info: {e}")
 
     pdl_response = PDLResponse(
         id=pdl.id,
@@ -292,7 +296,7 @@ async def reorder_pdls(
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Update display order for multiple PDLs"""
-    print(f"[REORDER] Received data: {order_data}")
+    logger.info(f"[REORDER] Received data: {order_data}")
     for item in order_data.pdl_orders:
         result = await db.execute(select(PDL).where(PDL.id == item.id, PDL.user_id == current_user.id))
         pdl = result.scalar_one_or_none()
@@ -391,7 +395,7 @@ async def fetch_contract_from_enedis(
         contract_data = await enedis_adapter.get_contract(pdl.usage_point_id, access_token)
 
         # Log the structure for debugging
-        print(f"[FETCH CONTRACT] Raw contract data: {contract_data}")
+        logger.info(f"[FETCH CONTRACT] Raw contract data: {contract_data}")
 
         # Extract subscribed power (puissance souscrite)
         if contract_data and "customer" in contract_data and "usage_points" in contract_data["customer"]:
@@ -402,25 +406,25 @@ async def fetch_contract_from_enedis(
                 # Get subscribed power and offpeak hours
                 if "contracts" in usage_point:
                     contract = usage_point["contracts"]
-                    print(f"[FETCH CONTRACT] Contract object: {contract}")
+                    logger.info(f"[FETCH CONTRACT] Contract object: {contract}")
 
                     if "subscribed_power" in contract:
                         power_str = str(contract["subscribed_power"])
                         # Extract just the number (handle "6 kVA", "6", etc.)
                         pdl.subscribed_power = int(power_str.replace("kVA", "").replace(" ", "").strip())
-                        print(f"[FETCH CONTRACT] Set subscribed_power: {pdl.subscribed_power}")
+                        logger.info(f"[FETCH CONTRACT] Set subscribed_power: {pdl.subscribed_power}")
 
                     # Get offpeak hours if available
                     if "offpeak_hours" in contract:
                         offpeak = contract["offpeak_hours"]
-                        print(f"[FETCH CONTRACT] Offpeak hours: {offpeak}")
+                        logger.info(f"[FETCH CONTRACT] Offpeak hours: {offpeak}")
                         # Parse offpeak hours - format can vary
                         if isinstance(offpeak, str):
                             # If it's a string like "HC : 22h30 - 06h30"
                             pdl.offpeak_hours = {"default": offpeak}
                         elif isinstance(offpeak, dict):
                             pdl.offpeak_hours = offpeak
-                        print(f"[FETCH CONTRACT] Set offpeak_hours: {pdl.offpeak_hours}")
+                        logger.info(f"[FETCH CONTRACT] Set offpeak_hours: {pdl.offpeak_hours}")
 
         await db.commit()
         await db.refresh(pdl)

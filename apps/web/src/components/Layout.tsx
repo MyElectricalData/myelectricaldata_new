@@ -3,7 +3,8 @@ import { Home, LogOut, Moon, Sun, Heart, Shield, BookOpen, Calculator, Users, Me
 import { useAuth } from '@/hooks/useAuth'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useThemeStore } from '@/stores/themeStore'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import toast, { Toaster } from 'react-hot-toast'
 import AdminTabs from './AdminTabs'
 import ApiDocsTabs from './ApiDocsTabs'
 
@@ -24,6 +25,29 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/tempo', icon: Calendar, label: 'Tempo' },
     { to: '/ecowatt', icon: Zap, label: 'EcoWatt' },
   ]
+
+  // Add click handler to dismiss toasts on click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+
+      // Try multiple selectors to find the toast element
+      const isToast = target.closest('[role="status"]') ||
+                     target.closest('[data-sonner-toast]') ||
+                     target.closest('div[style*="gradient"]')
+
+      if (isToast) {
+        toast.dismiss()
+      }
+    }
+
+    // Attach to document body
+    document.body.addEventListener('click', handleClick, { capture: true })
+
+    return () => {
+      document.body.removeEventListener('click', handleClick, { capture: true })
+    }
+  }, [])
 
   return (
     <div className="min-h-screen flex">
@@ -355,6 +379,56 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </footer>
       </div>
+
+      {/* Global Toaster */}
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          duration: 5000,
+          style: {
+            background: 'linear-gradient(135deg, #4338ca 0%, #3730a3 100%)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '0.75rem',
+            padding: '1rem 1.5rem',
+            fontSize: '0.875rem',
+            fontWeight: '500',
+            cursor: 'pointer',
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2)',
+            minWidth: '400px',
+            maxWidth: '600px',
+          },
+          success: {
+            iconTheme: {
+              primary: '#fff',
+              secondary: '#10b981',
+            },
+            style: {
+              background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+              minWidth: '400px',
+              maxWidth: '600px',
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: '#fff',
+              secondary: '#ef4444',
+            },
+            style: {
+              background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+              minWidth: '400px',
+              maxWidth: '600px',
+            },
+          },
+        }}
+        containerStyle={{
+          top: 10,
+          left: '50%',
+          right: 'auto',
+          transform: sidebarCollapsed ? 'translateX(calc(-50% + 2rem))' : 'translateX(calc(-50% + 7rem))',
+        }}
+        limit={2}
+      />
     </div>
   )
 }

@@ -3,7 +3,11 @@ from datetime import datetime, UTC
 from typing import Any, Optional
 import httpx
 from ..config import settings
+import logging
 
+
+
+logger = logging.getLogger(__name__)
 
 class RateLimiter:
     """Rate limiter for Enedis API calls (5 req/sec)"""
@@ -83,52 +87,52 @@ class EnedisAdapter:
         await self.rate_limiter.acquire()
 
         if settings.DEBUG:
-            print("=" * 80)
-            print(f"[ENEDIS API REQUEST] {method} {url}")
-            print(f"[ENEDIS API REQUEST] Headers:")
+            logger.info("=" * 80)
+            logger.debug(f"[ENEDIS API REQUEST] {method} {url}")
+            logger.debug(f"[ENEDIS API REQUEST] Headers:")
             if headers:
                 for key, value in headers.items():
                     if key.lower() == "authorization":
                         # Mask token but show format
                         if value.startswith("Bearer "):
-                            print(f"  {key}: Bearer {value[7:27]}...")
+                            logger.info(f"  {key}: Bearer {value[7:27]}...")
                         elif value.startswith("Basic "):
-                            print(f"  {key}: Basic {value[6:26]}...")
+                            logger.info(f"  {key}: Basic {value[6:26]}...")
                         else:
-                            print(f"  {key}: {value[:20]}...")
+                            logger.info(f"  {key}: {value[:20]}...")
                     else:
-                        print(f"  {key}: {value}")
+                        logger.info(f"  {key}: {value}")
             else:
-                print("  (no headers)")
+                logger.debug("  (no headers)")
 
             if params:
-                print(f"[ENEDIS API REQUEST] Query params: {params}")
+                logger.debug(f"[ENEDIS API REQUEST] Query params: {params}")
 
             if data:
-                print(f"[ENEDIS API REQUEST] Body data: {data}")
-            print("=" * 80)
+                logger.debug(f"[ENEDIS API REQUEST] Body data: {data}")
+            logger.info("=" * 80)
 
         client = await self.get_client()
         try:
             response = await client.request(method=method, url=url, headers=headers, data=data, params=params)
 
             if settings.DEBUG:
-                print(f"[ENEDIS API RESPONSE] Status: {response.status_code}")
+                logger.debug(f"[ENEDIS API RESPONSE] Status: {response.status_code}")
 
             response.raise_for_status()
             response_json = response.json()
 
             if settings.DEBUG:
-                print(f"[ENEDIS API RESPONSE] Success - keys: {list(response_json.keys()) if isinstance(response_json, dict) else 'not a dict'}")
-                print("=" * 80)
+                logger.debug(f"[ENEDIS API RESPONSE] Success - keys: {list(response_json.keys()) if isinstance(response_json, dict) else 'not a dict'}")
+                logger.info("=" * 80)
 
             return response_json
         except httpx.HTTPStatusError as e:
             if settings.DEBUG:
-                print(f"[ENEDIS API ERROR] HTTP {e.response.status_code}")
-                print(f"[ENEDIS API ERROR] Response headers: {dict(e.response.headers)}")
-                print(f"[ENEDIS API ERROR] Response body: {e.response.text}")
-                print("=" * 80)
+                logger.error(f"[ENEDIS API ERROR] HTTP {e.response.status_code}")
+                logger.error(f"[ENEDIS API ERROR] Response headers: {dict(e.response.headers)}")
+                logger.error(f"[ENEDIS API ERROR] Response body: {e.response.text}")
+                logger.info("=" * 80)
 
             # Parse JSON error from Enedis (e.g., ADAM-ERR0123)
             try:
@@ -144,8 +148,8 @@ class EnedisAdapter:
             raise
         except Exception as e:
             if settings.DEBUG:
-                print(f"[ENEDIS API ERROR] {type(e).__name__}: {str(e)}")
-                print("=" * 80)
+                logger.error(f"[ENEDIS API ERROR] {type(e).__name__}: {str(e)}")
+                logger.info("=" * 80)
             raise
 
     async def exchange_authorization_code(self, code: str, redirect_uri: str) -> dict[str, Any]:
@@ -162,13 +166,13 @@ class EnedisAdapter:
             "redirect_uri": redirect_uri,
         }
 
-        print(f"[ENEDIS] ===== REQUETE TOKEN EXCHANGE =====")
-        print(f"[ENEDIS] URL: {url}")
-        print(f"[ENEDIS] client_id: {self.client_id}")
-        print(f"[ENEDIS] client_secret: {self.client_secret[:10]}...")
-        print(f"[ENEDIS] redirect_uri: {redirect_uri}")
-        print(f"[ENEDIS] code: {code[:20]}...")
-        print("=" * 60)
+        logger.info(f"[ENEDIS] ===== REQUETE TOKEN EXCHANGE =====")
+        logger.info(f"[ENEDIS] URL: {url}")
+        logger.debug(f"[ENEDIS] client_id: {self.client_id}")
+        logger.info(f"[ENEDIS] client_secret: {self.client_secret[:10]}...")
+        logger.info(f"[ENEDIS] redirect_uri: {redirect_uri}")
+        logger.info(f"[ENEDIS] code: {code[:20]}...")
+        logger.info("=" * 60)
 
         return await self._make_request("POST", url, headers=headers, data=data)
 
@@ -195,7 +199,7 @@ class EnedisAdapter:
             "grant_type": "client_credentials"
         }
 
-        print(f"[ENEDIS] Getting client credentials token from {url}")
+        logger.info(f"[ENEDIS] Getting client credentials token from {url}")
         return await self._make_request("POST", url, headers=headers, data=data)
 
     async def refresh_access_token(self, refresh_token: str) -> dict[str, Any]:

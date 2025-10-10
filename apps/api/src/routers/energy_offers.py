@@ -8,6 +8,10 @@ from ..schemas import APIResponse, ErrorDetail
 from ..middleware import get_current_user, require_permission, require_action
 from ..services.email import email_service
 from ..config import settings
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/energy", tags=["Energy Offers"])
 
@@ -109,8 +113,8 @@ async def create_contribution(
     contribution_data: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Submit a new contribution for review"""
-    print(f"[CONTRIBUTION] New contribution from user: {current_user.email}")
-    print(f"[CONTRIBUTION] Data: {contribution_data}")
+    logger.info(f"[CONTRIBUTION] New contribution from user: {current_user.email}")
+    logger.info(f"[CONTRIBUTION] Data: {contribution_data}")
 
     # Validate required fields
     if not contribution_data.get("price_sheet_url"):
@@ -146,7 +150,7 @@ async def create_contribution(
     try:
         await send_contribution_notification(contribution, current_user, db)
     except Exception as e:
-        print(f"[CONTRIBUTION] Failed to send admin notifications: {str(e)}")
+        logger.error(f"[CONTRIBUTION] Failed to send admin notifications: {str(e)}")
         # Don't fail the contribution if email fails
 
     return APIResponse(
@@ -351,7 +355,7 @@ async def approve_contribution(
 
     except Exception as e:
         await db.rollback()
-        print(f"[CONTRIBUTION APPROVAL ERROR] {str(e)}")
+        logger.error(f"[CONTRIBUTION APPROVAL ERROR] {str(e)}")
         import traceback
 
         traceback.print_exc()
@@ -447,7 +451,7 @@ async def update_offer(
 
     except Exception as e:
         await db.rollback()
-        print(f"[OFFER UPDATE ERROR] {str(e)}")
+        logger.error(f"[OFFER UPDATE ERROR] {str(e)}")
         import traceback
 
         traceback.print_exc()
@@ -474,7 +478,7 @@ async def delete_offer(
 
     except Exception as e:
         await db.rollback()
-        print(f"[OFFER DELETE ERROR] {str(e)}")
+        logger.error(f"[OFFER DELETE ERROR] {str(e)}")
         import traceback
 
         traceback.print_exc()
@@ -521,7 +525,7 @@ async def update_provider(
 
     except Exception as e:
         await db.rollback()
-        print(f"[PROVIDER UPDATE ERROR] {str(e)}")
+        logger.error(f"[PROVIDER UPDATE ERROR] {str(e)}")
         import traceback
         traceback.print_exc()
         return APIResponse(success=False, error=ErrorDetail(code="DATABASE_ERROR", message="Failed to update provider"))
@@ -561,7 +565,7 @@ async def delete_provider(
 
     except Exception as e:
         await db.rollback()
-        print(f"[PROVIDER DELETE ERROR] {str(e)}")
+        logger.error(f"[PROVIDER DELETE ERROR] {str(e)}")
         import traceback
 
         traceback.print_exc()
@@ -571,7 +575,7 @@ async def delete_provider(
 async def send_contribution_notification(contribution: OfferContribution, contributor: User, db: AsyncSession):
     """Send email notification to all admins about a new contribution"""
     if not settings.ADMIN_EMAILS:
-        print("[CONTRIBUTION] No admin emails configured")
+        logger.info("[CONTRIBUTION] No admin emails configured")
         return
 
     admin_emails = [email.strip() for email in settings.ADMIN_EMAILS.split(",")]
@@ -644,6 +648,6 @@ MyElectricalData
     for admin_email in admin_emails:
         try:
             await email_service.send_email(admin_email, subject, html_content, text_content)
-            print(f"[CONTRIBUTION] Notification sent to admin: {admin_email}")
+            logger.info(f"[CONTRIBUTION] Notification sent to admin: {admin_email}")
         except Exception as e:
-            print(f"[CONTRIBUTION] Failed to send email to {admin_email}: {str(e)}")
+            logger.error(f"[CONTRIBUTION] Failed to send email to {admin_email}: {str(e)}")

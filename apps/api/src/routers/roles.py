@@ -6,6 +6,10 @@ from ..models import User, Role, Permission
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
 from ..middleware import get_current_user
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/roles", tags=["Roles"])
 
@@ -51,7 +55,7 @@ async def list_roles(
             ],
         )
     except Exception as e:
-        print(f"[ROLES LIST ERROR] {str(e)}")
+        logger.error(f"[ROLES LIST ERROR] {str(e)}")
         import traceback
         traceback.print_exc()
         return APIResponse(
@@ -93,7 +97,7 @@ async def list_permissions(
             data=grouped,
         )
     except Exception as e:
-        print(f"[PERMISSIONS LIST ERROR] {str(e)}")
+        logger.error(f"[PERMISSIONS LIST ERROR] {str(e)}")
         import traceback
         traceback.print_exc()
         return APIResponse(
@@ -153,7 +157,7 @@ async def update_role_permissions(
         )
     except Exception as e:
         await db.rollback()
-        print(f"[ROLE PERMISSIONS UPDATE ERROR] {str(e)}")
+        logger.error(f"[ROLE PERMISSIONS UPDATE ERROR] {str(e)}")
         import traceback
         traceback.print_exc()
         return APIResponse(
@@ -217,7 +221,7 @@ async def update_user_role(
         )
     except Exception as e:
         await db.rollback()
-        print(f"[USER ROLE UPDATE ERROR] {str(e)}")
+        logger.error(f"[USER ROLE UPDATE ERROR] {str(e)}")
         import traceback
         traceback.print_exc()
         return APIResponse(

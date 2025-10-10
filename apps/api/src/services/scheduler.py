@@ -1,11 +1,16 @@
 """Background scheduler for periodic tasks"""
 import asyncio
+import logging
 from datetime import datetime, UTC, timedelta
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from ..models.database import async_session_maker
 from ..models.refresh_tracker import RefreshTracker
 from .rte import rte_service
+
+logger = logging.getLogger(__name__)
 
 
 async def should_refresh(db: AsyncSession, cache_type: str, min_interval_minutes: int) -> bool:
@@ -45,19 +50,19 @@ async def refresh_tempo_cache_task():
             async with async_session_maker() as db:
                 # Check if we should refresh (minimum 10 minutes between refreshes)
                 if await should_refresh(db, 'tempo', 10):
-                    print(f"[SCHEDULER] {datetime.now(UTC).isoformat()} - Starting TEMPO cache refresh...")
+                    logger.info(f"[SCHEDULER] {datetime.now(UTC).isoformat()} - Starting TEMPO cache refresh...")
 
                     # RTE API limitation: only today + tomorrow (after 6am)
                     updated_count = await rte_service.update_tempo_cache(db)
-                    print(f"[SCHEDULER] Successfully refreshed {updated_count} TEMPO days")
+                    logger.info(f"[SCHEDULER] Successfully refreshed {updated_count} TEMPO days")
 
                     # Update last refresh time
                     await update_refresh_time(db, 'tempo')
                 else:
-                    print(f"[SCHEDULER] Skipping TEMPO refresh - last refresh too recent")
+                    logger.warning(f"[SCHEDULER] Skipping TEMPO refresh - last refresh too recent")
 
         except Exception as e:
-            print(f"[SCHEDULER ERROR] Failed to refresh TEMPO cache: {e}")
+            logger.error(f"[SCHEDULER ERROR] Failed to refresh TEMPO cache: {e}")
             import traceback
             traceback.print_exc()
 
@@ -72,18 +77,18 @@ async def refresh_ecowatt_cache_task():
             async with async_session_maker() as db:
                 # Check if we should refresh (minimum 60 minutes between refreshes)
                 if await should_refresh(db, 'ecowatt', 60):
-                    print(f"[SCHEDULER] {datetime.now(UTC).isoformat()} - Starting EcoWatt cache refresh...")
+                    logger.info(f"[SCHEDULER] {datetime.now(UTC).isoformat()} - Starting EcoWatt cache refresh...")
 
                     updated_count = await rte_service.update_ecowatt_cache(db)
-                    print(f"[SCHEDULER] Successfully refreshed {updated_count} EcoWatt signals")
+                    logger.info(f"[SCHEDULER] Successfully refreshed {updated_count} EcoWatt signals")
 
                     # Update last refresh time
                     await update_refresh_time(db, 'ecowatt')
                 else:
-                    print(f"[SCHEDULER] Skipping EcoWatt refresh - last refresh too recent")
+                    logger.warning(f"[SCHEDULER] Skipping EcoWatt refresh - last refresh too recent")
 
         except Exception as e:
-            print(f"[SCHEDULER ERROR] Failed to refresh EcoWatt cache: {e}")
+            logger.error(f"[SCHEDULER ERROR] Failed to refresh EcoWatt cache: {e}")
             import traceback
             traceback.print_exc()
 
@@ -95,4 +100,4 @@ def start_background_tasks():
     """Start all background tasks"""
     asyncio.create_task(refresh_tempo_cache_task())
     asyncio.create_task(refresh_ecowatt_cache_task())
-    print("[SCHEDULER] Background tasks started")
+    logger.info("[SCHEDULER] Background tasks started")

@@ -1,13 +1,18 @@
 """TEMPO calendar endpoints"""
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 from datetime import datetime, timedelta, UTC
 from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..middleware import get_current_user, require_permission, require_action
 from ..models import User, TempoDay
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
-from ..middleware import get_current_user, require_permission, require_action
 from ..services.rte import rte_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tempo", tags=["TEMPO Calendar"])
 
@@ -68,7 +73,7 @@ async def get_tempo_days(
     except ValueError as e:
         return APIResponse(success=False, error=ErrorDetail(code="INVALID_DATE", message=f"Invalid date format: {e}"))
     except Exception as e:
-        print(f"[TEMPO ERROR] {str(e)}")
+        logger.error(f"[TEMPO ERROR] {str(e)}")
         return APIResponse(success=False, error=ErrorDetail(code="SERVER_ERROR", message=str(e)))
 
 
@@ -95,7 +100,7 @@ async def get_today_tempo(db: AsyncSession = Depends(get_db)) -> APIResponse:
         )
 
     except Exception as e:
-        print(f"[TEMPO ERROR] {str(e)}")
+        logger.error(f"[TEMPO ERROR] {str(e)}")
         return APIResponse(success=False, error=ErrorDetail(code="SERVER_ERROR", message=str(e)))
 
 
@@ -124,7 +129,7 @@ async def get_week_tempo(db: AsyncSession = Depends(get_db)) -> APIResponse:
         )
 
     except Exception as e:
-        print(f"[TEMPO ERROR] {str(e)}")
+        logger.error(f"[TEMPO ERROR] {str(e)}")
         return APIResponse(success=False, error=ErrorDetail(code="SERVER_ERROR", message=str(e)))
 
 
@@ -140,7 +145,7 @@ async def refresh_tempo_cache(
     RTE API limitation: only today's color + tomorrow's color (available after 6am)
     """
     try:
-        print(f"[TEMPO] Refreshing cache (user: {current_user.email})")
+        logger.info(f"[TEMPO] Refreshing cache (user: {current_user.email})")
         updated_count = await rte_service.update_tempo_cache(db)
 
         return APIResponse(
@@ -149,7 +154,7 @@ async def refresh_tempo_cache(
 
     except Exception as e:
         error_msg = str(e)
-        print(f"[TEMPO REFRESH ERROR] {error_msg}")
+        logger.error(f"[TEMPO REFRESH ERROR] {error_msg}")
         import traceback
         traceback.print_exc()
 
@@ -189,7 +194,7 @@ async def clear_old_tempo_data(
     days_to_keep = max(days_to_keep, 7)
 
     try:
-        print(f"[TEMPO] Clearing data older than {days_to_keep} days (admin: {current_user.email})")
+        logger.info(f"[TEMPO] Clearing data older than {days_to_keep} days (admin: {current_user.email})")
         deleted_count = await rte_service.clear_old_data(db, days_to_keep)
 
         return APIResponse(
@@ -197,5 +202,5 @@ async def clear_old_tempo_data(
         )
 
     except Exception as e:
-        print(f"[TEMPO CLEAR ERROR] {str(e)}")
+        logger.error(f"[TEMPO CLEAR ERROR] {str(e)}")
         return APIResponse(success=False, error=ErrorDetail(code="SERVER_ERROR", message=str(e)))

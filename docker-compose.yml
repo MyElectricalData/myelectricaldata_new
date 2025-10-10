@@ -69,6 +69,7 @@ services:
       - PYTHONUNBUFFERED=1
       - WATCHFILES_FORCE_POLLING=true
       - WATCHFILES_POLL_INTERVAL=1000
+      - TZ=Europe/Paris
     volumes:
       - ./apps/api/data:/app/data
       - ./apps/api/src:/app/src

@@ -31,12 +31,14 @@ from .schemas import APIResponse, ErrorDetail, HealthCheckResponse
 from .services import cache_service
 from .services.scheduler import start_background_tasks
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Setup logging first
-    setup_logging()
+    setup_logging(debug_sql=settings.DEBUG_SQL)
 
     # Startup
     await init_db()
@@ -47,17 +49,17 @@ async def lifespan(app: FastAPI):
 
     # Print configuration in debug mode
     if settings.DEBUG:
-        print("=" * 60)
-        print("🔧 API Configuration (DEBUG MODE)")
-        print("=" * 60)
-        print(f"Frontend URL: {settings.FRONTEND_URL}")
-        print(f"Backend URL: {settings.BACKEND_URL}")
-        print(f"Enedis Environment: {settings.ENEDIS_ENVIRONMENT}")
-        print(f"Enedis Redirect URI: {settings.ENEDIS_REDIRECT_URI}")
-        print(f"Email Verification: {settings.REQUIRE_EMAIL_VERIFICATION}")
-        print(f"Captcha Required: {settings.REQUIRE_CAPTCHA}")
-        print(f"API Host: {settings.API_HOST}:{settings.API_PORT}")
-        print("=" * 60)
+        logger.info("=" * 60)
+        logger.info("🔧 API Configuration (DEBUG MODE)")
+        logger.info("=" * 60)
+        logger.info(f"Frontend URL: {settings.FRONTEND_URL}")
+        logger.info(f"Backend URL: {settings.BACKEND_URL}")
+        logger.info(f"Enedis Environment: {settings.ENEDIS_ENVIRONMENT}")
+        logger.info(f"Enedis Redirect URI: {settings.ENEDIS_REDIRECT_URI}")
+        logger.info(f"Email Verification: {settings.REQUIRE_EMAIL_VERIFICATION}")
+        logger.info(f"Captcha Required: {settings.REQUIRE_CAPTCHA}")
+        logger.info(f"API Host: {settings.API_HOST}:{settings.API_PORT}")
+        logger.info("=" * 60)
 
     yield
 
@@ -120,14 +122,14 @@ async def fix_redirect_urls(request: Request, call_next):
             frontend_scheme = frontend_parsed.scheme
 
             if settings.DEBUG:
-                print(f"[REDIRECT MIDDLEWARE] Original location: {location}")
+                logger.debug(f"[REDIRECT MIDDLEWARE] Original location: {location}")
 
             # Handle relative redirects (like /pdl/ from FastAPI trailing slash)
             if location.startswith("/"):
                 # It's a relative redirect - prepend scheme and host
                 location = f"{frontend_scheme}://{frontend_host}{location}"
                 if settings.DEBUG:
-                    print(f"[REDIRECT MIDDLEWARE] Converted relative to absolute: {location}")
+                    logger.debug(f"[REDIRECT MIDDLEWARE] Converted relative to absolute: {location}")
 
             # Force HTTPS if the frontend is HTTPS
             if frontend_scheme == "https":
@@ -135,7 +137,7 @@ async def fix_redirect_urls(request: Request, call_next):
                 if location.startswith("http://"):
                     location = location.replace("http://", "https://", 1)
                     if settings.DEBUG:
-                        print(f"[REDIRECT MIDDLEWARE] Fixed protocol to HTTPS: {location}")
+                        logger.debug(f"[REDIRECT MIDDLEWARE] Fixed protocol to HTTPS: {location}")
 
                 # Fix path - add /api prefix ONLY for API endpoints (not frontend routes like /dashboard)
                 if location.startswith(f"{frontend_scheme}://{frontend_host}/"):
@@ -153,17 +155,17 @@ async def fix_redirect_urls(request: Request, call_next):
                     )
 
                     if settings.DEBUG:
-                        print(f"[REDIRECT MIDDLEWARE] Path: {path}")
-                        print(f"[REDIRECT MIDDLEWARE] Is frontend route: {is_frontend_route}")
-                        print(f"[REDIRECT MIDDLEWARE] Starts with /api: {path.startswith('/api')}")
+                        logger.debug(f"[REDIRECT MIDDLEWARE] Path: {path}")
+                        logger.debug(f"[REDIRECT MIDDLEWARE] Is frontend route: {is_frontend_route}")
+                        logger.debug(f"[REDIRECT MIDDLEWARE] Starts with /api: {path.startswith('/api')}")
 
                     if path and not path.startswith("/api") and not is_frontend_route:
                         location = f"{frontend_scheme}://{frontend_host}/api{path}"
                         if settings.DEBUG:
-                            print(f"[REDIRECT MIDDLEWARE] Added /api prefix: {location}")
+                            logger.debug(f"[REDIRECT MIDDLEWARE] Added /api prefix: {location}")
 
             if settings.DEBUG and location != original_location:
-                print(f"[REDIRECT MIDDLEWARE] Final location: {location}")
+                logger.debug(f"[REDIRECT MIDDLEWARE] Final location: {location}")
 
             response.headers["location"] = location
 
@@ -215,14 +217,14 @@ async def consent_callback(
     # Frontend URL from settings
     frontend_url = f"{settings.FRONTEND_URL}/dashboard"
 
-    print("=" * 60)
-    print("[CONSENT] ===== DEBUT CALLBACK ENEDIS =====")
-    print(f"[CONSENT] Code reçu: {code[:20]}...")
-    print(f"[CONSENT] State reçu: {state}")
-    print(f"[CONSENT] Usage Point ID reçu: {usage_point_id}")
-    print(f"[CONSENT] Frontend URL: {frontend_url}")
-    print(f"[CONSENT] Redirect URI configuré: {settings.ENEDIS_REDIRECT_URI}")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.debug("[CONSENT] ===== DEBUT CALLBACK ENEDIS =====")
+    logger.debug(f"[CONSENT] Code reçu: {code[:20]}...")
+    logger.debug(f"[CONSENT] State reçu: {state}")
+    logger.debug(f"[CONSENT] Usage Point ID reçu: {usage_point_id}")
+    logger.debug(f"[CONSENT] Frontend URL: {frontend_url}")
+    logger.debug(f"[CONSENT] Redirect URI configuré: {settings.ENEDIS_REDIRECT_URI}")
+    logger.info("=" * 60)
 
     try:
         # Parse state - Enedis may return it with format "user_id:usage_point_id" or just "user_id"
@@ -233,7 +235,7 @@ async def consent_callback(
             user_id = state.strip()
 
         # Log for debugging
-        print(f"[CONSENT] User ID extrait du state: {user_id}")
+        logger.debug(f"[CONSENT] User ID extrait du state: {user_id}")
 
         # Verify user exists
         result = await db.execute(select(User).where(User.id == user_id))
@@ -243,36 +245,36 @@ async def consent_callback(
             # Log all users for debugging
             all_users = await db.execute(select(User))
             user_ids = [u.id for u in all_users.scalars().all()]
-            print(f"[CONSENT] User not found with ID: {user_id}")
-            print(f"[CONSENT] Available users: {user_ids}")
+            logger.error(f"[CONSENT] User not found with ID: {user_id}")
+            logger.debug(f"[CONSENT] Available users: {user_ids}")
             # Redirect to frontend dashboard with error
             error_msg = f"user_not_found (looking for: {user_id[:8]}...)"
             return RedirectResponse(url=f"{frontend_url}?consent_error={error_msg}")
 
         # Just create PDL - token will be managed globally via Client Credentials
-        print("[CONSENT] ===== TRAITEMENT DU PDL =====")
-        print("[CONSENT] Code ignoré (token géré globalement via Client Credentials)")
+        logger.debug("[CONSENT] ===== TRAITEMENT DU PDL =====")
+        logger.debug("[CONSENT] Code ignoré (token géré globalement via Client Credentials)")
 
         if not usage_point_id:
-            print("[CONSENT] ✗ Aucun usage_point_id fourni")
+            logger.error("[CONSENT] ✗ Aucun usage_point_id fourni")
             return RedirectResponse(url=f"{frontend_url}?consent_error=no_usage_point_id")
 
         # Split multiple PDLs separated by semicolons
         pdl_ids = [pdl.strip() for pdl in usage_point_id.split(";") if pdl.strip()]
         usage_points_list = [{"usage_point_id": pdl_id} for pdl_id in pdl_ids]
 
-        print(f"[CONSENT] PDL(s) à créer: {pdl_ids} (total: {len(pdl_ids)})")
+        logger.debug(f"[CONSENT] PDL(s) à créer: {pdl_ids} (total: {len(pdl_ids)})")
 
         created_count = 0
 
         # Create PDL only (token managed globally)
-        print("[CONSENT] ===== TRAITEMENT DES PDL =====")
+        logger.debug("[CONSENT] ===== TRAITEMENT DES PDL =====")
         for up in usage_points_list:
             usage_point_id = up.get("usage_point_id")
-            print(f"[CONSENT] Traitement PDL: {usage_point_id}")
+            logger.debug(f"[CONSENT] Traitement PDL: {usage_point_id}")
 
             if not usage_point_id:
-                print(f"[CONSENT] ⚠ PDL ignoré (pas d'ID): {up}")
+                logger.warning(f"[CONSENT] ⚠ PDL ignoré (pas d'ID): {up}")
                 continue
 
             # Check if PDL already exists
@@ -287,7 +289,7 @@ async def consent_callback(
                 db.add(new_pdl)
                 await db.flush()  # Flush to get the ID
                 created_count += 1
-                print(f"[CONSENT] ✓ PDL créé: {usage_point_id}")
+                logger.info(f"[CONSENT] ✓ PDL créé: {usage_point_id}")
 
                 # Try to fetch contract info automatically
                 try:
@@ -325,42 +327,42 @@ async def consent_callback(
                                             new_pdl.offpeak_hours = {"default": offpeak}
                                         elif isinstance(offpeak, dict):
                                             new_pdl.offpeak_hours = offpeak
-                                        print(f"[CONSENT] ✓ Heures creuses récupérées: {new_pdl.offpeak_hours}")
+                                        logger.info(f"[CONSENT] ✓ Heures creuses récupérées: {new_pdl.offpeak_hours}")
                 except Exception as e:
-                    print(f"[CONSENT] ⚠ Impossible de récupérer les infos du contrat: {e}")
+                    logger.warning(f"[CONSENT] ⚠ Impossible de récupérer les infos du contrat: {e}")
             else:
-                print(f"[CONSENT] PDL existe déjà: {usage_point_id}")
+                logger.debug(f"[CONSENT] PDL existe déjà: {usage_point_id}")
 
         await db.commit()
-        print("[CONSENT] ✓ Commit effectué en base de données")
+        logger.info("[CONSENT] ✓ Commit effectué en base de données")
 
         # Redirect to frontend dashboard with success message
-        print("[CONSENT] ===== FIN DU TRAITEMENT - SUCCES =====")
-        print(
+        logger.debug("[CONSENT] ===== FIN DU TRAITEMENT - SUCCES =====")
+        logger.info(
             f"[CONSENT] Redirection vers: {frontend_url}?consent_success=true&pdl_count={len(usage_points_list)}&created_count={created_count}"
         )
-        print("=" * 60)
+        logger.info("=" * 60)
         return RedirectResponse(
             url=f"{frontend_url}?consent_success=true&pdl_count={len(usage_points_list)}&created_count={created_count}"
         )
 
     except httpx.HTTPStatusError as e:
         # Handle HTTP errors from Enedis API
-        print(f"[CONSENT] ✗ ERREUR HTTP: {e.response.status_code}")
-        print(f"[CONSENT] Response body: {e.response.text}")
+        logger.error(f"[CONSENT] ✗ ERREUR HTTP: {e.response.status_code}")
+        logger.debug(f"[CONSENT] Response body: {e.response.text}")
         error_msg = f"Enedis API error: {e.response.status_code}"
         if e.response.status_code == 500:
             error_msg = "invalid_authorization_code"
         elif e.response.status_code == 401:
             error_msg = "unauthorized_client"
-        print(f"[CONSENT] Redirection avec erreur: {error_msg}")
-        print("=" * 60)
+        logger.error(f"[CONSENT] Redirection avec erreur: {error_msg}")
+        logger.info("=" * 60)
         return RedirectResponse(url=f"{frontend_url}?consent_error={error_msg}")
     except Exception as e:
         # Redirect to frontend dashboard with error
-        print(f"[CONSENT] ✗ ERREUR INATTENDUE: {type(e).__name__}: {str(e)}")
-        print(f"[CONSENT] Redirection avec erreur: {str(e)}")
-        print("=" * 60)
+        logger.error(f"[CONSENT] ✗ ERREUR INATTENDUE: {type(e).__name__}: {str(e)}")
+        logger.error(f"[CONSENT] Redirection avec erreur: {str(e)}")
+        logger.info("=" * 60)
         return RedirectResponse(url=f"{frontend_url}?consent_error={str(e)}")
 
 

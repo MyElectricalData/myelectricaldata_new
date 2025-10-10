@@ -1,12 +1,17 @@
+import logging
+import secrets
+from datetime import datetime, timedelta, UTC
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Body, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timedelta, UTC
-import secrets
-import httpx
+from sqlalchemy.orm import selectinload
+
+from ..config import settings
+from ..middleware import get_current_user
 from ..models import User, PDL, Token, EmailVerificationToken, PasswordResetToken, Role
 from ..models.database import get_db
-from sqlalchemy.orm import selectinload
 from ..schemas import (
     UserCreate,
     UserLogin,
@@ -16,6 +21,7 @@ from ..schemas import (
     APIResponse,
     ErrorDetail,
 )
+from ..services import cache_service, email_service, rate_limiter
 from ..utils import (
     verify_password,
     get_password_hash,
@@ -23,9 +29,8 @@ from ..utils import (
     generate_client_id,
     generate_client_secret,
 )
-from ..middleware import get_current_user
-from ..services import cache_service, email_service, rate_limiter
-from ..config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
 
@@ -61,13 +66,13 @@ async def signup(
     # Verify Turnstile captcha if enabled
     if settings.REQUIRE_CAPTCHA:
         if not user_data.turnstile_token:
-            print("[CAPTCHA] No token provided")
+            logger.warning("[CAPTCHA] No token provided")
             return APIResponse(
                 success=False, error=ErrorDetail(code="CAPTCHA_REQUIRED", message="Captcha verification required")
             )
 
         # Verify captcha with Cloudflare
-        print(f"[CAPTCHA] Verifying token: {user_data.turnstile_token[:20]}...")
+        logger.debug(f"[CAPTCHA] Verifying token: {user_data.turnstile_token[:20]}...")
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
@@ -75,14 +80,14 @@ async def signup(
                     json={"secret": settings.TURNSTILE_SECRET_KEY, "response": user_data.turnstile_token},
                 )
                 result_data = response.json()
-                print(f"[CAPTCHA] Cloudflare response: {result_data}")
+                logger.debug(f"[CAPTCHA] Cloudflare response: {result_data}")
 
                 if not result_data.get("success"):
                     return APIResponse(
                         success=False, error=ErrorDetail(code="CAPTCHA_FAILED", message="Captcha verification failed")
                     )
             except Exception as e:
-                print(f"[CAPTCHA] Error verifying captcha: {str(e)}")
+                logger.error(f"[CAPTCHA] Error verifying captcha: {str(e)}")
                 return APIResponse(
                     success=False, error=ErrorDetail(code="CAPTCHA_ERROR", message="Error verifying captcha")
                 )
@@ -128,7 +133,7 @@ async def signup(
     verification_url = f"{settings.FRONTEND_URL}/verify-email?token={verification_token}"
     await email_service.send_verification_email(user.email, verification_url)
 
-    print(f"[SIGNUP] User {user.email} created. Verification email sent.")
+    logger.info(f"[SIGNUP] User {user.email} created. Verification email sent.")
 
     # Return credentials with message about email verification
     credentials = ClientCredentials(client_id=client_id, client_secret=client_secret)
@@ -193,9 +198,9 @@ async def get_token(
 
     Accepts credentials either in form data or in Authorization header (Basic Auth).
     """
-    print(f"[TOKEN] Received request - Content-Type: {request.headers.get('content-type')}")
-    print(f"[TOKEN] Authorization header: {request.headers.get('authorization', 'None')[:50] if request.headers.get('authorization') else 'None'}")
-    print(f"[TOKEN] Form client_id: {client_id}, client_secret: {'***' if client_secret else None}")
+    logger.debug(f"[TOKEN] Received request - Content-Type: {request.headers.get('content-type')}")
+    logger.debug(f"[TOKEN] Authorization header: {request.headers.get('authorization', 'None')[:50] if request.headers.get('authorization') else 'None'}")
+    logger.debug(f"[TOKEN] Form client_id: {client_id}, client_secret: {'***' if client_secret else None}")
 
     # Try to get credentials from Authorization header (Basic Auth)
     if not client_id or not client_secret:
@@ -206,23 +211,23 @@ async def get_token(
                 encoded = auth_header.split(' ')[1]
                 decoded = base64.b64decode(encoded).decode('utf-8')
                 client_id, client_secret = decoded.split(':', 1)
-                print(f"[TOKEN] From Basic Auth - client_id: {client_id}, client_secret: ***")
+                logger.debug(f"[TOKEN] From Basic Auth - client_id: {client_id}, client_secret: ***")
             except Exception as e:
-                print(f"[TOKEN] Failed to parse Basic Auth: {e}")
+                logger.error(f"[TOKEN] Failed to parse Basic Auth: {e}")
 
     # If still not found, try form data
     if not client_id or not client_secret:
         try:
             form_data = await request.form()
-            print(f"[TOKEN] Form data keys: {list(form_data.keys())}")
+            logger.debug(f"[TOKEN] Form data keys: {list(form_data.keys())}")
             client_id = form_data.get('client_id') or client_id
             client_secret = form_data.get('client_secret') or client_secret
-            print(f"[TOKEN] After form parse - client_id: {client_id}, client_secret: {'***' if client_secret else None}")
+            logger.debug(f"[TOKEN] After form parse - client_id: {client_id}, client_secret: {'***' if client_secret else None}")
         except Exception as e:
-            print(f"[TOKEN] Failed to parse form: {e}")
+            logger.error(f"[TOKEN] Failed to parse form: {e}")
 
     if not client_id or not client_secret:
-        print(f"[TOKEN] Missing credentials - client_id: {client_id}, client_secret: {'***' if client_secret else None}")
+        logger.debug(f"[TOKEN] Missing credentials - client_id: {client_id}, client_secret: {'***' if client_secret else None}")
         raise HTTPException(status_code=422, detail="client_id and client_secret are required (provide in form data or Basic Auth header)")
 
     # Find user by client_id
@@ -369,7 +374,7 @@ async def verify_email(
     await db.delete(email_token)
     await db.commit()
 
-    print(f"[EMAIL_VERIFICATION] Email verified for user {user.email}")
+    logger.info(f"[EMAIL_VERIFICATION] Email verified for user {user.email}")
 
     return APIResponse(success=True, data={"message": "Email verified successfully! You can now log in."})
 
@@ -422,7 +427,7 @@ async def resend_verification(
     verification_url = f"{settings.FRONTEND_URL}/verify-email?token={verification_token}"
     await email_service.send_verification_email(user.email, verification_url)
 
-    print(f"[RESEND_VERIFICATION] Verification email resent to {user.email}")
+    logger.info(f"[RESEND_VERIFICATION] Verification email resent to {user.email}")
 
     return APIResponse(success=True, data={"message": "Verification email sent!"})
 
@@ -445,7 +450,7 @@ async def regenerate_secret(
 
     await db.commit()
 
-    print(f"[REGENERATE_SECRET] Client secret regenerated for user {current_user.email}, cache cleared")
+    logger.info(f"[REGENERATE_SECRET] Client secret regenerated for user {current_user.email}, cache cleared")
 
     credentials = ClientCredentials(client_id=current_user.client_id, client_secret=new_client_secret)
 
@@ -470,7 +475,7 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)) 
     if not email:
         raise HTTPException(status_code=422, detail="Email is required")
 
-    print(f"[FORGOT_PASSWORD] Request for email: {email}")
+    logger.debug(f"[FORGOT_PASSWORD] Request for email: {email}")
 
     # Find user
     result = await db.execute(select(User).where(User.email == email))
@@ -478,7 +483,7 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)) 
 
     # Always return success to avoid email enumeration
     if not user:
-        print(f"[FORGOT_PASSWORD] User not found: {email}")
+        logger.error(f"[FORGOT_PASSWORD] User not found: {email}")
         return APIResponse(
             success=True,
             data={"message": "If the email exists, a password reset link has been sent."}
@@ -506,13 +511,13 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)) 
     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
 
     # In development mode, log the reset URL
-    print(f"[FORGOT_PASSWORD] Reset URL: {reset_url}")
+    logger.info(f"[FORGOT_PASSWORD] Reset URL: {reset_url}")
 
     try:
         await email_service.send_password_reset_email(user.email, reset_url)
-        print(f"[FORGOT_PASSWORD] Reset email sent to: {user.email}")
+        logger.info(f"[FORGOT_PASSWORD] Reset email sent to: {user.email}")
     except Exception as e:
-        print(f"[FORGOT_PASSWORD] Error sending email: {str(e)}")
+        logger.error(f"[FORGOT_PASSWORD] Error sending email: {str(e)}")
         # Don't reveal email sending errors to avoid enumeration
 
     return APIResponse(
@@ -532,7 +537,7 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)) -
     if not token or not new_password:
         raise HTTPException(status_code=422, detail="Token and new_password are required")
 
-    print(f"[RESET_PASSWORD] Attempting password reset with token: {token[:20]}...")
+    logger.info(f"[RESET_PASSWORD] Attempting password reset with token: {token[:20]}...")
 
     # Find reset token
     result = await db.execute(
@@ -541,7 +546,7 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)) -
     reset_token = result.scalar_one_or_none()
 
     if not reset_token:
-        print(f"[RESET_PASSWORD] Invalid token")
+        logger.info(f"[RESET_PASSWORD] Invalid token")
         return APIResponse(
             success=False,
             error=ErrorDetail(code="INVALID_TOKEN", message="Invalid or expired reset token")
@@ -549,7 +554,7 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)) -
 
     # Check if token expired
     if datetime.now(UTC) > reset_token.expires_at:
-        print(f"[RESET_PASSWORD] Token expired")
+        logger.info(f"[RESET_PASSWORD] Token expired")
         await db.delete(reset_token)
         await db.commit()
         return APIResponse(
@@ -574,6 +579,6 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)) -
     await db.delete(reset_token)
     await db.commit()
 
-    print(f"[RESET_PASSWORD] Password reset successfully for user: {user.email}")
+    logger.info(f"[RESET_PASSWORD] Password reset successfully for user: {user.email}")
 
     return APIResponse(success=True, data={"message": "Password reset successfully!"})
