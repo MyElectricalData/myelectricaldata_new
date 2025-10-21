@@ -270,9 +270,10 @@ async def get_current_user_info(
         created_at=user.created_at,
     )
 
-    # Add is_admin field and role
+    # Add is_admin field, debug_mode, and role
     user_data = user_response.model_dump()
     user_data['is_admin'] = settings.is_admin(user.email)
+    user_data['debug_mode'] = user.debug_mode
 
     # Add role information with permissions
     if user.role:

@@ -243,7 +243,51 @@ class EnedisAdapter:
         headers = self._get_headers(access_token)
         params = {"usage_point_id": usage_point_id, "start": start, "end": end}
 
-        return await self._make_request("GET", url, headers=headers, params=params)
+        response = await self._make_request("GET", url, headers=headers, params=params)
+
+        # Check if date range includes a Saturday and log what we got back
+        from datetime import datetime, timedelta
+        start_date = datetime.strptime(start, "%Y-%m-%d")
+        end_date = datetime.strptime(end, "%Y-%m-%d")
+
+        # Find all Saturdays in range (day 5 = Saturday in Python)
+        saturdays = []
+        current = start_date
+        while current <= end_date:
+            if current.weekday() == 5:  # Saturday
+                saturdays.append(current.strftime("%Y-%m-%d"))
+            current += timedelta(days=1)
+
+        if saturdays:
+            logger.info(f"🔍 [SATURDAY ENEDIS] Requested range {start} → {end} includes Saturdays: {saturdays}")
+
+            # Extract readings
+            readings = []
+            if isinstance(response, dict):
+                if "meter_reading" in response and "interval_reading" in response["meter_reading"]:
+                    readings = response["meter_reading"]["interval_reading"]
+                elif "interval_reading" in response:
+                    readings = response["interval_reading"]
+
+            logger.info(f"🔍 [SATURDAY ENEDIS] Got {len(readings)} total readings from Enedis")
+
+            # Check which Saturday dates appear in the readings
+            if readings:
+                saturday_readings = []
+                for saturday in saturdays:
+                    sat_reads = [r for r in readings if r.get("date", "").startswith(saturday)]
+                    saturday_readings.extend(sat_reads)
+                    logger.info(f"🔍 [SATURDAY ENEDIS] Saturday {saturday}: {len(sat_reads)} readings in response")
+
+                if saturday_readings:
+                    logger.info(f"🔍 [SATURDAY ENEDIS] Sample Saturday reading: {saturday_readings[0]}")
+                    logger.info(f"🔍 [SATURDAY ENEDIS] First 5 Saturday reading dates: {[r.get('date') for r in saturday_readings[:5]]}")
+                else:
+                    logger.warning(f"🔍 [SATURDAY ENEDIS] ⚠️ NO Saturday readings found in Enedis response!")
+                    logger.info(f"🔍 [SATURDAY ENEDIS] First 5 readings in response: {[r.get('date') for r in readings[:5]]}")
+                    logger.info(f"🔍 [SATURDAY ENEDIS] Last 5 readings in response: {[r.get('date') for r in readings[-5:]]}")
+
+        return response
 
     async def get_max_power(self, usage_point_id: str, start: str, end: str, access_token: str) -> dict[str, Any]:
         """Get maximum power data"""

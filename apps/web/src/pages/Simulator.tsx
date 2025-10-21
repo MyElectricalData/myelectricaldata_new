@@ -7,6 +7,7 @@ import { energyApi, type EnergyProvider, type EnergyOffer } from '@/api/energy'
 import { tempoApi, type TempoDay } from '@/api/tempo'
 import type { PDL } from '@/types/api'
 import jsPDF from 'jspdf'
+import { logger } from '@/utils/logger'
 
 // Helper function to check if a date is weekend (Saturday or Sunday)
 function isWeekend(dateString: string): boolean {
@@ -76,7 +77,7 @@ function isOffpeakHour(hour: number, offpeakConfig?: Record<string, string>): bo
 
       // Log the parsed range (only once)
       if (!(isOffpeakHour as any)._logged) {
-        console.log(`[isOffpeakHour] Parsed "${range}" as ${startHour}h-${endHour}h (regex matched: "${match[0]}")`)
+        logger.log(`[isOffpeakHour] Parsed "${range}" as ${startHour}h-${endHour}h (regex matched: "${match[0]}")`)
         ;(isOffpeakHour as any)._logged = true
       }
 
@@ -105,12 +106,12 @@ export default function Simulator() {
     queryKey: ['pdls'],
     queryFn: async () => {
       const response = await pdlApi.list()
-      console.log('[Simulator] PDL API response:', response)
-      console.log('[Simulator] response.data type:', typeof response.data, 'isArray:', Array.isArray(response.data))
+      logger.log('[Simulator] PDL API response:', response)
+      logger.log('[Simulator] response.data type:', typeof response.data, 'isArray:', Array.isArray(response.data))
       if (response.success && Array.isArray(response.data)) {
         return response.data as PDL[]
       }
-      console.warn('[Simulator] Returning empty array, response was:', response)
+      logger.warn('[Simulator] Returning empty array, response was:', response)
       return []
     },
   })
@@ -152,7 +153,7 @@ export default function Simulator() {
 
   // Set first PDL as selected by default
   useEffect(() => {
-    console.log('[Simulator] pdlsData in useEffect:', pdlsData, 'isArray:', Array.isArray(pdlsData))
+    logger.log('[Simulator] pdlsData in useEffect:', pdlsData, 'isArray:', Array.isArray(pdlsData))
     if (pdlsData && pdlsData.length > 0 && !selectedPdl) {
       setSelectedPdl(pdlsData[0].usage_point_id)
     }
@@ -178,8 +179,8 @@ export default function Simulator() {
     try {
       // Get selected PDL configuration
       const pdl = Array.isArray(pdlsData) ? pdlsData.find((p) => p.usage_point_id === selectedPdl) : undefined
-      console.log('Selected PDL:', pdl)
-      console.log('Offpeak hours config:', pdl?.offpeak_hours)
+      logger.log('Selected PDL:', pdl)
+      logger.log('Offpeak hours config:', pdl?.offpeak_hours)
       // Récupérer les consommations horaires des 12 derniers mois (année glissante)
       // La date de fin doit être antérieure à la date actuelle selon Enedis
       const today = new Date()
@@ -218,7 +219,7 @@ export default function Simulator() {
 
       setFetchProgress({ current: 0, total: periods.length, phase: 'Récupération des données de consommation...' })
 
-      console.log(`Fetching ${periods.length} periods of consumption data`)
+      logger.log(`Fetching ${periods.length} periods of consumption data`)
 
       // Récupérer les données pour chaque période
       const allData: any[] = []
@@ -233,18 +234,18 @@ export default function Simulator() {
           phase: `${period.start} → ${period.end} (${i + 1}/${periods.length})`
         })
 
-        console.log(`Fetching period ${i + 1}/${periods.length}: ${period.start} to ${period.end}`)
+        logger.log(`Fetching period ${i + 1}/${periods.length}: ${period.start} to ${period.end}`)
 
         // Check if data is already in React Query cache
         const cacheKey = ['consumption-detail', selectedPdl, period.start, period.end]
         let response = queryClient.getQueryData(cacheKey) as any
 
         if (response) {
-          console.log(`✅ [Cache HIT] Using cached data for ${period.start} → ${period.end}`)
+          logger.log(`✅ [Cache HIT] Using cached data for ${period.start} → ${period.end}`)
         }
 
         if (!response) {
-          console.log(`❌ [Cache MISS] Fetching from API for ${period.start} → ${period.end}`)
+          logger.log(`❌ [Cache MISS] Fetching from API for ${period.start} → ${period.end}`)
           // Not in cache, fetch from API and cache it
           response = await queryClient.fetchQuery({
             queryKey: cacheKey,
@@ -262,11 +263,11 @@ export default function Simulator() {
           const errorCode = response.error?.code
           const errorMessage = response.error?.message || ''
 
-          console.log('[Simulator] API Error detected:', { errorCode, errorMessage, response })
+          logger.log('[Simulator] API Error detected:', { errorCode, errorMessage, response })
 
           // Check for Enedis error ADAM-ERR0123 (period before meter activation)
           if (errorMessage.includes('ADAM-ERR0123') || errorMessage.includes('anterior to the meter')) {
-            console.log(`⚠️ Stopping simulation at ${period.start} - meter not activated yet. Processing data already collected.`)
+            logger.log(`⚠️ Stopping simulation at ${period.start} - meter not activated yet. Processing data already collected.`)
             stoppedEarly = true
             if (allData.length > 0 && !earliestDataDate) {
               // Track the earliest period with data
@@ -286,7 +287,7 @@ export default function Simulator() {
         // Log the number of points in this period
         const data = response.data as any
         const pointsCount = data?.meter_reading?.interval_reading?.length || 0
-        console.log(`Period ${i + 1}/${periods.length} (${period.start} to ${period.end}): ${pointsCount} points`)
+        logger.log(`Period ${i + 1}/${periods.length} (${period.start} to ${period.end}): ${pointsCount} points`)
 
         allData.push(response.data)
       }
@@ -300,13 +301,13 @@ export default function Simulator() {
           yearStart.toISOString().split('T')[0],
           endDate.toISOString().split('T')[0]
         )
-        console.log('[TEMPO API] Response:', tempoResponse)
+        logger.log('[TEMPO API] Response:', tempoResponse)
         if (tempoResponse.success && Array.isArray(tempoResponse.data)) {
           tempoColors = tempoResponse.data
-          console.log('[TEMPO API] First 3 days:', JSON.stringify(tempoColors.slice(0, 3), null, 2))
+          logger.log('[TEMPO API] First 3 days:', JSON.stringify(tempoColors.slice(0, 3), null, 2))
         }
       } catch (error) {
-        console.warn('Could not fetch TEMPO colors:', error)
+        logger.warn('Could not fetch TEMPO colors:', error)
       }
 
       // Get subscribed power from selected PDL
@@ -332,7 +333,7 @@ export default function Simulator() {
       // Calculer les simulations pour chaque offre
       const result = calculateSimulationsForAllOffers(allData, filteredOffers, providersData || [], tempoColors, pdl)
 
-      console.log('Simulation result:', result)
+      logger.log('Simulation result:', result)
 
       if (!result || result.length === 0) {
         throw new Error('Aucun résultat de simulation généré')
@@ -358,8 +359,8 @@ export default function Simulator() {
       })
     }
 
-    console.log(`TEMPO colors loaded: ${tempoColorMap.size} days`)
-    console.log('Sample TEMPO dates:', Array.from(tempoColorMap.keys()).slice(0, 5))
+    logger.log(`TEMPO colors loaded: ${tempoColorMap.size} days`)
+    logger.log('Sample TEMPO dates:', Array.from(tempoColorMap.keys()).slice(0, 5))
 
     // Extract all consumption values
     const allConsumption: { date: string; dateOnly: string; value: number; hour?: number }[] = []
@@ -404,19 +405,19 @@ export default function Simulator() {
     const uniqueDates = new Set(allConsumption.map(item => item.date))
     const hasDuplicates = uniqueDates.size !== allConsumption.length
 
-    console.log('Total consumption points:', allConsumption.length)
-    console.log('Unique dates:', uniqueDates.size)
-    console.log('Has duplicates?', hasDuplicates)
+    logger.log('Total consumption points:', allConsumption.length)
+    logger.log('Unique dates:', uniqueDates.size)
+    logger.log('Has duplicates?', hasDuplicates)
 
     if (hasDuplicates) {
-      console.warn(`⚠️ DUPLICATE DETECTED: ${allConsumption.length - uniqueDates.size} duplicate points found!`)
+      logger.warn(`⚠️ DUPLICATE DETECTED: ${allConsumption.length - uniqueDates.size} duplicate points found!`)
     }
 
     // Calculate total kWh
     const totalKwh = allConsumption.reduce((sum, item) => sum + (item.value / 1000), 0) // Convert Wh to kWh
 
-    console.log('Total kWh for year:', totalKwh)
-    console.log('First 3 consumption samples:', JSON.stringify(allConsumption.slice(0, 3), null, 2))
+    logger.log('Total kWh for year:', totalKwh)
+    logger.log('First 3 consumption samples:', JSON.stringify(allConsumption.slice(0, 3), null, 2))
 
     // Simulate each offer
     const results = offers.map((offer) => {
@@ -447,7 +448,7 @@ export default function Simulator() {
             }
           })
           energyCost = (baseWeekdayKwh * offer.base_price) + (baseWeekendKwh * offer.base_price_weekend)
-          console.log(`BASE with weekend pricing for ${offer.name}:`, {
+          logger.log(`BASE with weekend pricing for ${offer.name}:`, {
             baseWeekdayKwh: baseWeekdayKwh.toFixed(2),
             baseWeekendKwh: baseWeekendKwh.toFixed(2),
             weekdayPrice: offer.base_price,
@@ -460,8 +461,8 @@ export default function Simulator() {
         }
       } else if (offer.offer_type === 'SEASONAL' && offer.hc_price_winter && offer.hp_price_winter) {
         // SEASONAL calculation (Enercoop Flexi WATT 2 saisons)
-        console.log(`[SIMULATOR] SEASONAL calculation for ${offer.name}`)
-        console.log(`[SIMULATOR] Seasonal prices:`, {
+        logger.log(`[SIMULATOR] SEASONAL calculation for ${offer.name}`)
+        logger.log(`[SIMULATOR] Seasonal prices:`, {
           hc_price_winter: offer.hc_price_winter,
           hp_price_winter: offer.hp_price_winter,
           hc_price_summer: offer.hc_price_summer,
@@ -530,7 +531,7 @@ export default function Simulator() {
         const peakDayCost = hasPeakDayPricing ? (peakDayKwh * offer.peak_day_price!) : 0
         energyCost = winterCost + summerCost + peakDayCost
 
-        console.log(`[SIMULATOR] SEASONAL result for ${offer.name}:`, {
+        logger.log(`[SIMULATOR] SEASONAL result for ${offer.name}:`, {
           winter: { hcKwh: hcWinterKwh.toFixed(2), hpKwh: hpWinterKwh.toFixed(2), cost: winterCost.toFixed(2) },
           summer: { hcKwh: hcSummerKwh.toFixed(2), hpKwh: hpSummerKwh.toFixed(2), cost: summerCost.toFixed(2) },
           peakDay: hasPeakDayPricing ? { kwh: peakDayKwh.toFixed(2), cost: peakDayCost.toFixed(2) } : null,
@@ -538,7 +539,7 @@ export default function Simulator() {
         })
       } else if ((offer.offer_type === 'HC_HP' || offer.offer_type === 'HC_NUIT_WEEKEND' || offer.offer_type === 'HC_WEEKEND') && offer.hc_price && offer.hp_price) {
         // HC/HP calculation using PDL offpeak hours configuration
-        console.log(`[SIMULATOR] ${offer.offer_type} calculation for ${offer.name}`)
+        logger.log(`[SIMULATOR] ${offer.offer_type} calculation for ${offer.name}`)
 
         let hcCount = 0
         let hpCount = 0
@@ -620,7 +621,7 @@ export default function Simulator() {
 
         energyCost = weekdayCost + weekendCost
 
-        console.log(`HC/HP result for ${offer.name}:`, {
+        logger.log(`HC/HP result for ${offer.name}:`, {
           weekday: {
             hcKwh: hcKwh.toFixed(2),
             hpKwh: hpKwh.toFixed(2),
@@ -649,7 +650,7 @@ export default function Simulator() {
 
           // Debug first 5 items
           if (index < 5) {
-            console.log(`[TEMPO] Item ${index}: dateOnly="${item.dateOnly}", color="${color}"`)
+            logger.log(`[TEMPO] Item ${index}: dateOnly="${item.dateOnly}", color="${color}"`)
           }
 
           // Determine if HC or HP (22:00-06:00 = HC)
@@ -676,7 +677,7 @@ export default function Simulator() {
           }
         })
 
-        console.log(`[TEMPO] Color distribution:`, colorStats)
+        logger.log(`[TEMPO] Color distribution:`, colorStats)
 
         energyCost = (
           (blueHcKwh * (offer.tempo_blue_hc || 0)) +
@@ -687,7 +688,7 @@ export default function Simulator() {
           (redHpKwh * (offer.tempo_red_hp || 0))
         )
 
-        console.log(`TEMPO calculation for ${offer.name}:`, {
+        logger.log(`TEMPO calculation for ${offer.name}:`, {
           blueHcKwh: blueHcKwh.toFixed(2),
           blueHpKwh: blueHpKwh.toFixed(2),
           whiteHcKwh: whiteHcKwh.toFixed(2),

@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -49,7 +49,10 @@ class PDLResponse(BaseModel):
     created_at: datetime
     display_order: Optional[int] = None
     subscribed_power: Optional[int] = None
-    offpeak_hours: Optional[dict] = None
+    offpeak_hours: Optional[Union[list[str], dict]] = None  # Array format or legacy object format
+    has_consumption: bool = True
+    has_production: bool = False
+    is_active: bool = True
 
 
 class CacheDeleteResponse(BaseModel):

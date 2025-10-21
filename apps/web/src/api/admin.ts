@@ -13,6 +13,14 @@ export const adminApi = {
     return apiClient.delete(`admin/users/${userId}/clear-cache`)
   },
 
+  clearAllConsumptionCache: async () => {
+    return apiClient.delete('admin/cache/consumption/clear-all')
+  },
+
+  toggleUserDebugMode: async (userId: string) => {
+    return apiClient.post(`admin/users/${userId}/toggle-debug`)
+  },
+
   getGlobalStats: async () => {
     return apiClient.get('admin/stats')
   },

@@ -18,12 +18,20 @@ export const pdlApi = {
     return apiClient.delete(`pdl/${id}`)
   },
 
-  updateContract: async (id: string, data: { subscribed_power?: number; offpeak_hours?: Record<string, string> }) => {
+  updateContract: async (id: string, data: { subscribed_power?: number; offpeak_hours?: string[] | Record<string, string> }) => {
     return apiClient.patch<PDL>(`pdl/${id}/contract`, data)
   },
 
   updateName: async (id: string, name: string) => {
     return apiClient.patch<PDL>(`pdl/${id}/name`, { name })
+  },
+
+  updateType: async (id: string, has_consumption: boolean, has_production: boolean) => {
+    return apiClient.patch<PDL>(`pdl/${id}/type`, { has_consumption, has_production })
+  },
+
+  toggleActive: async (id: string, is_active: boolean) => {
+    return apiClient.patch<PDL>(`pdl/${id}/active`, { is_active })
   },
 
   reorderPdls: async (pdlOrders: Array<{ id: string; order: number }>) => {

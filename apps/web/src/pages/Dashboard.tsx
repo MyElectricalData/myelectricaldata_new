@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams, Link } from 'react-router-dom'
 import { pdlApi } from '@/api/pdl'
 import { oauthApi } from '@/api/oauth'
-import { ExternalLink, CheckCircle, XCircle, ArrowUpDown, GripVertical, UserPlus } from 'lucide-react'
+import { ExternalLink, CheckCircle, XCircle, ArrowUpDown, GripVertical, UserPlus, Filter } from 'lucide-react'
 import PDLDetails from '@/components/PDLDetails'
 import PDLCard from '@/components/PDLCard'
 import { useAuth } from '@/hooks/useAuth'
@@ -15,6 +15,8 @@ export default function Dashboard() {
   const [selectedPdl, setSelectedPdl] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState<'name' | 'date' | 'id' | 'custom'>('custom')
   const [draggedPdl, setDraggedPdl] = useState<PDL | null>(null)
+  const [isDraggingEnabled, setIsDraggingEnabled] = useState(false)
+  const [showInactive, setShowInactive] = useState(true)
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
@@ -95,28 +97,32 @@ export default function Dashboard() {
 
   const pdls = pdlsResponse?.success && Array.isArray(pdlsResponse.data) ? pdlsResponse.data : []
 
+  const activePdlsCount = pdls.filter(pdl => pdl.is_active ?? true).length
+  const inactivePdlsCount = pdls.length - activePdlsCount
+
   const sortedPdls = useMemo(() => {
-    const pdlsCopy = [...pdls]
+    // Filter by active status first
+    let filteredPdls = showInactive ? [...pdls] : pdls.filter(pdl => pdl.is_active ?? true)
 
     switch (sortOrder) {
       case 'name':
-        return pdlsCopy.sort((a, b) => {
+        return filteredPdls.sort((a, b) => {
           const nameA = (a.name || a.usage_point_id).toLowerCase()
           const nameB = (b.name || b.usage_point_id).toLowerCase()
           return nameA.localeCompare(nameB)
         })
       case 'id':
-        return pdlsCopy.sort((a, b) => a.usage_point_id.localeCompare(b.usage_point_id))
+        return filteredPdls.sort((a, b) => a.usage_point_id.localeCompare(b.usage_point_id))
       case 'date':
-        return pdlsCopy.sort((a, b) =>
+        return filteredPdls.sort((a, b) =>
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )
       case 'custom':
       default:
         // Already sorted by display_order from backend
-        return pdlsCopy
+        return filteredPdls
     }
-  }, [pdls, sortOrder])
+  }, [pdls, sortOrder, showInactive])
 
   const handleDragStart = (pdl: PDL) => {
     setDraggedPdl(pdl)
@@ -201,16 +207,57 @@ export default function Dashboard() {
 
       {/* PDL Management */}
       <div className="card">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-          <h2 className="text-xl font-semibold">Points de livraison (PDL)</h2>
-          <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
-            {pdls.length > 1 && (
-              <div className="flex items-center gap-2 text-sm flex-1 sm:flex-initial">
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold">Points de livraison (PDL)</h2>
+              {pdls.length > 0 && (
+                <p className="text-sm text-gray-500 mt-1">
+                  {activePdlsCount} actif{activePdlsCount > 1 ? 's' : ''}
+                  {inactivePdlsCount > 0 && ` • ${inactivePdlsCount} désactivé${inactivePdlsCount > 1 ? 's' : ''}`}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+              {user?.is_admin && (
+                <Link
+                  to="/admin/add-pdl"
+                  className="btn bg-amber-600 hover:bg-amber-700 text-white text-sm flex items-center justify-center gap-1 w-full sm:w-auto whitespace-nowrap"
+                >
+                  <UserPlus size={16} />
+                  Ajouter PDL (Admin)
+                </Link>
+              )}
+              <button
+                onClick={handleStartConsent}
+                className="btn btn-primary text-sm flex items-center justify-center gap-1 w-full sm:w-auto whitespace-nowrap"
+                disabled={getOAuthUrlMutation.isPending}
+              >
+                <ExternalLink size={16} />
+                Consentement Enedis
+              </button>
+            </div>
+          </div>
+          {pdls.length > 1 && (
+            <div className="flex items-center justify-end gap-3 text-sm">
+              <div className="flex items-center gap-2">
+                <Filter size={16} className="text-gray-500" />
+                <label className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
+                  <input
+                    type="checkbox"
+                    checked={showInactive}
+                    onChange={(e) => setShowInactive(e.target.checked)}
+                    className="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-2 border-gray-400 dark:border-gray-500 rounded cursor-pointer focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 accent-primary-600"
+                  />
+                  <span className="text-sm select-none">Afficher les PDL désactivés</span>
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
                 <ArrowUpDown size={16} className="text-gray-500" />
                 <select
                   value={sortOrder}
                   onChange={(e) => setSortOrder(e.target.value as 'name' | 'date' | 'id' | 'custom')}
-                  className="input text-sm py-1 px-2 flex-1 sm:flex-initial"
+                  className="input text-sm py-1 px-2 w-auto"
                 >
                   <option value="custom">Ordre personnalisé</option>
                   <option value="date">Date d'ajout</option>
@@ -218,25 +265,8 @@ export default function Dashboard() {
                   <option value="id">Numéro PDL</option>
                 </select>
               </div>
-            )}
-            {user?.is_admin && (
-              <Link
-                to="/admin/add-pdl"
-                className="btn bg-amber-600 hover:bg-amber-700 text-white text-sm flex items-center gap-1 whitespace-nowrap"
-              >
-                <UserPlus size={16} />
-                Ajouter PDL (Admin)
-              </Link>
-            )}
-            <button
-              onClick={handleStartConsent}
-              className="btn btn-primary text-sm flex items-center gap-1 whitespace-nowrap"
-              disabled={getOAuthUrlMutation.isPending}
-            >
-              <ExternalLink size={16} />
-              Consentement Enedis
-            </button>
-          </div>
+            </div>
+          )}
         </div>
 
         {pdlsLoading ? (
@@ -255,23 +285,32 @@ export default function Dashboard() {
             {sortedPdls.map((pdl) => (
               <div
                 key={pdl.id}
-                draggable={sortOrder === 'custom'}
+                draggable={sortOrder === 'custom' && isDraggingEnabled}
                 onDragStart={() => handleDragStart(pdl)}
                 onDragOver={(e) => handleDragOver(e, pdl)}
-                onDragEnd={handleDragEnd}
-                className={`${sortOrder === 'custom' ? 'cursor-move' : ''} ${draggedPdl?.id === pdl.id ? 'opacity-50' : ''}`}
+                onDragEnd={() => {
+                  handleDragEnd()
+                  setIsDraggingEnabled(false)
+                }}
+                className={`${draggedPdl?.id === pdl.id ? 'opacity-50' : ''}`}
               >
                 {sortOrder === 'custom' && (
-                  <div className="flex items-center gap-2 mb-1 text-gray-400">
+                  <div
+                    className="flex items-center gap-2 mb-1 text-gray-400 cursor-move hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                    onMouseDown={() => setIsDraggingEnabled(true)}
+                    onMouseUp={() => setIsDraggingEnabled(false)}
+                  >
                     <GripVertical size={16} />
-                    <span className="text-xs">Glissez pour réorganiser</span>
+                    <span className="text-xs select-none">Glissez pour réorganiser</span>
                   </div>
                 )}
-                <PDLCard
-                  pdl={pdl}
-                  onViewDetails={() => setSelectedPdl(pdl.usage_point_id)}
-                  onDelete={() => deletePdlMutation.mutate(pdl.id)}
-                />
+                <div className="select-text">
+                  <PDLCard
+                    pdl={pdl}
+                    onViewDetails={() => setSelectedPdl(pdl.usage_point_id)}
+                    onDelete={() => deletePdlMutation.mutate(pdl.id)}
+                  />
+                </div>
               </div>
             ))}
           </div>

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/authStore'
+import { setDebugMode } from '@/utils/logger'
 import type { UserCreate, UserLogin } from '@/types/api'
 
 export const useAuth = () => {
@@ -13,6 +14,8 @@ export const useAuth = () => {
       const response = await authApi.getMe()
       if (response.success && response.data) {
         setUser(response.data)
+        // Update debug mode based on user settings
+        setDebugMode(response.data.debug_mode || false)
         return response.data
       }
       return null

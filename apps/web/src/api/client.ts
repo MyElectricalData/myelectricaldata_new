@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosInstance } from 'axios'
 import type { APIResponse } from '@/types/api'
+import { logger, isDebugEnabled } from '@/utils/logger'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 const DEBUG = import.meta.env.VITE_DEBUG === 'true'
@@ -9,13 +10,13 @@ class APIClient {
 
   constructor() {
     // Debug mode: print configuration
-    if (DEBUG) {
-      console.log('=' .repeat(60))
-      console.log('🔧 Frontend API Configuration (DEBUG MODE)')
-      console.log('=' .repeat(60))
-      console.log('API Base URL:', API_BASE_URL)
-      console.log('Turnstile Site Key:', import.meta.env.VITE_TURNSTILE_SITE_KEY || 'Not configured')
-      console.log('=' .repeat(60))
+    if (isDebugEnabled()) {
+      logger.log('=' .repeat(60))
+      logger.log('🔧 Frontend API Configuration (DEBUG MODE)')
+      logger.log('=' .repeat(60))
+      logger.log('API Base URL:', API_BASE_URL)
+      logger.log('Turnstile Site Key:', import.meta.env.VITE_TURNSTILE_SITE_KEY || 'Not configured')
+      logger.log('=' .repeat(60))
     }
 
     // Use API_BASE_URL as-is (already contains protocol and port)
@@ -42,10 +43,10 @@ class APIClient {
         config.headers.Authorization = `Bearer ${token}`
       }
       // Debug: log the full URL being called
-      if (DEBUG) {
-        console.log('[API Client] Request URL:', (config.baseURL || '') + (config.url || ''))
-        console.log('[API Client] Base URL:', config.baseURL)
-        console.log('[API Client] Relative URL:', config.url)
+      if (isDebugEnabled()) {
+        logger.log('[API Client] Request URL:', (config.baseURL || '') + (config.url || ''))
+        logger.log('[API Client] Base URL:', config.baseURL)
+        logger.log('[API Client] Relative URL:', config.url)
       }
       return config
     })
@@ -65,15 +66,15 @@ class APIClient {
   }
 
   async get<T>(url: string, params?: Record<string, unknown>): Promise<APIResponse<T>> {
-    const DEBUG = import.meta.env.VITE_DEBUG === 'true'
-    if (DEBUG) {
-      console.log('[API Client GET] About to call:', this.client.defaults.baseURL + url)
-      console.log('[API Client GET] Axios config:', {
+    if (isDebugEnabled()) {
+      logger.log('[API Client GET] About to call:', this.client.defaults.baseURL + url)
+      logger.log('[API Client GET] Params:', params)
+      logger.log('[API Client GET] Axios config:', {
         baseURL: this.client.defaults.baseURL,
         url: url,
         fullUrl: this.client.defaults.baseURL + url
       })
-    }    
+    }
     const response = await this.client.get<APIResponse<T>>(url, { params })
     return response.data
   }

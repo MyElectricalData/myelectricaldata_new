@@ -1,20 +1,20 @@
-"""TEMPO calendar endpoints"""
-import logging
-from datetime import datetime, timedelta, UTC
-from typing import List
+"""Tempo Calendar endpoints"""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import logging
+from datetime import UTC, datetime, timedelta
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..middleware import get_current_user, require_permission, require_action
-from ..models import User, TempoDay
+from ..middleware import require_action
+from ..models import User
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
 from ..services.rte import rte_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/tempo", tags=["TEMPO Calendar"])
+router = APIRouter(prefix="/tempo", tags=["Tempo Calendar"])
 
 
 @router.get("/days", response_model=APIResponse)
@@ -24,21 +24,21 @@ async def get_tempo_days(
         description="Start date (YYYY-MM-DD)",
         openapi_examples={
             "current_year": {"summary": "Start of 2024", "value": "2024-01-01"},
-            "current_month": {"summary": "Start of October", "value": "2024-10-01"}
-        }
+            "current_month": {"summary": "Start of October", "value": "2024-10-01"},
+        },
     ),
     end_date: str | None = Query(
         None,
         description="End date (YYYY-MM-DD)",
         openapi_examples={
             "current_year": {"summary": "End of 2024", "value": "2024-12-31"},
-            "current_month": {"summary": "End of October", "value": "2024-10-31"}
-        }
+            "current_month": {"summary": "End of October", "value": "2024-10-31"},
+        },
     ),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """
-    Get TEMPO calendar days from cache (public endpoint)
+    Get Tempo Calendar days from cache (public endpoint)
 
     Args:
         start_date: Optional start date (YYYY-MM-DD)
@@ -135,8 +135,7 @@ async def get_week_tempo(db: AsyncSession = Depends(get_db)) -> APIResponse:
 
 @router.post("/refresh", response_model=APIResponse)
 async def refresh_tempo_cache(
-    current_user: User = Depends(require_action("tempo", "refresh")),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(require_action("tempo", "refresh")), db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """
     Manually refresh TEMPO cache from RTE API
@@ -149,13 +148,15 @@ async def refresh_tempo_cache(
         updated_count = await rte_service.update_tempo_cache(db)
 
         return APIResponse(
-            success=True, data={"message": f"Successfully refreshed {updated_count} TEMPO days", "updated_count": updated_count}
+            success=True,
+            data={"message": f"Successfully refreshed {updated_count} TEMPO days", "updated_count": updated_count},
         )
 
     except Exception as e:
         error_msg = str(e)
         logger.error(f"[TEMPO REFRESH ERROR] {error_msg}")
         import traceback
+
         traceback.print_exc()
 
         # Provide user-friendly error message for RTE API errors
@@ -176,11 +177,11 @@ async def clear_old_tempo_data(
         openapi_examples={
             "default": {"summary": "Keep 30 days", "value": 30},
             "minimum": {"summary": "Keep 7 days (minimum)", "value": 7},
-            "extended": {"summary": "Keep 90 days", "value": 90}
-        }
+            "extended": {"summary": "Keep 90 days", "value": 90},
+        },
     ),
     current_user: User = Depends(require_action("tempo", "clear")),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """
     Clear old TEMPO data from cache
@@ -198,7 +199,8 @@ async def clear_old_tempo_data(
         deleted_count = await rte_service.clear_old_data(db, days_to_keep)
 
         return APIResponse(
-            success=True, data={"message": f"Successfully deleted {deleted_count} old TEMPO records", "count": deleted_count}
+            success=True,
+            data={"message": f"Successfully deleted {deleted_count} old TEMPO records", "count": deleted_count},
         )
 
     except Exception as e:

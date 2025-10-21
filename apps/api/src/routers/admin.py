@@ -45,6 +45,7 @@ async def list_users(
             "client_id": user.client_id,
             "is_active": user.is_active,
             "email_verified": user.email_verified,
+            "debug_mode": user.debug_mode,
             "created_at": user.created_at.isoformat(),
             "pdl_count": pdl_count,
             "usage_stats": usage_stats,
@@ -122,6 +123,70 @@ async def clear_user_cache(
             "user_id": user_id,
             "pdl_count": len(pdls),
             "deleted_keys": deleted_count
+        }
+    )
+
+
+@router.delete("/cache/consumption/clear-all", response_model=APIResponse)
+async def clear_all_consumption_cache(
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Clear ALL cached consumption data for all PDLs (admin only)"""
+
+    # Get all PDLs
+    pdl_result = await db.execute(select(PDL))
+    pdls = pdl_result.scalars().all()
+
+    deleted_count = 0
+    if cache_service.redis_client:
+        # Delete all consumption cache keys
+        patterns = [
+            "consumption:detail:*",
+            "consumption:daily:*",
+            "consumption:yearly:*"
+        ]
+
+        for pattern in patterns:
+            count = await cache_service.delete_pattern(pattern)
+            deleted_count += count
+            logger.info(f"[CACHE] Deleted {count} keys matching pattern {pattern}")
+
+    return APIResponse(
+        success=True,
+        data={
+            "message": f"All consumption cache cleared",
+            "total_pdls": len(pdls),
+            "deleted_keys": deleted_count
+        }
+    )
+
+
+@router.post("/users/{user_id}/toggle-debug", response_model=APIResponse)
+async def toggle_user_debug_mode(
+    user_id: str = Path(..., description="User ID (UUID)", openapi_examples={"user_uuid": {"summary": "User UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    current_user: User = Depends(require_permission('users')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Toggle debug mode for a user (admin only)"""
+
+    # Check if user exists
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
+
+    # Toggle debug mode
+    user.debug_mode = not user.debug_mode
+    await db.commit()
+
+    return APIResponse(
+        success=True,
+        data={
+            "message": f"Debug mode {'activated' if user.debug_mode else 'deactivated'} for user {user.email}",
+            "user_id": user_id,
+            "debug_mode": user.debug_mode
         }
     )
 

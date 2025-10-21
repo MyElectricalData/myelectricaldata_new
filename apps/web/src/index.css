@@ -100,4 +100,23 @@
     @apply border border-gray-300 dark:border-gray-700;
     @apply transition-colors duration-200;
   }
+
+  /* Hide scrollbar but keep scrolling functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari and Opera */
+  }
+
+  /* Recharts hover background customization */
+  .recharts-active-shape {
+    fill: rgba(30, 64, 175, 0.15) !important;
+  }
+
+  .dark .recharts-active-shape {
+    fill: rgba(59, 130, 246, 0.2) !important;
+  }
 }

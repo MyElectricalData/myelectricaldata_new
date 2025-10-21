@@ -19,11 +19,20 @@ router = APIRouter(prefix="/pdl", tags=["PDL Management"])
 
 class PDLUpdateContract(BaseModel):
     subscribed_power: int | None = None
-    offpeak_hours: dict | None = None
+    offpeak_hours: list[str] | dict | None = None  # Array format or legacy object format
 
 
 class PDLUpdateName(BaseModel):
     name: str | None = None
+
+
+class PDLUpdateType(BaseModel):
+    has_consumption: bool
+    has_production: bool
+
+
+class PDLUpdateActive(BaseModel):
+    is_active: bool
 
 
 class PDLOrderItem(BaseModel):
@@ -62,6 +71,9 @@ async def list_pdls(
             display_order=pdl.display_order,
             subscribed_power=pdl.subscribed_power,
             offpeak_hours=pdl.offpeak_hours,
+            has_consumption=pdl.has_consumption,
+            has_production=pdl.has_production,
+            is_active=pdl.is_active,
         )
         for pdl in pdls
     ]
@@ -128,13 +140,117 @@ async def create_pdl(
 
                         if "offpeak_hours" in contract:
                             offpeak = contract["offpeak_hours"]
-                            if isinstance(offpeak, str):
-                                pdl.offpeak_hours = {"default": offpeak}
-                            elif isinstance(offpeak, dict):
-                                pdl.offpeak_hours = offpeak
 
-                        await db.commit()
-                        await db.refresh(pdl)
+                            # Parse offpeak hours - format: "HC (22H00-6H00)" or "HC (22H00-6H00;12h00-14h00)"
+                            # Convert Enedis format to array of "HH:MM-HH:MM" strings
+                            parsed_ranges = []
+
+                            if isinstance(offpeak, str):
+                                import re
+                                # Extract content inside parentheses after "HC"
+                                match = re.search(r'HC\s*\(([^)]+)\)', offpeak, flags=re.IGNORECASE)
+                                if match:
+                                    content = match.group(1)
+                                    # Split by semicolon to get multiple ranges
+                                    ranges = content.split(';')
+
+                                    for range_str in ranges:
+                                        range_str = range_str.strip()
+                                        # Match format like "22H00-6H00" or "12h00-14h00"
+                                        range_match = re.search(r'(\d{1,2})[hH](\d{2})\s*-\s*(\d{1,2})[hH](\d{2})', range_str)
+                                        if range_match:
+                                            start_h = range_match.group(1).zfill(2)
+                                            start_m = range_match.group(2)
+                                            end_h = range_match.group(3).zfill(2)
+                                            end_m = range_match.group(4)
+                                            parsed_ranges.append(f"{start_h}:{start_m}-{end_h}:{end_m}")
+
+                            elif isinstance(offpeak, dict):
+                                # Legacy dict format - convert values to array
+                                import re
+                                for value in offpeak.values():
+                                    if isinstance(value, str):
+                                        # Try new format with parentheses
+                                        match = re.search(r'HC\s*\(([^)]+)\)', value, flags=re.IGNORECASE)
+                                        if match:
+                                            content = match.group(1)
+                                            ranges = content.split(';')
+                                            for range_str in ranges:
+                                                range_str = range_str.strip()
+                                                range_match = re.search(r'(\d{1,2})[hH](\d{2})\s*-\s*(\d{1,2})[hH](\d{2})', range_str)
+                                                if range_match:
+                                                    start_h = range_match.group(1).zfill(2)
+                                                    start_m = range_match.group(2)
+                                                    end_h = range_match.group(3).zfill(2)
+                                                    end_m = range_match.group(4)
+                                                    parsed_ranges.append(f"{start_h}:{start_m}-{end_h}:{end_m}")
+                                        else:
+                                            # Try old format without parentheses
+                                            range_match = re.search(r'(\d{1,2})[h:](\d{2})\s*-\s*(\d{1,2})[h:](\d{2})', value)
+                                            if range_match:
+                                                start_h = range_match.group(1).zfill(2)
+                                                start_m = range_match.group(2)
+                                                end_h = range_match.group(3).zfill(2)
+                                                end_m = range_match.group(4)
+                                                parsed_ranges.append(f"{start_h}:{start_m}-{end_h}:{end_m}")
+
+                            if parsed_ranges:
+                                pdl.offpeak_hours = parsed_ranges
+                            else:
+                                # Fallback to storing raw data if parsing failed
+                                if isinstance(offpeak, str):
+                                    pdl.offpeak_hours = {"default": offpeak}
+                                elif isinstance(offpeak, dict):
+                                    pdl.offpeak_hours = offpeak
+
+            # Detect PDL type (production and/or consumption) by testing Enedis endpoints
+            from datetime import datetime, timedelta
+            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            today = datetime.now().strftime("%Y-%m-%d")
+
+            has_production = False
+            has_consumption = False
+
+            # Test consumption endpoint
+            try:
+                consumption_test = await enedis_adapter.get_consumption_daily(
+                    pdl.usage_point_id, yesterday, today, access_token
+                )
+                if consumption_test and "meter_reading" in consumption_test:
+                    has_consumption = True
+                    logger.info(f"[CREATE PDL] PDL {pdl.usage_point_id} HAS CONSUMPTION (endpoint responded)")
+            except Exception as e:
+                logger.info(f"[CREATE PDL] Consumption endpoint failed: {str(e)}")
+
+            # Test production endpoint
+            try:
+                production_test = await enedis_adapter.get_production_daily(
+                    pdl.usage_point_id, yesterday, today, access_token
+                )
+                if production_test and "meter_reading" in production_test:
+                    has_production = True
+                    logger.info(f"[CREATE PDL] PDL {pdl.usage_point_id} HAS PRODUCTION (endpoint responded)")
+            except Exception as e:
+                logger.info(f"[CREATE PDL] Production endpoint failed: {str(e)}")
+
+            # Set PDL type based on test results
+            pdl.has_consumption = has_consumption
+            pdl.has_production = has_production
+
+            if has_consumption and has_production:
+                logger.info(f"[CREATE PDL] Set PDL type: BOTH consumption and production")
+            elif has_production:
+                logger.info(f"[CREATE PDL] Set PDL type: PRODUCTION only")
+            elif has_consumption:
+                logger.info(f"[CREATE PDL] Set PDL type: CONSUMPTION only")
+            else:
+                # Default to consumption if neither worked (consent might be missing)
+                pdl.has_consumption = True
+                pdl.has_production = False
+                logger.warning(f"[CREATE PDL] Could not detect PDL type, defaulting to CONSUMPTION")
+
+            await db.commit()
+            await db.refresh(pdl)
     except Exception as e:
         # Don't fail PDL creation if contract fetch fails
         logger.warning(f"[CREATE PDL] Could not fetch contract info: {e}")
@@ -146,6 +262,9 @@ async def create_pdl(
         created_at=pdl.created_at,
         subscribed_power=pdl.subscribed_power,
         offpeak_hours=pdl.offpeak_hours,
+        has_consumption=pdl.has_consumption,
+        has_production=pdl.has_production,
+        is_active=pdl.is_active,
     )
 
     return APIResponse(success=True, data=pdl_response.model_dump())
@@ -221,6 +340,73 @@ async def update_pdl_name(
             "id": pdl.id,
             "usage_point_id": pdl.usage_point_id,
             "name": pdl.name,
+        },
+    )
+
+
+@router.patch("/{pdl_id}/type", response_model=APIResponse)
+async def update_pdl_type(
+    pdl_id: str = Path(..., description="PDL ID (UUID)", openapi_examples={"example_uuid": {"summary": "Example UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    type_data: PDLUpdateType = Body(..., openapi_examples={
+        "consumption_only": {"summary": "Consumption only", "value": {"has_consumption": True, "has_production": False}},
+        "production_only": {"summary": "Production only", "value": {"has_consumption": False, "has_production": True}},
+        "both": {"summary": "Both consumption and production", "value": {"has_consumption": True, "has_production": True}}
+    }),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Update PDL type (consumption and/or production)"""
+    result = await db.execute(select(PDL).where(PDL.id == pdl_id, PDL.user_id == current_user.id))
+    pdl = result.scalar_one_or_none()
+
+    if not pdl:
+        return APIResponse(success=False, error=ErrorDetail(code="PDL_NOT_FOUND", message="PDL not found"))
+
+    pdl.has_consumption = type_data.has_consumption
+    pdl.has_production = type_data.has_production
+
+    await db.commit()
+    await db.refresh(pdl)
+
+    return APIResponse(
+        success=True,
+        data={
+            "id": pdl.id,
+            "usage_point_id": pdl.usage_point_id,
+            "has_consumption": pdl.has_consumption,
+            "has_production": pdl.has_production,
+        },
+    )
+
+
+@router.patch("/{pdl_id}/active", response_model=APIResponse)
+async def toggle_pdl_active(
+    pdl_id: str = Path(..., description="PDL ID (UUID)", openapi_examples={"example_uuid": {"summary": "Example UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    active_data: PDLUpdateActive = Body(..., openapi_examples={
+        "activate": {"summary": "Activate PDL", "value": {"is_active": True}},
+        "deactivate": {"summary": "Deactivate PDL", "value": {"is_active": False}}
+    }),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Toggle PDL active/inactive status"""
+    result = await db.execute(select(PDL).where(PDL.id == pdl_id, PDL.user_id == current_user.id))
+    pdl = result.scalar_one_or_none()
+
+    if not pdl:
+        return APIResponse(success=False, error=ErrorDetail(code="PDL_NOT_FOUND", message="PDL not found"))
+
+    pdl.is_active = active_data.is_active
+
+    await db.commit()
+    await db.refresh(pdl)
+
+    return APIResponse(
+        success=True,
+        data={
+            "id": pdl.id,
+            "usage_point_id": pdl.usage_point_id,
+            "is_active": pdl.is_active,
         },
     )
 
@@ -364,6 +550,9 @@ async def admin_add_pdl(
         created_at=pdl.created_at,
         subscribed_power=pdl.subscribed_power,
         offpeak_hours=pdl.offpeak_hours,
+        has_consumption=pdl.has_consumption,
+        has_production=pdl.has_production,
+        is_active=pdl.is_active,
     )
 
     return APIResponse(success=True, data=pdl_response.model_dump())
@@ -418,13 +607,117 @@ async def fetch_contract_from_enedis(
                     if "offpeak_hours" in contract:
                         offpeak = contract["offpeak_hours"]
                         logger.info(f"[FETCH CONTRACT] Offpeak hours: {offpeak}")
-                        # Parse offpeak hours - format can vary
+
+                        # Parse offpeak hours - format: "HC (22H00-6H00)" or "HC (22H00-6H00;12h00-14h00)"
+                        # Convert Enedis format to array of "HH:MM-HH:MM" strings
+                        parsed_ranges = []
+
                         if isinstance(offpeak, str):
-                            # If it's a string like "HC : 22h30 - 06h30"
-                            pdl.offpeak_hours = {"default": offpeak}
+                            import re
+                            # Extract content inside parentheses after "HC"
+                            match = re.search(r'HC\s*\(([^)]+)\)', offpeak, flags=re.IGNORECASE)
+                            if match:
+                                content = match.group(1)
+                                # Split by semicolon to get multiple ranges
+                                ranges = content.split(';')
+
+                                for range_str in ranges:
+                                    range_str = range_str.strip()
+                                    # Match format like "22H00-6H00" or "12h00-14h00"
+                                    range_match = re.search(r'(\d{1,2})[hH](\d{2})\s*-\s*(\d{1,2})[hH](\d{2})', range_str)
+                                    if range_match:
+                                        start_h = range_match.group(1).zfill(2)
+                                        start_m = range_match.group(2)
+                                        end_h = range_match.group(3).zfill(2)
+                                        end_m = range_match.group(4)
+                                        parsed_ranges.append(f"{start_h}:{start_m}-{end_h}:{end_m}")
+
                         elif isinstance(offpeak, dict):
-                            pdl.offpeak_hours = offpeak
+                            # Legacy dict format - convert values to array
+                            import re
+                            for value in offpeak.values():
+                                if isinstance(value, str):
+                                    # Try new format with parentheses
+                                    match = re.search(r'HC\s*\(([^)]+)\)', value, flags=re.IGNORECASE)
+                                    if match:
+                                        content = match.group(1)
+                                        ranges = content.split(';')
+                                        for range_str in ranges:
+                                            range_str = range_str.strip()
+                                            range_match = re.search(r'(\d{1,2})[hH](\d{2})\s*-\s*(\d{1,2})[hH](\d{2})', range_str)
+                                            if range_match:
+                                                start_h = range_match.group(1).zfill(2)
+                                                start_m = range_match.group(2)
+                                                end_h = range_match.group(3).zfill(2)
+                                                end_m = range_match.group(4)
+                                                parsed_ranges.append(f"{start_h}:{start_m}-{end_h}:{end_m}")
+                                    else:
+                                        # Try old format without parentheses
+                                        range_match = re.search(r'(\d{1,2})[h:](\d{2})\s*-\s*(\d{1,2})[h:](\d{2})', value)
+                                        if range_match:
+                                            start_h = range_match.group(1).zfill(2)
+                                            start_m = range_match.group(2)
+                                            end_h = range_match.group(3).zfill(2)
+                                            end_m = range_match.group(4)
+                                            parsed_ranges.append(f"{start_h}:{start_m}-{end_h}:{end_m}")
+
+                        if parsed_ranges:
+                            pdl.offpeak_hours = parsed_ranges
+                        else:
+                            # Fallback to storing raw data if parsing failed
+                            if isinstance(offpeak, str):
+                                pdl.offpeak_hours = {"default": offpeak}
+                            elif isinstance(offpeak, dict):
+                                pdl.offpeak_hours = offpeak
+
                         logger.info(f"[FETCH CONTRACT] Set offpeak_hours: {pdl.offpeak_hours}")
+
+        # Detect PDL type (production and/or consumption) by testing Enedis endpoints
+        from datetime import datetime, timedelta
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        has_production = False
+        has_consumption = False
+
+        # Test consumption endpoint
+        try:
+            consumption_test = await enedis_adapter.get_consumption_daily(
+                pdl.usage_point_id, yesterday, today, access_token
+            )
+            if consumption_test and "meter_reading" in consumption_test:
+                has_consumption = True
+                logger.info(f"[FETCH CONTRACT] PDL {pdl.usage_point_id} HAS CONSUMPTION (endpoint responded)")
+        except Exception as e:
+            logger.info(f"[FETCH CONTRACT] Consumption endpoint failed: {str(e)}")
+
+        # Test production endpoint
+        try:
+            production_test = await enedis_adapter.get_production_daily(
+                pdl.usage_point_id, yesterday, today, access_token
+            )
+            if production_test and "meter_reading" in production_test:
+                has_production = True
+                logger.info(f"[FETCH CONTRACT] PDL {pdl.usage_point_id} HAS PRODUCTION (endpoint responded)")
+        except Exception as e:
+            logger.info(f"[FETCH CONTRACT] Production endpoint failed: {str(e)}")
+
+        # Set PDL type based on test results
+        # A PDL can have consumption, production, or both
+        pdl.has_consumption = has_consumption
+        pdl.has_production = has_production
+
+        if has_consumption and has_production:
+            logger.info(f"[FETCH CONTRACT] Set PDL type: BOTH consumption and production")
+        elif has_production:
+            logger.info(f"[FETCH CONTRACT] Set PDL type: PRODUCTION only")
+        elif has_consumption:
+            logger.info(f"[FETCH CONTRACT] Set PDL type: CONSUMPTION only")
+        else:
+            # Default to consumption if neither worked (consent might be missing)
+            pdl.has_consumption = True
+            pdl.has_production = False
+            logger.warning(f"[FETCH CONTRACT] Could not detect PDL type, defaulting to CONSUMPTION")
 
         await db.commit()
         await db.refresh(pdl)
@@ -436,6 +729,8 @@ async def fetch_contract_from_enedis(
                 "usage_point_id": pdl.usage_point_id,
                 "subscribed_power": pdl.subscribed_power,
                 "offpeak_hours": pdl.offpeak_hours,
+                "has_consumption": pdl.has_consumption,
+                "has_production": pdl.has_production,
             },
         )
 

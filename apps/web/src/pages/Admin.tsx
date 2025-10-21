@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { adminApi } from '@/api/admin'
-import { Users, Activity, CheckCircle, XCircle, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Users, Activity, CheckCircle, XCircle, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Trash2, AlertTriangle, Key } from 'lucide-react'
 
 type SortField = 'total' | 'cached' | 'no_cache'
 type SortDirection = 'asc' | 'desc'
@@ -11,6 +11,7 @@ export default function Admin() {
   const [showAllEndpoints, setShowAllEndpoints] = useState(false)
   const [sortField, setSortField] = useState<SortField>('total')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [showClearCacheModal, setShowClearCacheModal] = useState(false)
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -36,16 +37,56 @@ export default function Admin() {
     refetchInterval: 30000,
   })
 
+  const showNotification = (type: 'success' | 'error', message: string) => {
+    setNotification({ type, message })
+    setTimeout(() => setNotification(null), 5000)
+  }
+
+  const copyTokenToClipboard = () => {
+    const token = localStorage.getItem('access_token')
+    if (token) {
+      navigator.clipboard.writeText(token).then(() => {
+        showNotification('success', 'Token API copié dans le presse-papier')
+      }).catch(() => {
+        showNotification('error', 'Erreur lors de la copie du token')
+      })
+    } else {
+      showNotification('error', 'Aucun token trouvé')
+    }
+  }
+
+  const clearAllCacheMutation = useMutation({
+    mutationFn: () => adminApi.clearAllConsumptionCache(),
+    onSuccess: (response) => {
+      const data = response.data as any
+      showNotification('success', `Cache vidé : ${data.deleted_keys} clés (${data.total_pdls} PDL)`)
+      setShowClearCacheModal(false)
+    },
+    onError: () => {
+      showNotification('error', 'Erreur lors du vidage du cache')
+      setShowClearCacheModal(false)
+    }
+  })
+
   const stats = statsResponse?.success ? (statsResponse.data as any) : null
 
   return (
     <div className="w-full">
       <div className="space-y-8 w-full">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">Tableau de bord Administration</h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Vue d'ensemble et statistiques de la plateforme
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Tableau de bord Administration</h1>
+            <p className="text-gray-600 dark:text-gray-400">
+              Vue d'ensemble et statistiques de la plateforme
+            </p>
+          </div>
+          <button
+            onClick={copyTokenToClipboard}
+            className="btn-secondary flex items-center gap-2 whitespace-nowrap"
+          >
+            <Key size={18} />
+            Copier mon token API
+          </button>
         </div>
 
       {/* Notification Toast */}
@@ -74,6 +115,47 @@ export default function Admin() {
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {/* Clear All Cache Modal */}
+      {showClearCacheModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowClearCacheModal(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3 mb-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <AlertTriangle size={20} className="text-red-600 dark:text-red-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                  Vider tout le cache ?
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  Cette action va <strong>supprimer tout le cache de consommation</strong> pour tous les utilisateurs et tous les PDL.
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Les données devront être récupérées à nouveau depuis Enedis lors des prochaines requêtes. Cette opération est <strong>irréversible</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowClearCacheModal(false)}
+                disabled={clearAllCacheMutation.isPending}
+                className="flex-1 btn btn-secondary"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => clearAllCacheMutation.mutate()}
+                disabled={clearAllCacheMutation.isPending}
+                className="flex-1 btn bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+              >
+                {clearAllCacheMutation.isPending ? 'Vidage...' : 'Vider le cache'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -323,6 +405,37 @@ export default function Admin() {
           </div>
         </div>
       )}
+
+      {/* Cache Management - Danger Zone */}
+      <div className="card border-2 border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10">
+        <div className="flex items-start gap-4">
+          <div className="flex-shrink-0 w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+            <AlertTriangle size={24} className="text-red-600 dark:text-red-400" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-red-900 dark:text-red-200 mb-2">
+              Zone dangereuse
+            </h3>
+            <p className="text-sm text-red-800 dark:text-red-300 mb-2">
+              Les actions suivantes sont <strong>irréversibles</strong> et affectent tous les utilisateurs de la plateforme. Utilisez avec précaution.
+            </p>
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 mb-4">
+              <p className="text-xs text-amber-900 dark:text-amber-200">
+                <strong>ℹ️ Note importante :</strong> Vider le cache Redis ne vide <strong>pas</strong> le cache des navigateurs des utilisateurs (localStorage + React Query).
+                Les données réapparaîtront dans Redis dès qu'un utilisateur consultera la page Consommation, car elles seront automatiquement re-fetchées depuis Enedis.
+                Chaque utilisateur doit vider son propre cache navigateur via le bouton rouge sur la page Consommation.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowClearCacheModal(true)}
+              className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
+            >
+              <Trash2 size={18} />
+              Vider tout le cache Redis de consommation
+            </button>
+          </div>
+        </div>
+      </div>
       </div>
 
     </div>

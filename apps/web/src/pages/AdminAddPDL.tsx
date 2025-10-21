@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Activity, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
+import { Activity, CheckCircle, XCircle, AlertCircle, ArrowLeft } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { pdlApi } from '@/api/pdl'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -75,6 +76,13 @@ export default function AdminAddPDL() {
     <div className="w-full">
       <div className="space-y-6 w-full max-w-3xl mx-auto">
         <div>
+          <Link
+            to="/dashboard"
+            className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-4 transition-colors"
+          >
+            <ArrowLeft size={16} />
+            Retour au Dashboard
+          </Link>
           <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
             <Activity className="text-amber-600 dark:text-amber-400" size={32} />
             Ajouter un PDL à un utilisateur

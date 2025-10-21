@@ -1,0 +1,3682 @@
+// import { useState, useEffect, useRef, useCallback } from 'react'
+// import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+// import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+// import { TrendingUp, Calendar, Zap, Clock, AlertCircle, RefreshCw, CheckCircle, XCircle, Copy, Download, Database, Trash2 } from 'lucide-react'
+// import { enedisApi } from '../api/enedis'
+// import { pdlApi } from '../api/pdl'
+// import toast from 'react-hot-toast'
+// import { logger, isDebugEnabled } from '@/utils/logger'
+// import { usePermissions } from '@/hooks/usePermissions'
+
+// interface IntervalReading {
+//   date: string
+//   value: number
+//   interval_length?: string
+// }
+
+// // Helper function to check if an hour is in offpeak hours
+// function isOffpeakHour(hour: number, offpeakConfig?: Record<string, string>): boolean {
+//   if (!offpeakConfig) {
+//     // Default: 22h-6h if no config
+//     return hour >= 22 || hour < 6
+//   }
+
+//   // Parse offpeak hours from config
+//   // Format can be: {"default": "22h30-06h30"} or {"HC": "22:00-06:00"} or "HC (22H00-6H00)"
+//   for (const range of Object.values(offpeakConfig)) {
+//     // Extract hours from various formats: "22h30-06h30", "22:00-06:00", "HC (22H00-6H00)", etc.
+//     const match = range.match(/(\d{1,2})[hH:]\d{0,2}\s*-\s*(\d{1,2})[hH:]?\d{0,2}/)
+//     if (match) {
+//       const startHour = parseInt(match[1])
+//       const endHour = parseInt(match[2])
+
+//       // Handle ranges that cross midnight (e.g., 22h-6h)
+//       if (startHour > endHour) {
+//         // e.g., 22-6 means 22:00-23:59 and 0:00-5:59
+//         if (hour >= startHour || hour < endHour) {
+//           return true
+//         }
+//       } else {
+//         // Normal range (shouldn't happen for offpeak but handle it)
+//         if (hour >= startHour && hour < endHour) {
+//           return true
+//         }
+//       }
+//     }
+//   }
+
+//   // Fallback to default
+//   return hour >= 22 || hour < 6
+// }
+
+// // Helper function to format Date to YYYY-MM-DD without timezone issues
+// function formatDateToISO(date: Date): string {
+//   const year = date.getFullYear()
+//   const month = String(date.getMonth() + 1).padStart(2, '0')
+//   const day = String(date.getDate()).padStart(2, '0')
+//   return `${year}-${month}-${day}`
+// }
+
+// // Helper function to validate date range based on endpoint limits
+// function validateDateRange(startDate: string, endDate: string, maxYears: number, endpointType: string): { isValid: boolean; errorMessage?: string } {
+//   try {
+//     const start = new Date(startDate)
+//     const end = new Date(endDate)
+//     const now = new Date()
+
+//     // Calculate oldest allowed date using setFullYear to handle leap years correctly
+//     const oldestAllowed = new Date(now)
+//     oldestAllowed.setFullYear(oldestAllowed.getFullYear() - maxYears)
+//     oldestAllowed.setHours(0, 0, 0, 0)
+
+//     if (start < oldestAllowed) {
+//       const oldestStr = formatDateToISO(oldestAllowed)
+//       return {
+//         isValid: false,
+//         errorMessage: `La date de début est trop ancienne. L'endpoint ${endpointType} ne supporte que les données jusqu'à ${maxYears} an(s) en arrière. Date la plus ancienne autorisée : ${oldestStr}`
+//       }
+//     }
+
+//     if (start > end) {
+//       return {
+//         isValid: false,
+//         errorMessage: 'La date de début doit être antérieure ou égale à la date de fin'
+//       }
+//     }
+
+//     return { isValid: true }
+//   } catch (error) {
+//     return {
+//       isValid: false,
+//       errorMessage: 'Format de date invalide. Format attendu : YYYY-MM-DD'
+//     }
+//   }
+// }
+
+// // Helper function to generate date ranges
+// function generateDateRanges(startDate: Date, endDate: Date, maxDays: number) {
+//   const ranges: Array<{ start: string; end: string }> = []
+//   let current = new Date(startDate)
+
+//   while (current <= endDate) {
+//     const rangeEnd = new Date(current)
+//     rangeEnd.setDate(rangeEnd.getDate() + maxDays - 1)
+
+//     if (rangeEnd >= endDate) {
+//       // Last range: always request at least 7 days (maxDays)
+//       // For Enedis API, to get data for date X, we need to request from X-1 to X
+//       const rangeStart = new Date(endDate)
+//       rangeStart.setDate(rangeStart.getDate() - (maxDays - 1)) // Go back maxDays-1 (e.g., 6 days for maxDays=7)
+
+//       // Make sure rangeStart is not before current (the loop start position)
+//       const finalStart = rangeStart >= current ? rangeStart : current
+//       const finalStartStr = formatDateToISO(finalStart)
+//       const finalEndStr = formatDateToISO(endDate)
+
+//       // SAFETY CHECK: Never allow start=end, always request at least 1 day before
+//       if (finalStartStr === finalEndStr) {
+//         const safeStart = new Date(endDate)
+//         safeStart.setDate(safeStart.getDate() - 1)
+//         ranges.push({
+//           start: formatDateToISO(safeStart),
+//           end: finalEndStr,
+//         })
+//       } else {
+//         ranges.push({
+//           start: finalStartStr,
+//           end: finalEndStr,
+//         })
+//       }
+//       break
+//     } else {
+//       ranges.push({
+//         start: formatDateToISO(current),
+//         end: formatDateToISO(rangeEnd),
+//       })
+//       current.setDate(current.getDate() + maxDays)
+//     }
+//   }
+
+//   return ranges
+// }
+
+// export default function Consumption() {
+//   // Helper functions for dates
+//   const getToday = (): Date => {
+//     const today = new Date()
+//     today.setHours(0, 0, 0, 0)
+//     return today
+//   }
+
+//   const getYesterday = (): Date => {
+//     const yesterday = new Date(getToday())
+//     yesterday.setDate(yesterday.getDate() - 1)
+//     return yesterday
+//   }
+
+//   const getTodayForCalendar = () => {
+//     return new Date()
+//   }
+
+//   // Generate visible days for the navigation window
+//   const generateVisibleDays = (fromDate: Date | null, count: number): Array<{date: Date; dateStr: string; isToday: boolean; hasData: boolean}> => {
+//     const today = getToday()
+//     const days: Array<{date: Date; dateStr: string; isToday: boolean; hasData: boolean}> = []
+
+//     if (count <= 0) {
+//       return days
+//     }
+
+//     const fallbackDate = selectedDate ? new Date(selectedDate) : getYesterday()
+//     let startDate = fromDate ? new Date(fromDate) : fallbackDate
+//     startDate.setHours(0, 0, 0, 0)
+
+//     // Prevent starting in the future to keep the anchor day visible
+//     if (startDate > today) {
+//       startDate = new Date(today)
+//     }
+
+//     // Build forward from the requested start date until we reach the limit or today
+//     for (let i = 0; i < count; i++) {
+//       const date = new Date(startDate)
+//       date.setDate(startDate.getDate() + i)
+
+//       if (date > today) {
+//         break
+//       }
+
+//       const dateStr = formatDateToISO(date)
+//       const hasData = hourlyData.some(d => d.day === dateStr && d.readings && d.readings.length > 0)
+//       const isToday = date.getTime() === today.getTime()
+
+//       days.push({ date, dateStr, isToday, hasData })
+//     }
+
+//     // If we stopped because we reached today, backfill with previous days until we reach the desired count
+//     while (days.length < count) {
+//       const referenceDate = days.length > 0 ? days[0].date : startDate
+//       const previousDate = new Date(referenceDate)
+//       previousDate.setDate(previousDate.getDate() - 1)
+
+//       const dateStr = formatDateToISO(previousDate)
+//       const hasData = hourlyData.some(d => d.day === dateStr && d.readings && d.readings.length > 0)
+//       const isToday = previousDate.getTime() === today.getTime()
+
+//       days.unshift({ date: previousDate, dateStr, isToday, hasData })
+
+//       // Safety guard to avoid infinite loops in pathological cases
+//       if (previousDate.getFullYear() < 2000) {
+//         break
+//       }
+//     }
+
+//     return days
+//   }
+
+
+//   const [selectedPDL, setSelectedPDL] = useState<string | null>(null)
+//   const [fetchStatus, setFetchStatus] = useState<{type: 'success' | 'error', message: string} | null>(null)
+//   const [yearlyData, setYearlyData] = useState<any>({ years: [] })
+//   const [hchpData, setHCHPData] = useState<any>({ years: [] })
+//   const [isLoadingData, setIsLoadingData] = useState(false)
+//   const [selectedHCHPYear, setSelectedHCHPYear] = useState<number>(0) // Index of selected year (0 = most recent)
+//   const [fetchProgress, setFetchProgress] = useState<{current: number, total: number, phase: string}>({current: 0, total: 0, phase: ''})
+//   const [fetchProgressDetail, setFetchProgressDetail] = useState<{current: number, total: number, phase: string}>({current: 0, total: 0, phase: ''})
+//   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'))
+
+//   // Hourly data state
+//   const [hourlyStartDate, setHourlyStartDate] = useState<string>('')
+//   const [hourlyEndDate, setHourlyEndDate] = useState<string>('')
+//   const [hourlyData, setHourlyData] = useState<any[]>([])
+//   const [isLoadingHourly, setIsLoadingHourly] = useState(false)
+//   const [comparingDays, setComparingDays] = useState<Set<string>>(new Set())
+//   const [hourlyFetchProgress, setHourlyFetchProgress] = useState<{message: string, percentage: number} | null>(null)
+//   const [hiddenYears, setHiddenYears] = useState<Set<string>>(new Set())
+//   const [isHourlySectionExpanded, setIsHourlySectionExpanded] = useState<boolean>(false) // Track if hourly section is expanded
+//   const [isYearlySectionExpanded, setIsYearlySectionExpanded] = useState<boolean>(false) // Track if yearly section is expanded
+//   const [isHCHPSectionExpanded, setIsHCHPSectionExpanded] = useState<boolean>(false) // Track if HC/HP section is expanded
+
+//   // New day navigation system
+//   const [selectedDate, setSelectedDate] = useState<Date | null>(null) // Currently selected date
+//   const [firstVisibleDate, setFirstVisibleDate] = useState<Date | null>(null) // First visible date in the window
+//   const [visibleDaysCount, setVisibleDaysCount] = useState<number>(7) // Number of days to show (responsive)
+//   const [showCalendar, setShowCalendar] = useState(false)
+//   const [calendarMonth, setCalendarMonth] = useState(new Date())
+
+//   // Check if user is admin
+//   const { isAdmin } = usePermissions()
+
+//   // Navigation functions
+//   const navigateToPrevDay = () => {
+//     if (!selectedDate || !firstVisibleDate) return
+
+//     const newSelectedDate = new Date(selectedDate)
+//     newSelectedDate.setDate(newSelectedDate.getDate() - 1)
+
+//     // Check if new date is within visible window
+//     const visibleDays = generateVisibleDays(firstVisibleDate, visibleDaysCount)
+//     const isInWindow = visibleDays.some(d => d.dateStr === formatDateToISO(newSelectedDate))
+
+//     if (isInWindow) {
+//       // Just change selection
+//       setSelectedDate(newSelectedDate)
+//     } else {
+//       // Scroll window backward
+//       const newFirstVisible = new Date(firstVisibleDate)
+//       newFirstVisible.setDate(newFirstVisible.getDate() - Math.floor(visibleDaysCount / 2))
+//       setFirstVisibleDate(newFirstVisible)
+//       setSelectedDate(newSelectedDate)
+//     }
+//   }
+
+//   const navigateToNextDay = () => {
+//     if (!selectedDate) return
+
+//     const today = getToday()
+//     const newSelectedDate = new Date(selectedDate)
+//     newSelectedDate.setDate(newSelectedDate.getDate() + 1)
+
+//     // Can't go beyond today
+//     if (newSelectedDate > today) return
+
+//     // Check if new date is within visible window
+//     const visibleDays = generateVisibleDays(firstVisibleDate!, visibleDaysCount)
+//     const isInWindow = visibleDays.some(d => d.dateStr === formatDateToISO(newSelectedDate))
+
+//     if (isInWindow) {
+//       // Just change selection
+//       setSelectedDate(newSelectedDate)
+//     } else {
+//       // Scroll window forward
+//       const newFirstVisible = new Date(firstVisibleDate!)
+//       newFirstVisible.setDate(newFirstVisible.getDate() + Math.floor(visibleDaysCount / 2))
+//       setFirstVisibleDate(newFirstVisible)
+//       setSelectedDate(newSelectedDate)
+//     }
+//   }
+
+//   const jumpToDate = (date: Date) => {
+//     const today = getToday()
+//     if (date > today) date = today // Can't select future
+
+//     setSelectedDate(date)
+
+//     // Center the window around the selected date
+//     const newFirstVisible = new Date(date)
+//     newFirstVisible.setDate(newFirstVisible.getDate() - Math.floor(visibleDaysCount / 2))
+
+//     // Make sure firstVisible doesn't go too far in the past or future
+//     const minDate = new Date('2022-01-01') // Arbitrary old date
+//     if (newFirstVisible < minDate) {
+//       setFirstVisibleDate(minDate)
+//     } else {
+//       setFirstVisibleDate(newFirstVisible)
+//     }
+
+//     setShowCalendar(false)
+//   }
+
+//   const jumpToThisWeek = () => {
+//     const today = getToday()
+//     const dayOfWeek = today.getDay() // 0 = Sunday, 1 = Monday, etc.
+//     const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek // Get to Monday
+
+//     const monday = new Date(today)
+//     monday.setDate(today.getDate() + mondayOffset)
+
+//     jumpToDate(monday)
+//   }
+
+//   const jumpToLastMonth = () => {
+//     const today = getToday()
+//     const firstDayLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+//     jumpToDate(firstDayLastMonth)
+//   }
+
+//   const jumpToLastYear = () => {
+//     const today = getToday()
+//     const firstDayLastYear = new Date(today.getFullYear() - 1, 0, 1) // Jan 1st of last year
+//     jumpToDate(firstDayLastYear)
+//   }
+
+//   // Detect dark mode changes
+//   useEffect(() => {
+//     const observer = new MutationObserver(() => {
+//       setIsDarkMode(document.documentElement.classList.contains('dark'))
+//     })
+//     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+//     return () => observer.disconnect()
+//   }, [])
+
+//   // Initialize day navigation on first load
+//   useEffect(() => {
+//     if (!selectedDate && !firstVisibleDate) {
+//       const yesterday = getYesterday()
+//       setSelectedDate(yesterday)
+
+//       // Center window around yesterday
+//       const firstVisible = new Date(yesterday)
+//       firstVisible.setDate(yesterday.getDate() - Math.floor(visibleDaysCount / 2))
+//       setFirstVisibleDate(firstVisible)
+//     }
+//   }, [])
+
+//   // Detect screen size and adjust visible days count
+//   useEffect(() => {
+//     const updateVisibleDaysCount = () => {
+//       const width = window.innerWidth
+//       if (width >= 1280) { // xl
+//         setVisibleDaysCount(7)
+//       } else if (width >= 1024) { // lg
+//         setVisibleDaysCount(5)
+//       } else if (width >= 768) { // md
+//         setVisibleDaysCount(4)
+//       } else if (width >= 640) { // sm
+//         setVisibleDaysCount(3)
+//       } else {
+//         setVisibleDaysCount(2)
+//       }
+//     }
+
+//     updateVisibleDaysCount()
+//     window.addEventListener('resize', updateVisibleDaysCount)
+//     return () => window.removeEventListener('resize', updateVisibleDaysCount)
+//   }, [])
+
+//   // Helper to check if a date has data
+//   const hasDataForDate = (dateStr: string): boolean => {
+//     return hourlyData.some(d => d.day === dateStr && d.readings && d.readings.length > 0)
+//   }
+
+//   // Load data when selectedDate changes
+//   useEffect(() => {
+//     if (!selectedDate || !selectedPDL) return
+
+//     // Load data for the selected day
+//     // IMPORTANT: Enedis timestamps represent the END of 30-minute intervals
+//     // Example: "2025-10-11 00:30:00" = consumption from 00:00 to 00:30
+//     // To get all 48 readings for Oct 11, we need data from "2025-10-11 00:30:00" to "2025-10-12 00:00:00"
+//     // So we request from Oct 11 to Oct 12 to get the full day
+
+//     // WORKAROUND: Enedis seems to have issues with Sunday data
+//     // When requesting a Sunday, we request a wider range (Saturday to Monday)    
+//     let startDate = new Date(selectedDate)
+//     let endDate = new Date(selectedDate)
+
+//     // Check if we already have data for this date in memory
+//     const startStr = formatDateToISO(startDate)
+//     const endStr = formatDateToISO(endDate)
+
+//     setHourlyStartDate(startStr)
+//     setHourlyEndDate(endStr)
+//   }, [selectedDate, selectedPDL, hourlyData])
+
+//   // Helper function to get conditional tooltip props
+//   const getTooltipProps = () => {
+//     if (isDarkMode) {
+//       return {
+//         contentStyle: {
+//           backgroundColor: 'rgb(30, 41, 59)',
+//           border: '1px solid rgb(51, 65, 85)',
+//           borderRadius: '0.5rem',
+//           color: 'rgb(255, 255, 255)' // white text
+//         },
+//         labelStyle: { color: 'rgb(255, 255, 255)' }, // white text for labels
+//         itemStyle: { color: 'rgb(255, 255, 255)' }, // white text for items
+//         cursor: { fill: 'rgb(29, 51, 70)', opacity: 0.8, cursor: 'pointer' }
+//       }
+//     }
+//     return {
+//       cursor: { fill: 'rgb(249, 250, 251)', opacity: 0.8, cursor: 'pointer' }
+//     }
+//   }
+
+//   // Helper function to get CartesianGrid props
+//   const getGridProps = () => {
+//     if (isDarkMode) {
+//       return {
+//         strokeDasharray: "3 3",
+//         stroke: 'rgb(75, 85, 99)', // gray-600
+//         opacity: 0.8
+//       }
+//     }
+//     return {
+//       strokeDasharray: "3 3",
+//       stroke: 'rgb(209, 213, 219)', // gray-300
+//       opacity: 0.8
+//     }
+//   }
+
+//   // Helper function to get axis props (XAxis, YAxis)
+//   const getAxisProps = () => {
+//     if (isDarkMode) {
+//       return {
+//         tick: { fill: 'rgb(255, 255, 255)' }, // white text in dark mode
+//         stroke: 'rgb(75, 85, 99)' // gray-600 for axis line
+//       }
+//     }
+//     return {
+//       tick: { fill: 'rgb(55, 65, 81)' } // gray-700 in light mode
+//     }
+//   }
+
+//   // Fetch user's PDLs
+//   const { data: pdlsResponse } = useQuery({
+//     queryKey: ['pdls'],
+//     queryFn: () => pdlApi.list(),
+//   })
+
+//   const pdls = pdlsResponse?.success && Array.isArray(pdlsResponse.data) ? pdlsResponse.data : []
+
+//   // Function to set period dates
+//   // Auto-select first PDL
+//   useEffect(() => {
+//     if (pdls.length > 0 && !selectedPDL) {
+//       setSelectedPDL(pdls[0].usage_point_id)
+//     }
+//   }, [pdls, selectedPDL])
+
+//   // Track last fetch time to prevent duplicate calls
+//   const lastFetchTime = useRef(0)
+//   const lastFetchParams = useRef('')
+//   const isLoadingFromCache = useRef(false)
+//   const isChangingPDL = useRef(false)
+
+//   const debouncedFetchHourlyData = useCallback(() => {
+//     if (!selectedPDL || !hourlyStartDate || !hourlyEndDate) return
+
+//     // Create a unique key for current parameters
+//     const paramsKey = `${selectedPDL}-${hourlyStartDate}-${hourlyEndDate}`
+//     const now = Date.now()
+
+//     // Skip if we fetched with same params in last 200ms
+//     if (now - lastFetchTime.current < 200 && lastFetchParams.current === paramsKey) {
+//       logger.log('[Consumption] Skipping duplicate fetch')
+//       return
+//     }
+
+//     lastFetchTime.current = now
+//     lastFetchParams.current = paramsKey
+//     fetchHourlyData()
+//   }, [selectedPDL, hourlyStartDate, hourlyEndDate])
+
+//   // Note: Auto-fetch disabled - data is only loaded when user clicks "Récupérer les données depuis Enedis"
+//   // useEffect(() => {
+//   //   if (hourlyStartDate && hourlyEndDate && selectedPDL) {
+//   //     debouncedFetchHourlyData()
+//   //   }
+//   // }, [hourlyStartDate, hourlyEndDate, selectedPDL, debouncedFetchHourlyData])
+
+//   const queryClient = useQueryClient()
+
+//   // Load cached data from localStorage when PDL changes
+//   // Note: Only loads from localStorage (client-side cache), does NOT fetch from API automatically
+//   useEffect(() => {
+//     if (selectedPDL) {
+//       // Set flags to prevent auto-reload and saving during PDL change
+//       isLoadingFromCache.current = true
+//       isChangingPDL.current = true
+
+//       // FIRST: Clear all data immediately to prevent showing wrong PDL data
+//       setYearlyData({ years: [] })
+//       setHCHPData({ years: [] })
+//       setHourlyData([])
+//       setIsYearlySectionExpanded(false)
+//       setIsHCHPSectionExpanded(false)
+//       setIsHourlySectionExpanded(false)
+
+//       // Wait for state updates to complete before loading new data
+//       setTimeout(() => {
+//         try {
+//           // THEN: Try to load data from localStorage for this specific PDL
+//           const cachedYearly = localStorage.getItem(`yearlyData_${selectedPDL}`)
+//           if (cachedYearly) {
+//             const parsed = JSON.parse(cachedYearly)
+//             setYearlyData(parsed)
+//           }
+
+//           const cachedHCHP = localStorage.getItem(`hchpData_${selectedPDL}`)
+//           if (cachedHCHP) {
+//             const parsed = JSON.parse(cachedHCHP)
+//             setHCHPData(parsed)
+//           }
+
+//           const cachedHourly = localStorage.getItem(`hourlyData_${selectedPDL}`)
+//           if (cachedHourly) {
+//             const parsed = JSON.parse(cachedHourly)
+//             setHourlyData(parsed)
+//           }
+//         } catch (error) {
+//           console.error('Error loading cached data from localStorage:', error)
+//         }
+
+//         // Reset flags after everything is done
+//         setTimeout(() => {
+//           isLoadingFromCache.current = false
+//           isChangingPDL.current = false
+//         }, 100)
+//       }, 50)
+//     }
+//   }, [selectedPDL])
+
+//   // Save yearly data to localStorage whenever it changes
+//   useEffect(() => {
+//     // Don't save during PDL change to prevent cross-contamination
+//     if (selectedPDL && yearlyData && !isChangingPDL.current) {
+//       try {
+//         localStorage.setItem(`yearlyData_${selectedPDL}`, JSON.stringify(yearlyData))
+//       } catch (error) {
+//         console.error('Error saving yearly data to localStorage:', error)
+//       }
+//     }
+//   }, [yearlyData, selectedPDL])
+
+//   // Save HC/HP data to localStorage whenever it changes
+//   useEffect(() => {
+//     // Don't save during PDL change to prevent cross-contamination
+//     if (selectedPDL && hchpData && !isChangingPDL.current) {
+//       try {
+//         localStorage.setItem(`hchpData_${selectedPDL}`, JSON.stringify(hchpData))
+//       } catch (error) {
+//         console.error('Error saving HC/HP data to localStorage:', error)
+//       }
+//     }
+//   }, [hchpData, selectedPDL])
+
+//   // Save hourly data to localStorage whenever it changes
+//   useEffect(() => {
+//     // Don't save during PDL change to prevent cross-contamination
+//     if (selectedPDL && hourlyData.length > 0 && !isChangingPDL.current) {
+//       try {
+//         localStorage.setItem(`hourlyData_${selectedPDL}`, JSON.stringify(hourlyData))
+//       } catch (error) {
+//         console.error('Error saving hourly data to localStorage:', error)
+//       }
+//     }
+//   }, [hourlyData, selectedPDL])
+
+//   // Function to copy day data to clipboard
+//   const copyDayDataToClipboard = (dayData: any) => {
+//     const jsonData = {
+//       date: dayData.day,
+//       total_kwh: dayData.readings.reduce((sum: number, r: any) => sum + r.value, 0),
+//       hc_kwh: dayData.readings.filter((r: any) => r.isHC).reduce((sum: number, r: any) => sum + r.value, 0),
+//       hp_kwh: dayData.readings.filter((r: any) => !r.isHC).reduce((sum: number, r: any) => sum + r.value, 0),
+//       readings: dayData.readings.map((r: any) => ({
+//         date: r.date,
+//         hour: r.hour,
+//         value_kwh: Math.round(r.value * 1000) / 1000,
+//         type: r.isHC ? 'HC' : 'HP'
+//       }))
+//     }
+
+//     navigator.clipboard.writeText(JSON.stringify(jsonData, null, 2))
+//       .then(() => {
+//         toast.success('Données copiées dans le presse-papier')
+//       })
+//       .catch((err) => {
+//         toast.error('Erreur lors de la copie : ' + err.message)
+//       })
+//   }
+
+//   // Function to export yearly comparison data as JSON
+//   const exportYearlyComparisonJSON = () => {
+//     const jsonData = {
+//       title: "Comparaison annuelle",
+//       data: yearlyComparisonData,
+//       generated_at: new Date().toISOString()
+//     }
+//     navigator.clipboard.writeText(JSON.stringify(jsonData, null, 2))
+//       .then(() => {
+//         toast.success('Données de comparaison annuelle copiées dans le presse-papier')
+//       })
+//       .catch((err) => {
+//         toast.error('Erreur lors de la copie : ' + err.message)
+//       })
+//   }
+
+//   // Function to export monthly consumption data as JSON
+//   const exportMonthlyConsumptionJSON = () => {
+//     const jsonData = {
+//       title: "Évolution mensuelle",
+//       years: yearlyData?.years?.map((y: any) => ({
+//         year: y.year,
+//         total: y.total_consumption_kwh,
+//         monthly_data: y.monthly_data
+//       })) || [],
+//       chart_data: yearlyChartData,
+//       generated_at: new Date().toISOString()
+//     }
+//     navigator.clipboard.writeText(JSON.stringify(jsonData, null, 2))
+//       .then(() => {
+//         toast.success('Données de consommation mensuelle copiées dans le presse-papier')
+//       })
+//       .catch((err) => {
+//         toast.error('Erreur lors de la copie : ' + err.message)
+//       })
+//   }
+
+//   // Function to export HC/HP pie chart data as JSON
+//   const exportHCHPPieJSON = () => {
+//     const jsonData = {
+//       title: 'Répartition HC/HP - Toutes les années',
+//       all_years: hchpData?.years || [],
+//       selected_year_index: selectedHCHPYear,
+//       pdl_info: {
+//         usage_point_id: selectedPDL?.usage_point_id,
+//         offpeak_hours: selectedPDL?.offpeak_hours
+//       },
+//       generated_at: new Date().toISOString()
+//     }
+//     navigator.clipboard.writeText(JSON.stringify(jsonData, null, 2))
+//       .then(() => {
+//         toast.success('Données HC/HP détaillées copiées dans le presse-papier')
+//       })
+//       .catch((err) => {
+//         toast.error('Erreur lors de la copie : ' + err.message)
+//       })
+//   }
+
+//   // Function to get all page data as JSON object
+//   const getAllDataJSON = () => {
+//     return {
+//       title: 'Export complet - Toutes les données de consommation',
+//       pdl_info: {
+//         usage_point_id: selectedPDL,
+//         pdl_details: pdls.find((p: any) => p.usage_point_id === selectedPDL)
+//       },
+//       yearly_data: {
+//         years: yearlyData?.years || [],
+//         comparison: yearlyComparisonData || [],
+//         monthly_evolution: yearlyChartData || []
+//       },
+//       hchp_data: {
+//         years: hchpData?.years || [],
+//         selected_year_index: selectedHCHPYear
+//       },
+//       hourly_data: {
+//         start_date: hourlyStartDate,
+//         end_date: hourlyEndDate,
+//         days: hourlyData || []
+//       },
+//       generated_at: new Date().toISOString()
+//     }
+//   }
+
+//   // Function to export all page data as JSON file
+//   const exportAllDataJSON = () => {
+//     const jsonData = getAllDataJSON()
+
+//     const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' })
+//     const url = URL.createObjectURL(blob)
+//     const a = document.createElement('a')
+//     a.href = url
+//     a.download = `consommation-${selectedPDL}-${new Date().toISOString().split('T')[0]}.json`
+//     document.body.appendChild(a)
+//     a.click()
+//     document.body.removeChild(a)
+//     URL.revokeObjectURL(url)
+
+//     toast.success('Fichier JSON téléchargé avec succès')
+//   }
+
+//   // Function to copy all page data to clipboard
+//   const copyAllDataJSON = () => {
+//     const jsonData = getAllDataJSON()
+
+//     navigator.clipboard.writeText(JSON.stringify(jsonData, null, 2))
+//       .then(() => {
+//         toast.success('Toutes les données copiées dans le presse-papier')
+//       })
+//       .catch((err) => {
+//         toast.error('Erreur lors de la copie : ' + err.message)
+//       })
+//   }
+
+//   // Function to export HC/HP monthly data as JSON
+//   const exportHCHPMonthlyJSON = () => {
+//     const selectedYear = hchpData?.years[selectedHCHPYear]
+//     const filteredMonthlyData = selectedYear?.monthly_data
+//       ?.sort((a: any, b: any) => {
+//         // Sort by month chronologically (YYYY-MM format)
+//         return a.month.localeCompare(b.month)
+//       }) || []
+
+//     const jsonData = {
+//       title: `HC/HP par mois - ${selectedYear?.year || 'N/A'}`,
+//       year: selectedYear?.year,
+//       period: selectedYear?.period || 'N/A',
+//       monthly_data: filteredMonthlyData,
+//       chart_data: hchpMonthlyData,
+//       generated_at: new Date().toISOString()
+//     }
+//     navigator.clipboard.writeText(JSON.stringify(jsonData, null, 2))
+//       .then(() => {
+//         toast.success('Données HC/HP mensuelles copiées dans le presse-papier')
+//       })
+//       .catch((err) => {
+//         toast.error('Erreur lors de la copie : ' + err.message)
+//       })
+//   }
+
+//   // Function to compare with last year
+//   const compareWithLastYear = async (dayKey: string) => {
+//     if (comparingDays.has(dayKey)) {
+//       // Remove comparison
+//       setComparingDays(prev => {
+//         const newSet = new Set(prev)
+//         newSet.delete(dayKey)
+//         return newSet
+//       })
+//       // Clear comparison data from hourlyData
+//       setHourlyData(prev => {
+//         const existingDay = prev.find(d => d.day === dayKey)
+//         if (existingDay) {
+//           delete existingDay.lastYearReadings
+//           delete existingDay.lastYearDate
+//           return [...prev]
+//         }
+//         return prev
+//       })
+//       return
+//     }
+
+//     // Add comparison - fetch last year data
+//     const currentDate = new Date(dayKey)
+//     const lastYearDate = new Date(currentDate)
+//     lastYearDate.setFullYear(currentDate.getFullYear() - 1)
+//     const lastYearKey = lastYearDate.toISOString().split('T')[0]
+
+//     // First check if we already have this day in hourlyData (from cache)
+//     const cachedDay = hourlyData.find(d => d.day === lastYearKey)
+//     if (cachedDay && cachedDay.readings && cachedDay.readings.length > 0) {
+//       // Use cached data directly
+//       setHourlyData(prev => {
+//         const existingDay = prev.find(d => d.day === dayKey)
+//         if (existingDay) {
+//           existingDay.lastYearReadings = cachedDay.readings
+//           existingDay.lastYearDate = lastYearKey
+//           return [...prev]
+//         }
+//         return prev
+//       })
+
+//       setComparingDays(prev => new Set(prev).add(dayKey))
+//       toast.success(`Comparaison ajoutée avec ${lastYearDate.toLocaleDateString('fr-FR')} (depuis cache)`)
+//       return
+//     }
+
+//     // Not in local data, fetch from API (which will use server cache if available)
+//     // Enedis requires a 7-day period for detail endpoint, so we request a week around the target date
+//     const weekStart = new Date(lastYearDate)
+//     weekStart.setDate(weekStart.getDate() - 3) // 3 days before
+//     const weekEnd = new Date(lastYearDate)
+//     weekEnd.setDate(weekEnd.getDate() + 3) // 3 days after
+
+//     const loadingToast = toast.loading(`Récupération des données du ${lastYearDate.toLocaleDateString('fr-FR')}...`)
+
+//     try {
+//       const pdl = pdls.find((p: any) => p.usage_point_id === selectedPDL)
+//       const response = await enedisApi.getConsumptionDetail(selectedPDL, {
+//         start: weekStart.toISOString().split('T')[0],
+//         end: weekEnd.toISOString().split('T')[0],
+//         use_cache: true,
+//       })
+
+//       toast.dismiss(loadingToast)
+
+//       if (response.success && response.data) {
+//         const data = response.data as any
+//         let readings: IntervalReading[] | undefined
+//         let globalIntervalLength: string | undefined
+
+//         if (data?.meter_reading?.interval_reading) {
+//           readings = data.meter_reading.interval_reading
+//           globalIntervalLength = data.meter_reading.interval_length
+//         } else if (data?.interval_reading) {
+//           readings = data.interval_reading
+//           globalIntervalLength = data.interval_length
+//         } else if (Array.isArray(data)) {
+//           readings = data
+//         }
+
+//         if (readings && readings.length > 0) {
+//           // Process readings same way as main data and filter for the target date only
+//           const lastYearReadings = readings
+//             .map((reading: any) => {
+//               const intervalLength = reading.interval_length || globalIntervalLength || 'PT30M'
+//               const intervalMatch = intervalLength.match(/PT(\d+)M/)
+//               const intervalMinutes = intervalMatch ? parseInt(intervalMatch[1]) : 30
+
+//               const valueWh = parseFloat(reading.value)
+//               const valueKWh = valueWh / 1000
+
+//               const dateParts = reading.date.match(/(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2}):(\d{2})/)
+//               if (!dateParts) return null
+
+//               const year = parseInt(dateParts[1])
+//               const month = parseInt(dateParts[2]) - 1
+//               const day = parseInt(dateParts[3])
+//               const hour = parseInt(dateParts[4])
+//               const minute = parseInt(dateParts[5])
+//               const second = parseInt(dateParts[6])
+
+//               const date = new Date(year, month, day, hour, minute, second)
+//               // Subtract interval to get START time
+//               date.setMinutes(date.getMinutes() - intervalMinutes)
+
+//               // Only keep readings for the target date
+//               const readingDateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+//               if (readingDateKey !== lastYearKey) {
+//                 return null
+//               }
+
+//               const hourValue = date.getHours()
+//               const minuteValue = date.getMinutes()
+//               const isHC = isOffpeakHour(hourValue, pdl?.offpeak_hours)
+
+//               return {
+//                 date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(hourValue).padStart(2, '0')}:${String(minuteValue).padStart(2, '0')}:00`,
+//                 hour: hourValue,
+//                 minute: minuteValue,
+//                 value: valueKWh,
+//                 isHC,
+//               }
+//             })
+//             .filter(Boolean)
+
+//           // Add to hourlyData with a special marker
+//           setHourlyData(prev => {
+//             const existingDay = prev.find(d => d.day === dayKey)
+//             if (existingDay) {
+//               existingDay.lastYearReadings = lastYearReadings
+//               existingDay.lastYearDate = lastYearKey
+//               return [...prev]
+//             }
+//             return prev
+//           })
+
+//           setComparingDays(prev => new Set(prev).add(dayKey))
+//           toast.success(`Comparaison ajoutée avec ${lastYearDate.toLocaleDateString('fr-FR')}`)
+//         } else {
+//           toast.error('Aucune donnée disponible pour cette date l\'année dernière')
+//         }
+//       } else {
+//         // Handle API error response
+//         const errorMsg = response.error?.message || 'Erreur lors de la récupération des données de l\'année dernière'
+//         if (errorMsg.includes('technical_error') || errorMsg.includes('Technical error')) {
+//           toast.error(
+//             `Erreur technique Enedis pour le ${lastYearDate.toLocaleDateString('fr-FR')}. Réessayez plus tard.`,
+//             { duration: 5000 }
+//           )
+//         } else {
+//           toast.error(errorMsg, { duration: 5000 })
+//         }
+//       }
+//     } catch (error: any) {
+//       toast.dismiss(loadingToast)
+
+//       // Parse error message
+//       let errorMessage = error.message || 'Erreur lors de la comparaison'
+
+//       // Check for specific error patterns
+//       if (errorMessage.includes('500') || errorMessage.includes('technical_error')) {
+//         errorMessage = `Erreur technique Enedis pour le ${lastYearDate.toLocaleDateString('fr-FR')}. Réessayez plus tard.`
+//       } else if (errorMessage.includes('404')) {
+//         errorMessage = `Aucune donnée disponible pour le ${lastYearDate.toLocaleDateString('fr-FR')}`
+//       } else if (errorMessage.includes('403') || errorMessage.includes('401')) {
+//         errorMessage = 'Accès refusé. Vérifiez vos autorisations.'
+//       }
+
+//       toast.error(errorMessage, { duration: 5000 })
+//     }
+//   }
+
+//   // Function to fetch hourly data
+//   const fetchHourlyData = async () => {
+//     if (!selectedPDL || !hourlyStartDate || !hourlyEndDate) return
+
+//     setIsLoadingHourly(true)
+//     setHourlyFetchProgress({
+//       message: `Récupération des données du ${new Date(hourlyStartDate).toLocaleDateString('fr-FR')} au ${new Date(hourlyEndDate).toLocaleDateString('fr-FR')}...`,
+//       percentage: 0
+//     })
+
+//     try {
+//       const pdl = pdls.find((p: any) => p.usage_point_id === selectedPDL)
+
+//       setHourlyFetchProgress({
+//         message: `Récupération des données du ${new Date(hourlyStartDate).toLocaleDateString('fr-FR')} au ${new Date(hourlyEndDate).toLocaleDateString('fr-FR')}...`,
+//         percentage: 50
+//       })
+
+//       const response = await enedisApi.getConsumptionDetail(selectedPDL, {
+//         start: hourlyStartDate,
+//         end: hourlyEndDate,
+//         use_cache: true,
+//       })
+
+//       setHourlyFetchProgress({
+//         message: 'Traitement des données...',
+//         percentage: 75
+//       })
+
+//       if (response.success && response.data) {
+//         const data = response.data as any
+//         let readings: IntervalReading[] | undefined
+//         let globalIntervalLength: string | undefined
+
+//         if (data?.meter_reading?.interval_reading) {
+//           readings = data.meter_reading.interval_reading
+//           globalIntervalLength = data.meter_reading.interval_length
+//         } else if (data?.interval_reading) {
+//           readings = data.interval_reading
+//           globalIntervalLength = data.interval_length
+//         } else if (Array.isArray(data)) {
+//           readings = data
+//         }
+
+//         if (readings && readings.length > 0) {
+//           console.log(`📊 TOTAL LECTURES REÇUES D'ENEDIS: ${readings.length}`)
+//           console.log(`📅 PREMIÈRE LECTURE: ${readings[0].date}`)
+//           console.log(`📅 DERNIÈRE LECTURE: ${readings[readings.length - 1].date}`)
+
+//           // Debug: Check for Sunday readings in raw data
+//           const sundayReadings = readings.filter((r: any) => {
+//             const d = new Date(r.date.replace(' ', 'T'));
+//             return d.getDay() === 0;
+//           });
+//           console.log(`📅 LECTURES DU DIMANCHE DANS LES DONNÉES BRUTES: ${sundayReadings.length}`);
+//           if (sundayReadings.length > 0) {
+//             console.log('Lectures dimanche brutes:', sundayReadings.map((r: any) => r.date));
+//           }
+
+//           // Also check for Saturday to Monday to understand the pattern
+//           const saturdayReadings = readings.filter((r: any) => {
+//             const d = new Date(r.date.replace(' ', 'T'));
+//             return d.getDay() === 6;
+//           });
+//           console.log(`📅 LECTURES DU SAMEDI DANS LES DONNÉES BRUTES: ${saturdayReadings.length}`);
+
+//           // Group readings by day
+//           const dailyData: Record<string, any[]> = {}
+
+//           readings.forEach((reading: any, index: number) => {
+//             const intervalLength = reading.interval_length || globalIntervalLength || 'PT30M'
+//             const intervalMatch = intervalLength.match(/PT(\d+)M/)
+//             const intervalMinutes = intervalMatch ? parseInt(intervalMatch[1]) : 30
+
+//             // Enedis returns Wh directly, not W
+//             const valueWh = parseFloat(reading.value)
+//             const valueKWh = valueWh / 1000
+
+//             // Enedis returns local time (Europe/Paris) at END of period
+//             // Parse as local time (not UTC) and subtract interval to get START
+//             // Date format can be with or without 'T': "2025-10-08T20:00:00" or "2025-10-08 20:00:00"
+//             const dateParts = reading.date.match(/(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2}):(\d{2})/)
+//             if (!dateParts) {
+//               logger.warn('Could not parse date:', reading.date)
+//               return
+//             }
+
+//             const year = parseInt(dateParts[1])
+//             const month = parseInt(dateParts[2]) - 1 // Month is 0-indexed
+//             const day = parseInt(dateParts[3])
+//             const hour = parseInt(dateParts[4])
+//             const minute = parseInt(dateParts[5])
+//             const second = parseInt(dateParts[6])
+
+//             // Create date in local timezone (at END of period)
+//             const endDate = new Date(year, month, day, hour, minute, second)
+
+//             // Debug: Check if this is a Sunday reading
+//             const dayOfWeek = endDate.getDay() // 0 = Sunday
+//             if (dayOfWeek === 0) {
+//               console.log('🔴 DIMANCHE DÉTECTÉ - Lecture brute:', reading.date, 'Valeur:', valueKWh, 'kWh')
+//             }
+
+//             // Calculate START time by subtracting interval
+//             const startDate = new Date(endDate)
+//             startDate.setMinutes(startDate.getMinutes() - intervalMinutes)
+
+//             // Debug: Detailed analysis for Sunday readings
+//             const endDayOfWeek = endDate.getDay();
+//             const startDayOfWeek = startDate.getDay();
+
+//             // Helper to format date without UTC conversion
+//             const formatLocalDate = (date: Date) => {
+//               const y = date.getFullYear();
+//               const m = String(date.getMonth() + 1).padStart(2, '0');
+//               const d = String(date.getDate()).padStart(2, '0');
+//               const h = String(date.getHours()).padStart(2, '0');
+//               const min = String(date.getMinutes()).padStart(2, '0');
+//               const s = String(date.getSeconds()).padStart(2, '0');
+//               return `${y}-${m}-${d} ${h}:${min}:${s}`;
+//             };
+
+//             if (endDayOfWeek === 0 || startDayOfWeek === 0) {
+//               console.log(`📅 DIMANCHE IMPLIQUÉ:
+//                 Lecture brute Enedis: ${reading.date}
+//                 => Start calculé: ${formatLocalDate(startDate)} (${['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'][startDayOfWeek]})
+//                 => End original: ${formatLocalDate(endDate)} (${['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'][endDayOfWeek]})
+//                 => Intervalle: ${intervalMinutes} minutes
+//                 => Attribution au jour: ${formatLocalDate(startDate).substring(0, 10)}`);
+//             }
+
+//             // Attribution logic - SIMPLIFIED:
+//             // The consumption period is from startDate to endDate
+//             // We should attribute it to the day where MOST of the period occurred
+
+//             let dayKeyDate;
+
+//             // Special case: readings ending at exactly midnight (00:00:00)
+//             // These represent the LAST period of the previous day (23:30-00:00)
+//             if (endDate.getHours() === 0 && endDate.getMinutes() === 0 && endDate.getSeconds() === 0) {
+//               // Use the day that's ending (where the consumption actually happened)
+//               dayKeyDate = startDate;
+//               if (startDayOfWeek === 0) {
+//                 console.log(`🌙 DIMANCHE 23h30-00h00: Attribution au dimanche (${formatLocalDate(startDate).substring(0, 10)})`);
+//               }
+//             }
+//             // For ALL other cases, check if start and end are on the same day
+//             else if (startDate.getDate() === endDate.getDate()) {
+//               // Same day - use that day
+//               dayKeyDate = startDate;
+//               if (startDayOfWeek === 0) {
+//                 console.log(`☀️ DIMANCHE ${formatLocalDate(startDate).substring(11, 16)}-${formatLocalDate(endDate).substring(11, 16)}: Attribution au dimanche`);
+//               }
+//             }
+//             // Period crosses midnight (but not ending at exactly 00:00)
+//             else {
+//               // This shouldn't happen with 30-minute intervals, but handle it anyway
+//               dayKeyDate = endDate; // Use the day where it ends
+//               console.log(`⚠️ PÉRIODE TRAVERSE MINUIT: ${formatLocalDate(startDate)} à ${formatLocalDate(endDate)}`);
+//             }
+
+//             // Format date manually to avoid UTC conversion
+//             const dayKey = `${dayKeyDate.getFullYear()}-${String(dayKeyDate.getMonth() + 1).padStart(2, '0')}-${String(dayKeyDate.getDate()).padStart(2, '0')}`
+//             const dateStr = `${dayKey}T${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}:${String(startDate.getSeconds()).padStart(2, '0')}`
+
+//             // Debug: Check if dayKey is for Sunday after adjustment
+//             if (dayKeyDate.getDay() === 0) {
+//               console.log('🟠 DIMANCHE APRÈS AJUSTEMENT - DayKey:', dayKey, 'DateStr:', dateStr)
+//             }
+
+//             const hourValue = startDate.getHours()
+//             const minuteValue = startDate.getMinutes()
+//             const isHC = isOffpeakHour(hourValue, pdl?.offpeak_hours)
+
+//             if (!dailyData[dayKey]) {
+//               dailyData[dayKey] = []
+//             }
+
+//             dailyData[dayKey].push({
+//               date: dateStr,
+//               originalDate: reading.date, // Original Enedis date (END of period)
+//               hour: hourValue,
+//               minute: minuteValue,
+//               value: valueKWh,
+//               isHC,
+//             })
+//           })
+
+//           // Debug: Check for Sunday in dailyData
+//           console.log('🔵 JOURS DANS DAILYDATA:')
+//           Object.keys(dailyData).forEach(dayKey => {
+//             const testDate = new Date(dayKey + 'T12:00:00')
+//             const dayName = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'][testDate.getDay()]
+//             console.log(`  ${dayKey} = ${dayName} (${dailyData[dayKey].length} lectures)`)
+//           })
+
+//           // Convert to array and sort by date (most recent first)
+//           const formattedData = Object.entries(dailyData).map(([day, hourlyReadings]) => ({
+//             day,
+//             readings: hourlyReadings.sort((a, b) => {
+//               // Sort by hour first, then by minute
+//               if (a.hour !== b.hour) return a.hour - b.hour
+//               return (a.minute || 0) - (b.minute || 0)
+//             }),
+//           })).sort((a, b) => b.day.localeCompare(a.day))
+
+//           // Merge new data with existing data instead of replacing
+//           setHourlyData(prevData => {
+//             // Get all days from the new data
+//             const newDays = new Set(formattedData.map(d => d.day))
+//             // Keep existing days that aren't in the new data
+//             const keptData = prevData.filter(d => !newDays.has(d.day))
+//             // Combine and sort by date (most recent first)
+//             const merged = [...formattedData, ...keptData].sort((a, b) => b.day.localeCompare(a.day))
+//             logger.log(`✅ Merged data: ${formattedData.length} new days + ${keptData.length} kept days = ${merged.length} total days`)
+//             return merged
+//           })
+//         } else {
+//           toast.error('Aucune donnée horaire disponible pour cette période')
+//           setHourlyData([])
+//         }
+//       } else {
+//         toast.error(response.error?.message || 'Erreur lors de la récupération des données horaires')
+//         setHourlyData([])
+//       }
+//     } catch (error: any) {
+//       toast.error(error.message || 'Erreur lors de la récupération des données horaires')
+//       setHourlyData([])
+//     } finally {
+//       setIsLoadingHourly(false)
+//       setHourlyFetchProgress(null)
+//     }
+//   }
+
+//   // Mutation to fetch data from Enedis (populate cache)
+//   const fetchDataMutation = useMutation({
+//     mutationFn: async () => {
+//       if (!selectedPDL) throw new Error('No PDL selected')
+
+//       // Get PDL configuration for offpeak hours
+//       const pdl = pdls.find((p: any) => p.usage_point_id === selectedPDL)
+//       logger.log('[Consumption] Selected PDL:', pdl)
+//       logger.log('[Consumption] Offpeak hours config:', pdl?.offpeak_hours)
+
+//       // Collapse all sections during loading
+//       setIsYearlySectionExpanded(false)
+//       setIsHCHPSectionExpanded(false)
+//       setIsHourlySectionExpanded(false)
+
+//       // Don't clear hourly data to avoid UI flickering during reload
+//       // Only clear yearly data
+//       setYearlyData({ years: [] })
+//       setHCHPData({ years: [] })
+
+//       setIsLoadingData(true)
+//       const yearlyResults: any[] = []
+//       const hchpResults: any[] = []
+//       let stoppedEarly = false
+//       let earliestDataDate: string | null = null
+//       let errorMessage: string | null = null
+
+//       try {
+//         // Fetch yearly data (3 years with daily endpoint - max 365 days per request)
+//         // Use rolling year: from today to same date last year
+//         const today = new Date()
+
+//         // Calculate actual number of ranges that will be processed
+//         let totalYearlyRanges = 0
+//         let totalDetailRanges = 0
+
+//         // Count yearly ranges (3 years)
+//         for (let yearOffset = 0; yearOffset < 3; yearOffset++) {
+//           const endDate = new Date(today)
+//           endDate.setFullYear(today.getFullYear() - yearOffset)
+//           const startDate = new Date(endDate)
+//           startDate.setFullYear(endDate.getFullYear() - 1)
+//           startDate.setDate(startDate.getDate() + 1)
+//           const yearlyRanges = generateDateRanges(startDate, endDate, 365)
+//           totalYearlyRanges += yearlyRanges.length
+//         }
+
+//         // Count HC/HP ranges (2 years)
+//         for (let yearOffset = 0; yearOffset < 2; yearOffset++) {
+//           const periodEndDate = new Date(today)
+//           periodEndDate.setFullYear(today.getFullYear() - yearOffset)
+//           const periodStartDate = new Date(periodEndDate)
+//           periodStartDate.setFullYear(periodEndDate.getFullYear() - 1)
+//           periodStartDate.setDate(periodStartDate.getDate() + 1)
+//           const hchpRanges = generateDateRanges(periodStartDate, periodEndDate, 7)
+//           totalDetailRanges += hchpRanges.length
+//         }
+
+//         // First pass for yearly data: count how many ranges actually need API calls
+//         let actualYearlyRangesToFetch = 0
+//         for (let yearOffset = 0; yearOffset < 3; yearOffset++) {
+//           const endDate = new Date(today)
+//           endDate.setFullYear(today.getFullYear() - yearOffset)
+//           const startDate = new Date(endDate)
+//           startDate.setFullYear(endDate.getFullYear() - 1)
+//           startDate.setDate(startDate.getDate() + 1)
+
+//           const dateRanges = generateDateRanges(startDate, endDate, 365)
+//           for (const range of dateRanges) {
+//             const cacheKey = ['consumption-daily', selectedPDL, range.start, range.end]
+//             const cached = queryClient.getQueryData(cacheKey)
+//             if (!cached) {
+//               const validation = validateDateRange(range.start, range.end, 3, 'Daily')
+//               if (validation.isValid) {
+//                 actualYearlyRangesToFetch++
+//               }
+//             }
+//           }
+//         }
+
+//         let currentYearlyRequest = 0
+//         let currentDetailRequest = 0
+//         setFetchProgress({ current: 0, total: actualYearlyRangesToFetch, phase: 'Récupération des données annuelles...' })
+//         setFetchProgressDetail({ current: 0, total: totalDetailRanges, phase: 'En attente...' })
+
+//         for (let yearOffset = 0; yearOffset < 3; yearOffset++) {
+//           const endDate = new Date(today)
+//           endDate.setFullYear(today.getFullYear() - yearOffset)
+
+//           const startDate = new Date(endDate)
+//           startDate.setFullYear(endDate.getFullYear() - 1)
+//           startDate.setDate(startDate.getDate() + 1) // Start from day after to avoid overlap
+
+//           const year = endDate.getFullYear()
+
+//           // Generate date ranges (max 365 days per request)
+//           const dateRanges = generateDateRanges(startDate, endDate, 365)
+
+//           let monthlyTotals: any = {}
+//           let totalYear = 0
+//           let readingCount = 0
+
+//           for (const range of dateRanges) {
+//             // Increment counter for each range processed (cache or API)
+//             currentYearlyRequest++
+
+//             // Check if data is already in React Query cache
+//             const cacheKey = ['consumption-daily', selectedPDL, range.start, range.end]
+//             let response = queryClient.getQueryData(cacheKey) as any
+
+//             if (!response) {
+//               // Validate date range before calling API (max 3 years for daily)
+//               const validation = validateDateRange(range.start, range.end, 3, 'Daily')
+//               if (!validation.isValid) {
+//                 // Skip this range if dates are too old and no cache available
+//                 logger.warn(`⚠️ Skipping range ${range.start} → ${range.end}: ${validation.errorMessage}`)
+//                 currentYearlyRequest-- // Decrement since we're skipping
+//                 continue
+//               }
+
+//               setFetchProgress({
+//                 current: currentYearlyRequest,
+//                 total: actualYearlyRangesToFetch,
+//                 phase: `Année ${year} : ${range.start} → ${range.end} (${currentYearlyRequest}/${actualYearlyRangesToFetch} ranges)`
+//               })
+
+//               // Not in cache, fetch from API and cache it
+//               response = await queryClient.fetchQuery({
+//                 queryKey: cacheKey,
+//                 queryFn: () => enedisApi.getConsumptionDaily(selectedPDL, {
+//                   start: range.start,
+//                   end: range.end,
+//                   use_cache: true,
+//                 }),
+//                 staleTime: 7 * 24 * 60 * 60 * 1000,
+//               })
+//             }
+
+//             // Check for Enedis errors first
+//             if (!response.success) {
+//               const apiErrorMessage = response.error?.message || ''
+//               // Check for ADAM-ERR0123 error (period before meter activation)
+//               if (apiErrorMessage.includes('ADAM-ERR0123') || apiErrorMessage.includes('anterior to the meter')) {
+//                 logger.log(`⚠️ Stopping yearly data fetch at ${range.start} - meter not activated yet`)
+//                 stoppedEarly = true
+//                 errorMessage = apiErrorMessage
+//                 if (!earliestDataDate && readingCount > 0) {
+//                   // Track earliest date with actual data
+//                   earliestDataDate = range.end
+//                 }
+//                 break // Stop this year's loop but save what we have
+//               }
+//             }
+
+//             const data = response.data as any
+
+//             // Check multiple possible data structures for daily endpoint
+//             let readings: IntervalReading[] | undefined
+
+//             if (data?.meter_reading?.interval_reading) {
+//               readings = data.meter_reading.interval_reading
+//             } else if (data?.interval_reading) {
+//               readings = data.interval_reading
+//             } else if (Array.isArray(data)) {
+//               readings = data
+//             }
+
+//             if (!readings || readings.length === 0) {
+//               logger.log('❌ No readings found for daily', range, data)
+//               // Skip processing this range - no valid data
+//               continue
+//             }
+
+//             if (response.success && readings && readings.length > 0) {
+//               logger.log(`✅ Got ${readings.length} readings for range ${range.start} to ${range.end}`)
+//               readingCount += readings.length
+
+//               readings.forEach((reading: any) => {
+//                 const value = reading.value / 1000 // Wh to kWh
+//                 const date = new Date(reading.date)
+//                 const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+
+//                 if (!monthlyTotals[monthKey]) {
+//                   monthlyTotals[monthKey] = 0
+//                 }
+
+//                 monthlyTotals[monthKey] += value
+//                 totalYear += value
+//               })
+//             }
+//           }
+
+//           const yearResult = {
+//             year,
+//             start_date: startDate.toISOString().split('T')[0],
+//             end_date: endDate.toISOString().split('T')[0],
+//             total_consumption_kwh: Math.round(totalYear * 100) / 100,
+//             monthly_data: Object.entries(monthlyTotals)
+//               .map(([month, consumption]) => ({
+//                 month,
+//                 consumption: Math.round((consumption as number) * 100) / 100,
+//               }))
+//               .sort((a, b) => a.month.localeCompare(b.month)),
+//             reading_count: readingCount,
+//           }
+
+//           logger.log(`📊 Year ${year} result (${yearResult.start_date} → ${yearResult.end_date}):`, yearResult)
+//           yearlyResults.push(yearResult)
+//         }
+
+//         // Fetch HC/HP data (2 years with detail endpoint - max 7 days per request)
+//         // Use same rolling year as yearly data: from today to same date last year
+
+//         // First pass: count how many ranges actually need API calls (not in cache)
+//         let actualDetailRangesToFetch = 0
+//         for (let yearOffset = 0; yearOffset < 2; yearOffset++) {
+//           const periodEndDate = new Date(today)
+//           periodEndDate.setFullYear(today.getFullYear() - yearOffset)
+//           if (yearOffset === 0) {
+//             periodEndDate.setDate(periodEndDate.getDate() - 1)
+//           }
+//           if (yearOffset > 0) {
+//             periodEndDate.setMonth(periodEndDate.getMonth() - 1)
+//             periodEndDate.setDate(1)
+//             periodEndDate.setDate(0)
+//           }
+//           const periodStartDate = new Date(periodEndDate)
+//           periodStartDate.setFullYear(periodEndDate.getFullYear() - 1)
+//           periodStartDate.setDate(periodStartDate.getDate() + 1)
+
+//           const dateRanges = generateDateRanges(periodStartDate, periodEndDate, 7)
+//           for (const range of dateRanges) {
+//             const cacheKey = ['consumption-detail', selectedPDL, range.start, range.end]
+//             const cached = queryClient.getQueryData(cacheKey)
+//             if (!cached) {
+//               const validation = validateDateRange(range.start, range.end, 2, 'Detail')
+//               if (validation.isValid) {
+//                 actualDetailRangesToFetch++
+//               }
+//             }
+//           }
+//         }
+
+//         setFetchProgressDetail({ current: 0, total: actualDetailRangesToFetch, phase: 'Récupération des données HC/HP...' })
+
+//         // Collect all hourly data for the day-by-day view
+//         const allHourlyData: Record<string, any[]> = {}
+
+//         for (let yearOffset = 0; yearOffset < 2; yearOffset++) {
+//           const periodEndDate = new Date(today)
+//           periodEndDate.setFullYear(today.getFullYear() - yearOffset)
+
+//           // For yearOffset = 0 (current year), use yesterday as end date
+//           // because today's data is not complete yet
+//           if (yearOffset === 0) {
+//             periodEndDate.setDate(periodEndDate.getDate() - 1) // Yesterday
+//           }
+
+//           // For yearOffset > 0, end at the last day of the previous month to avoid duplication
+//           if (yearOffset > 0) {
+//             periodEndDate.setMonth(periodEndDate.getMonth() - 1) // Go back one month
+//             periodEndDate.setDate(1) // First day of that month
+//             periodEndDate.setDate(0) // Last day of previous month (month before current)
+//           }
+
+//           const periodStartDate = new Date(periodEndDate)
+//           periodStartDate.setFullYear(periodEndDate.getFullYear() - 1)
+//           periodStartDate.setDate(periodStartDate.getDate() + 1) // Start from day after to avoid overlap
+
+//           const year = periodEndDate.getFullYear()
+
+//           // Invalidate cache for the last 3 days to avoid using stale single-day requests
+//           // This prevents errors when old cache had start=end which Enedis doesn't allow
+//           for (let daysBack = 0; daysBack < 3; daysBack++) {
+//             const dateToInvalidate = new Date(periodEndDate)
+//             dateToInvalidate.setDate(dateToInvalidate.getDate() - daysBack)
+//             const dateStr = dateToInvalidate.toISOString().split('T')[0]
+
+//             const invalidKeys = [
+//               ['consumption-detail', selectedPDL, dateStr, dateStr],
+//               ['consumption-daily', selectedPDL, dateStr, dateStr],
+//             ]
+//             invalidKeys.forEach(key => {
+//               queryClient.removeQueries({ queryKey: key })
+//             })
+//             logger.log(`🗑️ Invalidated cache for single-day requests on ${dateStr}`)
+//           }
+
+//           // Generate date ranges (max 7 days per request)
+//           const dateRanges = generateDateRanges(periodStartDate, periodEndDate, 7)
+
+//           let totalConsumption = 0
+//           let hcConsumption = 0
+//           let hpConsumption = 0
+//           let monthlyData: any = {}
+//           let readingCount = 0
+//           let totalReadingsProcessed = 0
+
+//           logger.log(`[HC/HP ${year}] Processing ${dateRanges.length} date ranges from ${periodStartDate.toISOString().split('T')[0]} to ${periodEndDate.toISOString().split('T')[0]}`)
+
+//           for (const range of dateRanges) {
+//             // Check if data is already in React Query cache
+//             const cacheKey = ['consumption-detail', selectedPDL, range.start, range.end]
+//             let response = queryClient.getQueryData(cacheKey) as any
+
+//             if (response) {
+//               logger.log(`✅ [Consumption Cache HIT] Using cached data for ${range.start} → ${range.end}`)
+//             }
+
+//             if (!response) {
+//               // Validate date range before calling API (max 2 years for detail)
+//               const validation = validateDateRange(range.start, range.end, 2, 'Detail')
+//               if (!validation.isValid) {
+//                 // Skip this range if dates are too old and no cache available
+//                 logger.warn(`⚠️ Skipping range ${range.start} → ${range.end}: ${validation.errorMessage}`)
+//                 continue
+//               }
+
+//               // Increment counter only when actually making an API request
+//               currentDetailRequest++
+
+//               setFetchProgressDetail({
+//                 current: currentDetailRequest,
+//                 total: actualDetailRangesToFetch,
+//                 phase: `HC/HP ${year} : ${range.start} → ${range.end} (${currentDetailRequest}/${actualDetailRangesToFetch} ranges)`
+//               })
+
+//               logger.log(`❌ [Consumption Cache MISS] Fetching from API for ${range.start} → ${range.end}`)
+//               // Not in cache, fetch from API and cache it
+//               response = await queryClient.fetchQuery({
+//                 queryKey: cacheKey,
+//                 queryFn: () => enedisApi.getConsumptionDetail(selectedPDL, {
+//                   start: range.start,
+//                   end: range.end,
+//                   use_cache: true,
+//                 }),
+//                 staleTime: 7 * 24 * 60 * 60 * 1000,
+//               })
+
+//               if (response) {
+//                 logger.log(`📊 [API Response] For range ${range.start} → ${range.end}:`, {
+//                   success: response.success,
+//                   hasData: !!response.data,
+//                   dataKeys: response.data ? Object.keys(response.data) : null,
+//                   hasMeterReading: response.data?.meter_reading ? true : false,
+//                   hasIntervalReading: response.data?.interval_reading ? true : false,
+//                   readingsCount: response.data?.meter_reading?.interval_reading?.length ||
+//                                  response.data?.interval_reading?.length ||
+//                                  (Array.isArray(response.data) ? response.data.length : 0)
+//                 })
+//               }
+//             }
+
+//             // Check for Enedis errors first
+//             if (!response.success) {
+//               const apiErrorMessage = response.error?.message || ''
+//               // Check for ADAM-ERR0123 error (period before meter activation)
+//               if (apiErrorMessage.includes('ADAM-ERR0123') || apiErrorMessage.includes('anterior to the meter')) {
+//                 logger.log(`⚠️ Stopping HC/HP data fetch at ${range.start} - meter not activated yet`)
+//                 stoppedEarly = true
+//                 errorMessage = apiErrorMessage
+//                 if (!earliestDataDate && readingCount > 0) {
+//                   // Track earliest date with actual data
+//                   earliestDataDate = range.end
+//                 }
+//                 break // Stop this year's loop but save what we have
+//               }
+//             }
+
+//             const data = response.data as any
+
+//             // Check multiple possible data structures for detail endpoint
+//             let readings: IntervalReading[] | undefined
+//             let globalIntervalLength: string | undefined
+
+//             // Log first response structure to understand data format
+//             if (totalReadingsProcessed === 0 && data) {
+//               logger.log(`[HC/HP ${year}] First API response structure:`, {
+//                 hasMeterReading: !!data.meter_reading,
+//                 hasIntervalReading: !!data.interval_reading,
+//                 isArray: Array.isArray(data),
+//                 keys: Object.keys(data),
+//                 meterReadingKeys: data.meter_reading ? Object.keys(data.meter_reading) : null,
+//                 firstReadingKeys: data.meter_reading?.interval_reading?.[0] ? Object.keys(data.meter_reading.interval_reading[0]) : null
+//               })
+//             }
+
+//             if (data?.meter_reading?.interval_reading) {
+//               readings = data.meter_reading.interval_reading
+//               // interval_length is in each reading, not at meter_reading level
+//               globalIntervalLength = readings[0]?.interval_length
+//             } else if (data?.interval_reading) {
+//               readings = data.interval_reading
+//               globalIntervalLength = readings[0]?.interval_length || data.interval_length
+//             } else if (Array.isArray(data)) {
+//               readings = data
+//               globalIntervalLength = data[0]?.interval_length
+//             }
+
+//             if (!readings || readings.length === 0) {
+//               logger.log('❌ No readings found for detail', range, data)
+//               // Skip processing this range - no valid data
+//               continue
+//             }
+
+//             if (response.success && readings && readings.length > 0) {
+//               logger.log(`✅ Got ${readings.length} detail readings for range ${range.start} to ${range.end}`)
+//               logger.log(`📏 Global interval_length: ${globalIntervalLength}`)
+//               readingCount += readings.length
+
+//               // Log first reading to check interval and value
+//               if (readings.length > 0 && totalReadingsProcessed === 0) {
+//                 const firstReading = readings[0]
+//                 const firstIntervalLength = firstReading.interval_length || globalIntervalLength || 'PT30M'
+//                 logger.log(`[HC/HP ${year}] First reading sample:`, {
+//                   date: firstReading.date,
+//                   valueW: firstReading.value,
+//                   interval_length: firstIntervalLength
+//                 })
+//               }
+
+//               readings.forEach((reading: any) => {
+//                 const intervalLength = reading.interval_length || globalIntervalLength || 'PT30M'
+//                 const intervalMatch = intervalLength.match(/PT(\d+)M/)
+//                 const intervalMinutes = intervalMatch ? parseInt(intervalMatch[1]) : 30
+
+//                 // Enedis returns energy in Wh for the interval period
+//                 // For 30-min intervals, the value is Wh consumed during those 30 minutes
+//                 const valueWh = parseFloat(reading.value)
+//                 const valueKWh = valueWh / 1000
+
+//                 totalReadingsProcessed++
+
+//                 // Enedis returns local time (Europe/Paris) at END of period
+//                 // Parse the date and subtract interval to get START for HC/HP determination
+//                 const dateParts = reading.date.match(/(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2}):(\d{2})/)
+//                 if (!dateParts) {
+//                   logger.warn('Could not parse date:', reading.date)
+//                   return
+//                 }
+
+//                 const readingYear = parseInt(dateParts[1])
+//                 const readingMonth = parseInt(dateParts[2]) - 1
+//                 const readingDay = parseInt(dateParts[3])
+//                 const endHour = parseInt(dateParts[4])
+//                 const endMinute = parseInt(dateParts[5])
+//                 const second = parseInt(dateParts[6])
+
+//                 // Create date at END time and subtract interval to get START
+//                 const readingEndDate = new Date(readingYear, readingMonth, readingDay, endHour, endMinute, second)
+//                 const readingStartDate = new Date(readingEndDate)
+//                 readingStartDate.setMinutes(readingStartDate.getMinutes() - intervalMinutes)
+
+//                 // Note: We don't filter by period here because we want ALL data from the API response
+//                 // to be stored in allHourlyData for the day-by-day view. The period filtering
+//                 // is only used for monthly aggregation below.
+
+//                 // Use the START hour to determine if it's HC or HP
+//                 const hourValue = readingStartDate.getHours()
+//                 const minuteValue = readingStartDate.getMinutes()
+//                 const isHC = isOffpeakHour(hourValue, pdl?.offpeak_hours)
+
+//                 if (isHC) {
+//                   hcConsumption += valueKWh
+//                 } else {
+//                   hpConsumption += valueKWh
+//                 }
+
+//                 totalConsumption += valueKWh
+
+//                 // Use END date for month attribution (like Enedis does)
+//                 const monthKey = `${readingEndDate.getFullYear()}-${String(readingEndDate.getMonth() + 1).padStart(2, '0')}`
+
+//                 if (!monthlyData[monthKey]) {
+//                   monthlyData[monthKey] = { hc: 0, hp: 0 }
+//                 }
+
+//                 if (isHC) {
+//                   monthlyData[monthKey].hc += valueKWh
+//                 } else {
+//                   monthlyData[monthKey].hp += valueKWh
+//                 }
+
+//                 // ALSO store in allHourlyData for day-by-day visualization
+//                 // Use readingStartDate for dayKey - the reading represents consumption during the START period
+//                 // Example: "2025-10-05 00:00:00" (END time) → START is 2025-10-04 23:30 → belongs to Oct 4
+//                 const dayKey = `${readingStartDate.getFullYear()}-${String(readingStartDate.getMonth() + 1).padStart(2, '0')}-${String(readingStartDate.getDate()).padStart(2, '0')}`
+//                 const dateStr = `${dayKey}T${String(hourValue).padStart(2, '0')}:${String(minuteValue).padStart(2, '0')}:${String(second).padStart(2, '0')}`
+
+//                 if (!allHourlyData[dayKey]) {
+//                   allHourlyData[dayKey] = []
+//                 }
+
+//                 // Check if this exact reading already exists to avoid duplicates from overlapping ranges
+//                 const existingReading = allHourlyData[dayKey].find(r => r.date === dateStr)
+//                 if (!existingReading) {
+//                   allHourlyData[dayKey].push({
+//                     date: dateStr,
+//                     hour: hourValue,
+//                     minute: minuteValue,
+//                     value: valueKWh,
+//                     isHC,
+//                   })
+//                 }
+//               })
+//             }
+//           }
+
+//           const hcPercentage = totalConsumption > 0 ? (hcConsumption / totalConsumption) * 100 : 0
+//           const hpPercentage = totalConsumption > 0 ? (hpConsumption / totalConsumption) * 100 : 0
+
+//           // Find corresponding yearly data to compare totals
+//           const correspondingYearlyData = yearlyResults.find(y => y.year === year)
+//           const yearlyTotal = correspondingYearlyData?.total_consumption_kwh || 0
+//           const detailTotal = totalConsumption
+//           const dataCompleteness = yearlyTotal > 0 ? (detailTotal / yearlyTotal) * 100 : 100
+
+//           logger.log(`[HC/HP ${year}] SUMMARY:`, {
+//             totalReadings: totalReadingsProcessed,
+//             dateRanges: dateRanges.length,
+//             totalConsumption: totalConsumption.toFixed(2),
+//             hcConsumption: hcConsumption.toFixed(2),
+//             hpConsumption: hpConsumption.toFixed(2),
+//             hcPercentage: hcPercentage.toFixed(2) + '%',
+//             hpPercentage: hpPercentage.toFixed(2) + '%',
+//             yearlyTotal: yearlyTotal.toFixed(2),
+//             dataCompleteness: dataCompleteness.toFixed(1) + '%',
+//             missingData: (yearlyTotal - detailTotal).toFixed(2) + ' kWh'
+//           })
+
+//           hchpResults.push({
+//             year,
+//             start_date: periodStartDate.toISOString().split('T')[0],
+//             end_date: periodEndDate.toISOString().split('T')[0],
+//             total_consumption_kwh: Math.round(totalConsumption * 100) / 100,
+//             hc_consumption_kwh: Math.round(hcConsumption * 100) / 100,
+//             hp_consumption_kwh: Math.round(hpConsumption * 100) / 100,
+//             hc_percentage: Math.round(hcPercentage * 100) / 100,
+//             hp_percentage: Math.round(hpPercentage * 100) / 100,
+//             data_completeness: Math.round(dataCompleteness * 10) / 10,
+//             missing_kwh: Math.round((yearlyTotal - detailTotal) * 100) / 100,
+//             monthly_data: Object.entries(monthlyData)
+//               .map(([month, values]: [string, any]) => ({
+//                 month,
+//                 hc: Math.round(values.hc * 100) / 100,
+//                 hp: Math.round(values.hp * 100) / 100,
+//               }))
+//               .sort((a, b) => a.month.localeCompare(b.month)),
+//             reading_count: readingCount,
+//           })
+//         }
+
+//         // Convert allHourlyData to array format
+
+//         const formattedHourlyData = Object.entries(allHourlyData).map(([day, hourlyReadings]) => ({
+//           day,
+//           readings: hourlyReadings.sort((a, b) => {
+//             // Sort by hour first, then by minute
+//             if (a.hour !== b.hour) return a.hour - b.hour
+//             return (a.minute || 0) - (b.minute || 0)
+//           }),
+//         })).sort((a, b) => b.day.localeCompare(a.day))
+
+//         logger.log(`📊 Formatted ${formattedHourlyData.length} days of hourly data from HC/HP fetch`)
+
+//         // Debug: Show distribution by day of week
+//         const dayOfWeekCounts = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }
+//         formattedHourlyData.forEach(({ day }) => {
+//           const date = new Date(day + 'T00:00:00')
+//           dayOfWeekCounts[date.getDay()]++
+//         })
+//         const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi']
+//         logger.log('📊 Distribution par jour de la semaine:')
+//         Object.entries(dayOfWeekCounts).forEach(([dow, count]) => {
+//           logger.log(`  ${dayNames[parseInt(dow)]}: ${count} jours`)
+//         })
+
+
+//         return { yearlyResults, hchpResults, hourlyData: formattedHourlyData, stoppedEarly, earliestDataDate, errorMessage }
+//       } finally {
+//         setIsLoadingData(false)
+//       }
+//     },
+//     onSuccess: (data) => {
+//       logger.log('✅ Mutation success - yearlyResults:', data.yearlyResults)
+//       logger.log('✅ Mutation success - hchpResults:', data.hchpResults)
+//       logger.log('✅ Mutation success - hourlyData days:', data.hourlyData?.length)
+
+//       setYearlyData({ years: data.yearlyResults })
+//       setHCHPData({ years: data.hchpResults })
+//       // Set hourly data so it's available for day-by-day visualization
+//       if (data.hourlyData && data.hourlyData.length > 0) {
+//         logger.log(`✅ Setting hourlyData with ${data.hourlyData.length} days`)
+//         logger.log('📅 First day:', data.hourlyData[0]?.day)
+//         logger.log('📅 Last day:', data.hourlyData[data.hourlyData.length - 1]?.day)
+//         setHourlyData(data.hourlyData)
+//       } else {
+//         logger.warn('⚠️ No hourlyData returned from mutation')
+//       }
+
+//       // Check if any data was collected
+//       const hasData = data.yearlyResults.length > 0 || data.hchpResults.length > 0
+
+//       if (!hasData) {
+//         const toastId = toast.error(
+//           'Aucune donnée disponible pour la période demandée. Le compteur n\'était peut-être pas encore activé.',
+//           { duration: 6000 }
+//         )
+//         // Add click handler to entire toast with overlay
+//         setTimeout(() => {
+//           const toastElements = document.querySelectorAll('[role="status"]')
+//           toastElements.forEach((el) => {
+//             if (el.textContent?.includes('Aucune donnée disponible')) {
+//               const toastEl = el as HTMLElement
+//               toastEl.style.cursor = 'pointer'
+//               toastEl.style.position = 'relative'
+
+//               // Create overlay to capture all clicks
+//               const overlay = document.createElement('div')
+//               overlay.style.position = 'absolute'
+//               overlay.style.top = '0'
+//               overlay.style.left = '0'
+//               overlay.style.width = '100%'
+//               overlay.style.height = '100%'
+//               overlay.style.cursor = 'pointer'
+//               overlay.style.zIndex = '1'
+//               overlay.onclick = (e) => {
+//                 e.stopPropagation()
+//                 toast.dismiss(toastId)
+//               }
+
+//               toastEl.appendChild(overlay)
+//             }
+//           })
+//         }, 50)
+//       } else if (data.stoppedEarly) {
+//         // Import stopped early but got some data
+//         const dateInfo = data.earliestDataDate
+//           ? ` Données disponibles à partir du ${new Date(data.earliestDataDate).toLocaleDateString('fr-FR')}.`
+//           : ''
+//         const errorInfo = data.errorMessage ? `\n\nErreur rencontrée : ${data.errorMessage}` : ''
+//         const toastId = toast(
+//           `Import partiel : ${data.yearlyResults.length} années de consommation et ${data.hchpResults.length} années HC/HP récupérées.${dateInfo}${errorInfo}`,
+//           {
+//             duration: 10000,
+//             icon: '⚠️',
+//             style: {
+//               background: '#78350f',
+//               color: '#fef3c7',
+//               border: '1px solid #f59e0b',
+//               cursor: 'pointer',
+//             },
+//           }
+//         )
+//         // Add click handler to entire toast with overlay
+//         setTimeout(() => {
+//           const toastElements = document.querySelectorAll('[role="status"]')
+//           toastElements.forEach((el) => {
+//             if (el.textContent?.includes('Import partiel')) {
+//               const toastEl = el as HTMLElement
+//               toastEl.style.cursor = 'pointer'
+//               toastEl.style.position = 'relative'
+
+//               // Create overlay to capture all clicks
+//               const overlay = document.createElement('div')
+//               overlay.style.position = 'absolute'
+//               overlay.style.top = '0'
+//               overlay.style.left = '0'
+//               overlay.style.width = '100%'
+//               overlay.style.height = '100%'
+//               overlay.style.cursor = 'pointer'
+//               overlay.style.zIndex = '1'
+//               overlay.onclick = (e) => {
+//                 e.stopPropagation()
+//                 toast.dismiss(toastId)
+//               }
+
+//               toastEl.appendChild(overlay)
+//             }
+//           })
+//         }, 50)
+//       } else {
+//         const toastId = toast.success(
+//           `Données récupérées avec succès : ${data.yearlyResults.length} années de consommation et ${data.hchpResults.length} années de ratio HC/HP mis en cache.`,
+//           { duration: 5000 }
+//         )
+
+//         // Auto-load hourly data if dates are set
+//         if (hourlyStartDate && hourlyEndDate) {
+//           setTimeout(() => {
+//             fetchHourlyData()
+//           }, 500)
+//         }
+//         // Add click handler to entire toast with overlay
+//         setTimeout(() => {
+//           const toastElements = document.querySelectorAll('[role="status"]')
+//           toastElements.forEach((el) => {
+//             if (el.textContent?.includes('Données récupérées avec succès')) {
+//               const toastEl = el as HTMLElement
+//               toastEl.style.cursor = 'pointer'
+//               toastEl.style.position = 'relative'
+
+//               // Create overlay to capture all clicks
+//               const overlay = document.createElement('div')
+//               overlay.style.position = 'absolute'
+//               overlay.style.top = '0'
+//               overlay.style.left = '0'
+//               overlay.style.width = '100%'
+//               overlay.style.height = '100%'
+//               overlay.style.cursor = 'pointer'
+//               overlay.style.zIndex = '1'
+//               overlay.onclick = (e) => {
+//                 e.stopPropagation()
+//                 toast.dismiss(toastId)
+//               }
+
+//               toastEl.appendChild(overlay)
+//             }
+//           })
+//         }, 50)
+//       }
+
+//       setFetchStatus(null)
+//     },
+//     onError: (error: any) => {
+//       setIsLoadingData(false)
+//       const toastId = toast.error(
+//         `Erreur lors de la récupération des données : ${error.message}`,
+//         { duration: 8000 }
+//       )
+//       // Add click handler to entire toast with overlay
+//       setTimeout(() => {
+//         const toastElements = document.querySelectorAll('[role="status"]')
+//         toastElements.forEach((el) => {
+//           if (el.textContent?.includes('Erreur lors de la récupération')) {
+//             const toastEl = el as HTMLElement
+//             toastEl.style.cursor = 'pointer'
+//             toastEl.style.position = 'relative'
+
+//             // Create overlay to capture all clicks
+//             const overlay = document.createElement('div')
+//             overlay.style.position = 'absolute'
+//             overlay.style.top = '0'
+//             overlay.style.left = '0'
+//             overlay.style.width = '100%'
+//             overlay.style.height = '100%'
+//             overlay.style.cursor = 'pointer'
+//             overlay.style.zIndex = '1'
+//             overlay.onclick = (e) => {
+//               e.stopPropagation()
+//               toast.dismiss(toastId)
+//             }
+
+//             toastEl.appendChild(overlay)
+//           }
+//         })
+//       }, 50)
+//       setFetchStatus({
+//         type: 'error',
+//         message: error?.message || 'Erreur lors de la récupération des données depuis Enedis'
+//       })
+//       setTimeout(() => setFetchStatus(null), 10000)
+//     }
+//   })
+
+//   const isLoading = isLoadingData
+//   const hasError = false
+
+//   // Helper functions to check if data has useful values (> 0)
+//   const hasUsefulYearlyData = () => {
+//     if (!yearlyData || !yearlyData.years || yearlyData.years.length === 0) return false
+//     return yearlyData.years.some((year: any) =>
+//       year.total_consumption_kwh && year.total_consumption_kwh > 0
+//     )
+//   }
+
+//   const hasUsefulHCHPData = () => {
+//     if (!hchpData || !hchpData.years || hchpData.years.length === 0) return false
+//     return hchpData.years.some((year: any) =>
+//       (year.hc_consumption_kwh && year.hc_consumption_kwh > 0) ||
+//       (year.hp_consumption_kwh && year.hp_consumption_kwh > 0)
+//     )
+//   }
+
+//   const hasUsefulHourlyData = () => {
+//     return hourlyData.some(day => {
+//       if (!day.readings || day.readings.length === 0) return false
+//       return day.readings.some((reading: any) => reading.value && reading.value > 0)
+//     })
+//   }
+
+//   // Auto-expand sections when data is loaded and has useful values (> 0)
+//   useEffect(() => {
+//     if (yearlyData && yearlyData.years && yearlyData.years.length > 0 && !isLoading) {
+//       // Check if at least one year has consumption > 0
+//       const hasUsefulData = yearlyData.years.some((year: any) =>
+//         year.total_consumption_kwh && year.total_consumption_kwh > 0
+//       )
+//       if (hasUsefulData) {
+//         setIsYearlySectionExpanded(true)
+//       } else {
+//         setIsYearlySectionExpanded(false)
+//       }
+//     } else {
+//       setIsYearlySectionExpanded(false)
+//     }
+//   }, [yearlyData, isLoading])
+
+//   useEffect(() => {
+//     if (hchpData && hchpData.years && hchpData.years.length > 0 && !isLoading) {
+//       // Check if at least one year has consumption > 0
+//       const hasUsefulData = hchpData.years.some((year: any) =>
+//         (year.hc_consumption_kwh && year.hc_consumption_kwh > 0) ||
+//         (year.hp_consumption_kwh && year.hp_consumption_kwh > 0)
+//       )
+//       if (hasUsefulData) {
+//         setIsHCHPSectionExpanded(true)
+//       } else {
+//         setIsHCHPSectionExpanded(false)
+//       }
+//     } else {
+//       setIsHCHPSectionExpanded(false)
+//     }
+//   }, [hchpData, isLoading])
+
+//   // Simple effect: expand section when data arrives, collapse when empty or no useful data (all values = 0)
+//   useEffect(() => {
+//     const hasUsefulData = hourlyData.some(day => {
+//       if (!day.readings || day.readings.length === 0) return false
+//       // Check if at least one reading has value > 0
+//       return day.readings.some((reading: any) => reading.value && reading.value > 0)
+//     })
+
+//     if (hasUsefulData && !isLoadingHourly) {
+//       setIsHourlySectionExpanded(true)
+//     } else if (!hasUsefulData) {
+//       setIsHourlySectionExpanded(false)
+//     }
+//   }, [hourlyData, isLoadingHourly])
+
+//   // Sync calendar month with selected date
+//   useEffect(() => {
+//     if (hourlyStartDate) {
+//       const startDate = new Date(hourlyStartDate)
+//       setCalendarMonth(new Date(startDate.getFullYear(), startDate.getMonth(), 1))
+//     }
+//   }, [hourlyStartDate])
+
+//   // Function to select tab by date - called directly by calendar
+//   // Prepare data for monthly evolution chart (rolling years)
+//   // Collect all monthly data from all years
+//   const allMonthlyData: Array<{date: string, consumption: number, year: number, monthYear: string}> = []
+
+//   yearlyData?.years.forEach((yearData: any) => {
+//     yearData.monthly_data.forEach((item: any) => {
+//       const [year, month] = item.month.split('-')
+//       const monthDate = new Date(item.month + '-01')
+//       const monthYear = monthDate.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
+//       allMonthlyData.push({
+//         date: item.month,
+//         consumption: item.consumption,
+//         year: parseInt(year),
+//         monthYear: monthYear
+//       })
+//     })
+//   })
+
+//   // Also add HC/HP data if available for more complete data
+//   hchpData?.years?.forEach((yearData: any) => {
+//     yearData.monthly_data?.forEach((item: any) => {
+//       const totalConsumption = (item.hc || 0) + (item.hp || 0)
+//       if (totalConsumption > 0) {
+//         // Check if this month already exists
+//         const existingMonth = allMonthlyData.find(d => d.date === item.month)
+//         if (!existingMonth) {
+//           const [year, month] = item.month.split('-')
+//           const monthDate = new Date(item.month + '-01')
+//           const monthYear = monthDate.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
+//           allMonthlyData.push({
+//             date: item.month,
+//             consumption: totalConsumption,
+//             year: parseInt(year),
+//             monthYear: monthYear
+//           })
+//         } else if (existingMonth && !existingMonth.consumption) {
+//           // Update if existing has no consumption
+//           existingMonth.consumption = totalConsumption
+//         }
+//       }
+//     })
+//   })
+
+//   // Sort by date
+//   allMonthlyData.sort((a, b) => a.date.localeCompare(b.date))
+
+//   // Group data for 3 rolling years display
+//   const today = new Date()
+//   const currentYear = today.getFullYear()
+//   const currentMonth = today.getMonth()
+
+//   // Create data structure for chart
+//   const yearlyChartData: any[] = []
+//   const monthNames = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
+
+//   // For each month position in the rolling 12 months
+//   for (let i = 0; i < 12; i++) {
+//     const monthOffset = 11 - i  // Start from 11 months ago
+//     const targetDate = new Date(today.getFullYear(), today.getMonth() - monthOffset, 1)
+//     const monthName = monthNames[targetDate.getMonth()]
+
+//     const dataPoint: any = {
+//       month: `${monthName} ${targetDate.getFullYear()}`
+//     }
+
+//     // Get all unique years from the data
+//     const uniqueYears = [...new Set(allMonthlyData.map(d => d.year))].sort()
+
+//     // Get data for the same month in all available years
+//     for (const year of uniqueYears) {
+//       const dateKey = `${year}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`
+//       const yearData = allMonthlyData.find(d => d.date === dateKey)
+//       if (yearData) {
+//         dataPoint[year.toString()] = yearData.consumption
+//       }
+//     }
+
+//     yearlyChartData.push(dataPoint)
+//   }
+
+//   // Prepare data for yearly comparison chart
+//   const yearlyComparisonData = yearlyData?.years.map((yearData: any) => ({
+//     year: yearData.year.toString(),
+//     'Consommation (kWh)': yearData.total_consumption_kwh,
+//   })) || []
+
+//   // Prepare HC/HP pie data (selected year)
+//   const selectedYearHCHP = hchpData?.years[selectedHCHPYear]
+//   const hcHpPieData = selectedYearHCHP ? [
+//     { name: 'Heures Creuses', value: selectedYearHCHP.hc_consumption_kwh, percentage: selectedYearHCHP.hc_percentage },
+//     { name: 'Heures Pleines', value: selectedYearHCHP.hp_consumption_kwh, percentage: selectedYearHCHP.hp_percentage },
+//   ] : []
+
+//   // Prepare HC/HP monthly chart data based on selected year
+//   const hchpMonthlyData = selectedYearHCHP?.monthly_data
+//     ?.sort((a: any, b: any) => {
+//       // Sort by month chronologically (YYYY-MM format)
+//       return a.month.localeCompare(b.month)
+//     })
+//     .map((item: any) => ({
+//       month: new Date(item.month + '-01').toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }),
+//       'HC (kWh)': item.hc,
+//       'HP (kWh)': item.hp,
+//     })) || []
+
+//   const COLORS = {
+//     hc: '#10b981', // green-500
+//     hp: '#f59e0b', // amber-500
+//     hcDark: '#059669', // green-600 (darker for N-1)
+//     hpDark: '#d97706', // amber-600 (darker for N-1)
+//   }
+
+//   if (!pdls || pdls.length === 0) {
+//     return (
+//       <div className="space-y-6">
+//         <div>
+//           <h1 className="text-2xl font-bold mb-2 flex items-center gap-2">
+//             <TrendingUp className="text-primary-600 dark:text-primary-400" size={28} />
+//             Consommation
+//           </h1>
+//           <p className="text-gray-600 dark:text-gray-400">
+//             Visualisez vos données de consommation annuelle
+//           </p>
+//         </div>
+//         <div className="card p-8 text-center">
+//           <p className="text-gray-600 dark:text-gray-400">
+//             Aucun PDL disponible.{' '}
+//             <a href="/dashboard" className="text-primary-600 dark:text-primary-400 hover:underline">
+//               Veuillez ajouter un point de livraison depuis votre tableau de bord.
+//             </a>
+//           </p>
+//         </div>
+//       </div>
+//     )
+//   }
+
+//   return (
+//     <div className="space-y-6">
+//       {/* Header */}
+//       <div className="flex items-start justify-between gap-4">
+//         <div>
+//           <h1 className="text-2xl font-bold mb-2 flex items-center gap-2">
+//             <TrendingUp className="text-primary-600 dark:text-primary-400" size={28} />
+//             Consommation
+//           </h1>
+//           <p className="text-gray-600 dark:text-gray-400">Visualisez vos données de consommation sur plusieurs années</p>
+//         </div>
+
+//         {/* Export All Data Buttons - Only show when data is loaded */}
+//         {((yearlyData && yearlyData.years && yearlyData.years.length > 0) ||
+//           (hchpData && hchpData.years && hchpData.years.length > 0) ||
+//           hourlyData.length > 0) && (
+//           <div className="flex gap-2">
+//             <button
+//               onClick={copyAllDataJSON}
+//               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 text-sm font-medium transition-colors whitespace-nowrap"
+//               title="Copier toutes les données dans le presse-papier"
+//             >
+//               <Copy size={18} />
+//               Copier JSON
+//             </button>
+//             <button
+//               onClick={exportAllDataJSON}
+//               className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center gap-2 text-sm font-medium transition-colors whitespace-nowrap"
+//               title="Télécharger toutes les données de la page en JSON"
+//             >
+//               <Download size={18} />
+//               Télécharger JSON
+//             </button>
+//           </div>
+//         )}
+//       </div>
+
+//       {/* PDL Selection and Data Loading Section */}
+//       <div className="card p-6">
+//         <h2 className="text-xl font-semibold flex items-center gap-2 mb-4">
+//           <Database className="text-primary-600 dark:text-primary-400" size={24} />
+//           Chargement des données
+//         </h2>
+
+//         <div className="space-y-4">
+//           {/* PDL Selector */}
+//           <div>
+//             <label className="block text-sm font-medium mb-2">Point de Livraison</label>
+//             <select
+//               value={selectedPDL || ''}
+//               onChange={(e) => {
+//                 setSelectedPDL(e.target.value)
+//                 // Note: Data clearing is now handled in useEffect to ensure proper order
+//               }}
+//               className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+//             >
+//               {pdls.map((pdl: any) => (
+//                 <option key={pdl.usage_point_id} value={pdl.usage_point_id}>
+//                   {pdl.name || pdl.usage_point_id}
+//                 </option>
+//               ))}
+//             </select>
+//           </div>
+
+//           {/* Fetch Data Button */}
+//           <div>
+//             <button
+//               onClick={() => {
+//                 // Collapse all sections immediately before starting fetch
+//                 setIsYearlySectionExpanded(false)
+//                 setIsHCHPSectionExpanded(false)
+//                 setIsHourlySectionExpanded(false)
+//                 fetchDataMutation.mutate()
+//               }}
+//               disabled={!selectedPDL || fetchDataMutation.isPending}
+//               className="w-full px-4 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium transition-colors"
+//             >
+//               <RefreshCw className={`w-5 h-5 ${fetchDataMutation.isPending ? 'animate-spin' : ''}`} />
+//               {fetchDataMutation.isPending ? 'Récupération en cours...' : 'Récupérer les données depuis Enedis'}
+//             </button>
+//             <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+//               Cette action récupère vos données de consommation depuis l'API Enedis et les met en cache pour 7 jours.
+//               Cela peut prendre quelques minutes (environ 100+ requêtes API).
+//             </p>
+//           </div>
+
+//           {/* Clear Browser Cache Button (Admin Only) */}
+//           {isAdmin() && (
+//             <div>
+//               <button
+//                 onClick={() => {
+//                   if (selectedPDL) {
+//                     // Set flag to prevent auto-reload
+//                     isLoadingFromCache.current = true
+
+//                     // Clear ALL localStorage (more thorough than individual keys)
+//                     localStorage.clear()
+
+//                     // Clear React Query cache for this PDL
+//                     queryClient.removeQueries({ queryKey: ['consumption-detail', selectedPDL] })
+//                     queryClient.removeQueries({ queryKey: ['consumption-daily', selectedPDL] })
+//                     queryClient.removeQueries({ queryKey: ['consumption-yearly', selectedPDL] })
+
+//                     // Reset all states
+//                     setYearlyData({ years: [] })
+//                     setHCHPData({ years: [] })
+//                     setHourlyData([])
+
+//                     // Collapse all sections
+//                     setIsYearlySectionExpanded(false)
+//                     setIsHCHPSectionExpanded(false)
+//                     setIsHourlySectionExpanded(false)
+
+//                     // Reset the flag after a delay
+//                     setTimeout(() => {
+//                       isLoadingFromCache.current = false
+//                     }, 1000)
+
+//                     toast.success('Cache du navigateur vidé avec succès (localStorage + React Query)')
+//                   }
+//                 }}
+//                 disabled={!selectedPDL}
+//                 className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium transition-colors"
+//               >
+//                 <Trash2 className="w-5 h-5" />
+//                 Vider le cache du navigateur
+//               </button>
+//               <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+//                 ⚠️ Cette action supprime les données en cache dans votre navigateur (localStorage + React Query).
+//                 Le cache Redis backend n'est pas affecté.
+//               </p>
+//             </div>
+//           )}
+
+//           {/* Clear Backend Cache Button (Admin Only) */}
+//           {isAdmin() && (
+//             <div>
+//               <button
+//                 onClick={async () => {
+//                   if (selectedPDL) {
+//                     try {
+//                       const response = await enedisApi.deleteCache(selectedPDL)
+//                       if (response.success && response.data) {
+//                         toast.success(`Cache backend vidé: ${response.data.deleted_keys} entrées supprimées`)
+//                       } else {
+//                         toast.error('Erreur lors du vidage du cache backend')
+//                       }
+//                     } catch (error) {
+//                       console.error('Error clearing backend cache:', error)
+//                       toast.error('Erreur lors du vidage du cache backend')
+//                     }
+//                   }
+//                 }}
+//                 disabled={!selectedPDL}
+//                 className="w-full px-4 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium transition-colors"
+//               >
+//                 <Database className="w-5 h-5" />
+//                 Vider le cache backend (Redis)
+//               </button>
+//               <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+//                 ⚠️ Cette action supprime les données en cache sur le serveur backend (Redis).
+//                 Utilisez cette option pour forcer un nouvel appel à l'API Enedis.
+//               </p>
+//             </div>
+//           )}
+
+//           {/* Fetch Status Notification */}
+//           {fetchStatus && (
+//             <div className={`p-4 border-l-4 rounded-lg ${
+//               fetchStatus.type === 'success'
+//                 ? 'bg-green-50 dark:bg-green-900/20 border-green-500'
+//                 : 'bg-red-50 dark:bg-red-900/30 border-red-700 dark:border-red-700'
+//             }`}>
+//               <div className="flex items-start gap-3">
+//                 {fetchStatus.type === 'success' ? (
+//                   <CheckCircle className="text-green-600 dark:text-green-400 flex-shrink-0" size={20} />
+//                 ) : (
+//                   <XCircle className="text-red-700 dark:text-red-400 flex-shrink-0" size={20} />
+//                 )}
+//                 <div className="flex-1">
+//                   <p className={`text-sm ${
+//                     fetchStatus.type === 'success'
+//                       ? 'text-green-800 dark:text-green-200'
+//                       : 'text-red-800 dark:text-red-300'
+//                   }`}>
+//                     {fetchStatus.message}
+//                   </p>
+//                 </div>
+//                 <button
+//                   onClick={() => setFetchStatus(null)}
+//                   className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+//                 >
+//                   ✕
+//                 </button>
+//               </div>
+//             </div>
+//           )}
+
+//           {/* Loading State */}
+//           {isLoading && (
+//             <div className="p-6 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+//               <div className="flex flex-col items-center justify-center gap-6">
+//                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+//                 <p className="text-gray-600 dark:text-gray-400">
+//                   Chargement des données de consommation... Cela peut prendre quelques minutes.
+//                 </p>
+
+//                 {/* Progress bar for Daily data (Yearly + HC/HP) */}
+//                 {fetchProgress.total > 0 && (
+//                   <div className="w-full max-w-md">
+//                     <div className="mb-2 flex justify-between text-sm text-gray-600 dark:text-gray-400">
+//                       <span className="font-medium">📊 Données annuelles</span>
+//                       <span className="font-semibold">{Math.round((fetchProgress.current / fetchProgress.total) * 100)}%</span>
+//                     </div>
+//                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4">
+//                       <div
+//                         className="bg-blue-600 h-4 rounded-full transition-all"
+//                         style={{ width: `${(fetchProgress.current / fetchProgress.total) * 100}%` }}
+//                       ></div>
+//                     </div>
+//                     <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+//                       {fetchProgress.phase} ({fetchProgress.current}/{fetchProgress.total} ranges)
+//                     </p>
+//                   </div>
+//                 )}
+
+//                 {/* Progress bar for Detail data (Hourly) */}
+//                 {fetchProgressDetail.total > 0 && (
+//                   <div className="w-full max-w-md">
+//                     <div className="mb-2 flex justify-between text-sm text-gray-600 dark:text-gray-400">
+//                       <span className="font-medium">⚡ Données détail (horaires)</span>
+//                       <span className="font-semibold">{Math.round((fetchProgressDetail.current / fetchProgressDetail.total) * 100)}%</span>
+//                     </div>
+//                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4">
+//                       <div
+//                         className="bg-green-600 h-4 rounded-full transition-all"
+//                         style={{ width: `${(fetchProgressDetail.current / fetchProgressDetail.total) * 100}%` }}
+//                       ></div>
+//                     </div>
+//                     <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+//                       {fetchProgressDetail.phase} ({fetchProgressDetail.current}/{fetchProgressDetail.total} ranges)
+//                     </p>
+//                   </div>
+//                 )}
+//               </div>
+//             </div>
+//           )}
+
+//           {/* Error State */}
+//           {hasError && !isLoading && (
+//             <div className="p-4 border-l-4 border-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg">
+//               <div className="flex items-center gap-2">
+//                 <AlertCircle className="text-red-600 dark:text-red-400" size={20} />
+//                 <p className="text-red-800 dark:text-red-200">
+//                   Erreur lors du chargement des données. Veuillez réessayer plus tard.
+//                 </p>
+//               </div>
+//             </div>
+//           )}
+//         </div>
+//       </div>
+
+//       {/* Yearly Statistics Section */}
+//       <div className={`card p-6 transition-opacity ${isYearlySectionExpanded ? 'min-h-[600px]' : ''} ${isLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+//         <div className={`flex items-center gap-2 ${isYearlySectionExpanded ? 'mb-4' : ''}`}>
+//           <h2
+//             className={`text-xl font-semibold flex items-center gap-2 hover:opacity-80 transition-opacity flex-1 ${
+//               hasUsefulYearlyData() ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+//             }`}
+//             onClick={() => {
+//               if (hasUsefulYearlyData()) {
+//                 setIsYearlySectionExpanded(!isYearlySectionExpanded)
+//               }
+//             }}
+//           >
+//             <Calendar className="text-primary-600 dark:text-primary-400" size={24} />
+//             Consommation annuelle (3 dernières années)
+//           </h2>
+//           <span
+//             className={`text-sm text-gray-500 ${
+//               hasUsefulYearlyData() ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+//             }`}
+//             onClick={() => {
+//               if (hasUsefulYearlyData()) {
+//                 setIsYearlySectionExpanded(!isYearlySectionExpanded)
+//               }
+//             }}
+//           >
+//             {isYearlySectionExpanded ? '▼' : '▶'}
+//           </span>
+//         </div>
+
+//         {isYearlySectionExpanded && !isLoading ? (
+//           yearlyData ? (
+//             <>
+//               {/* Summary Cards */}
+//               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+//               {yearlyData.years.map((yearData: any) => (
+//                 <div key={yearData.year} className="card p-4 bg-gradient-to-br from-primary-50 to-primary-100 dark:from-primary-900/20 dark:to-primary-800/20">
+//                   <div className="flex items-center justify-between mb-1">
+//                     <h3 className="text-lg font-semibold">{yearData.year}</h3>
+//                     <Zap className="text-primary-600 dark:text-primary-400" size={20} />
+//                   </div>
+//                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+//                     Du {new Date(yearData.start_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })} au {new Date(yearData.end_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+//                   </p>
+//                   <p className="text-2xl font-bold text-primary-700 dark:text-primary-300">
+//                     {yearData.total_consumption_kwh.toLocaleString('fr-FR')} kWh
+//                   </p>
+//                   <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+//                     {yearData.reading_count.toLocaleString('fr-FR')} relevés quotidiens
+//                   </p>
+//                 </div>
+//               ))}
+//             </div>
+
+//             {/* Yearly Comparison Chart */}
+//             <div className="mb-6">
+//               <div className="flex justify-between items-center mb-3">
+//                 <h3 className="text-lg font-medium">Comparaison annuelle</h3>
+//                 <button
+//                   onClick={exportYearlyComparisonJSON}
+//                   className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center gap-2 text-sm transition-colors"
+//                   title="Exporter en JSON"
+//                 >
+//                   <Download size={16} />
+//                   JSON
+//                 </button>
+//               </div>
+//               <ResponsiveContainer width="100%" height={250} style={{ cursor: 'pointer' }}>
+//                 <BarChart data={yearlyComparisonData}>
+//                   <CartesianGrid {...getGridProps()} />
+//                   <XAxis dataKey="year" {...getAxisProps()} />
+//                   <YAxis {...getAxisProps()} />
+//                   <Tooltip {...getTooltipProps()} />
+//                   <Legend />
+//                   <Bar dataKey="Consommation (kWh)" fill="rgb(6, 132, 199)" radius={[8, 8, 0, 0]} />
+//                 </BarChart>
+//               </ResponsiveContainer>
+//             </div>
+
+//             {/* Monthly Evolution Chart */}
+//             <div>
+//               <div className="flex justify-between items-center mb-3">
+//                 <h3 className="text-lg font-medium">Évolution mensuelle</h3>
+//                 <button
+//                   onClick={exportMonthlyConsumptionJSON}
+//                   className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center gap-2 text-sm transition-colors"
+//                   title="Exporter en JSON"
+//                 >
+//                   <Download size={16} />
+//                   JSON
+//                 </button>
+//               </div>
+//               <ResponsiveContainer width="100%" height={350} style={{ cursor: 'pointer' }}>
+//                 <LineChart data={yearlyChartData}>
+//                   <CartesianGrid {...getGridProps()} />
+//                   <XAxis dataKey="month" {...getAxisProps()} />
+//                   <YAxis {...getAxisProps()} />
+//                   <Tooltip
+//                     {...getTooltipProps()}
+//                     content={(props: any) => {
+//                       const { active, payload, label } = props
+//                       if (!active || !payload || payload.length === 0) return null
+
+//                       const tooltipStyle = isDarkMode ? {
+//                         backgroundColor: 'rgb(30, 41, 59)',
+//                         border: '1px solid rgb(51, 65, 85)',
+//                         borderRadius: '0.5rem',
+//                         padding: '8px 12px',
+//                         color: 'rgb(255, 255, 255)'
+//                       } : {
+//                         backgroundColor: 'white',
+//                         border: '1px solid #e5e7eb',
+//                         borderRadius: '0.5rem',
+//                         padding: '8px 12px'
+//                       }
+
+//                       return (
+//                         <div style={tooltipStyle}>
+//                           <p style={{ marginBottom: '6px', fontWeight: 'bold' }}>{label}</p>
+//                           {payload.map((entry: any, index: number) => (
+//                             <p key={index} style={{ margin: '4px 0', color: entry.stroke }}>
+//                               {entry.name}: {entry.value ? `${entry.value.toFixed(2)} kWh` : 'N/A'}
+//                             </p>
+//                           ))}
+//                         </div>
+//                       )
+//                     }}
+//                   />
+//                   <Legend
+//                     onClick={(e: any) => {
+//                       const year = e.dataKey
+//                       if (year) {
+//                         setHiddenYears(prev => {
+//                           const newSet = new Set(prev)
+//                           if (newSet.has(year)) {
+//                             newSet.delete(year)
+//                           } else {
+//                             newSet.add(year)
+//                           }
+//                           return newSet
+//                         })
+//                       }
+//                     }}
+//                     wrapperStyle={{ cursor: 'pointer' }}
+//                   />
+//                   {/* Generate lines dynamically based on available years */}
+//                   {(() => {
+//                     // Get unique years from the data
+//                     const years = new Set<string>()
+//                     yearlyChartData.forEach((dataPoint: any) => {
+//                       Object.keys(dataPoint).forEach(key => {
+//                         if (key !== 'month' && !isNaN(parseInt(key))) {
+//                           years.add(key)
+//                         }
+//                       })
+//                     })
+
+//                     // Sort years descending
+//                     const sortedYears = Array.from(years)
+//                       .sort()
+//                       .reverse()
+
+//                     // Define color palette for multiple years
+//                     const colors = [
+//                       'rgb(6, 132, 199)',   // Blue
+//                       '#8b5cf6',            // Purple
+//                       '#ec4899',            // Pink
+//                       '#f97316',            // Orange
+//                       '#10b981',            // Green
+//                       '#f59e0b',            // Amber
+//                       '#6366f1',            // Indigo
+//                       '#14b8a6',            // Teal
+//                     ]
+
+//                     // Map to Line components with different colors
+//                     return sortedYears.map((year, index) => (
+//                       <Line
+//                         key={year}
+//                         type="monotone"
+//                         dataKey={year}
+//                         stroke={colors[index % colors.length]}
+//                         name={year}
+//                         strokeWidth={2}
+//                         connectNulls={false}  // Don't connect points when there's no data
+//                         dot={{ r: 3 }}  // Show dots on data points
+//                         hide={hiddenYears.has(year)}
+//                         strokeOpacity={hiddenYears.has(year) ? 0.3 : 1}
+//                       />
+//                     ))
+//                   })()}
+//                 </LineChart>
+//               </ResponsiveContainer>
+//             </div>
+//             </>
+//           ) : (
+//             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+//               Chargez les données pour voir les statistiques annuelles
+//             </div>
+//           )
+//         ) : null}
+//       </div>
+
+//       {/* HC/HP Statistics Section */}
+//       <div className={`card p-6 transition-opacity ${isHCHPSectionExpanded ? 'min-h-[500px]' : ''} ${isLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+//         <div className={`flex items-center gap-2 ${isHCHPSectionExpanded ? 'mb-4' : ''}`}>
+//           <h2
+//             className={`text-xl font-semibold flex items-center gap-2 hover:opacity-80 transition-opacity flex-1 ${
+//               hasUsefulHCHPData() ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+//             }`}
+//             onClick={() => {
+//               if (hasUsefulHCHPData()) {
+//                 setIsHCHPSectionExpanded(!isHCHPSectionExpanded)
+//               }
+//             }}
+//           >
+//             <Clock className="text-primary-600 dark:text-primary-400" size={24} />
+//             Répartition Heures Creuses / Heures Pleines (2 dernières années)
+//           </h2>
+//           {isHCHPSectionExpanded && (
+//             <button
+//               onClick={exportHCHPPieJSON}
+//               className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center gap-2 text-sm transition-colors"
+//               title="Exporter les données du graphique en JSON"
+//             >
+//               <Download size={16} />
+//               JSON
+//             </button>
+//           )}
+//           <span
+//             className={`text-sm text-gray-500 ${
+//               hasUsefulHCHPData() ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+//             }`}
+//             onClick={() => {
+//               if (hasUsefulHCHPData()) {
+//                 setIsHCHPSectionExpanded(!isHCHPSectionExpanded)
+//               }
+//             }}
+//           >
+//             {isHCHPSectionExpanded ? '▼' : '▶'}
+//           </span>
+//         </div>
+
+//         {isHCHPSectionExpanded && !isLoading ? (
+//           hchpData && selectedYearHCHP ? (
+//             <>
+//               {/* HC/HP Summary Cards */}
+//               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+//               {hchpData.years.map((yearData: any) => (
+//                 <div key={yearData.year} className="card p-4">
+//                   <h3 className="text-lg font-semibold mb-2">{yearData.year}</h3>
+//                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+//                     Du {new Date(yearData.start_date).toLocaleDateString('fr-FR')} au {new Date(yearData.end_date).toLocaleDateString('fr-FR')}
+//                   </p>
+//                   <div className="space-y-2">
+//                     <div className="flex justify-between items-center">
+//                       <span className="text-sm font-medium text-green-700 dark:text-green-400">Heures Creuses</span>
+//                       <span className="text-lg font-bold text-green-700 dark:text-green-400">
+//                         {yearData.hc_consumption_kwh.toLocaleString('fr-FR')} kWh ({yearData.hc_percentage.toFixed(1)}%)
+//                       </span>
+//                     </div>
+//                     <div className="flex justify-between items-center">
+//                       <span className="text-sm font-medium text-amber-700 dark:text-amber-400">Heures Pleines</span>
+//                       <span className="text-lg font-bold text-amber-700 dark:text-amber-400">
+//                         {yearData.hp_consumption_kwh.toLocaleString('fr-FR')} kWh ({yearData.hp_percentage.toFixed(1)}%)
+//                       </span>
+//                     </div>
+//                     <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+//                       <div className="flex justify-between items-center">
+//                         <span className="text-sm font-medium">Total</span>
+//                         <span className="text-lg font-bold">
+//                           {yearData.total_consumption_kwh.toLocaleString('fr-FR')} kWh
+//                         </span>
+//                       </div>
+//                     </div>
+//                   </div>
+//                 </div>
+//               ))}
+//             </div>
+
+//             {/* Year Tabs */}
+//             <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
+//               {hchpData.years.map((yearData: any, index: number) => (
+//                 <button
+//                   key={yearData.year}
+//                   onClick={() => setSelectedHCHPYear(index)}
+//                   className={`flex-1 px-4 py-3 text-lg font-bold transition-colors whitespace-nowrap border-b-2 -mb-px ${
+//                     selectedHCHPYear === index
+//                       ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+//                       : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
+//                   }`}
+//                 >
+//                   {yearData.year}
+//                 </button>
+//               ))}
+//             </div>
+
+//             {/* HC/HP Pie Chart (selected year) */}
+//             <div className="mb-6">
+//               <h3 className="text-lg font-medium mb-2">Répartition {selectedYearHCHP.year}</h3>
+//               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+//                 Du {new Date(selectedYearHCHP.start_date).toLocaleDateString('fr-FR')} au {new Date(selectedYearHCHP.end_date).toLocaleDateString('fr-FR')}
+//               </p>
+//               <ResponsiveContainer width="100%" height={300} style={{ cursor: 'pointer' }}>
+//                 <PieChart>
+//                   <Pie
+//                     data={hcHpPieData}
+//                     cx="50%"
+//                     cy="50%"
+//                     labelLine={false}
+//                     label={(props: any) => {
+//                       const dataEntry = hcHpPieData[props.index]
+//                       return `${dataEntry.name}: ${dataEntry.percentage.toFixed(1)}%`
+//                     }}
+//                     outerRadius={100}
+//                     fill="#8884d8"
+//                     dataKey="value"
+//                   >
+//                     {hcHpPieData.map((_, index) => (
+//                       <Cell key={`cell-${index}`} fill={index === 0 ? COLORS.hc : COLORS.hp} />
+//                     ))}
+//                   </Pie>
+//                   <Tooltip formatter={(value: number) => `${value.toFixed(2)} kWh`} {...getTooltipProps()} />
+//                   <Legend />
+//                 </PieChart>
+//               </ResponsiveContainer>
+//             </div>
+
+//             {/* HC/HP Monthly Chart (most recent year) */}
+//             <div>
+//               <div className="flex justify-between items-center mb-2">
+//                 <h3 className="text-lg font-medium">Détail mensuel {selectedYearHCHP.year}</h3>
+//                 <button
+//                   onClick={exportHCHPMonthlyJSON}
+//                   className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center gap-2 text-sm transition-colors"
+//                   title="Exporter en JSON"
+//                 >
+//                   <Download size={16} />
+//                   JSON
+//                 </button>
+//               </div>
+//               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+//                 Du {new Date(selectedYearHCHP.start_date).toLocaleDateString('fr-FR')} au {new Date(selectedYearHCHP.end_date).toLocaleDateString('fr-FR')}
+//               </p>
+//               <ResponsiveContainer width="100%" height={350} style={{ cursor: 'pointer' }}>
+//                 <BarChart data={hchpMonthlyData}>
+//                   <CartesianGrid {...getGridProps()} />
+//                   <XAxis dataKey="month" {...getAxisProps()} />
+//                   <YAxis {...getAxisProps()} />
+//                   <Tooltip
+//                     {...getTooltipProps()}
+//                     content={(props: any) => {
+//                       const { active, payload, label } = props
+//                       if (active && payload && payload.length) {
+//                         const hcValue = payload.find((p: any) => p.dataKey === 'HC (kWh)')?.value || 0
+//                         const hpValue = payload.find((p: any) => p.dataKey === 'HP (kWh)')?.value || 0
+//                         const total = hcValue + hpValue
+
+//                         const tooltipStyle = isDarkMode ? {
+//                           backgroundColor: 'rgb(30, 41, 59)',
+//                           border: '1px solid rgb(51, 65, 85)',
+//                           borderRadius: '0.5rem',
+//                           color: 'rgb(226, 232, 240)',
+//                           padding: '8px 12px'
+//                         } : {
+//                           backgroundColor: 'white',
+//                           border: '1px solid #e5e7eb',
+//                           borderRadius: '0.5rem',
+//                           padding: '8px 12px'
+//                         }
+
+//                         return (
+//                           <div style={tooltipStyle}>
+//                             <p style={{ marginBottom: '6px', fontWeight: 'bold' }}>{label}</p>
+//                             <p style={{ margin: '4px 0', color: COLORS.hc }}>
+//                               HC : {hcValue.toFixed(2)} kWh
+//                             </p>
+//                             <p style={{ margin: '4px 0', color: COLORS.hp }}>
+//                               HP : {hpValue.toFixed(2)} kWh
+//                             </p>
+//                             <p style={{
+//                               marginTop: '6px',
+//                               paddingTop: '6px',
+//                               borderTop: `1px solid ${isDarkMode ? 'rgb(75, 85, 99)' : '#e5e7eb'}`,
+//                               fontWeight: 'bold'
+//                             }}>
+//                               Total : {total.toFixed(2)} kWh
+//                             </p>
+//                           </div>
+//                         )
+//                       }
+//                       return null
+//                     }}
+//                   />
+//                   <Legend />
+//                   <Bar dataKey="HC (kWh)" fill={COLORS.hc} stackId="a" radius={[0, 0, 0, 0]} />
+//                   <Bar dataKey="HP (kWh)" fill={COLORS.hp} stackId="a" radius={[8, 8, 0, 0]} />
+//                 </BarChart>
+//               </ResponsiveContainer>
+//             </div>
+//             </>
+//           ) : (
+//             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+//               Chargez les données pour voir les statistiques HC/HP
+//             </div>
+//           )
+//         ) : null}
+//       </div>
+
+//       {/* Hourly Data Section */}
+//       <div className={`card p-6 transition-opacity ${isHourlySectionExpanded ? 'min-h-[700px]' : ''} ${isLoading || isLoadingHourly ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+//         <div className={`flex items-center gap-2 ${isHourlySectionExpanded ? 'mb-4' : ''}`}>
+//           <h2
+//             className={`text-xl font-semibold flex items-center gap-2 hover:opacity-80 transition-opacity flex-1 ${
+//               hasUsefulHourlyData() ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+//             }`}
+//             onClick={() => {
+//               if (hasUsefulHourlyData()) {
+//                 setIsHourlySectionExpanded(!isHourlySectionExpanded)
+//               }
+//             }}
+//           >
+//             <Clock className="text-primary-600 dark:text-primary-400" size={24} />
+//             Consommation horaire (détail jour par jour)
+//           </h2>
+//           {isLoadingHourly && (
+//             <RefreshCw className="w-5 h-5 text-primary-600 dark:text-primary-400 animate-spin" />
+//           )}
+//           <span
+//             className={`text-sm text-gray-500 ${
+//               hasUsefulHourlyData() ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+//             }`}
+//             onClick={() => {
+//               if (hasUsefulHourlyData()) {
+//                 setIsHourlySectionExpanded(!isHourlySectionExpanded)
+//               }
+//             }}
+//           >
+//             {isHourlySectionExpanded ? '▼' : '▶'}
+//           </span>
+//         </div>
+
+//         {/* Period and Date Range Selector */}
+//         {isHourlySectionExpanded && !isLoading && (
+//         <div className="mb-6">
+//           <div className="flex items-center gap-3 w-full">
+//             {/* Date Picker */}
+//             <div className="flex items-center gap-2 flex-shrink-0 relative">
+//               <button
+//                 type="button"
+//                 onClick={() => setShowCalendar(!showCalendar)}
+//                 className="px-4 py-2.5 border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 text-sm font-medium flex items-center gap-3 hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-md transition-all duration-200 w-[280px]"
+//               >
+//                 <Calendar size={20} className="text-primary-600 dark:text-primary-400" />
+//                 {selectedDate ? (
+//                   <div className="flex-1 text-left">
+//                     <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Date sélectionnée</div>
+//                     <div className="text-sm font-semibold text-gray-900 dark:text-white">
+//                       {selectedDate.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+//                     </div>
+//                   </div>
+//                 ) : (
+//                   <span className="flex-1 text-left text-gray-500 dark:text-gray-400">Choisir une date</span>
+//                 )}
+//                 <span className={`text-gray-400 transition-transform duration-200 ${showCalendar ? 'rotate-180' : ''}`}>▼</span>
+//               </button>
+
+//               {showCalendar && (
+//                 <>
+//                   <div className="fixed inset-0 z-40" onClick={() => setShowCalendar(false)}></div>
+//                   <div className="absolute top-full mt-2 left-0 z-50 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-5 min-w-[420px]">
+//                     {/* Calendar Header */}
+//                     <div className="flex flex-col gap-3 mb-5 pb-4 border-b border-gray-200 dark:border-gray-700">
+//                       {(() => {
+//                         // Determine available years and months from cached data
+//                         const today = getTodayForCalendar()
+//                         const yesterday = new Date(today)
+//                         yesterday.setDate(today.getDate() - 1)
+
+//                         let availableYears: number[] = []
+//                         let minDate = new Date()
+//                         minDate.setFullYear(minDate.getFullYear() - 2)
+//                         let maxDate = yesterday
+
+//                         // Always show at least the last 3 years
+//                         const currentYear = new Date().getFullYear()
+//                         const defaultYears = [currentYear, currentYear - 1, currentYear - 2]
+
+//                         // If we have hourly data, extract available years
+//                         if (hourlyData.length > 0) {
+//                           const dates = hourlyData.map(d => new Date(d.day)).sort((a, b) => a.getTime() - b.getTime())
+//                           minDate = dates[0]
+//                           maxDate = dates[dates.length - 1]
+
+//                           // Get unique years from data
+//                           const yearsSet = new Set(dates.map(d => d.getFullYear()))
+//                           const dataYears = Array.from(yearsSet).sort((a, b) => b - a)
+
+//                           // Merge data years with default years to ensure we always have options
+//                           const allYears = new Set([...dataYears, ...defaultYears])
+//                           availableYears = Array.from(allYears).sort((a, b) => b - a)
+//                         } else {
+//                           // Default: last 3 years
+//                           availableYears = defaultYears
+//                         }
+
+//                         return (
+//                           <>
+//                             {/* Year Selection */}
+//                             <div className="flex items-center justify-center">
+//                               <select
+//                                 value={calendarMonth.getFullYear()}
+//                                 onChange={(e) => {
+//                                   const selectedYear = parseInt(e.target.value)
+//                                   const newDate = new Date(calendarMonth)
+//                                   newDate.setFullYear(selectedYear)
+
+//                                   // Check if current month exists for this year in data
+//                                   if (hourlyData.length > 0) {
+//                                     const datesInYear = hourlyData
+//                                       .map(d => new Date(d.day))
+//                                       .filter(d => d.getFullYear() === selectedYear)
+//                                       .sort((a, b) => a.getTime() - b.getTime())
+
+//                                     if (datesInYear.length > 0) {
+//                                       // Check if current month has data
+//                                       const hasCurrentMonth = datesInYear.some(d =>
+//                                         d.getFullYear() === selectedYear &&
+//                                         d.getMonth() === calendarMonth.getMonth()
+//                                       )
+
+//                                       if (!hasCurrentMonth) {
+//                                         // Go to first available month in this year
+//                                         newDate.setMonth(datesInYear[0].getMonth())
+//                                       }
+//                                     }
+//                                   }
+
+//                                   setCalendarMonth(newDate)
+//                                 }}
+//                                 className="text-lg font-bold text-gray-900 dark:text-white bg-transparent border-none cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 focus:outline-none px-3 py-1"
+//                               >
+//                                 {availableYears.map(year => (
+//                                   <option key={year} value={year}>
+//                                     {year}
+//                                   </option>
+//                                 ))}
+//                               </select>
+//                               {hourlyData.length > 0 && (
+//                                 <div className="text-xs text-gray-400 dark:text-gray-500 ml-2">
+//                                   ({minDate.getFullYear()} - {maxDate.getFullYear()})
+//                                 </div>
+//                               )}
+//                             </div>
+
+//                             {/* Month Navigation */}
+//                             <div className="flex items-center justify-between">
+//                               <button
+//                                 type="button"
+//                                 onClick={() => {
+//                                   let newMonth = new Date(calendarMonth)
+//                                   newMonth.setMonth(newMonth.getMonth() - 1)
+
+//                                   // If we have data, check if the new month has any data
+//                                   if (hourlyData.length > 0) {
+//                                     const hasDataInMonth = hourlyData.some(d => {
+//                                       const date = new Date(d.day)
+//                                       return date.getFullYear() === newMonth.getFullYear() &&
+//                                              date.getMonth() === newMonth.getMonth()
+//                                     })
+
+//                                     // If no data in this month, find the previous month with data
+//                                     if (!hasDataInMonth) {
+//                                       const datesBeforeMonth = hourlyData
+//                                         .map(d => new Date(d.day))
+//                                         .filter(d => d < newMonth)
+//                                         .sort((a, b) => b.getTime() - a.getTime())
+
+//                                       if (datesBeforeMonth.length > 0) {
+//                                         // Go to the most recent month before this one that has data
+//                                         newMonth = new Date(datesBeforeMonth[0].getFullYear(), datesBeforeMonth[0].getMonth(), 1)
+//                                       }
+//                                     }
+//                                   }
+
+//                                   setCalendarMonth(newMonth)
+//                                 }}
+//                                 className="p-2 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg transition-all"
+//                                 title="Mois précédent"
+//                               >
+//                                 <span className="text-xl font-bold text-primary-600 dark:text-primary-400">‹</span>
+//                               </button>
+//                               <div className="text-center flex-1">
+//                                 <div className="text-xl font-bold text-gray-900 dark:text-white capitalize">
+//                                   {calendarMonth.toLocaleDateString('fr-FR', { month: 'long' })}
+//                                 </div>
+//                               </div>
+//                               <button
+//                                 type="button"
+//                                 onClick={() => {
+//                                   let newMonth = new Date(calendarMonth)
+//                                   newMonth.setMonth(newMonth.getMonth() + 1)
+
+//                                   // If we have data, check if the new month has any data
+//                                   if (hourlyData.length > 0) {
+//                                     const hasDataInMonth = hourlyData.some(d => {
+//                                       const date = new Date(d.day)
+//                                       return date.getFullYear() === newMonth.getFullYear() &&
+//                                              date.getMonth() === newMonth.getMonth()
+//                                     })
+
+//                                     // If no data in this month, find the next month with data
+//                                     if (!hasDataInMonth) {
+//                                       const datesAfterMonth = hourlyData
+//                                         .map(d => new Date(d.day))
+//                                         .filter(d => d > newMonth)
+//                                         .sort((a, b) => a.getTime() - b.getTime())
+
+//                                       if (datesAfterMonth.length > 0) {
+//                                         // Go to the earliest month after this one that has data
+//                                         newMonth = new Date(datesAfterMonth[0].getFullYear(), datesAfterMonth[0].getMonth(), 1)
+//                                       }
+//                                     }
+//                                   }
+
+//                                   setCalendarMonth(newMonth)
+//                                 }}
+//                                 className="p-2 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg transition-all"
+//                                 title="Mois suivant"
+//                               >
+//                                 <span className="text-xl font-bold text-primary-600 dark:text-primary-400">›</span>
+//                               </button>
+//                             </div>
+//                           </>
+//                         )
+//                       })()}
+//                     </div>
+
+//                     {/* Days of Week */}
+//                     <div className="grid grid-cols-7 gap-2 mb-3">
+//                       {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map((day) => (
+//                         <div key={day} className="text-center text-xs font-bold text-gray-500 dark:text-gray-400 py-2">
+//                           {day}
+//                         </div>
+//                       ))}
+//                     </div>
+
+//                     {/* Calendar Grid */}
+//                     <div className="grid grid-cols-7 gap-2">
+//                       {(() => {
+//                         const days: JSX.Element[] = []
+//                         const year = calendarMonth.getFullYear()
+//                         const month = calendarMonth.getMonth()
+//                         const firstDay = new Date(year, month, 1)
+//                         const lastDay = new Date(year, month + 1, 0)
+//                         const today = getTodayForCalendar()
+//                         const twoYearsAgo = new Date(today)
+//                         twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2)
+
+//                         let startDay = firstDay.getDay()
+//                         if (startDay === -1) startDay = 7
+
+//                         for (let i = 0; i < startDay; i++) {
+//                           days.push(<div key={`empty-${i}`}></div>)
+//                         }
+
+//                         for (let day = 1; day <= lastDay.getDate(); day++) {
+//                           const date = new Date(year, month, day)
+//                           // Normalize dates to midnight for proper comparison
+//                           date.setHours(0, 0, 0, 0)
+//                           const todayNormalized = new Date(today)
+//                           todayNormalized.setHours(0, 0, 0, 0)
+
+//                           // Block today and future dates, only allow up to yesterday (J-1)
+//                           const isDisabled = date >= todayNormalized || date < twoYearsAgo
+//                           const isToday = date.getTime() === todayNormalized.getTime()
+
+//                           // Format date as YYYY-MM-DD without timezone issues
+//                           const selectedDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+//                           const isSelected = hourlyStartDate === selectedDateStr
+
+//                           days.push(
+//                             <button
+//                               key={day}
+//                               type="button"
+//                               disabled={isDisabled}
+//                               onClick={() => {
+//                                 if (!isDisabled) {
+//                                   // Jump to selected date using new system
+//                                   const selectedDate = new Date(year, month, day)
+//                                   jumpToDate(selectedDate)
+//                                 }
+//                               }}
+//                               className={`
+//                                 relative h-11 rounded-xl font-medium text-sm transition-all duration-200
+//                                 ${isDisabled
+//                                   ? 'text-gray-300 dark:text-gray-700 cursor-not-allowed pointer-events-none'
+//                                   : isSelected
+//                                   ? 'bg-gradient-to-br from-primary-500 to-primary-600 text-white shadow-lg scale-105 font-bold'
+//                                   : isToday
+//                                   ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed pointer-events-none ring-2 ring-gray-300 dark:ring-gray-600'
+//                                   : 'hover:bg-primary-50 dark:hover:bg-primary-900/20 text-gray-700 dark:text-gray-300 hover:scale-105 hover:shadow-md'
+//                                 }
+//                               `}
+//                               title={isToday ? 'Données disponibles uniquement en J-1 (à partir du lendemain)' : ''}
+//                             >
+//                               {day}
+//                               {isToday && !isSelected && (
+//                                 <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
+//                               )}
+//                             </button>
+//                           )
+//                         }
+//                         return days
+//                       })()}
+//                     </div>
+
+//                   </div>
+//                 </>
+//               )}
+//             </div>
+//           </div>
+//         </div>
+//         )}
+
+//         {/* Day navigation with scrollable tabs */}
+//         {isHourlySectionExpanded && selectedDate && firstVisibleDate && (
+//           <div className="mb-6">
+//             {/* Quick period buttons - always visible */}
+//             <div className="flex gap-2 mb-4">
+//               <button
+//                 onClick={jumpToThisWeek}
+//                 title="Aller au lundi de cette semaine"
+//                 className="flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+//               >
+//                 Cette semaine
+//               </button>
+//               <button
+//                 onClick={jumpToLastMonth}
+//                 title="Aller au 1er jour du mois dernier"
+//                 className="flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+//               >
+//                 Le mois dernier
+//               </button>
+//               <button
+//                 onClick={jumpToLastYear}
+//                 title="Aller au 1er janvier de l'année dernière"
+//                 className="flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+//               >
+//                 L'année dernière
+//               </button>
+//             </div>
+
+//             {/* Fetch data button and Admin debug buttons */}
+//             {selectedDate && (
+//               <div className="flex gap-2 mb-4">
+//                 <button
+//                   onClick={() => fetchHourlyData()}
+//                   disabled={isLoadingHourly || !selectedPDL || !hourlyStartDate || !hourlyEndDate}
+//                   className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium transition-colors"
+//                   title="Récupérer les données du jour sélectionné depuis Enedis"
+//                 >
+//                   <RefreshCw className={`w-4 h-4 ${isLoadingHourly ? 'animate-spin' : ''}`} />
+//                   Récupérer les données
+//                 </button>
+
+//                 {/* Admin debug buttons */}
+//                 {isAdmin() && (
+//                   <>
+//                     <button
+//                       onClick={async () => {
+//                         const dateStr = formatDateToISO(selectedDate)
+//                         // Pour récupérer les données d'un jour, on a besoin de start = jour et end = jour+1
+//                         // Car les timestamps Enedis vont de 00:30 le jour J à 00:00 le jour J+1
+//                         const nextDay = new Date(selectedDate)
+//                         nextDay.setDate(nextDay.getDate() + 1)
+//                         const nextDayStr = formatDateToISO(nextDay)
+
+//                         console.log(`📌 Cache Redis pour ${dateStr} (du ${dateStr} 00:30 au ${nextDayStr} 00:00) et PDL ${selectedPDL}:`)
+
+//                         // Get data from API to check Redis cache
+//                         try {
+//                           const response = await enedisApi.getConsumptionDetail(selectedPDL!, {
+//                             start: dateStr,
+//                             end: nextDayStr,
+//                             use_cache: true,
+//                           })
+//                           console.log('Cache Redis - Response:', response)
+//                           if (response.success && response.data) {
+//                             const data = response.data as any
+//                             let readings: any[] | undefined
+
+//                             if (data?.meter_reading?.interval_reading) {
+//                               readings = data.meter_reading.interval_reading
+//                             } else if (data?.interval_reading) {
+//                               readings = data.interval_reading
+//                             } else if (Array.isArray(data)) {
+//                               readings = data
+//                             }
+
+//                             if (readings) {
+//                               console.log(`📊 Nombre de lectures: ${readings.length}`)
+//                               // Afficher les dates originales d'Enedis (qui représentent la FIN de la période)
+//                               if (readings[0]) {
+//                                 console.log('Première lecture (fin de période):', {
+//                                   value: readings[0].value,
+//                                   date: readings[0].date || readings[0].originalDate,
+//                                   interval_length: readings[0].interval_length,
+//                                   measure_type: readings[0].measure_type
+//                                 })
+//                               }
+//                               if (readings[readings.length - 1]) {
+//                                 console.log('Dernière lecture (fin de période):', {
+//                                   value: readings[readings.length - 1].value,
+//                                   date: readings[readings.length - 1].date || readings[readings.length - 1].originalDate,
+//                                   interval_length: readings[readings.length - 1].interval_length,
+//                                   measure_type: readings[readings.length - 1].measure_type
+//                                 })
+//                               }
+//                             }
+//                           }
+//                         } catch (error) {
+//                           console.error('Erreur récupération cache Redis:', error)
+//                         }
+//                       }}
+//                       className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium transition-colors"
+//                       title="Afficher le cache Redis dans la console"
+//                     >
+//                       <Database className="w-4 h-4 inline mr-1" />
+//                       Cache Redis
+//                     </button>
+
+//                     <button
+//                       onClick={() => {
+//                         const dateStr = formatDateToISO(selectedDate)
+//                         console.log(`📌 Cache navigateur pour ${dateStr}:`)
+
+//                         // Check localStorage
+//                         const cachedYearly = localStorage.getItem(`yearlyData_${selectedPDL}`)
+//                         const cachedHCHP = localStorage.getItem(`hchpData_${selectedPDL}`)
+
+//                         // Check current hourly data in state
+//                         const dayData = hourlyData.find(d => d.day === dateStr)
+
+//                         console.log('Cache localStorage - yearly:', cachedYearly ? JSON.parse(cachedYearly) : null)
+//                         console.log('Cache localStorage - HC/HP:', cachedHCHP ? JSON.parse(cachedHCHP) : null)
+//                         console.log('Données horaires en mémoire pour ce jour:', dayData)
+//                         console.log('Toutes les données horaires:', hourlyData)
+//                       }}
+//                       className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium transition-colors"
+//                       title="Afficher le cache navigateur dans la console"
+//                     >
+//                       <Copy className="w-4 h-4 inline mr-1" />
+//                       Cache Nav
+//                     </button>
+//                   </>
+//                 )}
+//               </div>
+//             )}
+
+//             <div className="flex items-center gap-2 sm:gap-4 mb-4">
+//               <button
+//                 onClick={navigateToPrevDay}
+//                 className="px-3 sm:px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors text-sm font-medium whitespace-nowrap flex items-center gap-1"
+//                 title="Jour précédent"
+//               >
+//                 <span className="hidden sm:inline">← Jour précédent</span>
+//                 <span className="sm:hidden">←</span>
+//               </button>
+
+//               {/* Day Tabs */}
+//               <div className="flex-1 flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto scroll-smooth scrollbar-hide">
+//                 {generateVisibleDays(firstVisibleDate, visibleDaysCount).map((day) => {
+//                   const isSelected = day.dateStr === formatDateToISO(selectedDate)
+//                   return (
+//                     <button
+//                       key={day.dateStr}
+//                       onClick={() => setSelectedDate(day.date)}
+//                       className={`
+//                         flex-1 min-w-[80px] sm:min-w-[100px] px-2 sm:px-4 py-2.5 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap border-b-2 -mb-px
+//                         ${isSelected
+//                           ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+//                           : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
+//                         }
+//                         ${!day.hasData ? 'opacity-50' : ''}
+//                       `}
+//                       title={day.isToday ? "Données disponibles demain vers 11h" : ''}
+//                     >
+//                       {day.date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}
+//                     </button>
+//                   )
+//                 })}
+//               </div>
+
+//               <button
+//                 onClick={navigateToNextDay}
+//                 disabled={selectedDate >= getToday()}
+//                 className="px-3 sm:px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium whitespace-nowrap flex items-center gap-1"
+//                 title="Jour suivant"
+//               >
+//                 <span className="hidden sm:inline">Jour suivant →</span>
+//                 <span className="sm:hidden">→</span>
+//               </button>
+//             </div>
+//           </div>
+//         )}
+
+//         {/* Hourly Data Display */}
+//         {isHourlySectionExpanded && (
+//           <div className="min-h-[400px] relative">
+//             {/* Loading overlay */}
+//             {isLoadingHourly && (
+//               <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
+//                 <div className="flex flex-col items-center gap-3">
+//                   <RefreshCw className="w-8 h-8 text-primary-600 dark:text-primary-400 animate-spin" />
+//                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Chargement des données...</p>
+//                 </div>
+//               </div>
+//             )}
+//             {(() => {
+//               // Get data for selected date
+//               if (!selectedDate) return null
+
+//               const selectedDateStr = formatDateToISO(selectedDate)
+//               const dayData = hourlyData.find(d => d.day === selectedDateStr)
+
+//               // Check if day is empty or undefined
+//               if (!dayData || !dayData.readings || dayData.readings.length === 0) {
+//                 // Check if this is today
+//                 const today = getToday()
+//                 const isToday = selectedDate.getTime() === today.getTime()
+                
+//                 console.log("🕐 AFFICHAGE ONGLET HORAIRE - Date sélectionnée:", selectedDateStr);
+//                 console.log("🕐 DONNÉES HORAIRES DISPONIBLES:", hourlyData);
+//                 console.log("🕐 DONNÉES DU JOUR AFFICHÉ:", dayData);
+
+//                 // Afficher les infos sur les lectures (dates originales Enedis)
+//                 if (dayData && dayData.readings && dayData.readings.length > 0) {
+//                   const firstReading = dayData.readings[0]
+//                   const lastReading = dayData.readings[dayData.readings.length - 1]
+
+//                   console.log("📍 PREMIÈRE LECTURE DU JOUR (fin de période Enedis):", {
+//                     value: firstReading.value,
+//                     date: firstReading.originalDate || firstReading.date,
+//                     heure_debut: `${String(firstReading.hour).padStart(2, '0')}:${String(firstReading.minute || 0).padStart(2, '0')}`,
+//                     type: firstReading.isHC ? 'HC' : 'HP'
+//                   })
+
+//                   console.log("📍 DERNIÈRE LECTURE DU JOUR (fin de période Enedis):", {
+//                     value: lastReading.value,
+//                     date: lastReading.originalDate || lastReading.date,
+//                     heure_debut: `${String(lastReading.hour).padStart(2, '0')}:${String(lastReading.minute || 0).padStart(2, '0')}`,
+//                     type: lastReading.isHC ? 'HC' : 'HP'
+//                   })
+//                 }
+                
+//                 return (
+//                   <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+//                     <svg className="w-16 h-16 text-gray-400 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+//                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+//                     </svg>
+//                     <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+//                       Données non disponibles
+//                     </h3>
+//                     {isToday ? (
+//                       <>
+//                         <p className="text-sm text-gray-600 dark:text-gray-400 max-w-md">
+//                           Les données du jour ne sont pas encore disponibles chez Enedis.
+//                         </p>
+//                         <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
+//                           <strong>Les données seront disponibles demain vers 11h au plus tard.</strong>
+//                         </p>
+//                       </>
+//                     ) : (
+//                       <>
+//                         <p className="text-sm text-gray-600 dark:text-gray-400 max-w-md">
+//                           Les données pour le {selectedDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} ne sont pas disponibles.
+//                         </p>
+//                         <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
+//                           Les données sont généralement disponibles avec 1 à 2 jours de délai.
+//                         </p>
+//                       </>
+//                     )}
+//                   </div>
+//                 )
+//               }
+
+//               // Afficher les infos sur les lectures quand on a des données
+//               console.log("🕐 AFFICHAGE ONGLET HORAIRE - Date sélectionnée:", selectedDateStr);
+//               console.log("🕐 NOMBRE DE LECTURES:", dayData.readings.length);
+
+//               if (dayData.readings.length > 0) {
+//                 const firstReading = dayData.readings[0]
+//                 const lastReading = dayData.readings[dayData.readings.length - 1]
+
+//                 console.log("📍 PREMIÈRE LECTURE DU JOUR (fin de période Enedis):", {
+//                   value: firstReading.value,
+//                   date: firstReading.originalDate || firstReading.date,
+//                   heure_debut: `${String(firstReading.hour).padStart(2, '0')}:${String(firstReading.minute || 0).padStart(2, '0')}`,
+//                   type: firstReading.isHC ? 'HC' : 'HP'
+//                 })
+
+//                 console.log("📍 DERNIÈRE LECTURE DU JOUR (fin de période Enedis):", {
+//                   value: lastReading.value,
+//                   date: lastReading.originalDate || lastReading.date,
+//                   heure_debut: `${String(lastReading.hour).padStart(2, '0')}:${String(lastReading.minute || 0).padStart(2, '0')}`,
+//                   type: lastReading.isHC ? 'HC' : 'HP'
+//                 })
+//               }
+
+//               const hasComparison = dayData.lastYearReadings && dayData.lastYearReadings.length > 0
+
+//               // Prepare data for the chart - merge current and last year if comparing
+//               let chartData: any[] = []
+
+//               if (hasComparison) {
+//                 // Create a map of hour:minute -> readings for both years
+//                 const currentYearMap = new Map()
+//                 dayData.readings.forEach((reading: any) => {
+//                   const key = `${reading.hour}:${reading.minute || 0}`
+//                   currentYearMap.set(key, reading)
+//                 })
+
+//                 const lastYearMap = new Map()
+//                 dayData.lastYearReadings.forEach((reading: any) => {
+//                   const key = `${reading.hour}:${reading.minute}`
+//                   lastYearMap.set(key, reading)
+//                 })
+
+//                 // Merge both datasets using current year as reference
+//                 chartData = dayData.readings.map((reading: any, index: number) => {
+//                   const hour = reading.hour
+//                   const minute = reading.minute || 0
+//                   const key = `${hour}:${minute}`
+//                   const lastYearReading = lastYearMap.get(key)
+
+//                   return {
+//                     index,
+//                     hour: `${hour}h${minute === 0 ? '' : String(minute).padStart(2, '0')}`,
+//                     hourValue: hour,
+//                     minuteValue: minute,
+//                     'Année actuelle (kWh)': Math.round(reading.value * 1000) / 1000,
+//                     'Année N-1 (kWh)': lastYearReading ? Math.round(lastYearReading.value * 1000) / 1000 : 0,
+//                     type: reading.isHC ? 'HC' : 'HP',
+//                     typeLastYear: lastYearReading ? (lastYearReading.isHC ? 'HC' : 'HP') : null,
+//                   }
+//                 })
+//               } else {
+//                 // No comparison - single dataset
+//                 chartData = dayData.readings.map((reading: any, index: number) => {
+//                   const hour = reading.hour
+//                   const minute = reading.minute || 0
+
+//                   return {
+//                     index,
+//                     hour: `${hour}h${minute === 0 ? '' : String(minute).padStart(2, '0')}`,
+//                     hourValue: hour,
+//                     minuteValue: minute,
+//                     'Consommation (kWh)': Math.round(reading.value * 1000) / 1000,
+//                     type: reading.isHC ? 'HC' : 'HP',
+//                   }
+//                 })
+//               }
+
+//               const totalDay = dayData.readings.reduce((sum: number, r: any) => sum + r.value, 0)
+//               const totalHC = dayData.readings.filter((r: any) => r.isHC).reduce((sum: number, r: any) => sum + r.value, 0)
+//               const totalHP = dayData.readings.filter((r: any) => !r.isHC).reduce((sum: number, r: any) => sum + r.value, 0)
+//               const percentHC = totalDay > 0 ? (totalHC / totalDay * 100) : 0
+//               const percentHP = totalDay > 0 ? (totalHP / totalDay * 100) : 0
+
+//               const totalLastYear = hasComparison
+//                 ? dayData.lastYearReadings.reduce((sum: number, r: any) => sum + r.value, 0)
+//                 : 0
+//               const totalLastYearHC = hasComparison
+//                 ? dayData.lastYearReadings.filter((r: any) => r.isHC).reduce((sum: number, r: any) => sum + r.value, 0)
+//                 : 0
+//               const totalLastYearHP = hasComparison
+//                 ? dayData.lastYearReadings.filter((r: any) => !r.isHC).reduce((sum: number, r: any) => sum + r.value, 0)
+//                 : 0
+//               const percentLastYearHC = totalLastYear > 0 ? (totalLastYearHC / totalLastYear * 100) : 0
+//               const percentLastYearHP = totalLastYear > 0 ? (totalLastYearHP / totalLastYear * 100) : 0
+
+//               return (
+//                 <div key={dayData.day} className="card p-4">
+//                   <div className="flex items-center justify-between mb-4">
+//                     <div>
+//                       <h3 className="text-lg font-semibold">
+//                         {new Date(dayData.day + 'T12:00:00').toLocaleDateString('fr-FR', {
+//                           weekday: 'long',
+//                           year: 'numeric',
+//                           month: 'long',
+//                           day: 'numeric',
+//                         })}
+//                       </h3>
+//                       {hasComparison && dayData.lastYearDate && (
+//                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+//                           Comparaison avec le {new Date(dayData.lastYearDate + 'T12:00:00').toLocaleDateString('fr-FR', {
+//                             weekday: 'long',
+//                             year: 'numeric',
+//                             month: 'long',
+//                             day: 'numeric',
+//                           })}
+//                         </p>
+//                       )}
+//                     </div>
+//                     <div className="flex items-center gap-4">
+//                       <div className="flex gap-4 text-sm">
+//                         <div>
+//                           <div className="font-medium">Année actuelle</div>
+//                           <div className="flex gap-2">
+//                             <span className="font-medium">Total: {totalDay.toFixed(2)} kWh</span>
+//                             <span className="text-green-600 dark:text-green-400">
+//                               HC: {totalHC.toFixed(2)} ({percentHC.toFixed(1)}%)
+//                             </span>
+//                             <span className="text-amber-600 dark:text-amber-400">
+//                               HP: {totalHP.toFixed(2)} ({percentHP.toFixed(1)}%)
+//                             </span>
+//                           </div>
+//                         </div>
+//                         {hasComparison && (
+//                           <div className="border-l border-gray-300 dark:border-gray-600 pl-4">
+//                             <div className="font-medium text-orange-600 dark:text-orange-400">Année N-1</div>
+//                             <div className="flex flex-col gap-1">
+//                               <div>
+//                                 <span className="font-medium">Total: {totalLastYear.toFixed(2)} kWh</span>
+//                                 <span className={`ml-2 ${totalDay > totalLastYear ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+//                                   ({totalDay > totalLastYear ? '+' : ''}{((totalDay - totalLastYear) / totalLastYear * 100).toFixed(1)}%)
+//                                 </span>
+//                               </div>
+//                               <div className="flex gap-2 text-xs">
+//                                 <span className="text-green-600 dark:text-green-400">
+//                                   HC: {totalLastYearHC.toFixed(2)} ({percentLastYearHC.toFixed(1)}%)
+//                                 </span>
+//                                 <span className="text-amber-600 dark:text-amber-400">
+//                                   HP: {totalLastYearHP.toFixed(2)} ({percentLastYearHP.toFixed(1)}%)
+//                                 </span>
+//                               </div>
+//                             </div>
+//                           </div>
+//                         )}
+//                       </div>
+//                       <button
+//                         onClick={() => compareWithLastYear(dayData.day)}
+//                         className={`px-3 py-1 rounded-lg flex items-center gap-2 text-sm transition-colors ${
+//                           comparingDays.has(dayData.day)
+//                             ? 'bg-orange-600 hover:bg-orange-700 text-white'
+//                             : 'bg-blue-600 hover:bg-blue-700 text-white'
+//                         }`}
+//                         title={comparingDays.has(dayData.day) ? 'Retirer la comparaison' : 'Comparer avec l\'année dernière'}
+//                       >
+//                         <Calendar size={16} />
+//                         {comparingDays.has(dayData.day) ? 'Retirer N-1' : 'Comparer N-1'}
+//                       </button>
+//                       <button
+//                         onClick={() => copyDayDataToClipboard(dayData)}
+//                         className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center gap-2 text-sm transition-colors"
+//                         title="Copier les données en JSON"
+//                       >
+//                         <Copy size={16} />
+//                         JSON
+//                       </button>
+//                     </div>
+//                   </div>
+//                   <ResponsiveContainer width="100%" height={350} style={{ cursor: 'pointer' }}>
+//                     <BarChart data={chartData} margin={{ bottom: 20, left: 10, right: 10 }} barCategoryGap="10%">
+//                       <CartesianGrid {...getGridProps()} />
+//                       <XAxis
+//                         dataKey="index"
+//                         type="number"
+//                         domain={[-0.5, chartData.length - 0.5]}
+//                         ticks={chartData
+//                           .map((entry, idx) => entry.minuteValue === 0 && entry.hourValue % 4 === 0 ? idx : null)
+//                           .filter((v): v is number => v !== null)}
+//                         tickFormatter={(value) => {
+//                           const entry = chartData[value]
+//                           return entry ? `${entry.hourValue}h` : ''
+//                         }}
+//                         tick={{ fill: isDarkMode ? 'rgb(156, 163, 175)' : 'rgb(107, 114, 128)', fontSize: 13 }}
+//                         interval={0}
+//                       />
+//                       <YAxis tick={{ dx: -8, ...getAxisProps().tick }} width={50} />
+//                       <Tooltip
+//                         {...getTooltipProps()}
+//                         labelFormatter={(value) => {
+//                           const entry = chartData[value as number]
+//                           return entry ? entry.hour : ''
+//                         }}
+//                       />
+//                       <Legend />
+//                       {hasComparison ? (
+//                         <>
+//                           <Bar dataKey="Année actuelle (kWh)" fill="rgb(6, 132, 199)" radius={[8, 8, 0, 0]}>
+//                             {chartData.map((entry, index) => (
+//                               <Cell key={`cell-current-${index}`} fill={entry.type === 'HC' ? COLORS.hc : COLORS.hp} />
+//                             ))}
+//                           </Bar>
+//                           <Bar dataKey="Année N-1 (kWh)" fill="#f97316" radius={[8, 8, 0, 0]}>
+//                             {chartData.map((entry, index) => (
+//                               <Cell key={`cell-lastyear-${index}`} fill={entry.typeLastYear === 'HC' ? COLORS.hcDark : entry.typeLastYear === 'HP' ? COLORS.hpDark : '#9ca3af'} />
+//                             ))}
+//                           </Bar>
+//                         </>
+//                       ) : (
+//                         <Bar dataKey="Consommation (kWh)" fill="rgb(6, 132, 199)" radius={[8, 8, 0, 0]}>
+//                           {chartData.map((entry, index) => (
+//                             <Cell key={`cell-${index}`} fill={entry.type === 'HC' ? COLORS.hc : COLORS.hp} />
+//                           ))}
+//                         </Bar>
+//                       )}
+//                     </BarChart>
+//                   </ResponsiveContainer>
+//                 </div>
+//               )
+//             })()}
+//             {hourlyData.length === 0 && hourlyStartDate && hourlyEndDate && (
+//               <div className="card p-6">
+//                 <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+//                   Aucune donnée disponible pour cette période.
+//                 </div>
+//               </div>
+//             )}
+//           </div>
+//         )}
+//       </div>
+
+//       {/* Information */}
+//       <div className="card p-6 bg-gray-50 dark:bg-gray-800">
+//         <h3 className="font-semibold mb-2">Informations techniques</h3>
+//         <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+//           <li>• <strong>Consommation annuelle :</strong> Données issues de l'endpoint <code>consumption/daily</code> (relevés quotidiens) sur 3 ans, max 365 jours par requête</li>
+//           <li>• <strong>Ratio HC/HP :</strong> Données issues de l'endpoint <code>consumption/detail</code> (relevés horaires) sur 2 ans, max 7 jours par requête</li>
+//           <li>• <strong>Consommation horaire :</strong> Données issues de l'endpoint <code>consumption/detail</code> (relevés horaires), max 7 jours par requête</li>
+//           {(() => {
+//             const pdl = pdls.find((p: any) => p.usage_point_id === selectedPDL)
+//             if (pdl?.offpeak_hours) {
+//               let ranges: string[] = []
+
+//               // Handle both array and object formats
+//               if (Array.isArray(pdl.offpeak_hours)) {
+//                 ranges = pdl.offpeak_hours
+//               } else if (typeof pdl.offpeak_hours === 'object') {
+//                 ranges = Object.values(pdl.offpeak_hours)
+//               }
+
+//               if (ranges.length > 0) {
+//                 return (
+//                   <>
+//                     <li>• <strong>Heures Creuses :</strong> {ranges.join(', ')} (configuré sur ce PDL)</li>
+//                     <li>• <strong>Heures Pleines :</strong> Toutes les heures hors plages HC</li>
+//                   </>
+//                 )
+//               }
+//             }
+
+//             return (
+//               <>
+//                 <li>• <strong>Heures Creuses :</strong> Non configurées pour ce PDL</li>
+//                 <li>• <strong>Heures Pleines :</strong> Toutes les heures</li>
+//               </>
+//             )
+//           })()}
+//           <li>• <strong>Cache :</strong> Toutes les données sont mises en cache pendant 7 jours pour optimiser les performances</li>
+//           <li>• <strong>Source :</strong> API Enedis Data Connect</li>
+//         </ul>
+//       </div>
+//     </div>
+//   )
+// }

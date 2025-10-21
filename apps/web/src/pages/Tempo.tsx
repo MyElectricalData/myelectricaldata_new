@@ -305,10 +305,13 @@ export default function Tempo() {
             const months = Object.keys(groupedBySeason[season])
               .map(Number)
               .sort((a, b) => {
-                // Sort Sept-Dec (8-11) before Jan-Aug (0-7)
+                // Sort months from most recent to oldest within a season
+                // For a season (Sept N to Aug N+1):
+                // - Jan-Aug (0-7) are more recent (year N+1)
+                // - Sept-Dec (8-11) are older (year N)
                 const orderA = a >= 8 ? a - 8 : a + 4
                 const orderB = b >= 8 ? b - 8 : b + 4
-                return orderA - orderB
+                return orderB - orderA // Inverted for reverse order (most recent first)
               })
 
             return (

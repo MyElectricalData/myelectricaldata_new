@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -26,7 +27,7 @@ class Settings(BaseSettings):
     ENEDIS_ENVIRONMENT: Literal["sandbox", "production"] = "sandbox"
     ENEDIS_REDIRECT_URI: str = "http://localhost:3000/oauth/callback"
 
-    # RTE API (for TEMPO calendar)
+    # RTE API (for Tempo Calendar)
     RTE_CLIENT_ID: str
     RTE_CLIENT_SECRET: str
     RTE_BASE_URL: str = "https://digital.iservices.rte-france.com"
@@ -69,7 +70,7 @@ class Settings(BaseSettings):
         """Check if an email is in the admin list"""
         if not self.ADMIN_EMAILS:
             return False
-        admin_list = [e.strip() for e in self.ADMIN_EMAILS.split(',')]
+        admin_list = [e.strip() for e in self.ADMIN_EMAILS.split(",")]
         return email.lower() in [e.lower() for e in admin_list]
 
     @property

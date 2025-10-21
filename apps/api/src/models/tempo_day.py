@@ -1,18 +1,23 @@
-from sqlalchemy import Column, String, DateTime, Enum as SQLEnum
-from datetime import datetime, UTC
-from .base import Base
 import enum
+from datetime import UTC, datetime
+
+from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Enum as SQLEnum
+
+from .base import Base
 
 
 class TempoColor(str, enum.Enum):
     """TEMPO day colors"""
+
     BLUE = "BLUE"
     WHITE = "WHITE"
     RED = "RED"
 
 
 class TempoDay(Base):
-    """Store TEMPO calendar days from RTE API"""
+    """Store Tempo Calendar days from RTE API"""
+
     __tablename__ = "tempo_days"
 
     id = Column(String, primary_key=True)  # Format: YYYY-MM-DD

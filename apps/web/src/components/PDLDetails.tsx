@@ -79,6 +79,28 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
   const isTesting = testConsumptionDaily.isPending || testConsumptionDetail.isPending ||
                      testMaxPower.isPending || testProductionDaily.isPending || testProductionDetail.isPending
 
+  // Syntax highlighting for JSON
+  const highlightJSON = (json: string) => {
+    return json.replace(
+      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      (match) => {
+        let cls = 'text-orange-400' // numbers
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'text-blue-400' // keys
+          } else {
+            cls = 'text-green-400' // strings
+          }
+        } else if (/true|false/.test(match)) {
+          cls = 'text-purple-400' // booleans
+        } else if (/null/.test(match)) {
+          cls = 'text-red-400' // null
+        }
+        return `<span class="${cls}">${match}</span>`
+      }
+    )
+  }
+
   return createPortal(
     <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/50" style={{ zIndex: 9999 }}>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative">
@@ -331,44 +353,47 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
                   </button>
                 </div>
 
-                {isTesting && (
-                  <div className="flex items-center gap-2 text-blue-600 text-sm">
-                    <Loader2 className="animate-spin" size={16} />
-                    Test en cours...
-                  </div>
-                )}
-
-                {testResult && (
-                  <div className="mt-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-semibold">Résultat :</h4>
+                {/* Result Box - Always visible with fixed height */}
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold">Résultat :</h4>
+                    {(testResult || testError) && (
                       <button
-                        onClick={() => setTestResult(null)}
-                        className="text-xs text-gray-500 hover:text-gray-700"
+                        onClick={() => {
+                          setTestResult(null)
+                          setTestError(null)
+                        }}
+                        className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                       >
                         Fermer
                       </button>
-                    </div>
-                    <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-auto max-h-64">
-                      {JSON.stringify(testResult, null, 2)}
-                    </pre>
+                    )}
                   </div>
-                )}
-
-                {testError && (
-                  <div className="mt-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded">
-                    <div className="flex items-center justify-between mb-1">
-                      <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Erreur :</h4>
-                      <button
-                        onClick={() => setTestError(null)}
-                        className="text-xs text-red-600 hover:text-red-800"
-                      >
-                        Fermer
-                      </button>
-                    </div>
-                    <p className="text-sm text-red-700 dark:text-red-300">{testError}</p>
+                  <div className="bg-gray-900 text-gray-100 p-4 rounded h-64 overflow-auto">
+                    {isTesting ? (
+                      <div className="flex flex-col items-center justify-center h-full gap-3">
+                        <Loader2 className="animate-spin text-blue-400" size={32} />
+                        <span className="text-sm text-blue-400">Test en cours...</span>
+                      </div>
+                    ) : testError ? (
+                      <div className="flex flex-col h-full">
+                        <div className="text-red-400 font-semibold mb-2">Erreur :</div>
+                        <div className="text-red-300 text-sm">{testError}</div>
+                      </div>
+                    ) : testResult ? (
+                      <pre
+                        className="text-xs leading-relaxed"
+                        dangerouslySetInnerHTML={{
+                          __html: highlightJSON(JSON.stringify(testResult, null, 2))
+                        }}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                        Cliquez sur un bouton ci-dessus pour tester un endpoint
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             </>
           )}

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { Copy, Check, Eye, EyeOff } from 'lucide-react'
+import { logger } from '@/utils/logger'
 
 declare global {
   interface Window {
@@ -47,7 +48,7 @@ export default function Signup() {
           window.turnstile.render(`#${widgetId}`, {
             sitekey: TURNSTILE_SITE_KEY,
             callback: (token: string) => {
-              console.log('[TURNSTILE] Token received:', token.substring(0, 20) + '...')
+              logger.log('[TURNSTILE] Token received:', token.substring(0, 20) + '...')
               setTurnstileToken(token)
             },
             'error-callback': () => {
@@ -55,7 +56,7 @@ export default function Signup() {
               setTurnstileToken(null)
             },
             'expired-callback': () => {
-              console.log('[TURNSTILE] Token expired')
+              logger.log('[TURNSTILE] Token expired')
               setTurnstileToken(null)
             },
           })

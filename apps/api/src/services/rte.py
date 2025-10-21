@@ -1,22 +1,23 @@
-"""RTE API Service for TEMPO calendar and EcoWatt data"""
+"""RTE API Service for Tempo Calendar and EcoWatt data"""
+
 import logging
-from datetime import datetime, timedelta, UTC, date
-from typing import List, Dict, Any, Optional
+from datetime import UTC, date, datetime, timedelta
+from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
-from ..models import TempoDay, TempoColor
-from ..models.ecowatt import EcoWatt, EcoWattCreate
+from ..models import TempoColor, TempoDay
+from ..models.ecowatt import EcoWatt
 
 logger = logging.getLogger(__name__)
 
 
 class RTEService:
-    """Service to fetch and cache TEMPO calendar and EcoWatt data from RTE API"""
+    """Service to fetch and cache Tempo Calendar and EcoWatt data from RTE API"""
 
     def __init__(self):
         self.base_url = settings.RTE_BASE_URL
@@ -57,7 +58,7 @@ class RTEService:
 
     async def fetch_tempo_calendar(self, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
         """
-        Fetch TEMPO calendar from RTE API
+        Fetch Tempo Calendar from RTE API
 
         Args:
             start_date: Start date (timezone aware)
@@ -102,7 +103,7 @@ class RTEService:
 
     async def update_tempo_cache(self, db: AsyncSession, days: int = 7) -> int:
         """
-        Update TEMPO calendar cache in database
+        Update Tempo Calendar cache in database
 
         Args:
             db: Database session
@@ -124,20 +125,24 @@ class RTEService:
         else:
             end_date = now_paris.replace(hour=23, minute=59, second=59, microsecond=0)
 
-        logger.info(f"[RTE] Fetching today/tomorrow data...")
+        logger.info("[RTE] Fetching today/tomorrow data...")
         tempo_values = await self.fetch_tempo_calendar(start_date, end_date)
         updated_count += await self._process_tempo_values(db, tempo_values)
 
         # 2. Fetch historical data (last 10 years) split by 366-day periods
-        logger.info(f"[RTE] Fetching historical data (last 10 years)...")
+        logger.info("[RTE] Fetching historical data (last 10 years)...")
         years_to_fetch = 10
         for year_offset in range(years_to_fetch):
             try:
                 # Each period is 366 days to cover leap years
-                period_end = now_paris.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=366 * year_offset)
+                period_end = now_paris.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+                    days=366 * year_offset
+                )
                 period_start = period_end - timedelta(days=366)
 
-                logger.info(f"[RTE] Fetching year {year_offset + 1}/10 ({period_start.date()} to {period_end.date()})...")
+                logger.info(
+                    f"[RTE] Fetching year {year_offset + 1}/10 ({period_start.date()} to {period_end.date()})..."
+                )
                 historical_values = await self.fetch_tempo_calendar(period_start, period_end)
                 logger.info(f"[RTE] Received {len(historical_values)} values for year {year_offset + 1}")
                 count = await self._process_tempo_values(db, historical_values)
@@ -147,6 +152,7 @@ class RTEService:
             except Exception as e:
                 logger.warning(f"[RTE] Warning: Could not fetch year {year_offset + 1}: {e}")
                 import traceback
+
                 traceback.print_exc()
 
         logger.info(f"[RTE] Total updated: {updated_count} days")
@@ -266,7 +272,7 @@ class RTEService:
         """
         token = await self._get_access_token()
 
-        logger.debug(f"[RTE API] Requesting EcoWatt data...")
+        logger.debug("[RTE API] Requesting EcoWatt data...")
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -284,7 +290,7 @@ class RTEService:
             response.raise_for_status()
             data = response.json()
 
-            logger.info(f"[RTE API] Received EcoWatt signals")
+            logger.info("[RTE API] Received EcoWatt signals")
             return data
 
     async def update_ecowatt_cache(self, db: AsyncSession) -> int:
@@ -304,7 +310,9 @@ class RTEService:
                 time_since_last_fetch = now - self._last_ecowatt_fetch
                 if time_since_last_fetch < self._ecowatt_fetch_min_interval:
                     remaining = self._ecowatt_fetch_min_interval - time_since_last_fetch
-                    logger.warning(f"[RTE] EcoWatt API rate limit: last fetch was {time_since_last_fetch.total_seconds():.0f}s ago, need to wait {remaining.total_seconds():.0f}s more")
+                    logger.warning(
+                        f"[RTE] EcoWatt API rate limit: last fetch was {time_since_last_fetch.total_seconds():.0f}s ago, need to wait {remaining.total_seconds():.0f}s more"
+                    )
                     return 0
 
             # Fetch EcoWatt data from RTE API
@@ -323,7 +331,9 @@ class RTEService:
             for signal in signals:
                 try:
                     # Extract signal data and convert to UTC naive datetime
-                    generation_datetime = datetime.fromisoformat(signal["GenerationFichier"]).astimezone(UTC).replace(tzinfo=None)
+                    generation_datetime = (
+                        datetime.fromisoformat(signal["GenerationFichier"]).astimezone(UTC).replace(tzinfo=None)
+                    )
                     periode = datetime.fromisoformat(signal["jour"]).astimezone(UTC).replace(tzinfo=None)
 
                     # Extract hourly values and map them to hours (pas = hour)
@@ -349,13 +359,11 @@ class RTEService:
                         "pas": 60,  # Always 60 minutes (1 hour step)
                         "dvalue": signal["dvalue"],
                         "message": signal.get("message", ""),
-                        "values": hourly_values  # Array of 24 values indexed by hour
+                        "values": hourly_values,  # Array of 24 values indexed by hour
                     }
 
                     # Check if signal for this day already exists
-                    result = await db.execute(
-                        select(EcoWatt).where(EcoWatt.periode == periode)
-                    )
+                    result = await db.execute(select(EcoWatt).where(EcoWatt.periode == periode))
                     existing = result.scalar_one_or_none()
 
                     if existing:
@@ -382,6 +390,7 @@ class RTEService:
             await db.rollback()
             logger.error(f"[RTE] Error updating EcoWatt cache: {e}")
             import traceback
+
             traceback.print_exc()
             return 0
 
@@ -425,8 +434,7 @@ class RTEService:
 
         result = await db.execute(
             select(EcoWatt).where(
-                EcoWatt.periode >= target_datetime,
-                EcoWatt.periode < target_datetime + timedelta(days=1)
+                EcoWatt.periode >= target_datetime, EcoWatt.periode < target_datetime + timedelta(days=1)
             )
         )
         return result.scalar_one_or_none()

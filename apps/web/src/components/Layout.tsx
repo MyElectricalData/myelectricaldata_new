@@ -354,13 +354,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className={`container mx-auto px-3 sm:px-4 lg:px-6 max-w-[1920px] ${location.pathname.startsWith('/admin') || location.pathname.startsWith('/api-docs') ? 'pt-3 pb-6' : 'py-6'}`}>
             {children}
 
-            {/* Spacer to push footer down */}
-            <div className="pb-20"></div>
+            {/* Spacer to push footer down - only on desktop */}
+            <div className="hidden md:block pb-20"></div>
           </div>
         </main>
 
-        {/* Footer - Fixed at bottom */}
-        <footer className={`fixed bottom-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 z-30 transition-all duration-300 ${sidebarCollapsed ? 'left-0 md:left-16' : 'left-0 md:left-56'}`}>
+        {/* Footer - Fixed at bottom - Hidden on mobile */}
+        <footer className={`hidden md:fixed bottom-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 z-30 transition-all duration-300 ${sidebarCollapsed ? 'left-0 md:left-16' : 'left-0 md:left-56'}`}>
           <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-3 max-w-[1920px]">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <p className="text-sm text-gray-600 dark:text-gray-400">

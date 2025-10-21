@@ -41,6 +41,7 @@ export interface User {
   is_active: boolean
   created_at: string
   is_admin?: boolean
+  debug_mode?: boolean
   role?: Role
 }
 
@@ -61,7 +62,10 @@ export interface PDL {
   created_at: string
   display_order?: number
   subscribed_power?: number
-  offpeak_hours?: Record<string, string>
+  offpeak_hours?: string[] | Record<string, string> // Array format or legacy object format
+  has_consumption?: boolean
+  has_production?: boolean
+  is_active?: boolean
 }
 
 export interface CacheDeleteResponse {
