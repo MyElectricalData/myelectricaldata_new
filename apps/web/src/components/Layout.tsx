@@ -77,22 +77,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 overflow-y-auto py-4">
           <div className="space-y-1 px-2">
             {menuItems.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
-                  location.pathname === item.to
-                    ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-                title={sidebarCollapsed ? item.label : ''}
-                data-tour={item.to === '/consumption' ? 'nav-consumption' :
-                          item.to === '/simulator' ? 'nav-simulator' :
-                          item.to === '/contribute' ? 'nav-contribute' : undefined}
-              >
-                <item.icon size={20} className="flex-shrink-0" />
-                {!sidebarCollapsed && <span className="font-medium">{item.label}</span>}
-              </Link>
+              <div key={item.to}>
+                <Link
+                  to={item.to}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
+                    location.pathname === item.to
+                      ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                  title={sidebarCollapsed ? item.label : ''}
+                  data-tour={item.to === '/consumption' ? 'nav-consumption' :
+                            item.to === '/simulator' ? 'nav-simulator' :
+                            item.to === '/contribute' ? 'nav-contribute' : undefined}
+                >
+                  <item.icon size={20} className="flex-shrink-0" />
+                  {!sidebarCollapsed && <span className="font-medium">{item.label}</span>}
+                </Link>
+              </div>
             ))}
 
             {/* Admin Link */}

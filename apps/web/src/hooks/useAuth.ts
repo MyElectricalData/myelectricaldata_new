@@ -54,10 +54,15 @@ export const useAuth = () => {
     queryClient.clear()
   }
 
+  // Check if we have a valid token in localStorage
+  const hasToken = !!localStorage.getItem('access_token')
+
   return {
     user,
     isLoading,
-    isAuthenticated: !!user,
+    // Consider authenticated if user exists OR if we have a token in localStorage
+    // This prevents logout during page refresh while the user query is loading
+    isAuthenticated: !!user || hasToken,
     login: loginMutation.mutate,
     signup: signupMutation.mutate,
     logout,
