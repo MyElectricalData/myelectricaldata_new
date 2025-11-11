@@ -283,7 +283,7 @@ async def create_pdl(
         has_production=pdl.has_production,
         is_active=pdl.is_active,
         oldest_available_data_date=pdl.oldest_available_data_date,
-        contract_end_date=pdl.contract_end_date,
+        activation_date=pdl.activation_date,
     )
 
     return APIResponse(success=True, data=pdl_response.model_dump())
@@ -320,7 +320,7 @@ async def get_pdl(
         has_production=pdl.has_production,
         is_active=pdl.is_active,
         oldest_available_data_date=pdl.oldest_available_data_date,
-        contract_end_date=pdl.contract_end_date,
+        activation_date=pdl.activation_date,
     )
 
     return APIResponse(success=True, data=pdl_response.model_dump())
@@ -584,7 +584,7 @@ async def admin_add_pdl(
         has_production=pdl.has_production,
         is_active=pdl.is_active,
         oldest_available_data_date=pdl.oldest_available_data_date,
-        contract_end_date=pdl.contract_end_date,
+        activation_date=pdl.activation_date,
     )
 
     return APIResponse(success=True, data=pdl_response.model_dump())
