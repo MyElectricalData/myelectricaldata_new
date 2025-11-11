@@ -483,7 +483,175 @@ Avant de créer ou modifier une page, vérifier :
 <Icon className="text-primary-600 dark:text-primary-400" size={20} />
 ```
 
-## 19. Exemples Complets
+## 19. Filtres et Tri (Pattern Standard)
+
+### Structure des Filtres
+
+Utiliser le pattern compact avec fond gris inspiré d'AdminUsers :
+
+```tsx
+<div className="flex flex-wrap gap-3 p-3 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-200 dark:border-gray-700">
+  <div className="flex items-center gap-2">
+    <Filter size={16} className="text-gray-500" />
+    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filtres:</span>
+  </div>
+
+  <div className="flex items-center gap-2">
+    <label className="text-xs text-gray-600 dark:text-gray-400">Catégorie:</label>
+    <select
+      value={filterValue}
+      onChange={(e) => setFilterValue(e.target.value)}
+      className="input text-xs py-1 px-2 w-auto"
+    >
+      <option value="all">Tous</option>
+      {/* Options */}
+    </select>
+  </div>
+
+  {/* Checkbox pour filtres binaires */}
+  <div className="flex items-center gap-2">
+    <label className="flex items-center gap-1 cursor-pointer text-xs text-gray-600 dark:text-gray-400">
+      <input
+        type="checkbox"
+        checked={showOnlyRecent}
+        onChange={(e) => setShowOnlyRecent(e.target.checked)}
+        className="w-3 h-3 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+      />
+      <span>Récentes uniquement</span>
+    </label>
+  </div>
+
+  {/* Bouton de réinitialisation si filtres actifs */}
+  {filterValue !== 'all' && (
+    <button
+      onClick={() => setFilterValue('all')}
+      className="text-xs text-primary-600 dark:text-primary-400 hover:underline ml-auto"
+    >
+      Réinitialiser
+    </button>
+  )}
+</div>
+```
+
+**Règles :**
+
+- Fond : `bg-gray-50 dark:bg-gray-900/30`
+- Bordure : `border border-gray-200 dark:border-gray-700`
+- Padding : `p-3`
+- Gap entre éléments : `gap-3`
+- Labels : `text-xs text-gray-600 dark:text-gray-400`
+- Selects : `input text-xs py-1 px-2 w-auto`
+- Checkboxes : `w-3 h-3` pour garder une taille compacte
+- Icône Filter : `size={16} text-gray-500`
+- Bouton réinitialiser : `ml-auto` pour aligner à droite
+
+### Exemple : Filtre "Récentes uniquement" (Simulateur)
+
+Dans le simulateur de tarifs, le filtre "Récentes uniquement" permet de filtrer les offres dont les tarifs ont été mis à jour récemment (moins de 6 mois).
+
+**Fonctionnalité :**
+
+- Les offres sont marquées avec un badge `⚠️ Ancien` si leurs tarifs datent de plus de 6 mois
+- Le filtre "Récentes uniquement" cache automatiquement ces offres anciennes
+- Utile pour comparer uniquement les offres avec des tarifs à jour
+
+**Implémentation :**
+
+```tsx
+// Helper function to check if tariff is older than 6 months
+function isOldTariff(validFrom: string | undefined): boolean {
+  if (!validFrom) return false
+  const sixMonthsAgo = new Date()
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+  return new Date(validFrom) < sixMonthsAgo
+}
+
+// In filtering logic
+if (showOnlyRecent) {
+  filtered = filtered.filter((result) => !isOldTariff(result.validFrom))
+}
+
+// In UI
+{isOldTariff(offer.validFrom) && (
+  <span className="px-2 py-0.5 text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded font-semibold"
+        title="Tarif ancien (> 6 mois) - Potentiellement non à jour">
+    ⚠️ Ancien
+  </span>
+)}
+```
+
+**Règles :**
+
+- Seuil de fraîcheur : 6 mois (configurable selon le contexte)
+- Badge d'avertissement : couleur orange avec `⚠️`
+- Tooltip explicatif : title="..." pour plus d'informations
+- Message clair dans le filtre : "Récentes uniquement" ou "Offres récentes uniquement"
+
+### Tri dans les Colonnes de Tableau
+
+Pour les tableaux, intégrer le tri directement dans les headers de colonnes :
+
+```tsx
+<th
+  className="p-3 text-right font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors select-none"
+  onClick={() => handleSort('column')}
+  title="Cliquez pour trier"
+>
+  <div className="flex items-center justify-end gap-1">
+    <span>Nom de la Colonne</span>
+    {getSortIcon('column')}
+  </div>
+</th>
+```
+
+**Règles :**
+
+- Headers cliquables : `cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700`
+- Transition : `transition-colors`
+- Prévenir la sélection : `select-none`
+- Icônes de tri :
+  - Non trié : `<ArrowUpDown size={14} className="opacity-40" />`
+  - Ascendant : `<ArrowUp size={14} />`
+  - Descendant : `<ArrowDown size={14} />`
+- Alignement : Utiliser `justify-end` pour colonnes de droite, `justify-start` pour colonnes de gauche
+
+### Logique de Tri
+
+```tsx
+const [sortBy, setSortBy] = useState<'column1' | 'column2'>('column1')
+const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+
+const handleSort = (column: 'column1' | 'column2') => {
+  if (sortBy === column) {
+    // Toggle sort order if clicking the same column
+    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+  } else {
+    // Set new column and default to ascending
+    setSortBy(column)
+    setSortOrder('asc')
+  }
+}
+
+const filteredAndSortedData = useMemo(() => {
+  let filtered = [...data]
+
+  // Apply filters
+  if (filterValue !== 'all') {
+    filtered = filtered.filter(item => item.category === filterValue)
+  }
+
+  // Apply sorting
+  filtered.sort((a, b) => {
+    const comparison = a[sortBy] - b[sortBy]  // Pour nombres
+    // Pour strings : a[sortBy].localeCompare(b[sortBy])
+    return sortOrder === 'asc' ? comparison : -comparison
+  })
+
+  return filtered
+}, [data, filterValue, sortBy, sortOrder])
+```
+
+## 20. Exemples Complets
 
 ### Exemple 1 : Page Simple
 
