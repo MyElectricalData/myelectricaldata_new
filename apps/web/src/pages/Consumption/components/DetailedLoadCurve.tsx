@@ -342,8 +342,8 @@ export function DetailedLoadCurve({
 
   return (
     <div>
-      {/* Date selector - full width block with blue background, responsive */}
-      <div className="mb-4 bg-gradient-to-r from-primary-50 to-blue-50 dark:from-primary-900/20 dark:to-blue-900/20 rounded-xl border border-primary-200 dark:border-primary-800 p-4">
+      {/* Date selector - hidden on small screens (mobile), visible on sm and up */}
+      <div className="hidden sm:block mb-4 bg-gradient-to-r from-primary-50 to-blue-50 dark:from-primary-900/20 dark:to-blue-900/20 rounded-xl border border-primary-200 dark:border-primary-800 p-4">
         <div className="flex flex-col lg:flex-row lg:items-center gap-3">
           <div className="flex items-center gap-2">
             <Calendar className="text-primary-600 dark:text-primary-400 flex-shrink-0" size={24} />
@@ -426,8 +426,8 @@ export function DetailedLoadCurve({
         </div>
       </div>
 
-      {/* Day selector tabs with navigation and export button */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+      {/* Day selector tabs with navigation and export button - hidden on smaller screens */}
+      <div className="hidden lg:flex lg:flex-row lg:items-center lg:justify-between gap-2 mb-4">
         {/* Left side: navigation and tabs */}
         <div className="flex items-center gap-2 flex-1 overflow-x-auto">
           {/* Left button */}
@@ -555,6 +555,53 @@ export function DetailedLoadCurve({
             <span>Export JSON</span>
           </button>
         </div>
+      </div>
+
+      {/* Smaller screens: Comparison and Export buttons - centered */}
+      <div className="lg:hidden flex items-center gap-2 justify-center flex-wrap mb-4">
+        <button
+          onClick={() => {
+            if (yearComparisonAvailable) {
+              setShowDetailYearComparison(!showDetailYearComparison)
+            }
+          }}
+          disabled={!yearComparisonAvailable}
+          className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 shadow-sm ${
+            showDetailYearComparison && yearComparisonAvailable
+              ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md'
+              : !yearComparisonAvailable
+              ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-gray-600 cursor-not-allowed opacity-50'
+              : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
+          }`}
+        >
+          <CalendarRange size={16} className="flex-shrink-0" />
+          <span>Année -1</span>
+        </button>
+        <button
+          onClick={() => {
+            if (weekComparisonAvailable) {
+              setShowDetailWeekComparison(!showDetailWeekComparison)
+            }
+          }}
+          disabled={!weekComparisonAvailable}
+          className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 shadow-sm ${
+            showDetailWeekComparison && weekComparisonAvailable
+              ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md'
+              : !weekComparisonAvailable
+              ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-gray-600 cursor-not-allowed opacity-50'
+              : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
+          }`}
+        >
+          <CalendarDays size={16} className="flex-shrink-0" />
+          <span>Semaine -1</span>
+        </button>
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
+        >
+          <Download size={16} className="flex-shrink-0" />
+          <span>Export JSON</span>
+        </button>
       </div>
 
       {/* Graph */}

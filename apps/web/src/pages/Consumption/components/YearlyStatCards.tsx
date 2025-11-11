@@ -99,7 +99,13 @@ export function YearlyStatCards({ chartData, consumptionData }: YearlyStatCardsP
       </div>
 
       <div className="overflow-x-auto pb-2">
-        <div className={`grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`}>
+        <div className={`grid gap-3 grid-cols-1 sm:grid-cols-2 ${
+          chartData.byYear.length === 3
+            ? 'lg:grid-cols-3'
+            : chartData.byYear.length >= 4
+              ? 'lg:grid-cols-3 xl:grid-cols-4'
+              : 'lg:grid-cols-2'
+        }`}>
           {chartData.byYear.map((yearData) => {
             const startDateFormatted = yearData.startDate.toLocaleDateString('fr-FR', {
               day: '2-digit',
@@ -124,7 +130,7 @@ export function YearlyStatCards({ chartData, consumptionData }: YearlyStatCardsP
                     </p>
                     <button
                       onClick={() => handleExportYear(yearData)}
-                      className="p-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 rounded transition-colors opacity-60 hover:opacity-100"
+                      className="p-1.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded shadow-sm hover:shadow-md transition-all duration-200"
                     >
                       <Download size={14} />
                     </button>

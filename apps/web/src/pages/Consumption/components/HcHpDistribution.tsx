@@ -93,7 +93,7 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
               </h4>
               <button
                 onClick={() => handleExportPeriod(yearData)}
-                className="p-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 rounded transition-colors opacity-60 hover:opacity-100"
+                className="p-1.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded shadow-sm hover:shadow-md transition-all duration-200"
               >
                 <Download size={14} />
               </button>
