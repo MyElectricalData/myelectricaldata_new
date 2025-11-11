@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Calculator, AlertCircle, Loader2, ChevronDown, ChevronUp, FileDown } from 'lucide-react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Calculator, AlertCircle, Loader2, ChevronDown, ChevronUp, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info, Activity } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
 import { enedisApi } from '@/api/enedis'
@@ -8,6 +8,7 @@ import { tempoApi, type TempoDay } from '@/api/tempo'
 import type { PDL } from '@/types/api'
 import jsPDF from 'jspdf'
 import { logger } from '@/utils/logger'
+import { SimulatorLoadingProgress } from './Simulator/SimulatorLoadingProgress'
 
 // Helper function to check if a date is weekend (Saturday or Sunday)
 function isWeekend(dateString: string): boolean {
@@ -59,15 +60,16 @@ function getEnerocoopOffpeakHours(offerName: string, hour: number, isWeekendOrHo
 }
 
 // Helper function to check if an hour is in offpeak hours
-function isOffpeakHour(hour: number, offpeakConfig?: Record<string, string>): boolean {
+function isOffpeakHour(hour: number, offpeakConfig?: Record<string, string> | string[]): boolean {
   if (!offpeakConfig) {
     // Default: 22h-6h if no config
     return hour >= 22 || hour < 6
   }
 
   // Parse offpeak hours from config
-  // Format can be: {"default": "22h30-06h30"} or {"HC": "22:00-06:00"} or "HC (22H00-6H00)"
-  for (const range of Object.values(offpeakConfig)) {
+  // Format can be: {"default": "22h30-06h30"} or {"HC": "22:00-06:00"} or "HC (22H00-6H00)" or array of strings
+  const values = Array.isArray(offpeakConfig) ? offpeakConfig : Object.values(offpeakConfig)
+  for (const range of values) {
     // Extract hours from various formats: "22h30-06h30", "22:00-06:00", "HC (22H00-6H00)", etc.
     // Match: optional text, then first hour (1-2 digits), separator, then second hour
     const match = range.match(/(\d{1,2})[hH:]\d{0,2}\s*-\s*(\d{1,2})[hH:]?\d{0,2}/)
@@ -150,6 +152,15 @@ export default function Simulator() {
   const [fetchProgress, setFetchProgress] = useState<{current: number, total: number, phase: string}>({current: 0, total: 0, phase: ''})
   const [simulationError, setSimulationError] = useState<string | null>(null)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [hasAutoLaunched, setHasAutoLaunched] = useState(false)
+  const [isProgressExpanded, setIsProgressExpanded] = useState(false)
+
+  // Filters and sorting state
+  const [filterType, setFilterType] = useState<string>('all')
+  const [filterProvider, setFilterProvider] = useState<string>('all')
+  const [showOnlyRecent, setShowOnlyRecent] = useState(false)
+  const [sortBy, setSortBy] = useState<'total' | 'subscription' | 'energy'>('total')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
 
   // Set first active PDL as selected by default
   useEffect(() => {
@@ -167,7 +178,20 @@ export default function Simulator() {
   useEffect(() => {
     setSimulationResult(null)
     setSimulationError(null)
+    setHasAutoLaunched(false)
   }, [selectedPdl])
+
+  // Auto-expand/collapse progress section
+  useEffect(() => {
+    if (isSimulating) {
+      setIsProgressExpanded(true)
+    } else if (simulationResult || simulationError) {
+      // Close after a small delay when complete
+      setTimeout(() => {
+        setIsProgressExpanded(false)
+      }, 1000)
+    }
+  }, [isSimulating, simulationResult, simulationError])
 
   const handleSimulation = async () => {
     if (!selectedPdl) {
@@ -227,8 +251,6 @@ export default function Simulator() {
 
       // Récupérer les données pour chaque période
       const allData: any[] = []
-      let stoppedEarly = false
-      let earliestDataDate: string | null = null
 
       for (let i = 0; i < periods.length; i++) {
         const period = periods[i]
@@ -240,8 +262,8 @@ export default function Simulator() {
 
         logger.log(`Fetching period ${i + 1}/${periods.length}: ${period.start} to ${period.end}`)
 
-        // Check if data is already in React Query cache
-        const cacheKey = ['consumption-detail', selectedPdl, period.start, period.end]
+        // Check if data is already in React Query cache (shared with Consumption page)
+        const cacheKey = ['consumptionDetail', selectedPdl, period.start, period.end]
         let response = queryClient.getQueryData(cacheKey) as any
 
         if (response) {
@@ -272,11 +294,6 @@ export default function Simulator() {
           // Check for Enedis error ADAM-ERR0123 (period before meter activation)
           if (errorMessage.includes('ADAM-ERR0123') || errorMessage.includes('anterior to the meter')) {
             logger.log(`⚠️ Stopping simulation at ${period.start} - meter not activated yet. Processing data already collected.`)
-            stoppedEarly = true
-            if (allData.length > 0 && !earliestDataDate) {
-              // Track the earliest period with data
-              earliestDataDate = period.end
-            }
             break // Stop fetching but process what we have
           }
 
@@ -740,8 +757,8 @@ export default function Simulator() {
 
   if (pdlsLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="animate-spin text-primary-600" size={48} />
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="animate-spin text-primary-600 dark:text-primary-400" size={32} />
       </div>
     )
   }
@@ -768,9 +785,9 @@ export default function Simulator() {
     return (
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2 text-gray-900 dark:text-gray-100">
-            <Calculator className="text-primary-600 dark:text-primary-400" size={28} />
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+            <Calculator className="text-primary-600 dark:text-primary-400" size={32} />
             Simulateur tarifaire
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
@@ -835,6 +852,73 @@ export default function Simulator() {
     }
   }
 
+  // Auto-launch simulation if cache data exists
+  useEffect(() => {
+    logger.log('[Auto-launch] useEffect triggered', {
+      selectedPdl,
+      isSimulating,
+      hasSimulationResult: !!simulationResult,
+      hasAutoLaunched,
+    })
+
+    // Don't auto-launch if already launched, simulating, or have results
+    if (!selectedPdl || isSimulating || simulationResult || hasAutoLaunched) {
+      logger.log('[Auto-launch] Skipping auto-launch due to conditions')
+      return
+    }
+
+    // Check if we have cached data for this PDL
+    // The cache uses daily keys: ['consumptionDetail', pdl, date, date]
+    const today = new Date()
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+
+    // Sample 20 random days spread across the year to check cache
+    const sampleDays: string[] = []
+    const yearStart = new Date(today)
+    yearStart.setDate(yearStart.getDate() - 365)
+
+    for (let i = 0; i < 20; i++) {
+      const daysFromStart = Math.floor((365 / 20) * i)
+      const sampleDate = new Date(yearStart)
+      sampleDate.setDate(sampleDate.getDate() + daysFromStart)
+
+      if (sampleDate <= yesterday) {
+        sampleDays.push(sampleDate.toISOString().split('T')[0])
+      }
+    }
+
+    // Check how many sample days have cached data
+    let cachedCount = 0
+    for (const dateStr of sampleDays) {
+      // Cache key format: ['consumptionDetail', pdl, date, date] (same date for start and end)
+      const cacheKey = ['consumptionDetail', selectedPdl, dateStr, dateStr]
+      const cachedData = queryClient.getQueryData(cacheKey) as any
+
+      // Check if we have complete data (at least 40 data points for a full day)
+      const hasCompleteData = cachedData?.data?.meter_reading?.interval_reading?.length >= 40
+      if (hasCompleteData) {
+        cachedCount++
+      }
+    }
+
+    const cachePercentage = Math.round((cachedCount / sampleDays.length) * 100)
+    logger.log(`[Auto-launch] Found ${cachedCount}/${sampleDays.length} cached days (${cachePercentage}%)`)
+
+    // If we have at least 70% cached (14/20 days), auto-launch simulation
+    if (cachedCount >= 14) {
+      logger.log(`✅ Auto-launching simulation with ${cachedCount}/${sampleDays.length} cached days`)
+      setHasAutoLaunched(true)
+
+      // Use setTimeout to avoid calling during render
+      setTimeout(() => {
+        handleSimulation()
+      }, 100)
+    } else {
+      logger.log(`❌ Not enough cached data (${cachePercentage}%), skipping auto-launch`)
+    }
+  }, [selectedPdl, isSimulating, simulationResult, hasAutoLaunched, queryClient, handleSimulation])
+
   const toggleRowExpansion = (offerId: string) => {
     setExpandedRows((prev) => {
       const newSet = new Set(prev)
@@ -846,6 +930,79 @@ export default function Simulator() {
       return newSet
     })
   }
+
+  const handleSort = (column: 'total' | 'subscription' | 'energy') => {
+    if (sortBy === column) {
+      // Toggle sort order if clicking the same column
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+    } else {
+      // Set new column and default to ascending
+      setSortBy(column)
+      setSortOrder('asc')
+    }
+  }
+
+  const getSortIcon = (column: 'total' | 'subscription' | 'energy') => {
+    if (sortBy !== column) {
+      return <ArrowUpDown size={14} className="opacity-40" />
+    }
+    return sortOrder === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+  }
+
+  // Filter and sort simulation results
+  const filteredAndSortedResults = useMemo(() => {
+    if (!simulationResult || !Array.isArray(simulationResult)) return []
+
+    let filtered = [...simulationResult]
+
+    // Filter by type
+    if (filterType !== 'all') {
+      filtered = filtered.filter((result) => result.offerType === filterType)
+    }
+
+    // Filter by provider
+    if (filterProvider !== 'all') {
+      filtered = filtered.filter((result) => result.providerName === filterProvider)
+    }
+
+    // Filter by recency (tariffs < 6 months old)
+    if (showOnlyRecent) {
+      filtered = filtered.filter((result) => !isOldTariff(result.validFrom))
+    }
+
+    // Sort by selected criteria
+    filtered.sort((a, b) => {
+      let comparison = 0
+      switch (sortBy) {
+        case 'subscription':
+          comparison = a.subscriptionCost - b.subscriptionCost
+          break
+        case 'energy':
+          comparison = a.energyCost - b.energyCost
+          break
+        case 'total':
+        default:
+          comparison = a.totalCost - b.totalCost
+          break
+      }
+      return sortOrder === 'asc' ? comparison : -comparison
+    })
+
+    return filtered
+  }, [simulationResult, filterType, filterProvider, showOnlyRecent, sortBy, sortOrder])
+
+  // Get unique providers and types for filter options
+  const availableProviders = useMemo(() => {
+    if (!simulationResult || !Array.isArray(simulationResult)) return []
+    const providers = new Set(simulationResult.map((r) => r.providerName))
+    return Array.from(providers).sort()
+  }, [simulationResult])
+
+  const availableTypes = useMemo(() => {
+    if (!simulationResult || !Array.isArray(simulationResult)) return []
+    const types = new Set(simulationResult.map((r) => r.offerType))
+    return Array.from(types).sort()
+  }, [simulationResult])
 
   const exportToPDF = async () => {
     if (!simulationResult || simulationResult.length === 0) return
@@ -1232,16 +1389,9 @@ export default function Simulator() {
         </p>
       </div>
 
-      {/* Cache Warning - Important */}
-      <div className="mb-6 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 p-4">
-        <p className="text-sm text-yellow-800 dark:text-yellow-200">
-          <strong>⚠️ Information importante :</strong> L'utilisation du simulateur active automatiquement le cache. Vos données de consommation seront stockées temporairement sur la passerelle pour améliorer les performances et éviter de solliciter excessivement l'API Enedis. Les données en cache expirent automatiquement après 24 heures.
-        </p>
-      </div>
-
       {/* Error Banner */}
       {simulationError && (
-        <div className="mb-6 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-4 rounded-lg">
+        <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
           <div className="flex items-start">
             <AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={20} />
             <div className="ml-3 flex-1">
@@ -1263,12 +1413,14 @@ export default function Simulator() {
         </div>
       )}
 
-      <div className="card space-y-6">
+      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200 p-6">
         {/* Configuration Header */}
-        <div className="bg-primary-600 text-white px-4 py-3 -mx-6 -mt-6 rounded-t-lg">
-          <h2 className="text-xl font-semibold">Configuration</h2>
+        <div className="flex items-center gap-2 mb-6">
+          <Calculator className="text-primary-600 dark:text-primary-400" size={20} />
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Configuration</h2>
         </div>
 
+        <div className="space-y-6">
         {/* PDL Selection */}
         {(() => {
           const activePdls = Array.isArray(pdlsData) ? pdlsData.filter((pdl) => pdl.is_active !== false) : []
@@ -1323,62 +1475,148 @@ export default function Simulator() {
             'Lancer la simulation'
           )}
         </button>
-      </div>
+        </div>
 
-      {/* Info about automatic simulation */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 p-4">
-        <p className="text-sm text-blue-800 dark:text-blue-200">
-          ℹ️ La simulation comparera automatiquement <strong>toutes les offres disponibles</strong> dans la base de données
-          {(() => {
-            const selectedPdlData = Array.isArray(pdlsData) ? pdlsData.find((p) => p.usage_point_id === selectedPdl) : undefined
-            const subscribedPower = selectedPdlData?.subscribed_power
-            return subscribedPower ? (
-              <> correspondant à votre puissance souscrite de <strong>{subscribedPower} kVA</strong></>
-            ) : null
-          })()}
-        </p>
-      </div>
-
-      {/* Loading Progress */}
-      {isSimulating && fetchProgress.total > 0 && (
-          <div className="mt-6 card p-8">
-            <div className="flex flex-col items-center justify-center gap-4">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
-              <p className="text-gray-600 dark:text-gray-400">
-                Chargement des données de consommation... Cela peut prendre quelques minutes.
-              </p>
-              <div className="w-full max-w-md">
-                <div className="mb-2 flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                  <span>{fetchProgress.phase}</span>
-                  <span>{Math.round((fetchProgress.current / fetchProgress.total) * 100)}%</span>
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                  <div
-                    className="bg-primary-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${(fetchProgress.current / fetchProgress.total) * 100}%` }}
-                  ></div>
-                </div>
-                <p className="text-sm text-gray-500 dark:text-gray-500 mt-2 text-center">
-                  ({fetchProgress.current}/{fetchProgress.total} requêtes API)
-                </p>
-              </div>
+        {/* Collapsible Progress Section */}
+        <div className="mt-6">
+          <div
+            onClick={() => setIsProgressExpanded(!isProgressExpanded)}
+            className="flex items-center justify-between cursor-pointer hover:opacity-70 transition-opacity"
+          >
+            <div className="flex items-center gap-2">
+              <Activity className="text-primary-600 dark:text-primary-400" size={20} />
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Progression de la simulation
+              </h3>
+            </div>
+            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+              {isProgressExpanded ? (
+                <span className="text-sm">Réduire</span>
+              ) : (
+                <span className="text-sm">Développer</span>
+              )}
+              {isProgressExpanded ? (
+                <ChevronUp size={20} className="text-gray-500" />
+              ) : (
+                <ChevronDown size={20} className="text-gray-500" />
+              )}
             </div>
           </div>
-        )}
+
+          {isProgressExpanded && (
+            <div className="animate-in fade-in slide-in-from-top-2 duration-300 mt-4">
+              <SimulatorLoadingProgress
+                isSimulating={isSimulating}
+                fetchProgress={fetchProgress}
+                simulationResult={simulationResult}
+                simulationError={simulationError}
+              />
+            </div>
+          )}
+        </div>
+      </div>
 
         {/* Simulation Results */}
         {simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0 && (
-          <div className="mt-8 space-y-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-2xl font-bold">Comparaison des offres (classées par coût total)</h3>
+          <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+            <div className="flex items-center justify-between p-6">
+              <div className="flex items-center gap-2">
+                <Calculator className="text-primary-600 dark:text-primary-400" size={20} />
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Comparaison des offres ({filteredAndSortedResults.length} résultat{filteredAndSortedResults.length > 1 ? 's' : ''})
+                </h2>
+              </div>
               <button
                 onClick={exportToPDF}
-                className="btn-primary flex items-center gap-2 px-6 py-3 text-lg font-semibold"
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
               >
-                <FileDown size={24} />
-                Exporter en PDF
+                <FileDown size={16} className="flex-shrink-0" />
+                <span>Exporter en PDF</span>
               </button>
             </div>
+
+            {/* Filters */}
+            <div className="px-6 pb-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex flex-wrap gap-3 p-3 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2">
+                  <Filter size={16} className="text-gray-500" />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filtres:</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-600 dark:text-gray-400">Type:</label>
+                  <select
+                    value={filterType}
+                    onChange={(e) => setFilterType(e.target.value)}
+                    className="input text-xs py-1 px-2 w-auto"
+                  >
+                    <option value="all">Tous</option>
+                    {availableTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {getTypeLabel(type)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-600 dark:text-gray-400">Fournisseur:</label>
+                  <select
+                    value={filterProvider}
+                    onChange={(e) => setFilterProvider(e.target.value)}
+                    className="input text-xs py-1 px-2 w-auto"
+                  >
+                    <option value="all">Tous</option>
+                    {availableProviders.map((provider) => (
+                      <option key={provider} value={provider}>
+                        {provider}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1 cursor-pointer text-xs text-gray-600 dark:text-gray-400">
+                    <input
+                      type="checkbox"
+                      checked={showOnlyRecent}
+                      onChange={(e) => setShowOnlyRecent(e.target.checked)}
+                      className="w-3 h-3 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                    />
+                    <span>Récentes uniquement</span>
+                  </label>
+                  <div className="relative group">
+                    <Info
+                      size={14}
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-help transition-colors"
+                    />
+                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg z-10">
+                      <div className="text-left">
+                        Affiche uniquement les offres avec des tarifs mis à jour il y a moins de 6 mois. Les offres plus anciennes sont marquées du badge "⚠️ Ancien".
+                      </div>
+                      <div className="absolute top-full left-4 -mt-1">
+                        <div className="border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {(filterType !== 'all' || filterProvider !== 'all' || showOnlyRecent) && (
+                  <button
+                    onClick={() => {
+                      setFilterType('all')
+                      setFilterProvider('all')
+                      setShowOnlyRecent(false)
+                    }}
+                    className="text-xs text-primary-600 dark:text-primary-400 hover:underline ml-auto"
+                  >
+                    Réinitialiser
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 pb-6">
 
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
@@ -1389,22 +1627,49 @@ export default function Simulator() {
                     <th className="p-3 text-left font-semibold">Fournisseur</th>
                     <th className="p-3 text-center font-semibold">Type</th>
                     <th className="p-3 text-left font-semibold">Offre</th>
-                    <th className="p-3 text-right font-semibold">Abonnement/an</th>
-                    <th className="p-3 text-right font-semibold">Énergie/an</th>
-                    <th className="p-3 text-right font-semibold">Total annuel</th>
+                    <th
+                      className="p-3 text-right font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors select-none"
+                      onClick={() => handleSort('subscription')}
+                      title="Cliquez pour trier"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        <span>Abonnement/an</span>
+                        {getSortIcon('subscription')}
+                      </div>
+                    </th>
+                    <th
+                      className="p-3 text-right font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors select-none"
+                      onClick={() => handleSort('energy')}
+                      title="Cliquez pour trier"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        <span>Énergie/an</span>
+                        {getSortIcon('energy')}
+                      </div>
+                    </th>
+                    <th
+                      className="p-3 text-right font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors select-none"
+                      onClick={() => handleSort('total')}
+                      title="Cliquez pour trier"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        <span>Total annuel</span>
+                        {getSortIcon('total')}
+                      </div>
+                    </th>
                     <th className="p-3 text-right font-semibold">Écart</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {simulationResult.map((result, index) => {
+                  {filteredAndSortedResults.map((result, index) => {
                     const isExpanded = expandedRows.has(result.offerId)
                     // Calculate difference from first offer (best offer)
-                    const firstResult = simulationResult[0]
+                    const firstResult = filteredAndSortedResults[0]
                     const costDifferenceFromFirst = index > 0 ? result.totalCost - firstResult.totalCost : 0
                     const percentDifferenceFromFirst = index > 0 ? ((result.totalCost - firstResult.totalCost) / firstResult.totalCost) * 100 : 0
 
                     // Calculate difference from previous offer
-                    const previousResult = index > 0 ? simulationResult[index - 1] : null
+                    const previousResult = index > 0 ? filteredAndSortedResults[index - 1] : null
                     const costDifferenceFromPrevious = previousResult ? result.totalCost - previousResult.totalCost : 0
                     const percentDifferenceFromPrevious = previousResult ? ((result.totalCost - previousResult.totalCost) / previousResult.totalCost) * 100 : 0
 
@@ -1757,24 +2022,95 @@ export default function Simulator() {
               </table>
             </div>
 
-            {simulationResult.length > 0 && (
+            {filteredAndSortedResults.length > 0 && (
               <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
                 <p>
                   📊 Consommation totale sur la période : <strong>{simulationResult[0].totalKwh.toFixed(2)} kWh</strong>
                 </p>
-                {simulationResult.length > 1 && (
+                {filteredAndSortedResults.length > 1 && (
                   <p className="mt-1">
-                    💡 L'offre la moins chère vous permet d'économiser{' '}
+                    💡 {filterType !== 'all' || filterProvider !== 'all' || showOnlyRecent ? 'Parmi les offres affichées, l' : 'L'}'offre la moins chère vous permet d'économiser{' '}
                     <strong className="text-green-600 dark:text-green-400">
-                      {(simulationResult[simulationResult.length - 1].totalCost - simulationResult[0].totalCost).toFixed(2)} €
+                      {(filteredAndSortedResults[filteredAndSortedResults.length - 1].totalCost - filteredAndSortedResults[0].totalCost).toFixed(2)} €
                     </strong>
-                    {' '}par an par rapport à l'offre la plus chère.
+                    {' '}par an par rapport à l'offre la plus chère{filterType !== 'all' || filterProvider !== 'all' || showOnlyRecent ? ' (affichée)' : ''}.
                   </p>
                 )}
               </div>
             )}
+
+            {/* No results message */}
+            {filteredAndSortedResults.length === 0 && simulationResult.length > 0 && (
+              <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                  Aucune offre ne correspond à vos critères de filtrage. Essayez de modifier les filtres ou de les réinitialiser.
+                </p>
+              </div>
+            )}
+            </div>
           </div>
         )}
+
+      {/* Information Block - Always visible at bottom */}
+      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          ℹ️ Informations importantes
+        </h3>
+
+        <div className="space-y-4">
+          {/* Cache Information */}
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+            <p className="text-sm text-yellow-800 dark:text-yellow-200">
+              <strong>⚠️ Cache automatique :</strong> L'utilisation du simulateur active automatiquement le cache. Vos données de consommation seront stockées temporairement sur la passerelle pour améliorer les performances et éviter de solliciter excessivement l'API Enedis. Les données en cache expirent automatiquement après 24 heures.
+            </p>
+          </div>
+
+          {/* Simulation Information */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              <strong>🔍 Comparaison automatique :</strong> La simulation comparera automatiquement <strong>toutes les offres disponibles</strong> dans la base de données
+              {(() => {
+                const selectedPdlData = Array.isArray(pdlsData) ? pdlsData.find((p) => p.usage_point_id === selectedPdl) : undefined
+                const subscribedPower = selectedPdlData?.subscribed_power
+                return subscribedPower ? (
+                  <> correspondant à votre puissance souscrite de <strong>{subscribedPower} kVA</strong></>
+                ) : null
+              })()}.
+            </p>
+          </div>
+
+          {/* Data Source Information */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
+              <p>
+                <strong>📊 Source des données :</strong>
+              </p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Les données sont récupérées depuis l'API <strong>Enedis Data Connect</strong></li>
+                <li>Endpoint utilisé : <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">consumption/daily</code> (relevés quotidiens)</li>
+                <li>Les données sont mises en cache pour optimiser les performances</li>
+                <li>Récupération automatique de <strong>1095 jours d'historique</strong> (limite maximale Enedis)</li>
+                <li>Les données Enedis ne sont disponibles qu'en <strong>J-1</strong> (hier)</li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Tariff Information */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
+              <p>
+                <strong>💰 À propos des tarifs :</strong>
+              </p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Les tarifs sont issus de la base de données MyElectricalData</li>
+                <li>Les calculs HC/HP sont basés sur vos plages horaires configurées dans votre PDL</li>
+                <li>Pour les offres Enercoop spécifiques (Flexi Watt), les plages HC/HP sont détectées automatiquement</li>
+                <li>Les économies affichées sont calculées sur la base de votre consommation réelle sur 12 mois</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
