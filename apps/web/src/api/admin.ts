@@ -1,8 +1,29 @@
 import { apiClient } from './client'
+import type { AdminUserCreate } from '@/types/api'
 
 export const adminApi = {
   listUsers: async () => {
     return apiClient.get('admin/users')
+  },
+
+  getUserStats: async () => {
+    return apiClient.get('admin/users/stats')
+  },
+
+  createUser: async (data: AdminUserCreate) => {
+    return apiClient.post('admin/users', data)
+  },
+
+  toggleUserStatus: async (userId: string) => {
+    return apiClient.post(`admin/users/${userId}/toggle-status`)
+  },
+
+  deleteUser: async (userId: string) => {
+    return apiClient.delete(`admin/users/${userId}`)
+  },
+
+  resetUserPassword: async (userId: string) => {
+    return apiClient.post(`admin/users/${userId}/reset-password`)
   },
 
   resetUserQuota: async (userId: string) => {

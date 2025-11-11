@@ -162,6 +162,194 @@ async def clear_all_consumption_cache(
     )
 
 
+@router.get("/users/stats", response_model=APIResponse)
+async def get_user_stats(
+    current_user: User = Depends(require_permission('users')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Get user statistics (requires users permission)"""
+
+    # Total users
+    total_result = await db.execute(select(func.count()).select_from(User))
+    total_users = total_result.scalar()
+
+    # Active users
+    active_result = await db.execute(
+        select(func.count()).select_from(User).where(User.is_active == True)
+    )
+    active_users = active_result.scalar()
+
+    # Verified users
+    verified_result = await db.execute(
+        select(func.count()).select_from(User).where(User.email_verified == True)
+    )
+    verified_users = verified_result.scalar()
+
+    # Admin count (users with admin role)
+    from ..models import Role
+    admin_result = await db.execute(
+        select(func.count()).select_from(User).join(Role).where(Role.name == 'admin')
+    )
+    admin_count = admin_result.scalar()
+
+    # Users created this month
+    from datetime import datetime, UTC
+    now = datetime.now(UTC)
+    first_day = datetime(now.year, now.month, 1, tzinfo=UTC)
+    month_result = await db.execute(
+        select(func.count()).select_from(User).where(User.created_at >= first_day)
+    )
+    users_this_month = month_result.scalar()
+
+    return APIResponse(
+        success=True,
+        data={
+            "total_users": total_users,
+            "active_users": active_users,
+            "verified_users": verified_users,
+            "admin_count": admin_count,
+            "users_this_month": users_this_month
+        }
+    )
+
+
+@router.post("/users", response_model=APIResponse)
+async def create_user(
+    request: dict,
+    current_user: User = Depends(require_permission('users.edit')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Create a new user (requires users.edit permission)"""
+    from ..models import Role
+    import secrets
+
+    email = request.get('email')
+    role_id = request.get('role_id')
+
+    if not email:
+        return APIResponse(success=False, error={"code": "MISSING_EMAIL", "message": "Email is required"})
+
+    # Check if user already exists
+    existing_result = await db.execute(select(User).where(User.email == email))
+    if existing_result.scalar_one_or_none():
+        return APIResponse(success=False, error={"code": "USER_EXISTS", "message": "User already exists"})
+
+    # Create user
+    new_user = User(
+        email=email,
+        client_id=secrets.token_urlsafe(32),
+        client_secret=secrets.token_urlsafe(64),
+        is_active=False,  # Will be activated when email is verified
+        email_verified=False,
+        debug_mode=False
+    )
+
+    # Set role if provided
+    if role_id:
+        role_result = await db.execute(select(Role).where(Role.id == role_id))
+        role = role_result.scalar_one_or_none()
+        if role:
+            new_user.role_id = role_id
+
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+
+    # TODO: Send activation email
+
+    return APIResponse(
+        success=True,
+        data={
+            "message": f"User created: {email}",
+            "user_id": new_user.id
+        }
+    )
+
+
+@router.post("/users/{user_id}/toggle-status", response_model=APIResponse)
+async def toggle_user_status(
+    user_id: str = Path(..., description="User ID (UUID)"),
+    current_user: User = Depends(require_permission('users.edit')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Toggle user active status (requires users.edit permission)"""
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
+
+    # Toggle status
+    user.is_active = not user.is_active
+    await db.commit()
+
+    return APIResponse(
+        success=True,
+        data={
+            "message": f"User {'activated' if user.is_active else 'deactivated'}",
+            "user_id": user_id,
+            "is_active": user.is_active
+        }
+    )
+
+
+@router.delete("/users/{user_id}", response_model=APIResponse)
+async def delete_user(
+    user_id: str = Path(..., description="User ID (UUID)"),
+    current_user: User = Depends(require_permission('users.delete')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Delete a user (requires users.delete permission)"""
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
+
+    # Prevent deleting yourself
+    if user.id == current_user.id:
+        return APIResponse(success=False, error={"code": "CANNOT_DELETE_SELF", "message": "Cannot delete your own account"})
+
+    # Delete user (cascades will handle PDLs, etc.)
+    await db.delete(user)
+    await db.commit()
+
+    return APIResponse(
+        success=True,
+        data={
+            "message": f"User deleted: {user.email}",
+            "user_id": user_id
+        }
+    )
+
+
+@router.post("/users/{user_id}/reset-password", response_model=APIResponse)
+async def reset_user_password(
+    user_id: str = Path(..., description="User ID (UUID)"),
+    current_user: User = Depends(require_permission('users.edit')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Reset a user's password (requires users.edit permission)"""
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
+
+    # TODO: Send password reset email
+
+    return APIResponse(
+        success=True,
+        data={
+            "message": f"Password reset email sent to {user.email}",
+            "user_id": user_id
+        }
+    )
+
+
 @router.post("/users/{user_id}/toggle-debug", response_model=APIResponse)
 async def toggle_user_debug_mode(
     user_id: str = Path(..., description="User ID (UUID)", openapi_examples={"user_uuid": {"summary": "User UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),

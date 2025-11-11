@@ -43,6 +43,14 @@ export interface User {
   is_admin?: boolean
   debug_mode?: boolean
   role?: Role
+  email_verified?: boolean
+  pdl_count?: number
+  usage_stats?: {
+    cached_requests: number
+    cached_limit: number
+    no_cache_requests: number
+    no_cache_limit: number
+  }
 }
 
 export interface ClientCredentials {
@@ -81,6 +89,19 @@ export interface UserCreate {
   email: string
   password: string
   turnstile_token?: string
+}
+
+export interface AdminUserCreate {
+  email: string
+  role_id?: string
+}
+
+export interface AdminUserStats {
+  total_users: number
+  active_users: number
+  verified_users: number
+  admin_count: number
+  users_this_month: number
 }
 
 export interface UserLogin {

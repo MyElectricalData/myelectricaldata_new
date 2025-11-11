@@ -2,8 +2,12 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/api/admin'
 import { rolesApi } from '@/api/roles'
-import { RefreshCw, Users, CheckCircle, XCircle, Copy, Trash2, Shield, Bug, Database, ArrowUpDown, ArrowUp, ArrowDown, Filter } from 'lucide-react'
-import type { Role } from '@/types/api'
+import {
+  RefreshCw, Users, CheckCircle, XCircle, Copy, Trash2, Shield, Bug, Database,
+  ArrowUpDown, ArrowUp, ArrowDown, Filter, Search, UserPlus, Key, Power,
+  TrendingUp, UserCheck, Mail
+} from 'lucide-react'
+import type { Role, AdminUserStats } from '@/types/api'
 
 type SortColumn = 'email' | 'created_at' | 'role' | 'pdl_count' | 'is_active'
 type SortDirection = 'asc' | 'desc'
@@ -16,11 +20,23 @@ export default function AdminUsers() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [filterRole, setFilterRole] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createEmail, setCreateEmail] = useState('')
+  const [createRoleId, setCreateRoleId] = useState<string>('')
+  const [deleteConfirm, setDeleteConfirm] = useState<{userId: string, email: string} | null>(null)
+  const [resetPasswordConfirm, setResetPasswordConfirm] = useState<{userId: string, email: string} | null>(null)
 
   const { data: usersResponse, isLoading: usersLoading } = useQuery({
     queryKey: ['admin-users'],
     queryFn: () => adminApi.listUsers(),
     refetchInterval: 30000,
+  })
+
+  const { data: statsResponse } = useQuery({
+    queryKey: ['admin-users-stats'],
+    queryFn: () => adminApi.getUserStats(),
+    refetchInterval: 60000,
   })
 
   const { data: rolesResponse } = useQuery({
@@ -32,6 +48,55 @@ export default function AdminUsers() {
     setNotification({ type, message })
     setTimeout(() => setNotification(null), 5000)
   }
+
+  const createUserMutation = useMutation({
+    mutationFn: (data: { email: string, role_id?: string }) => adminApi.createUser(data),
+    onSuccess: () => {
+      showNotification('success', 'Utilisateur créé avec succès')
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-users-stats'] })
+      setShowCreateModal(false)
+      setCreateEmail('')
+      setCreateRoleId('')
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.error?.message || 'Erreur lors de la création'
+      showNotification('error', message)
+    }
+  })
+
+  const toggleStatusMutation = useMutation({
+    mutationFn: (userId: string) => adminApi.toggleUserStatus(userId),
+    onSuccess: () => {
+      showNotification('success', 'Statut modifié')
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-users-stats'] })
+    },
+    onError: () => showNotification('error', 'Erreur lors de la modification du statut')
+  })
+
+  const deleteUserMutation = useMutation({
+    mutationFn: (userId: string) => adminApi.deleteUser(userId),
+    onSuccess: () => {
+      showNotification('success', 'Utilisateur supprimé')
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-users-stats'] })
+      setDeleteConfirm(null)
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.error?.message || 'Erreur lors de la suppression'
+      showNotification('error', message)
+    }
+  })
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: (userId: string) => adminApi.resetUserPassword(userId),
+    onSuccess: () => {
+      showNotification('success', 'Mot de passe réinitialisé avec succès')
+      setResetPasswordConfirm(null)
+    },
+    onError: () => showNotification('error', 'Erreur lors de la réinitialisation')
+  })
 
   const resetQuotaMutation = useMutation({
     mutationFn: (userId: string) => adminApi.resetUserQuota(userId),
@@ -52,22 +117,13 @@ export default function AdminUsers() {
     onError: () => showNotification('error', 'Erreur lors du vidage du cache')
   })
 
-  const clearAllCacheMutation = useMutation({
-    mutationFn: () => adminApi.clearAllConsumptionCache(),
-    onSuccess: (response) => {
-      const data = response.data as any
-      showNotification('success', `Cache global vidé : ${data.deleted_keys} clés (${data.total_pdls} PDL)`)
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
-    },
-    onError: () => showNotification('error', 'Erreur lors du vidage du cache global')
-  })
-
   const updateRoleMutation = useMutation({
     mutationFn: ({ userId, roleId }: { userId: string, roleId: string }) =>
       rolesApi.updateUserRole(userId, roleId),
     onSuccess: () => {
       showNotification('success', 'Rôle mis à jour')
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-users-stats'] })
       setEditingRole(null)
     },
     onError: () => showNotification('error', 'Erreur lors de la mise à jour du rôle')
@@ -94,6 +150,10 @@ export default function AdminUsers() {
   const users = usersResponse?.success && Array.isArray((usersResponse.data as any)?.users)
     ? (usersResponse.data as any).users
     : []
+
+  const stats = statsResponse?.success && statsResponse.data
+    ? statsResponse.data as AdminUserStats
+    : null
 
   const roles = rolesResponse?.success && Array.isArray(rolesResponse.data)
     ? rolesResponse.data as Role[]
@@ -130,6 +190,15 @@ export default function AdminUsers() {
 
   const filteredAndSortedUsers = useMemo(() => {
     let filtered = [...users]
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter((user: any) =>
+        user.email.toLowerCase().includes(query) ||
+        user.client_id.toLowerCase().includes(query)
+      )
+    }
 
     // Apply role filter
     if (filterRole !== 'all') {
@@ -188,7 +257,7 @@ export default function AdminUsers() {
     })
 
     return filtered
-  }, [users, filterRole, filterStatus, sortColumn, sortDirection])
+  }, [users, filterRole, filterStatus, sortColumn, sortDirection, searchQuery])
 
   return (
     <div className="w-full">
@@ -202,6 +271,57 @@ export default function AdminUsers() {
             Gérez les utilisateurs, leurs quotas et leurs rôles
           </p>
         </div>
+
+        {/* Statistics */}
+        {stats && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="card p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Total</p>
+                  <p className="text-2xl font-bold">{stats.total_users}</p>
+                </div>
+                <Users className="text-primary-600 dark:text-primary-400" size={24} />
+              </div>
+            </div>
+            <div className="card p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Actifs</p>
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.active_users}</p>
+                </div>
+                <UserCheck className="text-green-600 dark:text-green-400" size={24} />
+              </div>
+            </div>
+            <div className="card p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Vérifiés</p>
+                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.verified_users}</p>
+                </div>
+                <Mail className="text-blue-600 dark:text-blue-400" size={24} />
+              </div>
+            </div>
+            <div className="card p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Admins</p>
+                  <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{stats.admin_count}</p>
+                </div>
+                <Shield className="text-purple-600 dark:text-purple-400" size={24} />
+              </div>
+            </div>
+            <div className="card p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Ce mois</p>
+                  <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{stats.users_this_month}</p>
+                </div>
+                <TrendingUp className="text-orange-600 dark:text-orange-400" size={24} />
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* Notification */}
       {notification && (
@@ -256,61 +376,225 @@ export default function AdminUsers() {
         </div>
       )}
 
+      {/* Create User Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowCreateModal(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <UserPlus size={20} />
+              Créer un utilisateur
+            </h3>
+            <div className="space-y-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Email</label>
+                <input
+                  type="email"
+                  value={createEmail}
+                  onChange={(e) => setCreateEmail(e.target.value)}
+                  className="input w-full"
+                  placeholder="utilisateur@example.com"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Rôle (optionnel)</label>
+                <select
+                  value={createRoleId}
+                  onChange={(e) => setCreateRoleId(e.target.value)}
+                  className="input w-full"
+                >
+                  <option value="">Visiteur (par défaut)</option>
+                  {roles.map((role: any) => (
+                    <option key={role.id} value={role.id}>{role.display_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="text-xs text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded">
+                L'utilisateur recevra un email d'activation pour définir son mot de passe.
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  if (createEmail.trim()) {
+                    createUserMutation.mutate({
+                      email: createEmail.trim(),
+                      role_id: createRoleId || undefined
+                    })
+                  }
+                }}
+                disabled={!createEmail.trim() || createUserMutation.isPending}
+                className="flex-1 btn btn-primary"
+              >
+                Créer
+              </button>
+              <button
+                onClick={() => {
+                  setShowCreateModal(false)
+                  setCreateEmail('')
+                  setCreateRoleId('')
+                }}
+                className="flex-1 btn btn-secondary"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setDeleteConfirm(null)}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-red-600 dark:text-red-400">
+              <Trash2 size={20} />
+              Supprimer l'utilisateur
+            </h3>
+            <p className="text-sm mb-4">
+              Êtes-vous sûr de vouloir supprimer l'utilisateur <strong>{deleteConfirm.email}</strong> ?
+            </p>
+            <p className="text-xs text-gray-600 dark:text-gray-400 bg-red-50 dark:bg-red-900/20 p-3 rounded mb-4">
+              Cette action est irréversible. Toutes les données de l'utilisateur seront définitivement supprimées.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => deleteUserMutation.mutate(deleteConfirm.userId)}
+                disabled={deleteUserMutation.isPending}
+                className="flex-1 btn bg-red-600 hover:bg-red-700 text-white"
+              >
+                Supprimer
+              </button>
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 btn btn-secondary"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Confirmation Modal */}
+      {resetPasswordConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setResetPasswordConfirm(null)}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Key size={20} />
+              Réinitialiser le mot de passe
+            </h3>
+            <p className="text-sm mb-4">
+              Réinitialiser le mot de passe de <strong>{resetPasswordConfirm.email}</strong> ?
+            </p>
+            <p className="text-xs text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded mb-4">
+              L'utilisateur recevra un email avec un lien pour réinitialiser son mot de passe.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => resetPasswordMutation.mutate(resetPasswordConfirm.userId)}
+                disabled={resetPasswordMutation.isPending}
+                className="flex-1 btn btn-primary"
+              >
+                Réinitialiser
+              </button>
+              <button
+                onClick={() => setResetPasswordConfirm(null)}
+                className="flex-1 btn btn-secondary"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Users Table */}
       <div className="card p-3">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">
             Utilisateurs ({filteredAndSortedUsers.length}{filteredAndSortedUsers.length !== users.length && ` / ${users.length}`})
           </h2>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="btn btn-primary text-sm flex items-center gap-2"
+          >
+            <UserPlus size={16} />
+            Créer un utilisateur
+          </button>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap gap-3 mb-4 p-3 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-2">
-            <Filter size={16} className="text-gray-500" />
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filtres:</span>
+        {/* Search and Filters */}
+        <div className="space-y-3 mb-4">
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <input
+              type="text"
+              placeholder="Rechercher par email ou client ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input w-full pl-10"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-600 dark:text-gray-400">Rôle:</label>
-            <select
-              value={filterRole}
-              onChange={(e) => setFilterRole(e.target.value)}
-              className="input text-xs py-1 px-2 w-auto"
-            >
-              <option value="all">Tous</option>
-              <option value="admin">Admin</option>
-              <option value="moderator">Modérateur</option>
-              <option value="visitor">Visiteur</option>
-            </select>
-          </div>
+          {/* Filters */}
+          <div className="flex flex-wrap gap-3 p-3 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-2">
+              <Filter size={16} className="text-gray-500" />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filtres:</span>
+            </div>
 
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-600 dark:text-gray-400">Statut:</label>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="input text-xs py-1 px-2 w-auto"
-            >
-              <option value="all">Tous</option>
-              <option value="active">Actifs</option>
-              <option value="inactive">Inactifs</option>
-              <option value="verified">Email vérifié</option>
-              <option value="unverified">Email non vérifié</option>
-            </select>
-          </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-600 dark:text-gray-400">Rôle:</label>
+              <select
+                value={filterRole}
+                onChange={(e) => setFilterRole(e.target.value)}
+                className="input text-xs py-1 px-2 w-auto"
+              >
+                <option value="all">Tous</option>
+                <option value="admin">Admin</option>
+                <option value="moderator">Modérateur</option>
+                <option value="visitor">Visiteur</option>
+              </select>
+            </div>
 
-          {(filterRole !== 'all' || filterStatus !== 'all') && (
-            <button
-              onClick={() => {
-                setFilterRole('all')
-                setFilterStatus('all')
-              }}
-              className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
-            >
-              Réinitialiser
-            </button>
-          )}
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-600 dark:text-gray-400">Statut:</label>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="input text-xs py-1 px-2 w-auto"
+              >
+                <option value="all">Tous</option>
+                <option value="active">Actifs</option>
+                <option value="inactive">Inactifs</option>
+                <option value="verified">Email vérifié</option>
+                <option value="unverified">Email non vérifié</option>
+              </select>
+            </div>
+
+            {(filterRole !== 'all' || filterStatus !== 'all' || searchQuery) && (
+              <button
+                onClick={() => {
+                  setFilterRole('all')
+                  setFilterStatus('all')
+                  setSearchQuery('')
+                }}
+                className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
+              >
+                Réinitialiser
+              </button>
+            )}
+          </div>
         </div>
 
         {usersLoading ? (
@@ -433,7 +717,19 @@ export default function AdminUsers() {
                       </div>
                     </td>
                     <td className="py-2 px-2 text-center">
-                      <div className="flex gap-1 items-center justify-center">
+                      <div className="flex gap-1 items-center justify-center flex-wrap">
+                        <button
+                          onClick={() => toggleStatusMutation.mutate(user.id)}
+                          disabled={toggleStatusMutation.isPending}
+                          className={`p-1.5 rounded transition-colors ${
+                            user.is_active
+                              ? 'hover:bg-red-50 dark:hover:bg-red-900/20'
+                              : 'hover:bg-green-50 dark:hover:bg-green-900/20'
+                          }`}
+                          title={user.is_active ? "Désactiver" : "Activer"}
+                        >
+                          <Power size={14} className={user.is_active ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"} />
+                        </button>
                         <button
                           onClick={() => toggleDebugMutation.mutate(user.id)}
                           disabled={toggleDebugMutation.isPending}
@@ -461,6 +757,20 @@ export default function AdminUsers() {
                           title="Vider le cache de consommation"
                         >
                           <Database size={14} className="text-purple-600 dark:text-purple-400" />
+                        </button>
+                        <button
+                          onClick={() => setResetPasswordConfirm({ userId: user.id, email: user.email })}
+                          className="p-1.5 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded transition-colors"
+                          title="Réinitialiser le mot de passe"
+                        >
+                          <Key size={14} className="text-yellow-600 dark:text-yellow-400" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirm({ userId: user.id, email: user.email })}
+                          className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                          title="Supprimer l'utilisateur"
+                        >
+                          <Trash2 size={14} className="text-red-600 dark:text-red-400" />
                         </button>
                       </div>
                     </td>

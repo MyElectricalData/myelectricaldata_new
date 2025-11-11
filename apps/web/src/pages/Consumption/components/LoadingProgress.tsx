@@ -77,9 +77,10 @@ export function LoadingProgress({
 
       {isProgressExpanded && (
         <div className="animate-in fade-in slide-in-from-top-2 duration-300 mt-4">
-          <div className="flex flex-col gap-6">
-        {/* Daily consumption data loading */}
-        <div className="flex flex-col gap-4">
+          <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+            <div className="flex flex-col gap-6">
+              {/* Daily consumption data loading */}
+              <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Chargement des données quotidiennes (3 ans)
@@ -237,6 +238,7 @@ export function LoadingProgress({
             Analyse des plages horaires pour déterminer les heures creuses
           </p>
         </div>
+            </div>
           </div>
         </div>
       )}
