@@ -91,7 +91,7 @@ export function YearlyStatCards({ chartData, consumptionData }: YearlyStatCardsP
         </h3>
         <button
           onClick={handleExportAll}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 transform hover:scale-105"
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
         >
           <Download size={16} className="flex-shrink-0" />
           <span>Export JSON</span>
@@ -99,9 +99,7 @@ export function YearlyStatCards({ chartData, consumptionData }: YearlyStatCardsP
       </div>
 
       <div className="overflow-x-auto pb-2">
-        <div className={`grid gap-3 ${
-          chartData.byYear.length > 3 ? 'grid-cols-3 min-w-max' : 'grid-cols-' + Math.min(chartData.byYear.length, 3)
-        }`}>
+        <div className={`grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`}>
           {chartData.byYear.map((yearData) => {
             const startDateFormatted = yearData.startDate.toLocaleDateString('fr-FR', {
               day: '2-digit',
@@ -117,7 +115,7 @@ export function YearlyStatCards({ chartData, consumptionData }: YearlyStatCardsP
             return (
               <div
                 key={yearData.year}
-                className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4 border border-gray-200 dark:border-gray-600 min-w-[300px]"
+                className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4 border border-gray-200 dark:border-gray-600"
               >
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
@@ -126,7 +124,7 @@ export function YearlyStatCards({ chartData, consumptionData }: YearlyStatCardsP
                     </p>
                     <button
                       onClick={() => handleExportYear(yearData)}
-                      className="p-1 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded transition-colors"
+                      className="p-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 rounded transition-colors opacity-60 hover:opacity-100"
                     >
                       <Download size={14} />
                     </button>

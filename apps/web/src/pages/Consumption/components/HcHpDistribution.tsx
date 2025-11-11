@@ -40,10 +40,10 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
         Répartition HC/HP par année
       </h3>
 
-      {/* Tabs and export button on same line */}
-      <div className="flex items-center justify-between gap-4 mb-4">
+      {/* Tabs and export button - responsive layout */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         {/* Tabs on the left */}
-        <div className="flex gap-2 flex-1">
+        <div className="flex gap-2 flex-1 overflow-x-auto">
           {hcHpByYear.map((yearData, index) => {
             // Extract the year from the end date
             const endYear = yearData.year.split(' - ')[1]?.split(' ').pop() || yearData.year
@@ -67,7 +67,7 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
         {/* Export button on the right */}
         <button
           onClick={handleExportAll}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 transform hover:scale-105"
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
         >
           <Download size={16} className="flex-shrink-0" />
           <span>Export JSON</span>
@@ -93,13 +93,13 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
               </h4>
               <button
                 onClick={() => handleExportPeriod(yearData)}
-                className="p-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded transition-colors"
+                className="p-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 rounded transition-colors opacity-60 hover:opacity-100"
               >
-                <Download size={16} />
+                <Download size={14} />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Pie Chart */}
               <div className="flex items-center justify-center">
                 <ResponsiveContainer width="100%" height={300}>

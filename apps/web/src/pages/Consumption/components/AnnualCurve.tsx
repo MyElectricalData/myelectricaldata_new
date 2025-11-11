@@ -42,7 +42,7 @@ export function AnnualCurve({ chartData, isDarkMode }: AnnualCurveProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           Courbe de consommation annuelle
         </h3>
@@ -51,7 +51,7 @@ export function AnnualCurve({ chartData, isDarkMode }: AnnualCurveProps) {
             onClick={() => setShowPreviousYear(!showPreviousYear)}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 shadow-sm ${
               showPreviousYear
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md transform scale-105'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md'
                 : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
             }`}
           >
@@ -60,7 +60,7 @@ export function AnnualCurve({ chartData, isDarkMode }: AnnualCurveProps) {
           </button>
           <button
             onClick={handleExport}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 transform hover:scale-105"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
           >
             <Download size={16} className="flex-shrink-0" />
             <span>Export JSON</span>

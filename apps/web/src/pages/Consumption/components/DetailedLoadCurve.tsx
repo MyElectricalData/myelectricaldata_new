@@ -342,13 +342,15 @@ export function DetailedLoadCurve({
 
   return (
     <div>
-      {/* Date selector - full width block with blue background, single line */}
+      {/* Date selector - full width block with blue background, responsive */}
       <div className="mb-4 bg-gradient-to-r from-primary-50 to-blue-50 dark:from-primary-900/20 dark:to-blue-900/20 rounded-xl border border-primary-200 dark:border-primary-800 p-4">
-        <div className="flex items-center gap-3">
-          <Calendar className="text-primary-600 dark:text-primary-400 flex-shrink-0" size={24} />
-          <label className="text-sm font-semibold text-gray-900 dark:text-white whitespace-nowrap">
-            Sélectionner une date :
-          </label>
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Calendar className="text-primary-600 dark:text-primary-400 flex-shrink-0" size={24} />
+            <label className="text-sm font-semibold text-gray-900 dark:text-white whitespace-nowrap">
+              Sélectionner une date :
+            </label>
+          </div>
 
           {/* Date display button - enlarged */}
           <div className="relative flex-1">
@@ -387,15 +389,15 @@ export function DetailedLoadCurve({
             )}
           </div>
 
-          {/* Quick access buttons - enlarged and better distributed */}
-          <div className="flex items-center gap-3 flex-shrink-0">
+          {/* Quick access buttons - responsive grid on mobile */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 lg:flex lg:items-center lg:gap-3 lg:flex-shrink-0">
             <button
               onClick={() => {
                 onWeekOffsetChange(0)
                 setSelectedDetailDay(0)
                 toast.success("Retour à aujourd'hui")
               }}
-              className="px-6 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-medium border border-gray-300 dark:border-gray-600 transition-colors whitespace-nowrap"
+              className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-medium border border-gray-300 dark:border-gray-600 transition-colors text-sm sm:text-base"
             >
               Aujourd'hui
             </button>
@@ -405,7 +407,7 @@ export function DetailedLoadCurve({
                 setSelectedDetailDay(0)
                 toast.success("Semaine dernière sélectionnée")
               }}
-              className="px-6 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-medium border border-gray-300 dark:border-gray-600 transition-colors whitespace-nowrap"
+              className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-medium border border-gray-300 dark:border-gray-600 transition-colors text-sm sm:text-base"
             >
               Semaine dernière
             </button>
@@ -416,7 +418,7 @@ export function DetailedLoadCurve({
                 setSelectedDetailDay(0)
                 toast.success("Il y a un an sélectionné")
               }}
-              className="px-6 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-medium border border-gray-300 dark:border-gray-600 transition-colors whitespace-nowrap"
+              className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-medium border border-gray-300 dark:border-gray-600 transition-colors text-sm sm:text-base"
             >
               Il y a un an
             </button>
@@ -425,9 +427,9 @@ export function DetailedLoadCurve({
       </div>
 
       {/* Day selector tabs with navigation and export button */}
-      <div className="flex items-center justify-between gap-2 mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
         {/* Left side: navigation and tabs */}
-        <div className="flex items-center gap-2 flex-1">
+        <div className="flex items-center gap-2 flex-1 overflow-x-auto">
           {/* Left button */}
           <button
             onClick={() => {
@@ -508,7 +510,7 @@ export function DetailedLoadCurve({
         </div>
 
         {/* Right side: Comparison and Export buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 justify-end flex-wrap">
           <button
             onClick={() => {
               if (yearComparisonAvailable) {
@@ -547,7 +549,7 @@ export function DetailedLoadCurve({
           </button>
           <button
             onClick={handleExport}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 transform hover:scale-105"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
           >
             <Download size={16} className="flex-shrink-0" />
             <span>Export JSON</span>

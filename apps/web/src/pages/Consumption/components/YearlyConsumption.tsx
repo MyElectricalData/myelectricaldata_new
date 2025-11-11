@@ -35,13 +35,13 @@ export function YearlyConsumption({ chartData, consumptionData, isDarkMode }: Ye
     <div className="space-y-8">
       {/* Yearly Consumption Chart */}
       <div>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             Consommation par année
           </h3>
           <button
             onClick={handleExportYearly}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 transform hover:scale-105"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
           >
             <Download size={16} className="flex-shrink-0" />
             <span>Export JSON</span>
@@ -85,13 +85,13 @@ export function YearlyConsumption({ chartData, consumptionData, isDarkMode }: Ye
 
       {/* Monthly Comparison Chart */}
       <div>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             Comparaison mensuelle par année
           </h3>
           <button
             onClick={handleExportMonthly}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 transform hover:scale-105"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
           >
             <Download size={16} className="flex-shrink-0" />
             <span>Export JSON</span>
