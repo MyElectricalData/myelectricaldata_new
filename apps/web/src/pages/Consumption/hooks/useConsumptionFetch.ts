@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { enedisApi } from '@/api/enedis'
 import { adminApi } from '@/api/admin'
+import { logger } from '@/utils/logger'
 import toast from 'react-hot-toast'
 import type { PDL } from '@/types/api'
 import type { DateRange, LoadingProgress } from '../types/consumption.types'
@@ -82,7 +83,7 @@ export function useConsumptionFetch({
     ))
 
     // Apply limits: never go before oldest_available_data_date or activation_date
-    console.log('PDL Details:', {
+    logger.log('PDL Details:', {
       selectedPDL,
       oldest_available_data_date: selectedPDLDetails?.oldest_available_data_date,
       activation_date: selectedPDLDetails?.activation_date,
@@ -92,7 +93,7 @@ export function useConsumptionFetch({
     // For now, don't apply oldest_available_data_date or activation_date limits
     // Let the API handle the error and we'll display it to the user
     // TODO: Implement proper retry logic with progressive date advancement
-    console.log(`Daily consumption: Requesting full 3 years (API will return error if too old)`)
+    logger.log(`Daily consumption: Requesting full 3 years (API will return error if too old)`)
 
     // Format dates as YYYY-MM-DD in UTC
     const startDate = startDate_obj.getUTCFullYear() + '-' +
@@ -102,7 +103,7 @@ export function useConsumptionFetch({
                     String(yesterday.getUTCMonth() + 1).padStart(2, '0') + '-' +
                     String(yesterday.getUTCDate()).padStart(2, '0')
 
-    console.log(`Final date range for API: ${startDate} → ${endDate}`)
+    logger.log(`Final date range for API: ${startDate} → ${endDate}`)
 
     // Setting dateRange will trigger React Query to fetch data
     setDateRange({ start: startDate, end: endDate })
@@ -121,7 +122,7 @@ export function useConsumptionFetch({
       ))
 
       // For now, don't apply date limits - let the retry logic handle it
-      console.log(`Detailed data: Requesting full 2 years (retry logic will adjust if needed)`)
+      logger.log(`Detailed data: Requesting full 2 years (retry logic will adjust if needed)`)
 
       // Calculate number of weeks in 2 years (approximately 104 weeks)
       const totalWeeks = Math.ceil(730 / 7)
@@ -147,10 +148,10 @@ export function useConsumptionFetch({
         }
       }
 
-      console.log(`Cache check: ${allDates.length - missingDates.length}/${allDates.length} days cached, ${missingDates.length} missing`)
+      logger.log(`Cache check: ${allDates.length - missingDates.length}/${allDates.length} days cached, ${missingDates.length} missing`)
 
       if (missingDates.length === 0) {
-        console.log('All data already in cache!')
+        logger.log('All data already in cache!')
         const totalDays = allDates.length
         const years = Math.floor(totalDays / 365)
         const remainingDays = totalDays % 365
@@ -227,7 +228,7 @@ export function useConsumptionFetch({
         }
       }
 
-      console.log(`Need to fetch ${weeksToFetch.length} weeks (out of ${totalWeeks} total)`)
+      logger.log(`Need to fetch ${weeksToFetch.length} weeks (out of ${totalWeeks} total)`)
 
       // Fetch weeks sequentially to show progress
       setLoadingProgress({ current: 0, total: weeksToFetch.length, currentRange: 'Démarrage...' })
@@ -269,7 +270,7 @@ export function useConsumptionFetch({
                 use_cache: true,
               })
 
-              console.log(`Response for ${currentStartStr} → ${fetchEndStr}:`, {
+              logger.log(`Response for ${currentStartStr} → ${fetchEndStr}:`, {
                 success: weeklyData?.success,
                 hasError: !!weeklyData?.error,
                 errorCode: weeklyData?.error?.code,
@@ -278,7 +279,7 @@ export function useConsumptionFetch({
 
               // Check for ADAM-ERR0123 error
               if (weeklyData?.success === false && weeklyData?.error?.code === 'ADAM-ERR0123') {
-                console.log(`Enedis: Data not available for ${currentStartStr} → ${fetchEndStr}, trying later start date...`)
+                logger.log(`Enedis: Data not available for ${currentStartStr} → ${fetchEndStr}, trying later start date...`)
 
                 // Try one day later (advance start date)
                 currentStartDate.setUTCDate(currentStartDate.getUTCDate() + 1)
@@ -286,7 +287,7 @@ export function useConsumptionFetch({
 
                 // If we've tried all days in the week without success, stop completely
                 if (retryCount >= maxRetries || currentStartDate > endDateObj) {
-                  console.log(`No data available for this week after ${retryCount} retries - this is expected if before activation date`)
+                  logger.log(`No data available for this week after ${retryCount} retries - this is expected if before activation date`)
 
                   // No error toast - this is normal behavior when requesting data before activation
                   // Just log it and continue to the next week or stop gracefully

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams, Link } from 'react-router-dom'
 import { pdlApi } from '@/api/pdl'
 import { oauthApi } from '@/api/oauth'
+import { logger } from '@/utils/logger'
 import { ExternalLink, CheckCircle, XCircle, ArrowUpDown, GripVertical, UserPlus, Filter, Search, Keyboard, X as CloseIcon } from 'lucide-react'
 import PDLDetails from '@/components/PDLDetails'
 import PDLCard from '@/components/PDLCard'
@@ -48,7 +49,7 @@ export default function Dashboard() {
 
     // Debug logging
     if (import.meta.env.VITE_DEBUG === 'true') {
-      console.log('Onboarding check:', {
+      logger.log('Onboarding check:', {
         hasCompletedOnboarding: hasCompletedOnboarding(),
         hasTourCompleted: hasTourCompleted('dashboard-tour'),
         shouldShowOnboarding,
@@ -103,7 +104,7 @@ export default function Dashboard() {
             // Sync all PDLs in parallel and wait for all to complete
             const syncPromises = data.map((pdl: PDL) =>
               pdlApi.fetchContract(pdl.id).catch((error) => {
-                console.warn(`Failed to sync PDL ${pdl.usage_point_id}:`, error)
+                logger.warn(`Failed to sync PDL ${pdl.usage_point_id}:`, error)
                 return null
               })
             )
@@ -112,7 +113,7 @@ export default function Dashboard() {
             const results = await Promise.all(syncPromises)
 
             if (import.meta.env.VITE_DEBUG === 'true') {
-              console.log('All sync results:', results)
+              logger.log('All sync results:', results)
             }
 
             // Now refresh the PDL list to show all updated data
@@ -176,8 +177,8 @@ export default function Dashboard() {
   // Onboarding handlers
   const handleStartTour = () => {
     if (import.meta.env.VITE_DEBUG === 'true') {
-      console.log('Starting tour...')
-      console.log('Consent button exists:', !!document.querySelector('[data-tour="consent-button"]'))
+      logger.log('Starting tour...')
+      logger.log('Consent button exists:', !!document.querySelector('[data-tour="consent-button"]'))
     }
     setShowWelcomeModal(false)
     setShowOnboardingTour(true)

@@ -212,6 +212,43 @@ export default function Consumption() {
     )
   }, [selectedPDL, queryClient])
 
+  // Check if yesterday's data is in cache (to determine if we need to auto-fetch)
+  const hasYesterdayDataInCache = useMemo(() => {
+    if (!selectedPDL) return false
+
+    // Calculate yesterday's date in UTC
+    const todayUTC = new Date()
+    const yesterdayUTC = new Date(Date.UTC(
+      todayUTC.getUTCFullYear(),
+      todayUTC.getUTCMonth(),
+      todayUTC.getUTCDate() - 1,
+      0, 0, 0, 0
+    ))
+
+    const yesterdayStr = yesterdayUTC.getUTCFullYear() + '-' +
+                        String(yesterdayUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                        String(yesterdayUTC.getUTCDate()).padStart(2, '0')
+
+    // Check if we have consumption data that includes yesterday
+    const consumptionQuery = queryClient.getQueryCache().find({
+      queryKey: ['consumption', selectedPDL],
+      exact: false,
+    })
+
+    if (!consumptionQuery?.state.data) return false
+
+    const data = consumptionQuery.state.data as any
+    const readings = data?.data?.meter_reading?.interval_reading
+
+    if (!readings || readings.length === 0) return false
+
+    // Check if any reading matches yesterday's date
+    return readings.some((reading: any) => {
+      const readingDate = reading.date?.split('T')[0]
+      return readingDate === yesterdayStr
+    })
+  }, [selectedPDL, queryClient])
+
   // Auto-set selectedPDL when there's only one active PDL
   useEffect(() => {
     if (activePdls.length > 0 && !selectedPDL) {
@@ -263,13 +300,27 @@ export default function Consumption() {
     }
   }, [hcHpCalculationTrigger, selectedPDLDetails])
 
-  // Auto-fetch data on first load
+  // Auto-fetch data on first load only if yesterday's data is NOT in cache
   useEffect(() => {
-    if (!hasAttemptedAutoLoad && selectedPDL && hasDataInCache) {
+    if (!hasAttemptedAutoLoad && selectedPDL) {
       setHasAttemptedAutoLoad(true)
-      fetchConsumptionData()
+
+      // Only fetch if we DON'T have yesterday's data in cache
+      // This prevents unnecessary fetches when returning to the page with cached data
+      if (!hasYesterdayDataInCache) {
+        fetchConsumptionData()
+      } else {
+        // Data is already in cache and up-to-date, set states to show cached data
+        setDailyLoadingComplete(true)
+        setPowerLoadingComplete(true)
+        setAllLoadingComplete(true)
+        setIsChartsExpanded(true)
+        setIsStatsSectionExpanded(true)
+        setIsDetailSectionExpanded(true)
+        setIsPowerSectionExpanded(true)
+      }
     }
-  }, [selectedPDL, hasDataInCache, hasAttemptedAutoLoad, fetchConsumptionData])
+  }, [selectedPDL, hasYesterdayDataInCache, hasAttemptedAutoLoad, fetchConsumptionData])
 
   // Mark daily consumption loading as complete (whether success or error)
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Calculator, AlertCircle, Loader2, ChevronDown, ChevronUp, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info, Activity } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
@@ -1674,9 +1674,8 @@ export default function Simulator() {
                     const percentDifferenceFromPrevious = previousResult ? ((result.totalCost - previousResult.totalCost) / previousResult.totalCost) * 100 : 0
 
                     return (
-                      <>
+                      <React.Fragment key={result.offerId}>
                         <tr
-                          key={result.offerId}
                           onClick={() => toggleRowExpansion(result.offerId)}
                           className={`border-t border-gray-200 dark:border-gray-700 cursor-pointer transition-all duration-200 ${
                             index === 0
@@ -2015,7 +2014,7 @@ export default function Simulator() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </React.Fragment>
                     )
                   })}
                 </tbody>

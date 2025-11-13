@@ -3,6 +3,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { Calendar, Download, BarChart3, Loader2, CalendarDays, CalendarRange } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useQueryClient } from '@tanstack/react-query'
+import { logger } from '@/utils/logger'
 
 interface DetailedLoadCurveProps {
   detailByDayData: any[]
@@ -132,7 +133,7 @@ export function DetailedLoadCurve({
                             String(weekAgoDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
                             String(weekAgoDate.getUTCDate()).padStart(2, '0')
 
-      console.log('🔍 Looking for week-1 data:', {
+      logger.log('🔍 Looking for week-1 data:', {
         currentDate: currentDate.toISOString().split('T')[0],
         weekAgoDate: weekAgoDateStr,
         selectedPDL
@@ -142,7 +143,7 @@ export function DetailedLoadCurve({
       const weekAgoData = queryClient.getQueryData(['consumptionDetail', selectedPDL, weekAgoDateStr, weekAgoDateStr]) as any
 
       if (weekAgoData?.data?.meter_reading?.interval_reading) {
-        console.log('✅ Found week-1 data in cache!')
+        logger.log('✅ Found week-1 data in cache!')
         const readings = weekAgoData.data.meter_reading.interval_reading
         const unit = weekAgoData.data.meter_reading.reading_type?.unit || 'W'
         const intervalLength = weekAgoData.data.meter_reading.reading_type?.interval_length || 'PT30M'
@@ -167,9 +168,9 @@ export function DetailedLoadCurve({
             powerWeekAgo: power
           }
         })
-        console.log('✅ Week-1 data added successfully')
+        logger.log('✅ Week-1 data added successfully')
       } else {
-        console.log('⚠️ No week-1 data found in cache for date:', weekAgoDateStr)
+        logger.log('⚠️ No week-1 data found in cache for date:', weekAgoDateStr)
       }
     }
 
@@ -183,7 +184,7 @@ export function DetailedLoadCurve({
                             String(yearAgoDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
                             String(yearAgoDate.getUTCDate()).padStart(2, '0')
 
-      console.log('🔍 Looking for year-1 data:', {
+      logger.log('🔍 Looking for year-1 data:', {
         currentDate: currentDate.toISOString().split('T')[0],
         yearAgoDate: yearAgoDateStr,
         selectedPDL
@@ -193,7 +194,7 @@ export function DetailedLoadCurve({
       const yearAgoData = queryClient.getQueryData(['consumptionDetail', selectedPDL, yearAgoDateStr, yearAgoDateStr]) as any
 
       if (yearAgoData?.data?.meter_reading?.interval_reading) {
-        console.log('✅ Found year-1 data in cache!')
+        logger.log('✅ Found year-1 data in cache!')
         const readings = yearAgoData.data.meter_reading.interval_reading
         const unit = yearAgoData.data.meter_reading.reading_type?.unit || 'W'
         const intervalLength = yearAgoData.data.meter_reading.reading_type?.interval_length || 'PT30M'
@@ -218,9 +219,9 @@ export function DetailedLoadCurve({
             powerYearAgo: power
           }
         })
-        console.log('✅ Year-1 data added successfully')
+        logger.log('✅ Year-1 data added successfully')
       } else {
-        console.log('⚠️ No year-1 data found in cache for date:', yearAgoDateStr)
+        logger.log('⚠️ No year-1 data found in cache for date:', yearAgoDateStr)
       }
     }
 
@@ -395,11 +396,11 @@ export function DetailedLoadCurve({
               onClick={() => {
                 onWeekOffsetChange(0)
                 setSelectedDetailDay(0)
-                toast.success("Retour à aujourd'hui")
+                toast.success("Retour à la veille")
               }}
               className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-medium border border-gray-300 dark:border-gray-600 transition-colors text-sm sm:text-base"
             >
-              Aujourd'hui
+              Hier
             </button>
             <button
               onClick={() => {

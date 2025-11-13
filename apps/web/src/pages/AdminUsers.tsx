@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/api/admin'
 import { rolesApi } from '@/api/roles'
+import { useAuth } from '@/hooks/useAuth'
 import {
   RefreshCw, Users, CheckCircle, XCircle, Copy, Trash2, Shield, Bug, Database,
   ArrowUpDown, ArrowUp, ArrowDown, Filter, Search, UserPlus, Key, Power,
@@ -14,6 +15,7 @@ type SortDirection = 'asc' | 'desc'
 
 export default function AdminUsers() {
   const queryClient = useQueryClient()
+  const { user: currentUser } = useAuth()
   const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null)
   const [editingRole, setEditingRole] = useState<{userId: string, currentRoleId: string | null} | null>(null)
   const [sortColumn, setSortColumn] = useState<SortColumn>('created_at')
@@ -131,9 +133,14 @@ export default function AdminUsers() {
 
   const toggleDebugMutation = useMutation({
     mutationFn: (userId: string) => adminApi.toggleUserDebugMode(userId),
-    onSuccess: () => {
+    onSuccess: (_, userId) => {
       showNotification('success', 'Mode debug modifié')
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+
+      // If the user modified their own debug mode, refresh user data to update logger
+      if (currentUser && userId === currentUser.id) {
+        queryClient.invalidateQueries({ queryKey: ['user'] })
+      }
     },
     onError: () => showNotification('error', 'Erreur lors de la modification du mode debug')
   })

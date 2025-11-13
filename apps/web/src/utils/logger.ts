@@ -18,9 +18,6 @@ export function setDebugMode(enabled: boolean) {
  * Check if debug mode is enabled (checks dynamically each time)
  */
 export function isDebugEnabled(): boolean {
-  // Always enable if VITE_DEBUG is true
-  const envDebug = import.meta.env.VITE_DEBUG === 'true'
-
   // Check localStorage for user debug setting (dynamically)
   let userDebugMode = false
   try {
@@ -32,7 +29,7 @@ export function isDebugEnabled(): boolean {
     // Ignore localStorage errors
   }
 
-  return envDebug || userDebugMode
+  return userDebugMode
 }
 
 /**

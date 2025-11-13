@@ -11,15 +11,18 @@ export interface OffpeakRange {
  * Parse offpeak hours configuration from PDL
  * Supports both array format ["22:00-06:00"] and legacy object format {"HC": "22h00-06h00"}
  */
-export function parseOffpeakHours(offpeakConfig?: string[] | Record<string, string>): OffpeakRange[] {
+export function parseOffpeakHours(offpeakConfig?: string[] | Record<string, string> | Record<string, any>): OffpeakRange[] {
   if (!offpeakConfig) return []
 
   const ranges: OffpeakRange[] = []
   const rangeStrings: string[] = Array.isArray(offpeakConfig)
-    ? offpeakConfig
-    : Object.values(offpeakConfig).filter(Boolean)
+    ? offpeakConfig.filter((item): item is string => typeof item === 'string')
+    : Object.values(offpeakConfig).filter((item): item is string => typeof item === 'string' && Boolean(item))
 
   for (const range of rangeStrings) {
+    // Skip if range is not a string (safety check)
+    if (typeof range !== 'string') continue
+
     // Extract time ranges from various formats: "22h30-06h30", "22:00-06:00", "HC (22H00-6H00)", etc.
     // Match: optional text, then first time (HH:MM or HHhMM), separator, then second time
     const match = range.match(/(\d{1,2})[hH:](\d{0,2})\s*-\s*(\d{1,2})[hH:]?(\d{0,2})/)
@@ -71,7 +74,7 @@ export function isOffpeakTime(hour: number, minute: number, ranges: OffpeakRange
 /**
  * Check if a given hour is in off-peak (simplified version for hour-only checks)
  */
-export function isOffpeakHour(hour: number, offpeakConfig?: string[] | Record<string, string>): boolean {
+export function isOffpeakHour(hour: number, offpeakConfig?: string[] | Record<string, string> | Record<string, any>): boolean {
   const ranges = parseOffpeakHours(offpeakConfig)
   return isOffpeakTime(hour, 0, ranges)
 }

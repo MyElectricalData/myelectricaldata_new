@@ -15,7 +15,10 @@ export const useAuth = () => {
       if (response.success && response.data) {
         setUser(response.data)
         // Update debug mode based on user settings
-        setDebugMode(response.data.debug_mode || false)
+        const debugMode = response.data.debug_mode || false
+        setDebugMode(debugMode)
+        // Always log this to verify it's working (even when debug is off)
+        console.log('[useAuth] Debug mode set to:', debugMode, 'localStorage value:', JSON.stringify(localStorage.getItem('debug_mode')))
         return response.data
       }
       return null
