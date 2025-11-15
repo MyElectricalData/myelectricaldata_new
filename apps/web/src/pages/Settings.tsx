@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { authApi } from '@/api/auth'
 import { useAuth } from '@/hooks/useAuth'
 import { useThemeStore } from '@/stores/themeStore'
+import { useIsDemo } from '@/hooks/useIsDemo'
 import { Trash2, TrendingUp, Copy, RefreshCw, Key, Lock, LogOut, Palette, Eye, EyeOff } from 'lucide-react'
 
 export default function Settings() {
@@ -12,6 +13,7 @@ export default function Settings() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { mode, setMode } = useThemeStore()
+  const isDemo = useIsDemo()
 
   // State for password change
   const [oldPassword, setOldPassword] = useState('')
@@ -91,6 +93,11 @@ export default function Settings() {
   })
 
   const handleChangePassword = () => {
+    if (isDemo) {
+      toast.error('Modification du mot de passe désactivée en mode démo')
+      return
+    }
+
     if (newPassword !== confirmPassword) {
       toast.error('Les mots de passe ne correspondent pas')
       return
@@ -105,10 +112,18 @@ export default function Settings() {
   }
 
   const handleRegenerateSecret = () => {
+    if (isDemo) {
+      toast.error('Régénération du client_secret désactivée en mode démo')
+      return
+    }
     regenerateSecretMutation.mutate()
   }
 
   const handleDeleteAccount = () => {
+    if (isDemo) {
+      toast.error('Suppression du compte désactivée en mode démo')
+      return
+    }
     if (deleteConfirmText === 'SUPPRIMER') {
       deleteAccountMutation.mutate()
     }
@@ -281,19 +296,29 @@ export default function Settings() {
               ) : (
                 <>
                   {!showRegenerateConfirm ? (
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <div className="flex-1 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg flex items-center">
-                        <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                          ⚠️ Le client_secret n'est jamais stocké ni affiché. Vous l'avez reçu lors de la création de votre compte.
-                        </p>
+                    <div className="space-y-3">
+                      {isDemo && (
+                        <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                          <p className="text-sm text-amber-800 dark:text-amber-200">
+                            <strong>Mode Démo :</strong> La régénération du client_secret est désactivée pour le compte de démonstration.
+                          </p>
+                        </div>
+                      )}
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="flex-1 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg flex items-center">
+                          <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                            ⚠️ Le client_secret n'est jamais stocké ni affiché. Vous l'avez reçu lors de la création de votre compte.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setShowRegenerateConfirm(true)}
+                          className="btn bg-yellow-600 hover:bg-yellow-700 text-white flex items-center gap-2 justify-center whitespace-nowrap disabled:opacity-50"
+                          disabled={isDemo}
+                        >
+                          <RefreshCw size={18} />
+                          Régénérer le client_secret
+                        </button>
                       </div>
-                      <button
-                        onClick={() => setShowRegenerateConfirm(true)}
-                        className="btn bg-yellow-600 hover:bg-yellow-700 text-white flex items-center gap-2 justify-center whitespace-nowrap"
-                      >
-                        <RefreshCw size={18} />
-                        Régénérer le client_secret
-                      </button>
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -343,6 +368,13 @@ export default function Settings() {
           <Lock className="text-primary-600 dark:text-primary-400" size={24} />
           <h2 className="text-xl font-semibold">Modifier le mot de passe</h2>
         </div>
+        {isDemo && (
+          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              <strong>Mode Démo :</strong> La modification du mot de passe est désactivée pour le compte de démonstration.
+            </p>
+          </div>
+        )}
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2">Mot de passe actuel</label>
@@ -353,6 +385,7 @@ export default function Settings() {
                 onChange={(e) => setOldPassword(e.target.value)}
                 placeholder="••••••••"
                 className="input pr-10"
+                disabled={isDemo}
               />
               <button
                 type="button"
@@ -372,6 +405,7 @@ export default function Settings() {
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="••••••••"
                 className="input pr-10"
+                disabled={isDemo}
               />
               <button
                 type="button"
@@ -391,6 +425,7 @@ export default function Settings() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="••••••••"
                 className="input pr-10"
+                disabled={isDemo}
               />
               <button
                 type="button"
@@ -403,7 +438,7 @@ export default function Settings() {
           </div>
           <button
             onClick={handleChangePassword}
-            disabled={!oldPassword || !newPassword || !confirmPassword || changePasswordMutation.isPending}
+            disabled={isDemo || !oldPassword || !newPassword || !confirmPassword || changePasswordMutation.isPending}
             className="btn btn-primary disabled:opacity-50"
           >
             {changePasswordMutation.isPending ? 'Modification...' : 'Modifier le mot de passe'}
@@ -517,6 +552,14 @@ export default function Settings() {
           Zone dangereuse
         </h2>
 
+        {isDemo && (
+          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              <strong>Mode Démo :</strong> La suppression du compte est désactivée pour le compte de démonstration.
+            </p>
+          </div>
+        )}
+
         {!showDeleteConfirm ? (
           <div>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
@@ -524,7 +567,8 @@ export default function Settings() {
             </p>
             <button
               onClick={() => setShowDeleteConfirm(true)}
-              className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
+              className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2 disabled:opacity-50"
+              disabled={isDemo}
             >
               <Trash2 size={20} />
               Supprimer mon compte

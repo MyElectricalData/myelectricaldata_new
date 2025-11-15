@@ -61,6 +61,7 @@ export function AnnualCurve({ chartData, isDarkMode }: AnnualCurveProps) {
   const handleExport = () => {
     const selectedData = Array.from(selectedYears)
       .map(index => yearsData[index])
+      .filter((yearData): yearData is YearData => yearData !== undefined && yearData.byMonth !== undefined)
       .sort((a, b) => b.label.localeCompare(a.label))
     const jsonData = JSON.stringify(selectedData, null, 2)
     navigator.clipboard.writeText(jsonData)
@@ -99,6 +100,7 @@ export function AnnualCurve({ chartData, isDarkMode }: AnnualCurveProps) {
   const chartDataMerged = (() => {
     const selectedYearsData = Array.from(selectedYears)
       .map(index => yearsData[index])
+      .filter((yearData): yearData is YearData => yearData !== undefined && yearData.byMonth !== undefined)
       .sort((a, b) => b.label.localeCompare(a.label)) // Sort by year descending
 
     // Create a map using normalized month keys (YYYY-MM) to overlay years
@@ -134,6 +136,7 @@ export function AnnualCurve({ chartData, isDarkMode }: AnnualCurveProps) {
 
   const selectedYearsData = Array.from(selectedYears)
     .map(index => yearsData[index])
+    .filter((yearData): yearData is YearData => yearData !== undefined && yearData.byMonth !== undefined)
     .sort((a, b) => b.label.localeCompare(a.label))
 
   const colors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4']

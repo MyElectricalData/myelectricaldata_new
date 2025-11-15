@@ -9,6 +9,7 @@ interface ExtendedLoadingProgressProps extends LoadingProgressProps {
   isLoadingPower: boolean
   consumptionResponse: any
   maxPowerResponse: any
+  hasYesterdayDataInCache: boolean
 }
 
 export function LoadingProgress({
@@ -22,37 +23,48 @@ export function LoadingProgress({
   isLoadingConsumption,
   isLoadingPower,
   consumptionResponse,
-  maxPowerResponse
+  maxPowerResponse,
+  hasYesterdayDataInCache
 }: ExtendedLoadingProgressProps) {
   const [isProgressExpanded, setIsProgressExpanded] = useState(false)
+  const [wasManuallyExpanded, setWasManuallyExpanded] = useState(false)
 
-  // Auto-expand when loading starts
+  // Auto-collapse when loading completes (but only if NOT manually expanded)
   useEffect(() => {
-    const isLoading = isLoadingConsumption || isLoadingPower || isLoadingDetailed
-    if (isLoading) {
-      setIsProgressExpanded(true)
-    } else if (allLoadingComplete) {
-      // Auto-collapse 1 second after completion
-      setTimeout(() => {
+    if (allLoadingComplete && isProgressExpanded && !wasManuallyExpanded) {
+      // Auto-collapse 2 seconds after completion (only if auto-expanded during loading)
+      const timer = setTimeout(() => {
         setIsProgressExpanded(false)
-      }, 1000)
+      }, 2000)
+      return () => clearTimeout(timer)
     }
-  }, [isLoadingConsumption, isLoadingPower, isLoadingDetailed, allLoadingComplete])
+  }, [allLoadingComplete, isProgressExpanded, wasManuallyExpanded])
 
-  if (!dateRange) {
+  // Show if we have a dateRange OR if anything is loading/complete OR if cache exists
+  const hasAnyActivity = dateRange || isLoadingConsumption || isLoadingPower || isLoadingDetailed || allLoadingComplete || hasYesterdayDataInCache
+
+  if (!hasAnyActivity) {
     return null
   }
 
-  const hasAnyLoading = isLoadingConsumption || isLoadingPower || isLoadingDetailed || allLoadingComplete
-
-  if (!hasAnyLoading) {
-    return null
-  }
+  // Calculate completion status for compact view
+  const tasks = [
+    { name: 'Quotidien', complete: dailyLoadingComplete, loading: isLoadingConsumption, error: consumptionResponse?.success === false },
+    { name: 'Puissance', complete: powerLoadingComplete, loading: isLoadingPower, error: maxPowerResponse?.success === false },
+    { name: 'Détaillé', complete: loadingProgress.total === 0 || (loadingProgress.total > 0 && loadingProgress.current === loadingProgress.total), loading: isLoadingDetailed && loadingProgress.total > 0, progress: loadingProgress.total > 0 ? `${loadingProgress.current}/${loadingProgress.total}` : null },
+    { name: 'HC/HP', complete: hcHpCalculationComplete || loadingProgress.total === 0, loading: !hcHpCalculationComplete && isLoadingDetailed && loadingProgress.total > 0 }
+  ]
 
   return (
     <div className="mt-6">
       <div
-        onClick={() => setIsProgressExpanded(!isProgressExpanded)}
+        onClick={() => {
+          const willExpand = !isProgressExpanded
+          setIsProgressExpanded(willExpand)
+          if (willExpand) {
+            setWasManuallyExpanded(true)
+          }
+        }}
         className="flex items-center justify-between cursor-pointer hover:opacity-70 transition-opacity"
       >
         <div className="flex items-center gap-2">
@@ -61,6 +73,39 @@ export function LoadingProgress({
             Progression du chargement
           </h3>
         </div>
+
+        {/* Compact status when collapsed */}
+        {!isProgressExpanded && (
+          <div className="flex items-center gap-3 text-xs">
+            {tasks.map((task, idx) => (
+              <div key={idx} className="flex items-center gap-1">
+                {task.complete ? (
+                  <svg className="h-4 w-4 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : task.error ? (
+                  <svg className="h-4 w-4 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : task.loading ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-primary-600"></div>
+                ) : (
+                  <div className="h-4 w-4 rounded-full border-2 border-gray-300 dark:border-gray-600"></div>
+                )}
+                <span className={`font-medium ${
+                  task.complete ? 'text-green-600 dark:text-green-400' :
+                  task.error ? 'text-red-600 dark:text-red-400' :
+                  task.loading ? 'text-primary-600 dark:text-primary-400' :
+                  'text-gray-500 dark:text-gray-400'
+                }`}>
+                  {task.name}
+                  {task.progress && ` (${task.progress})`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
           {isProgressExpanded ? (
             <span className="text-sm">Réduire</span>
@@ -178,31 +223,64 @@ export function LoadingProgress({
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Chargement des données détaillées (2 ans)
               </h3>
-              <span className="text-sm font-medium text-primary-600 dark:text-primary-400">
-                {loadingProgress.current} / {loadingProgress.total} semaines
-              </span>
-            </div>
-
-            {/* Progress bar */}
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-8 overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-primary-500 to-blue-500 transition-all duration-300 ease-out flex items-center justify-end pr-3"
-                style={{ width: `${(loadingProgress.current / loadingProgress.total) * 100}%` }}
-              >
-                {loadingProgress.current > 0 && (
-                  <span className="text-sm font-bold text-white drop-shadow">
-                    {Math.round((loadingProgress.current / loadingProgress.total) * 100)}%
+              <div className="flex items-center gap-2">
+                {loadingProgress.total === 0 ? (
+                  <>
+                    <svg className="h-5 w-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-sm font-medium text-green-600 dark:text-green-400">
+                      Terminé
+                    </span>
+                  </>
+                ) : loadingProgress.current === loadingProgress.total ? (
+                  <>
+                    <svg className="h-5 w-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-sm font-medium text-green-600 dark:text-green-400">
+                      Terminé ({loadingProgress.total} semaines)
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-sm font-medium text-primary-600 dark:text-primary-400">
+                    {loadingProgress.current} / {loadingProgress.total} semaines
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Current range */}
-            {loadingProgress.currentRange && (
-              <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
-                <span className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-                  {loadingProgress.currentRange}
-                </span>
+            {/* Progress bar - only show if loading */}
+            {loadingProgress.total > 0 && loadingProgress.current < loadingProgress.total && (
+              <>
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-8 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-primary-500 to-blue-500 transition-all duration-300 ease-out flex items-center justify-end pr-3"
+                    style={{ width: `${(loadingProgress.current / loadingProgress.total) * 100}%` }}
+                  >
+                    {loadingProgress.current > 0 && (
+                      <span className="text-sm font-bold text-white drop-shadow">
+                        {Math.round((loadingProgress.current / loadingProgress.total) * 100)}%
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Current range */}
+                {loadingProgress.currentRange && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
+                    <span className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+                      {loadingProgress.currentRange}
+                    </span>
+                  </p>
+                )}
+              </>
+            )}
+
+            {/* Completion message */}
+            {loadingProgress.total === 0 && (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Pas de données détaillées à charger
               </p>
             )}
           </div>

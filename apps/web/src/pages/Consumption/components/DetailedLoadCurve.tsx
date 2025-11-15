@@ -32,6 +32,67 @@ export function DetailedLoadCurve({
   const [viewMonth, setViewMonth] = useState(new Date())
   const [weekComparisonAvailable, setWeekComparisonAvailable] = useState(false)
   const [yearComparisonAvailable, setYearComparisonAvailable] = useState(false)
+  const [hasAutoSelected, setHasAutoSelected] = useState(false)
+
+  // Reset auto-selection flag when PDL changes
+  useEffect(() => {
+    setHasAutoSelected(false)
+  }, [selectedPDL])
+
+  // Auto-select most recent day with data ONLY on initial load (only once per PDL)
+  // This prevents resetting the user's selection when data refreshes
+  useEffect(() => {
+    // Skip if already auto-selected OR if user has manually navigated away from default (day 0, week 0)
+    const hasUserNavigated = detailWeekOffset !== 0 || selectedDetailDay !== 0
+    if (!selectedPDL || !detailDateRange || hasAutoSelected || hasUserNavigated) return
+
+    // Calculate yesterday (J-1)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const yesterday = new Date(today)
+    yesterday.setDate(today.getDate() - 1)
+
+    // Search backwards for up to 30 days to find the most recent day with data
+    let foundDate: Date | null = null
+    for (let daysBack = 0; daysBack < 30; daysBack++) {
+      const checkDate = new Date(yesterday)
+      checkDate.setDate(yesterday.getDate() - daysBack)
+
+      // Format date as YYYY-MM-DD
+      const dateStr = checkDate.getFullYear() + '-' +
+                     String(checkDate.getMonth() + 1).padStart(2, '0') + '-' +
+                     String(checkDate.getDate()).padStart(2, '0')
+
+      // Check if this day has data in cache
+      const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPDL, dateStr, dateStr]) as any
+      const hasData = !!cachedData?.data?.meter_reading?.interval_reading &&
+                      cachedData.data.meter_reading.interval_reading.length > 0
+
+      if (hasData) {
+        foundDate = checkDate
+        break
+      }
+    }
+
+    // If we found a date with data, select it
+    if (foundDate) {
+      const daysDiff = Math.floor((yesterday.getTime() - foundDate.getTime()) / (1000 * 60 * 60 * 24))
+      const newWeekOffset = Math.floor(daysDiff / 7)
+      const newDayIndex = daysDiff % 7
+
+      onWeekOffsetChange(newWeekOffset)
+      setSelectedDetailDay(newDayIndex)
+      setHasAutoSelected(true)
+      logger.info('Auto-selected most recent day with data', {
+        date: foundDate.toISOString().split('T')[0],
+        weekOffset: newWeekOffset,
+        dayIndex: newDayIndex
+      })
+    } else {
+      // No data found, still mark as auto-selected to prevent re-running
+      setHasAutoSelected(true)
+    }
+  }, [selectedPDL, detailDateRange, queryClient, hasAutoSelected])
 
   // Auto-adjust selected day when data changes
   useEffect(() => {
@@ -252,6 +313,16 @@ export function DetailedLoadCurve({
       twoYearsAgo.setFullYear(yesterday.getFullYear() - 2)
       const isInRange = dayDate && dayDate <= yesterday && dayDate >= twoYearsAgo
 
+      // Check if data exists for this day
+      let hasData = false
+      if (isInRange && dayDate && selectedPDL) {
+        const dateStr = dayDate.getFullYear() + '-' +
+                       String(dayDate.getMonth() + 1).padStart(2, '0') + '-' +
+                       String(dayDate.getDate()).padStart(2, '0')
+        const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPDL, dateStr, dateStr]) as any
+        hasData = !!cachedData?.data?.meter_reading?.interval_reading && cachedData.data.meter_reading.interval_reading.length > 0
+      }
+
       const currentSelectedDate = new Date(yesterday)
       currentSelectedDate.setDate(yesterday.getDate() - (detailWeekOffset * 7) - selectedDetailDay)
       const isSelected = dayDate &&
@@ -263,6 +334,7 @@ export function DetailedLoadCurve({
         dayNumber,
         isValidDay,
         isInRange,
+        hasData,
         isSelected,
         date: dayDate
       })
@@ -313,9 +385,9 @@ export function DetailedLoadCurve({
           {calendarDays.map((day, i) => (
             <button
               key={i}
-              disabled={!day.isValidDay || !day.isInRange}
+              disabled={!day.isValidDay || !day.hasData}
               onClick={() => {
-                if (day.date && day.isInRange) {
+                if (day.date && day.hasData) {
                   const daysDiff = Math.floor((yesterday.getTime() - day.date.getTime()) / (1000 * 60 * 60 * 24))
                   const newWeekOffset = Math.floor(daysDiff / 7)
                   const newDayIndex = daysDiff % 7
@@ -325,11 +397,12 @@ export function DetailedLoadCurve({
                   toast.success(`Date sélectionnée : ${day.date.toLocaleDateString('fr-FR')}`)
                 }
               }}
+              title={day.isValidDay && day.isInRange && !day.hasData ? 'Aucune donnée disponible pour ce jour' : ''}
               className={`
                 aspect-square p-2 rounded-lg text-sm font-medium transition-all duration-200
                 ${!day.isValidDay ? 'invisible' : ''}
-                ${day.isValidDay && !day.isInRange ? 'text-gray-300 dark:text-gray-700 cursor-not-allowed' : ''}
-                ${day.isValidDay && day.isInRange && !day.isSelected ? 'text-gray-700 dark:text-gray-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 cursor-pointer' : ''}
+                ${day.isValidDay && !day.hasData ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-40' : ''}
+                ${day.isValidDay && day.hasData && !day.isSelected ? 'text-gray-700 dark:text-gray-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 cursor-pointer' : ''}
                 ${day.isSelected ? 'bg-primary-600 text-white font-bold shadow-lg scale-105' : ''}
               `}
             >
@@ -613,6 +686,34 @@ export function DetailedLoadCurve({
               <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
                 {detailByDayData[selectedDetailDay].data.length} points de mesure pour cette journée
               </div>
+              {/* Warning message if viewing yesterday (J-1) and no data yet */}
+              {(() => {
+                const today = new Date()
+                today.setHours(0, 0, 0, 0)
+                const yesterday = new Date(today)
+                yesterday.setDate(today.getDate() - 1)
+
+                // Get the actual date from the data
+                const selectedDataDate = new Date(detailByDayData[selectedDetailDay].date)
+                selectedDataDate.setHours(0, 0, 0, 0)
+
+                // Check if selected date is J-1 (yesterday)
+                const isYesterday = selectedDataDate.getTime() === yesterday.getTime()
+
+                // Check if we have data (less than expected 48 points for a full day)
+                const hasIncompleteData = detailByDayData[selectedDetailDay].data.length < 40
+
+                if (isYesterday && hasIncompleteData) {
+                  return (
+                    <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                      <p className="text-sm text-blue-800 dark:text-blue-200">
+                        <strong>ℹ️ Information :</strong> Les données de la veille (J-1) sont disponibles au plus tard à 11h le lendemain. Si vous ne voyez pas encore les données complètes, elles seront mises à jour automatiquement dans les prochaines heures.
+                      </p>
+                    </div>
+                  )
+                }
+                return null
+              })()}
               <ResponsiveContainer width="100%" height={400}>
                 <LineChart data={getComparisonData()}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#9CA3AF" opacity={0.3} />
@@ -689,15 +790,46 @@ export function DetailedLoadCurve({
             </>
           ) : (
             <div className="flex items-center justify-center h-[468px]">
-              <div className="flex flex-col items-center justify-center gap-4 text-center">
+              <div className="flex flex-col items-center justify-center gap-4 text-center px-6">
                 <BarChart3 className="text-gray-400 dark:text-gray-600" size={48} />
                 <p className="text-gray-600 dark:text-gray-400">
                   Aucune donnée détaillée disponible pour cette période
                 </p>
                 {detailDateRange && (
-                  <p className="text-xs text-gray-500 dark:text-gray-500">
-                    Période demandée : du {new Date(detailDateRange.start).toLocaleDateString('fr-FR')} au {new Date(detailDateRange.end).toLocaleDateString('fr-FR')}
-                  </p>
+                  <>
+                    <p className="text-xs text-gray-500 dark:text-gray-500">
+                      Période demandée : du {new Date(detailDateRange.start).toLocaleDateString('fr-FR')} au {new Date(detailDateRange.end).toLocaleDateString('fr-FR')}
+                    </p>
+                    {/* Check if we're looking at yesterday (J-1) */}
+                    {(() => {
+                      if (!detailDateRange) return null
+
+                      const today = new Date()
+                      today.setHours(0, 0, 0, 0)
+                      const yesterday = new Date(today)
+                      yesterday.setDate(today.getDate() - 1)
+
+                      // Parse the date range to check if we're viewing yesterday
+                      const startDate = new Date(detailDateRange.start)
+                      startDate.setHours(0, 0, 0, 0)
+                      const endDate = new Date(detailDateRange.end)
+                      endDate.setHours(0, 0, 0, 0)
+
+                      // Check if the range includes yesterday
+                      const isYesterday = (startDate.getTime() <= yesterday.getTime()) && (yesterday.getTime() <= endDate.getTime())
+
+                      if (isYesterday) {
+                        return (
+                          <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg max-w-md">
+                            <p className="text-sm text-blue-800 dark:text-blue-200">
+                              <strong>ℹ️ Information :</strong> Les données de la veille (J-1) sont disponibles au plus tard à 11h le lendemain. Si vous ne voyez pas encore les données, elles seront mises à jour automatiquement dans les prochaines heures.
+                            </p>
+                          </div>
+                        )
+                      }
+                      return null
+                    })()}
+                  </>
                 )}
               </div>
             </div>

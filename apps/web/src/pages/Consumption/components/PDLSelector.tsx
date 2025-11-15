@@ -1,5 +1,6 @@
-import { Loader2, Download, Trash2, Settings } from 'lucide-react'
+import { Loader2, Download, Trash2, Settings, Lock } from 'lucide-react'
 import type { PDL } from '@/types/api'
+import { useIsDemo } from '@/hooks/useIsDemo'
 
 interface PDLSelectorProps {
   pdls: PDL[]
@@ -31,6 +32,8 @@ export function PDLSelector({
   user,
   children
 }: PDLSelectorProps) {
+  const isDemo = useIsDemo()
+
   return (
     <div className="card">
       {/* Configuration Header */}
@@ -93,44 +96,39 @@ export function PDLSelector({
 
         {/* Fetch Button - Always show if there are active PDLs */}
         {activePdls.length > 0 && (
-          <button
-            onClick={onFetchData}
-            disabled={!selectedPDL || isLoading || isLoadingDetailed}
-            className="w-full bg-primary-600 hover:bg-primary-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2"
-          >
-            {isLoading || isLoadingDetailed ? (
-              <>
-                <Loader2 className="animate-spin" size={20} />
-                Récupération en cours...
-              </>
-            ) : (
-              <>
-                <Download size={20} />
-                Récupérer l'historique
-              </>
-            )}
-          </button>
-        )}
+          <>
+            <button
+              onClick={onFetchData}
+              disabled={!selectedPDL || isLoading || isLoadingDetailed || isDemo}
+              className="w-full bg-primary-600 hover:bg-primary-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2"
+            >
+              {isLoading || isLoadingDetailed ? (
+                <>
+                  <Loader2 className="animate-spin" size={20} />
+                  Récupération en cours...
+                </>
+              ) : isDemo ? (
+                <>
+                  <Lock size={20} />
+                  Récupération bloquée en mode démo
+                </>
+              ) : (
+                <>
+                  <Download size={20} />
+                  Récupérer l'historique
+                </>
+              )}
+            </button>
 
-        {/* Clear Cache Button (Admin only) */}
-        {user?.is_admin && (
-          <button
-            onClick={onClearCache}
-            disabled={isClearingCache}
-            className="w-full bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2"
-          >
-            {isClearingCache ? (
-              <>
-                <Loader2 className="animate-spin" size={20} />
-                Vidage en cours...
-              </>
-            ) : (
-              <>
-                <Trash2 size={20} />
-                Vider tout le cache (Navigateur + Redis)
-              </>
+            {isDemo && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <p className="text-sm text-amber-800 dark:text-amber-200">
+                  <strong>Mode Démo :</strong> Le compte démo dispose déjà de 3 ans de données fictives.
+                  La récupération depuis l'API Enedis est désactivée.
+                </p>
+              </div>
             )}
-          </button>
+          </>
         )}
 
         {/* Children (LoadingProgress) */}

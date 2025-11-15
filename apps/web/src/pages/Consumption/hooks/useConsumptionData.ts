@@ -25,15 +25,93 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
   const activePdls = pdls.filter(p => p.is_active !== false)
 
   // Fetch consumption data with React Query
+  // Split into multiple yearly calls to respect API limits (max 1 year per call)
   const { data: consumptionResponse, isLoading: isLoadingConsumption } = useQuery({
     queryKey: ['consumption', selectedPDL, dateRange?.start, dateRange?.end],
     queryFn: async () => {
       if (!selectedPDL || !dateRange) return null
-      return enedisApi.getConsumptionDaily(selectedPDL, {
-        start: dateRange.start,
-        end: dateRange.end,
-        use_cache: true,
-      })
+
+      // Calculate the total date range in days
+      const startDate = new Date(dateRange.start + 'T00:00:00Z')
+      const endDate = new Date(dateRange.end + 'T00:00:00Z')
+      const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+
+      // If the range is <= 365 days, make a single call
+      if (totalDays <= 365) {
+        return enedisApi.getConsumptionDaily(selectedPDL, {
+          start: dateRange.start,
+          end: dateRange.end,
+          use_cache: true,
+        })
+      }
+
+      // Split into yearly chunks (max 365 days per call)
+      const yearlyChunks: { start: string; end: string }[] = []
+      let currentStart = new Date(startDate)
+
+      while (currentStart <= endDate) {
+        // Calculate end of this chunk (1 year or less)
+        let currentEnd = new Date(currentStart)
+        currentEnd.setUTCFullYear(currentEnd.getUTCFullYear() + 1)
+        currentEnd.setUTCDate(currentEnd.getUTCDate() - 1) // 365 days max
+
+        // Cap to overall end date if needed
+        if (currentEnd > endDate) {
+          currentEnd = new Date(endDate)
+        }
+
+        const chunkStart = currentStart.getUTCFullYear() + '-' +
+                          String(currentStart.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                          String(currentStart.getUTCDate()).padStart(2, '0')
+        const chunkEnd = currentEnd.getUTCFullYear() + '-' +
+                        String(currentEnd.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                        String(currentEnd.getUTCDate()).padStart(2, '0')
+
+        yearlyChunks.push({ start: chunkStart, end: chunkEnd })
+
+        // Move to next chunk (day after current end)
+        currentStart = new Date(currentEnd)
+        currentStart.setUTCDate(currentStart.getUTCDate() + 1)
+      }
+
+      // Fetch all chunks in parallel
+      const chunkPromises = yearlyChunks.map(chunk =>
+        enedisApi.getConsumptionDaily(selectedPDL, {
+          start: chunk.start,
+          end: chunk.end,
+          use_cache: true,
+        })
+      )
+
+      const chunkResults = await Promise.all(chunkPromises)
+
+      // Merge all chunks into a single response
+      // Take the first successful response as the base
+      const firstSuccess = chunkResults.find(r => r?.success)
+      if (!firstSuccess) {
+        // If no successful response, return the first one (which will be an error)
+        return chunkResults[0]
+      }
+
+      // Combine all interval_reading arrays
+      const allReadings: any[] = []
+      for (const result of chunkResults) {
+        if (result?.success && result?.data?.meter_reading?.interval_reading) {
+          allReadings.push(...result.data.meter_reading.interval_reading)
+        }
+      }
+
+      // Return merged response
+      return {
+        ...firstSuccess,
+        data: {
+          ...firstSuccess.data,
+          meter_reading: {
+            ...firstSuccess.data.meter_reading,
+            interval_reading: allReadings
+          }
+        }
+      }
     },
     enabled: !!selectedPDL && !!dateRange,
     staleTime: 1000 * 60 * 60, // 1 hour - data is considered fresh
@@ -41,15 +119,93 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
   })
 
   // Fetch max power data with React Query
+  // Split into multiple yearly calls to respect API limits (max 1 year per call)
   const { data: maxPowerResponse, isLoading: isLoadingPower } = useQuery({
     queryKey: ['maxPower', selectedPDL, dateRange?.start, dateRange?.end],
     queryFn: async () => {
       if (!selectedPDL || !dateRange) return null
-      return enedisApi.getMaxPower(selectedPDL, {
-        start: dateRange.start,
-        end: dateRange.end,
-        use_cache: true,
-      })
+
+      // Calculate the total date range in days
+      const startDate = new Date(dateRange.start + 'T00:00:00Z')
+      const endDate = new Date(dateRange.end + 'T00:00:00Z')
+      const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+
+      // If the range is <= 365 days, make a single call
+      if (totalDays <= 365) {
+        return enedisApi.getMaxPower(selectedPDL, {
+          start: dateRange.start,
+          end: dateRange.end,
+          use_cache: true,
+        })
+      }
+
+      // Split into yearly chunks (max 365 days per call)
+      const yearlyChunks: { start: string; end: string }[] = []
+      let currentStart = new Date(startDate)
+
+      while (currentStart <= endDate) {
+        // Calculate end of this chunk (1 year or less)
+        let currentEnd = new Date(currentStart)
+        currentEnd.setUTCFullYear(currentEnd.getUTCFullYear() + 1)
+        currentEnd.setUTCDate(currentEnd.getUTCDate() - 1) // 365 days max
+
+        // Cap to overall end date if needed
+        if (currentEnd > endDate) {
+          currentEnd = new Date(endDate)
+        }
+
+        const chunkStart = currentStart.getUTCFullYear() + '-' +
+                          String(currentStart.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                          String(currentStart.getUTCDate()).padStart(2, '0')
+        const chunkEnd = currentEnd.getUTCFullYear() + '-' +
+                        String(currentEnd.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                        String(currentEnd.getUTCDate()).padStart(2, '0')
+
+        yearlyChunks.push({ start: chunkStart, end: chunkEnd })
+
+        // Move to next chunk (day after current end)
+        currentStart = new Date(currentEnd)
+        currentStart.setUTCDate(currentStart.getUTCDate() + 1)
+      }
+
+      // Fetch all chunks in parallel
+      const chunkPromises = yearlyChunks.map(chunk =>
+        enedisApi.getMaxPower(selectedPDL, {
+          start: chunk.start,
+          end: chunk.end,
+          use_cache: true,
+        })
+      )
+
+      const chunkResults = await Promise.all(chunkPromises)
+
+      // Merge all chunks into a single response
+      // Take the first successful response as the base
+      const firstSuccess = chunkResults.find(r => r?.success)
+      if (!firstSuccess) {
+        // If no successful response, return the first one (which will be an error)
+        return chunkResults[0]
+      }
+
+      // Combine all interval_reading arrays
+      const allReadings: any[] = []
+      for (const result of chunkResults) {
+        if (result?.success && result?.data?.meter_reading?.interval_reading) {
+          allReadings.push(...result.data.meter_reading.interval_reading)
+        }
+      }
+
+      // Return merged response
+      return {
+        ...firstSuccess,
+        data: {
+          ...firstSuccess.data,
+          meter_reading: {
+            ...firstSuccess.data.meter_reading,
+            interval_reading: allReadings
+          }
+        }
+      }
     },
     enabled: !!selectedPDL && !!dateRange,
     staleTime: 1000 * 60 * 60, // 1 hour

@@ -25,7 +25,7 @@ from src.services.cache import cache_service
 # Configuration
 DEMO_EMAIL = "demo@myelectricaldata.fr"
 DEMO_PASSWORD = "demo"
-YEARS_OF_DATA = 6
+YEARS_OF_DATA = 3
 
 # PDL configurations
 PDLS = [
@@ -52,7 +52,15 @@ PDLS = [
         "subscribed_power": 9,
         "has_consumption": True,
         "has_production": True,
-        "offpeak_hours": None,
+        "offpeak_hours": {
+            "monday": "HC (22h00-06h00)",
+            "tuesday": "HC (22h00-06h00)",
+            "wednesday": "HC (22h00-06h00)",
+            "thursday": "HC (22h00-06h00)",
+            "friday": "HC (22h00-06h00)",
+            "saturday": "HC (22h00-06h00)",
+            "sunday": "HC (22h00-06h00)",
+        },
         "consumption_profile": "residential_solar",
         "production_profile": "solar_standard",
     },
@@ -62,7 +70,15 @@ PDLS = [
         "subscribed_power": 3,
         "has_consumption": True,
         "has_production": False,
-        "offpeak_hours": None,
+        "offpeak_hours": {
+            "monday": "HC (22h00-06h00)",
+            "tuesday": "HC (22h00-06h00)",
+            "wednesday": "HC (22h00-06h00)",
+            "thursday": "HC (22h00-06h00)",
+            "friday": "HC (22h00-06h00)",
+            "saturday": "HC (22h00-06h00)",
+            "sunday": "HC (22h00-06h00)",
+        },
         "consumption_profile": "seasonal",
     },
 ]
@@ -268,6 +284,10 @@ async def create_demo_pdls(user: User) -> List[PDL]:
             print(f"✅ Created PDL: {pdl.name} ({pdl.usage_point_id})")
 
         await session.commit()
+
+        # Refresh all PDL objects to ensure offpeak_hours are loaded
+        for pdl, _ in created_pdls:
+            await session.refresh(pdl)
 
     return created_pdls
 

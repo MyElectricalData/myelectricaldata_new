@@ -32,7 +32,7 @@ class DemoAdapter:
         client_secret: str,
     ) -> dict[str, Any]:
         """
-        Get mock daily consumption data from cache.
+        Generate mock daily consumption data dynamically (no cache).
 
         Args:
             usage_point_id: PDL number
@@ -43,42 +43,68 @@ class DemoAdapter:
         Returns:
             Mock consumption data in Enedis format
         """
-        logger.info(f"[DEMO] Fetching mock consumption data for {usage_point_id} from {start} to {end}")
+        logger.info(f"[DEMO] Generating dynamic consumption data for {usage_point_id} from {start} to {end}")
 
-        cache_key = f"demo:consumption:daily:{usage_point_id}"
-        cached_data = await self.cache_service.get(cache_key, client_secret)
+        # Generate daily consumption data dynamically
+        from datetime import datetime, timedelta
+        import math
 
-        if not cached_data:
-            logger.warning(f"[DEMO] No cached consumption data found for {usage_point_id}")
-            return {
-                "meter_reading": {
-                    "usage_point_id": usage_point_id,
-                    "start": start,
-                    "end": end,
-                    "reading_type": {"unit": "kWh", "measurement_kind": "energy", "aggregate": "sum"},
-                    "interval_reading": []
-                }
-            }
+        start_date = datetime.strptime(start, "%Y-%m-%d")
+        end_date = datetime.strptime(end, "%Y-%m-%d")
 
-        # Filter data by date range
-        all_data = cached_data.get("data", [])
-        filtered_data = [
-            item for item in all_data
-            if start <= item["date"] <= end
-        ]
+        # Define consumption profiles based on PDL
+        if usage_point_id == "04004253849200":  # Résidence principale
+            base_daily_kwh = 20  # 6 kVA - typical residential consumption
+        elif usage_point_id == "04004253849201":  # Maison avec panneaux solaires
+            base_daily_kwh = 25  # 9 kVA - higher consumption
+        elif usage_point_id == "04004253849202":  # Résidence secondaire
+            base_daily_kwh = 8  # 3 kVA - seasonal usage
+        else:
+            base_daily_kwh = 15  # Default
 
-        # Convert to Enedis format
-        interval_reading = [
-            {
-                "value": str(item["value"]),
-                "date": item["date"],
+        interval_reading = []
+        current_date = start_date
+
+        while current_date <= end_date:
+            date_str = current_date.strftime("%Y-%m-%d")
+            day_of_year = current_date.timetuple().tm_yday
+
+            # Seasonal variation (winter: higher, summer: lower)
+            season_factor = 1 + 0.3 * math.cos(2 * math.pi * (day_of_year - 30) / 365)
+
+            # Weekly variation (weekend: lower)
+            weekday = current_date.weekday()
+            week_factor = 0.8 if weekday >= 5 else 1.0
+
+            # Résidence secondaire: only significant consumption in summer and winter holidays
+            if usage_point_id == "04004253849202":
+                month = current_date.month
+                # High usage in July-August (summer) and December-January (winter holidays)
+                if month in [7, 8] or month in [12, 1]:
+                    occupancy_factor = 1.0
+                else:
+                    occupancy_factor = 0.1  # Very low when unoccupied
+            else:
+                occupancy_factor = 1.0
+
+            # Calculate daily value with variations
+            daily_value = base_daily_kwh * season_factor * week_factor * occupancy_factor
+
+            # Add some randomness (±10%)
+            import random
+            random.seed(hash(date_str + usage_point_id))  # Deterministic randomness
+            daily_value *= (0.9 + random.random() * 0.2)
+
+            interval_reading.append({
+                "value": f"{daily_value:.3f}",
+                "date": date_str,
                 "interval_length": "PT1D",
                 "measure_type": "B",
-            }
-            for item in filtered_data
-        ]
+            })
 
-        logger.info(f"[DEMO] Returning {len(interval_reading)} consumption records")
+            current_date += timedelta(days=1)
+
+        logger.info(f"[DEMO] Generated {len(interval_reading)} consumption records")
 
         return {
             "meter_reading": {
@@ -118,23 +144,34 @@ class DemoAdapter:
             date_str = daily_record["date"]
             daily_value = float(daily_record["value"])
 
-            # Divide daily consumption into 48 intervals (30 minutes each)
-            # Simple distribution: lower at night, higher during day
+            # Define consumption patterns by hour (48 half-hour intervals per day)
+            # Pattern represents relative consumption by time of day
+            hourly_factors = []
+            for hour in range(24):
+                # Create consumption pattern: lower at night (0-6h), higher during day
+                if 0 <= hour < 6:
+                    factor = 0.5  # Low at night
+                elif 6 <= hour < 9:
+                    factor = 1.3  # Morning peak
+                elif 9 <= hour < 18:
+                    factor = 1.0  # Normal day
+                elif 18 <= hour < 22:
+                    factor = 1.4  # Evening peak
+                else:
+                    factor = 0.7  # Late night
+
+                # Each hour has 2 half-hour intervals
+                hourly_factors.extend([factor, factor])
+
+            # Normalize factors so they sum to 48 (total intervals per day)
+            factor_sum = sum(hourly_factors)
+            normalized_factors = [f * 48 / factor_sum for f in hourly_factors]
+
+            # Generate intervals
+            interval_idx = 0
             for hour in range(24):
                 for half in [0, 30]:
-                    # Create consumption pattern: lower at night (0-6h), higher during day
-                    if 0 <= hour < 6:
-                        factor = 0.5
-                    elif 6 <= hour < 9:
-                        factor = 1.2
-                    elif 9 <= hour < 18:
-                        factor = 1.0
-                    elif 18 <= hour < 22:
-                        factor = 1.3
-                    else:
-                        factor = 0.7
-
-                    interval_value = (daily_value / 48) * factor
+                    interval_value = (daily_value / 48) * normalized_factors[interval_idx]
 
                     timestamp = f"{date_str}T{hour:02d}:{half:02d}:00+01:00"
                     interval_reading.append({
@@ -143,6 +180,7 @@ class DemoAdapter:
                         "interval_length": "PT30M",
                         "measure_type": "B",
                     })
+                    interval_idx += 1
 
         return {
             "meter_reading": {
@@ -166,14 +204,11 @@ class DemoAdapter:
         end: str,
         client_secret: str,
     ) -> dict[str, Any]:
-        """Get mock daily production data from cache"""
-        logger.info(f"[DEMO] Fetching mock production data for {usage_point_id} from {start} to {end}")
+        """Generate mock daily production data dynamically (no cache)"""
+        logger.info(f"[DEMO] Generating dynamic production data for {usage_point_id} from {start} to {end}")
 
-        cache_key = f"demo:production:daily:{usage_point_id}"
-        cached_data = await self.cache_service.get(cache_key, client_secret)
-
-        if not cached_data:
-            logger.warning(f"[DEMO] No cached production data found for {usage_point_id}")
+        # Only PDL 04004253849201 (Maison avec panneaux solaires) has production
+        if usage_point_id != "04004253849201":
             return {
                 "meter_reading": {
                     "usage_point_id": usage_point_id,
@@ -184,25 +219,44 @@ class DemoAdapter:
                 }
             }
 
-        # Filter data by date range
-        all_data = cached_data.get("data", [])
-        filtered_data = [
-            item for item in all_data
-            if start <= item["date"] <= end
-        ]
+        # Generate daily production data dynamically
+        from datetime import datetime, timedelta
+        import math
 
-        # Convert to Enedis format
-        interval_reading = [
-            {
-                "value": str(item["value"]),
-                "date": item["date"],
+        start_date = datetime.strptime(start, "%Y-%m-%d")
+        end_date = datetime.strptime(end, "%Y-%m-%d")
+
+        base_daily_kwh = 15  # Average daily solar production (9 kVA installation)
+
+        interval_reading = []
+        current_date = start_date
+
+        while current_date <= end_date:
+            date_str = current_date.strftime("%Y-%m-%d")
+            day_of_year = current_date.timetuple().tm_yday
+
+            # Seasonal variation (higher in summer, lower in winter)
+            # Peak in June (day ~172), minimum in December (day ~355)
+            season_factor = 1 + 0.5 * math.sin(2 * math.pi * (day_of_year - 80) / 365)
+
+            # Weather variation (simulate cloudy/sunny days)
+            import random
+            random.seed(hash(date_str + usage_point_id + "prod"))  # Deterministic randomness
+            weather_factor = 0.3 + random.random() * 0.7  # 30% to 100% of potential
+
+            # Calculate daily value with variations
+            daily_value = base_daily_kwh * season_factor * weather_factor
+
+            interval_reading.append({
+                "value": f"{daily_value:.3f}",
+                "date": date_str,
                 "interval_length": "PT1D",
                 "measure_type": "B",
-            }
-            for item in filtered_data
-        ]
+            })
 
-        logger.info(f"[DEMO] Returning {len(interval_reading)} production records")
+            current_date += timedelta(days=1)
+
+        logger.info(f"[DEMO] Generated {len(interval_reading)} production records")
 
         return {
             "meter_reading": {
@@ -238,17 +292,32 @@ class DemoAdapter:
             date_str = daily_record["date"]
             daily_value = float(daily_record["value"])
 
-            # Solar production pattern: 0 at night, peak at midday
+            # Define solar production pattern (bell curve during daylight)
+            hourly_factors = []
+            for hour in range(24):
+                # Solar production only during daylight (6h-20h)
+                if 6 <= hour < 20:
+                    # Bell curve: peak at noon (12h)
+                    distance_from_noon = abs(hour - 12)
+                    factor = max(0, 1 - (distance_from_noon / 7))  # Softer curve
+                else:
+                    factor = 0.0
+
+                # Each hour has 2 half-hour intervals
+                hourly_factors.extend([factor, factor])
+
+            # Normalize factors so they sum to 48 (total intervals per day)
+            factor_sum = sum(hourly_factors)
+            if factor_sum > 0:
+                normalized_factors = [f * 48 / factor_sum for f in hourly_factors]
+            else:
+                normalized_factors = [0] * 48
+
+            # Generate intervals
+            interval_idx = 0
             for hour in range(24):
                 for half in [0, 30]:
-                    # Solar production only during daylight (6h-20h)
-                    if 6 <= hour < 20:
-                        # Bell curve: peak at noon (12h)
-                        distance_from_noon = abs(hour - 12)
-                        factor = max(0, 1 - (distance_from_noon / 6))
-                        interval_value = (daily_value / 28) * factor  # 28 intervals of daylight
-                    else:
-                        interval_value = 0.0
+                    interval_value = (daily_value / 48) * normalized_factors[interval_idx]
 
                     timestamp = f"{date_str}T{hour:02d}:{half:02d}:00+01:00"
                     interval_reading.append({
@@ -257,6 +326,7 @@ class DemoAdapter:
                         "interval_length": "PT30M",
                         "measure_type": "B",
                     })
+                    interval_idx += 1
 
         return {
             "meter_reading": {
@@ -268,6 +338,77 @@ class DemoAdapter:
                     "unit": "kWh",
                     "measurement_kind": "energy",
                     "aggregate": "sum"
+                },
+                "interval_reading": interval_reading
+            }
+        }
+
+    async def get_max_power(
+        self,
+        usage_point_id: str,
+        start: str,
+        end: str,
+        client_secret: str,
+    ) -> dict[str, Any]:
+        """
+        Get mock max power data.
+        Generate realistic daily max power data based on consumption patterns.
+        """
+        logger.info(f"[DEMO] Fetching mock max power data for {usage_point_id} from {start} to {end}")
+
+        # Get consumption data to derive max power
+        cache_key = f"demo:consumption:daily:{usage_point_id}"
+        cached_data = await self.cache_service.get(cache_key, client_secret)
+
+        if not cached_data:
+            logger.warning(f"[DEMO] No cached consumption data found for {usage_point_id}")
+            return {
+                "meter_reading": {
+                    "usage_point_id": usage_point_id,
+                    "start": start,
+                    "end": end,
+                    "reading_type": {"unit": "kVA", "measurement_kind": "power", "aggregate": "maximum"},
+                    "interval_reading": []
+                }
+            }
+
+        # Filter data by date range
+        all_data = cached_data.get("data", [])
+        filtered_data = [
+            item for item in all_data
+            if start <= item["date"] <= end
+        ]
+
+        # Calculate max power (roughly 1.5-2x average hourly consumption)
+        # If daily consumption is 20 kWh, average per hour is ~0.83 kW, peaks can be 2-3 kVA
+        interval_reading = []
+        for item in filtered_data:
+            daily_kwh = float(item["value"])
+            # Estimate max power as daily_kwh / 12 (assuming 12 hours of active use)
+            # Then add some variation for realistic peaks
+            import random
+            base_power = daily_kwh / 12
+            max_power = base_power * random.uniform(2.0, 3.5)  # Peak is 2-3.5x average
+
+            interval_reading.append({
+                "value": f"{max_power:.3f}",
+                "date": item["date"],
+                "interval_length": "PT1D",
+                "measure_type": "B",
+            })
+
+        logger.info(f"[DEMO] Returning {len(interval_reading)} max power records")
+
+        return {
+            "meter_reading": {
+                "usage_point_id": usage_point_id,
+                "start": start,
+                "end": end,
+                "quality": "CORRIGE",
+                "reading_type": {
+                    "unit": "kVA",
+                    "measurement_kind": "power",
+                    "aggregate": "maximum"
                 },
                 "interval_reading": interval_reading
             }

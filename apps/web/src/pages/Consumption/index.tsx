@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth'
 import type { PDL } from '@/types/api'
 import toast from 'react-hot-toast'
 import { parseOffpeakHours, isOffpeakTime } from '@/utils/offpeakHours'
+import { logger } from '@/utils/logger'
 import {
   BarChart,
   Bar,
@@ -42,11 +43,13 @@ import { AnnualCurve } from './components/AnnualCurve'
 import { DetailedLoadCurve } from './components/DetailedLoadCurve'
 import { MonthlyHcHp } from './components/MonthlyHcHp'
 import { PowerPeaks } from './components/PowerPeaks'
+import { useIsDemo } from '@/hooks/useIsDemo'
 
 // Re-export as default for backwards compatibility
 export default function Consumption() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  const isDemo = useIsDemo()
 
   // States
   const [selectedPDL, setSelectedPDL] = useState<string>('')
@@ -214,7 +217,10 @@ export default function Consumption() {
 
   // Check if yesterday's data is in cache (to determine if we need to auto-fetch)
   const hasYesterdayDataInCache = useMemo(() => {
-    if (!selectedPDL) return false
+    if (!selectedPDL) {
+      logger.log('[Cache Detection] No PDL selected')
+      return false
+    }
 
     // Calculate yesterday's date in UTC
     const todayUTC = new Date()
@@ -229,24 +235,67 @@ export default function Consumption() {
                         String(yesterdayUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
                         String(yesterdayUTC.getUTCDate()).padStart(2, '0')
 
-    // Check if we have consumption data that includes yesterday
+    logger.log('[Cache Detection] Checking cache for PDL:', selectedPDL, 'yesterday:', yesterdayStr)
+
+    // Log all cache keys to see what's actually stored
+    const allQueries = queryClient.getQueryCache().getAll()
+    logger.log('[Cache Detection] Total queries in cache:', allQueries.length)
+
+    const relevantQueries = allQueries.filter(q =>
+      q.queryKey.includes(selectedPDL) &&
+      (q.queryKey[0] === 'consumptionDetail' || q.queryKey[0] === 'consumption')
+    )
+    logger.log('[Cache Detection] Relevant queries for this PDL:', relevantQueries.map(q => ({
+      key: q.queryKey,
+      hasData: !!q.state.data
+    })))
+
+    // Check if we have detailed consumption data for yesterday (day-by-day cache)
+    const detailedCacheKey = ['consumptionDetail', selectedPDL, yesterdayStr, yesterdayStr]
+    const detailedQuery = queryClient.getQueryData(detailedCacheKey) as any
+
+    logger.log('[Cache Detection] Detailed cache key:', detailedCacheKey)
+    logger.log('[Cache Detection] Detailed query result:', detailedQuery ? 'Found' : 'Not found')
+
+    if (detailedQuery?.data?.meter_reading?.interval_reading) {
+      logger.log('[Cache Detection] Detailed cache has', detailedQuery.data.meter_reading.interval_reading.length, 'readings')
+      if (detailedQuery.data.meter_reading.interval_reading.length > 0) {
+        logger.log('[Cache Detection] ✓ Cache found via detailed query!')
+        return true
+      }
+    }
+
+    // Also check daily consumption data
     const consumptionQuery = queryClient.getQueryCache().find({
       queryKey: ['consumption', selectedPDL],
       exact: false,
     })
 
-    if (!consumptionQuery?.state.data) return false
+    logger.log('[Cache Detection] Daily consumption query:', consumptionQuery ? 'Found' : 'Not found')
+
+    if (!consumptionQuery?.state.data) {
+      logger.log('[Cache Detection] ✗ No cache found')
+      return false
+    }
 
     const data = consumptionQuery.state.data as any
     const readings = data?.data?.meter_reading?.interval_reading
 
-    if (!readings || readings.length === 0) return false
+    logger.log('[Cache Detection] Daily consumption readings:', readings ? readings.length : 0)
+
+    if (!readings || readings.length === 0) {
+      logger.log('[Cache Detection] ✗ No readings in cache')
+      return false
+    }
 
     // Check if any reading matches yesterday's date
-    return readings.some((reading: any) => {
+    const hasYesterday = readings.some((reading: any) => {
       const readingDate = reading.date?.split('T')[0]
       return readingDate === yesterdayStr
     })
+
+    logger.log('[Cache Detection]', hasYesterday ? '✓' : '✗', 'Yesterday data in daily consumption cache:', hasYesterday)
+    return hasYesterday
   }, [selectedPDL, queryClient])
 
   // Auto-set selectedPDL when there's only one active PDL
@@ -300,17 +349,45 @@ export default function Consumption() {
     }
   }, [hcHpCalculationTrigger, selectedPDLDetails])
 
-  // Auto-fetch data on first load only if yesterday's data is NOT in cache
+  // Auto-fetch data on first load only for demo accounts or if cache has data
   useEffect(() => {
+    logger.log('[Auto-load] Effect triggered - hasAttemptedAutoLoad:', hasAttemptedAutoLoad, 'selectedPDL:', selectedPDL, 'hasCache:', hasYesterdayDataInCache, 'isDemo:', isDemo)
+
     if (!hasAttemptedAutoLoad && selectedPDL) {
       setHasAttemptedAutoLoad(true)
+      logger.log('[Auto-load] First load detected')
 
-      // Only fetch if we DON'T have yesterday's data in cache
-      // This prevents unnecessary fetches when returning to the page with cached data
-      if (!hasYesterdayDataInCache) {
+      // For demo accounts, ALWAYS fetch data to ensure detailed data is loaded for HC/HP calculations
+      if (isDemo) {
+        logger.log('[Auto-load] Demo account - fetching data')
         fetchConsumptionData()
-      } else {
-        // Data is already in cache and up-to-date, set states to show cached data
+      } else if (hasYesterdayDataInCache) {
+        logger.log('[Auto-load] Cache detected - displaying cached data without fetching')
+
+        // If data is already in cache, just set states to show cached data
+        // Don't auto-fetch for regular users - they must click the button manually
+
+        // Calculate date range (same as in fetchConsumptionData)
+        const todayUTC = new Date()
+        const yesterdayUTC = new Date(Date.UTC(
+          todayUTC.getUTCFullYear(),
+          todayUTC.getUTCMonth(),
+          todayUTC.getUTCDate() - 1,
+          0, 0, 0, 0
+        ))
+        const yesterday = yesterdayUTC
+        const startDate_obj = new Date(Date.UTC(
+          yesterdayUTC.getUTCFullYear(),
+          yesterdayUTC.getUTCMonth(),
+          yesterdayUTC.getUTCDate() - 1094,
+          0, 0, 0, 0
+        ))
+        const startDate = startDate_obj.toISOString().split('T')[0]
+        const endDate = yesterday.toISOString().split('T')[0]
+
+        logger.log('[Auto-load] Setting date range:', startDate, 'to', endDate)
+
+        setDateRange({ start: startDate, end: endDate })
         setDailyLoadingComplete(true)
         setPowerLoadingComplete(true)
         setAllLoadingComplete(true)
@@ -318,9 +395,16 @@ export default function Consumption() {
         setIsStatsSectionExpanded(true)
         setIsDetailSectionExpanded(true)
         setIsPowerSectionExpanded(true)
+        // Trigger HC/HP calculation for cached data
+        setHcHpCalculationTrigger(prev => prev + 1)
+
+        logger.log('[Auto-load] All states set - graphs should be visible')
+      } else {
+        logger.log('[Auto-load] No cache - user must click button manually')
       }
+      // For regular accounts without cache: do nothing, user must click the button manually
     }
-  }, [selectedPDL, hasYesterdayDataInCache, hasAttemptedAutoLoad, fetchConsumptionData])
+  }, [selectedPDL, hasYesterdayDataInCache, hasAttemptedAutoLoad, fetchConsumptionData, isDemo])
 
   // Mark daily consumption loading as complete (whether success or error)
   useEffect(() => {
@@ -477,264 +561,245 @@ export default function Consumption() {
           isLoadingPower={isLoadingPower}
           consumptionResponse={consumptionResponse}
           maxPowerResponse={maxPowerResponse}
+          hasYesterdayDataInCache={hasYesterdayDataInCache}
         />
       </PDLSelector>
 
       {/* Statistics Section - Collapsible */}
-      {allLoadingComplete && (
-        <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
-          <div
-            className={`flex items-center justify-between p-6 cursor-pointer ${
-              isLoading || isLoadingDetailed ? 'opacity-60 cursor-not-allowed' : ''
-            }`}
-            onClick={() => {
-              if (!isLoading && !isLoadingDetailed) {
-                setIsStatsSectionExpanded(!isStatsSectionExpanded)
-              }
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Statistiques de consommation
-              </h2>
-            </div>
-            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              {isStatsSectionExpanded ? (
-                <span className="text-sm">Réduire</span>
-              ) : (
-                <span className="text-sm">Développer</span>
-              )}
-              <svg
-                className={`w-5 h-5 transition-transform duration-200 ${
-                  isStatsSectionExpanded ? 'rotate-180' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
+      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+        <div
+          className={`flex items-center justify-between p-6 ${
+            allLoadingComplete ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+          }`}
+          onClick={() => {
+            if (allLoadingComplete) {
+              setIsStatsSectionExpanded(!isStatsSectionExpanded)
+            }
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Statistiques de consommation
+            </h2>
           </div>
-
-          {isStatsSectionExpanded && (
-            <div className="px-6 pb-6">
-              {/* Yearly Statistics Cards */}
-              <YearlyStatCards
-                chartData={chartData}
-                consumptionData={consumptionData}
-              />
-
-              {/* HC/HP Distribution */}
-              <HcHpDistribution
-                hcHpByYear={hcHpByYear}
-                selectedPDLDetails={selectedPDLDetails}
-              />
-            </div>
-          )}
+          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+            {isStatsSectionExpanded ? (
+              <span className="text-sm">Réduire</span>
+            ) : (
+              <span className="text-sm">Développer</span>
+            )}
+            <svg
+              className={`w-5 h-5 transition-transform duration-200 ${
+                isStatsSectionExpanded ? 'rotate-180' : ''
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
         </div>
-      )}
+
+        {isStatsSectionExpanded && allLoadingComplete && (
+          <div className="px-6 pb-6">
+            {/* Yearly Statistics Cards */}
+            <YearlyStatCards
+              chartData={chartData}
+              consumptionData={consumptionData}
+            />
+
+            {/* HC/HP Distribution */}
+            <HcHpDistribution
+              hcHpByYear={hcHpByYear}
+              selectedPDLDetails={selectedPDLDetails}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Charts Section - Annual Curve */}
-      {allLoadingComplete && (
-        <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
-          <div
-            className={`flex items-center justify-between p-6 cursor-pointer ${
-              isLoading || isLoadingDetailed ? 'opacity-60 cursor-not-allowed' : ''
-            }`}
-            onClick={() => {
-              if (!isLoading && !isLoadingDetailed) {
-                setIsChartsExpanded(!isChartsExpanded)
-              }
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Graphiques de consommation
-              </h2>
-            </div>
-            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              {isChartsExpanded ? (
-                <span className="text-sm">Réduire</span>
-              ) : (
-                <span className="text-sm">Développer</span>
-              )}
-              <svg
-                className={`w-5 h-5 transition-transform duration-200 ${
-                  isChartsExpanded ? 'rotate-180' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
+      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+        <div
+          className={`flex items-center justify-between p-6 ${
+            allLoadingComplete ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+          }`}
+          onClick={() => {
+            if (allLoadingComplete) {
+              setIsChartsExpanded(!isChartsExpanded)
+            }
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Graphiques de consommation
+            </h2>
           </div>
-
-          {isChartsExpanded && (
-            <div className="px-6 pb-6 space-y-8">
-              {/* Yearly Consumption by Month */}
-              <YearlyConsumption
-                chartData={chartData}
-                consumptionData={consumptionData}
-                isDarkMode={isDarkMode}
-              />
-
-              {/* Annual Curve */}
-              <AnnualCurve
-                chartData={chartData}
-                isDarkMode={isDarkMode}
-              />
-            </div>
-          )}
+          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+            {isChartsExpanded ? (
+              <span className="text-sm">Réduire</span>
+            ) : (
+              <span className="text-sm">Développer</span>
+            )}
+            <svg
+              className={`w-5 h-5 transition-transform duration-200 ${
+                isChartsExpanded ? 'rotate-180' : ''
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
         </div>
-      )}
+
+        {isChartsExpanded && allLoadingComplete && (
+          <div className="px-6 pb-6 space-y-8">
+            {/* Yearly Consumption by Month */}
+            <YearlyConsumption
+              chartData={chartData}
+              consumptionData={consumptionData}
+              isDarkMode={isDarkMode}
+            />
+
+            {/* Annual Curve */}
+            <AnnualCurve
+              chartData={chartData}
+              isDarkMode={isDarkMode}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Detailed Consumption Section */}
-      {allLoadingComplete && (
-        <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
-          <div
-            className={`flex items-center justify-between p-6 cursor-pointer ${
-              isLoading || isLoadingDetailed ? 'opacity-60 cursor-not-allowed' : ''
-            }`}
-            onClick={() => {
-              if (!isLoading && !isLoadingDetailed) {
-                setIsDetailSectionExpanded(!isDetailSectionExpanded)
-              }
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Courbe de charge détaillée
-              </h2>
-            </div>
-            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              {isDetailSectionExpanded ? (
-                <span className="text-sm">Réduire</span>
-              ) : (
-                <span className="text-sm">Développer</span>
-              )}
-              <svg
-                className={`w-5 h-5 transition-transform duration-200 ${
-                  isDetailSectionExpanded ? 'rotate-180' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
+      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+        <div
+          className={`flex items-center justify-between p-6 ${
+            allLoadingComplete && detailByDayData.length > 0 ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+          }`}
+          onClick={() => {
+            if (allLoadingComplete && detailByDayData.length > 0) {
+              setIsDetailSectionExpanded(!isDetailSectionExpanded)
+            }
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Courbe de charge détaillée
+            </h2>
           </div>
-
-          {isDetailSectionExpanded && (
-            <div className="px-6 pb-6 space-y-8">
-              {/* Detailed Load Curve */}
-              <DetailedLoadCurve
-                detailByDayData={detailByDayData}
-                selectedPDL={selectedPDL}
-                isDarkMode={isDarkMode}
-                isLoadingDetail={isLoadingDetail}
-                detailDateRange={detailDateRange}
-                onWeekOffsetChange={setDetailWeekOffset}
-                detailWeekOffset={detailWeekOffset}
-              />
-
-              {/* Monthly HC/HP */}
-              <MonthlyHcHp
-                monthlyHcHpByYear={monthlyHcHpByYear}
-                selectedPDLDetails={selectedPDLDetails}
-                isDarkMode={isDarkMode}
-              />
-
-              {/* Info note */}
-              {detailByDayData.length > 0 && (
-                <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                  <p className="text-sm text-blue-800 dark:text-blue-200">
-                    <strong>ℹ️ Note :</strong> Ces graphiques montrent votre consommation électrique détaillée avec des mesures à intervalles réguliers
-                    ({detailData?.meter_reading?.reading_type?.interval_length === 'P30M' ? '30 minutes' :
-                      detailData?.meter_reading?.reading_type?.interval_length === 'P15M' ? '15 minutes' :
-                      detailData?.meter_reading?.reading_type?.interval_length || 'variables'})
-                    pour les 7 derniers jours.
-                    Cela vous permet d'identifier précisément vos pics de consommation et d'optimiser votre utilisation.
-                    <br/><br/>
-                    <strong>💡 Calcul :</strong> Les valeurs sont en puissance moyenne (kW) pour chaque intervalle.
-                    L'énergie consommée pendant l'intervalle est calculée en tenant compte de la durée
-                    (Énergie = Puissance × Durée). Le total journalier affiché dans les onglets correspond à la somme
-                    de tous les intervalles de la journée.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+            {isDetailSectionExpanded ? (
+              <span className="text-sm">Réduire</span>
+            ) : (
+              <span className="text-sm">Développer</span>
+            )}
+            <svg
+              className={`w-5 h-5 transition-transform duration-200 ${
+                isDetailSectionExpanded ? 'rotate-180' : ''
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
         </div>
-      )}
+
+        {isDetailSectionExpanded && allLoadingComplete && detailByDayData.length > 0 && (
+          <div className="px-6 pb-6 space-y-8">
+            {/* Detailed Load Curve */}
+            <DetailedLoadCurve
+              detailByDayData={detailByDayData}
+              selectedPDL={selectedPDL}
+              isDarkMode={isDarkMode}
+              isLoadingDetail={isLoadingDetail}
+              detailDateRange={detailDateRange}
+              onWeekOffsetChange={setDetailWeekOffset}
+              detailWeekOffset={detailWeekOffset}
+            />
+
+            {/* Monthly HC/HP */}
+            <MonthlyHcHp
+              monthlyHcHpByYear={monthlyHcHpByYear}
+              selectedPDLDetails={selectedPDLDetails}
+              isDarkMode={isDarkMode}
+            />
+
+            {/* Info note */}
+            {detailByDayData.length > 0 && (
+              <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <strong>ℹ️ Note :</strong> Ces graphiques montrent votre consommation électrique détaillée avec des mesures à intervalles réguliers
+                  ({detailData?.meter_reading?.reading_type?.interval_length === 'P30M' ? '30 minutes' :
+                    detailData?.meter_reading?.reading_type?.interval_length === 'P15M' ? '15 minutes' :
+                    detailData?.meter_reading?.reading_type?.interval_length || 'variables'})
+                  pour les 7 derniers jours.
+                  Cela vous permet d'identifier précisément vos pics de consommation et d'optimiser votre utilisation.
+                  <br/><br/>
+                  <strong>💡 Calcul :</strong> Les valeurs sont en puissance moyenne (kW) pour chaque intervalle.
+                  L'énergie consommée pendant l'intervalle est calculée en tenant compte de la durée
+                  (Énergie = Puissance × Durée). Le total journalier affiché dans les onglets correspond à la somme
+                  de tous les intervalles de la journée.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Max Power Section */}
-      {allLoadingComplete && (
-        <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
-          <div
-            className={`flex items-center justify-between p-6 cursor-pointer ${
-              isLoading || isLoadingDetailed ? 'opacity-60 cursor-not-allowed' : ''
-            }`}
-            onClick={() => {
-              if (!isLoading && !isLoadingDetailed) {
-                setIsPowerSectionExpanded(!isPowerSectionExpanded)
-              }
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <TrendingUp className="text-primary-600 dark:text-primary-400" size={20} />
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Pics de puissance maximale</h2>
-            </div>
-            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              {isPowerSectionExpanded ? (
-                <span className="text-sm">Réduire</span>
-              ) : (
-                <span className="text-sm">Développer</span>
-              )}
-              <svg
-                className={`w-5 h-5 transition-transform duration-200 ${
-                  isPowerSectionExpanded ? 'rotate-180' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
+      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+        <div
+          className={`flex items-center justify-between p-6 ${
+            allLoadingComplete ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+          }`}
+          onClick={() => {
+            if (allLoadingComplete) {
+              setIsPowerSectionExpanded(!isPowerSectionExpanded)
+            }
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <TrendingUp className="text-primary-600 dark:text-primary-400" size={20} />
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Pics de puissance maximale</h2>
           </div>
-
-          {isPowerSectionExpanded && powerByYearData.length > 0 && (
-            <div className="px-6 pb-6">
-              <PowerPeaks
-                powerByYearData={powerByYearData}
-                selectedPDLDetails={selectedPDLDetails}
-                maxPowerData={maxPowerData}
-                isDarkMode={isDarkMode}
-              />
-            </div>
-          )}
+          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+            {isPowerSectionExpanded ? (
+              <span className="text-sm">Réduire</span>
+            ) : (
+              <span className="text-sm">Développer</span>
+            )}
+            <svg
+              className={`w-5 h-5 transition-transform duration-200 ${
+                isPowerSectionExpanded ? 'rotate-180' : ''
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
         </div>
-      )}
 
-      {/* Empty State */}
-      {!consumptionData && !isLoading && !dailyLoadingComplete && !powerLoadingComplete && (
-        <div className="card mt-6 p-12 text-center">
-          <TrendingUp className="mx-auto text-gray-400 mb-4" size={48} />
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-            Aucune donnée à afficher
-          </h3>
-          <p className="text-gray-600 dark:text-gray-400">
-            Sélectionnez un PDL et cliquez sur "Récupérer 3 ans d'historique depuis Enedis"
-          </p>
-        </div>
-      )}
+        {isPowerSectionExpanded && allLoadingComplete && powerByYearData.length > 0 && (
+          <div className="px-6 pb-6">
+            <PowerPeaks
+              powerByYearData={powerByYearData}
+              selectedPDLDetails={selectedPDLDetails}
+              maxPowerData={maxPowerData}
+              isDarkMode={isDarkMode}
+            />
+          </div>
+        )}
+      </div>
+
 
       {/* Info Block Component */}
       <InfoBlock dataLimitWarning={dataLimitWarning} />

@@ -1,14 +1,18 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Calculator, AlertCircle, Loader2, ChevronDown, ChevronUp, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info, Activity } from 'lucide-react'
+import React, { useState, useEffect, useMemo } from 'react'
+import { Calculator, AlertCircle, Loader2, ChevronDown, ChevronUp, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
 import { enedisApi } from '@/api/enedis'
+// import { adminApi } from '@/api/admin' // Unused - cache clearing is in sidebar
 import { energyApi, type EnergyProvider, type EnergyOffer } from '@/api/energy'
 import { tempoApi, type TempoDay } from '@/api/tempo'
 import type { PDL } from '@/types/api'
 import jsPDF from 'jspdf'
 import { logger } from '@/utils/logger'
 import { SimulatorLoadingProgress } from './Simulator/SimulatorLoadingProgress'
+import { useIsDemo } from '@/hooks/useIsDemo'
+// import { useAuth } from '@/hooks/useAuth' // Unused for now
+// import toast from 'react-hot-toast' // Unused for now
 
 // Helper function to check if a date is weekend (Saturday or Sunday)
 function isWeekend(dateString: string): boolean {
@@ -103,6 +107,10 @@ function isOffpeakHour(hour: number, offpeakConfig?: Record<string, string> | st
 }
 
 export default function Simulator() {
+  // const { user } = useAuth() // Unused for now
+  const queryClient = useQueryClient()
+  const isDemo = useIsDemo()
+
   // Fetch user's PDLs
   const { data: pdlsData, isLoading: pdlsLoading, error: pdlsError } = useQuery({
     queryKey: ['pdls'],
@@ -144,8 +152,6 @@ export default function Simulator() {
   // Selected PDL
   const [selectedPdl, setSelectedPdl] = useState<string>('')
 
-  const queryClient = useQueryClient()
-
   // Simulation state
   const [isSimulating, setIsSimulating] = useState(false)
   const [simulationResult, setSimulationResult] = useState<any>(null)
@@ -153,7 +159,7 @@ export default function Simulator() {
   const [simulationError, setSimulationError] = useState<string | null>(null)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [hasAutoLaunched, setHasAutoLaunched] = useState(false)
-  const [isProgressExpanded, setIsProgressExpanded] = useState(false)
+  // const [isClearingCache, setIsClearingCache] = useState(false) // Unused for now
 
   // Filters and sorting state
   const [filterType, setFilterType] = useState<string>('all')
@@ -161,6 +167,33 @@ export default function Simulator() {
   const [showOnlyRecent, setShowOnlyRecent] = useState(false)
   const [sortBy, setSortBy] = useState<'total' | 'subscription' | 'energy'>('total')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+
+  // Check if cache exists for selected PDL
+  const hasCacheData = useMemo(() => {
+    if (!selectedPdl) return false
+
+    // Sample a few dates to check if cache exists
+    const today = new Date()
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+
+    // Check if we have any cached data for the last 7 days
+    let cachedCount = 0
+    for (let i = 0; i < 7; i++) {
+      const sampleDate = new Date(yesterday)
+      sampleDate.setDate(yesterday.getDate() - i * 7)
+      const dateStr = sampleDate.toISOString().split('T')[0]
+
+      const cacheKey = ['consumptionDetail', selectedPdl, dateStr, dateStr]
+      const cachedData = queryClient.getQueryData(cacheKey)
+
+      if (cachedData) {
+        cachedCount++
+      }
+    }
+
+    return cachedCount >= 3 // If at least 3 out of 7 sample days are cached
+  }, [selectedPdl, queryClient])
 
   // Set first active PDL as selected by default
   useEffect(() => {
@@ -180,18 +213,6 @@ export default function Simulator() {
     setSimulationError(null)
     setHasAutoLaunched(false)
   }, [selectedPdl])
-
-  // Auto-expand/collapse progress section
-  useEffect(() => {
-    if (isSimulating) {
-      setIsProgressExpanded(true)
-    } else if (simulationResult || simulationError) {
-      // Close after a small delay when complete
-      setTimeout(() => {
-        setIsProgressExpanded(false)
-      }, 1000)
-    }
-  }, [isSimulating, simulationResult, simulationError])
 
   const handleSimulation = async () => {
     if (!selectedPdl) {
@@ -262,17 +283,44 @@ export default function Simulator() {
 
         logger.log(`Fetching period ${i + 1}/${periods.length}: ${period.start} to ${period.end}`)
 
-        // Check if data is already in React Query cache (shared with Consumption page)
-        const cacheKey = ['consumptionDetail', selectedPdl, period.start, period.end]
-        let response = queryClient.getQueryData(cacheKey) as any
+        // Try to build response from day-by-day cache (shared with Consumption page)
+        // Consumption page stores data with keys: ['consumptionDetail', pdl, date, date]
+        const startDate = new Date(period.start + 'T00:00:00Z')
+        const endDate = new Date(period.end + 'T00:00:00Z')
+        const cachedDayData: any[] = []
+        let hasMissingDays = false
 
-        if (response) {
-          logger.log(`✅ [Cache HIT] Using cached data for ${period.start} → ${period.end}`)
+        const currentDate = new Date(startDate)
+        while (currentDate <= endDate) {
+          const dateStr = currentDate.toISOString().split('T')[0]
+          const dayCacheKey = ['consumptionDetail', selectedPdl, dateStr, dateStr]
+          const dayData = queryClient.getQueryData(dayCacheKey) as any
+
+          if (dayData?.data?.meter_reading?.interval_reading) {
+            cachedDayData.push(...dayData.data.meter_reading.interval_reading)
+          } else {
+            hasMissingDays = true
+          }
+          currentDate.setUTCDate(currentDate.getUTCDate() + 1)
         }
 
-        if (!response) {
+        let response: any
+
+        if (!hasMissingDays && cachedDayData.length > 0) {
+          // All days are in cache, build response from cached data
+          logger.log(`✅ [Cache HIT] Using cached data for ${period.start} → ${period.end}`)
+          response = {
+            success: true,
+            data: {
+              meter_reading: {
+                interval_reading: cachedDayData
+              }
+            }
+          }
+        } else {
+          // Some or all days are missing, fetch from API
           logger.log(`❌ [Cache MISS] Fetching from API for ${period.start} → ${period.end}`)
-          // Not in cache, fetch from API and cache it
+          const cacheKey = ['consumptionDetail', selectedPdl, period.start, period.end]
           response = await queryClient.fetchQuery({
             queryKey: cacheKey,
             queryFn: () => enedisApi.getConsumptionDetail(selectedPdl, {
@@ -282,6 +330,32 @@ export default function Simulator() {
             }),
             staleTime: 7 * 24 * 60 * 60 * 1000,
           })
+
+          // Also cache day by day for future use (same format as Consumption page)
+          if (response?.data?.meter_reading?.interval_reading) {
+            const dataByDate: Record<string, any[]> = {}
+            response.data.meter_reading.interval_reading.forEach((point: any) => {
+              let date = point.date.split(' ')[0].split('T')[0]
+              const time = point.date.split(' ')[1] || point.date.split('T')[1] || '00:00:00'
+              if (time.startsWith('00:00')) {
+                const dateObj = new Date(date + 'T00:00:00Z')
+                dateObj.setUTCDate(dateObj.getUTCDate() - 1)
+                date = dateObj.toISOString().split('T')[0]
+              }
+              if (!dataByDate[date]) dataByDate[date] = []
+              dataByDate[date].push(point)
+            })
+
+            Object.entries(dataByDate).forEach(([date, points]) => {
+              queryClient.setQueryData(
+                ['consumptionDetail', selectedPdl, date, date],
+                {
+                  success: true,
+                  data: { meter_reading: { interval_reading: points } }
+                }
+              )
+            })
+          }
         }
 
         if (!response.success || !response.data) {
@@ -859,11 +933,21 @@ export default function Simulator() {
       isSimulating,
       hasSimulationResult: !!simulationResult,
       hasAutoLaunched,
+      isDemo,
+      pdlsDataLoaded: !!pdlsData,
+      offersDataLoaded: !!offersData,
+      providersDataLoaded: !!providersData,
     })
 
     // Don't auto-launch if already launched, simulating, or have results
     if (!selectedPdl || isSimulating || simulationResult || hasAutoLaunched) {
       logger.log('[Auto-launch] Skipping auto-launch due to conditions')
+      return
+    }
+
+    // Don't auto-launch if PDL data, offers, or providers are not loaded yet
+    if (!pdlsData || !offersData || !providersData) {
+      logger.log('[Auto-launch] Skipping auto-launch - data not loaded yet')
       return
     }
 
@@ -917,7 +1001,7 @@ export default function Simulator() {
     } else {
       logger.log(`❌ Not enough cached data (${cachePercentage}%), skipping auto-launch`)
     }
-  }, [selectedPdl, isSimulating, simulationResult, hasAutoLaunched, queryClient, handleSimulation])
+  }, [selectedPdl, isSimulating, simulationResult, hasAutoLaunched, isDemo, pdlsData, offersData, providersData, queryClient, handleSimulation])
 
   const toggleRowExpansion = (offerId: string) => {
     setExpandedRows((prev) => {
@@ -1003,6 +1087,67 @@ export default function Simulator() {
     const types = new Set(simulationResult.map((r) => r.offerType))
     return Array.from(types).sort()
   }, [simulationResult])
+
+  // Clear cache function (admin only) - Unused for now as cache clearing is in the sidebar
+  /*
+  const confirmClearCache = async () => {
+    if (!selectedPdl) {
+      toast.error('Aucun PDL sélectionné')
+      return
+    }
+
+    setIsClearingCache(true)
+
+    try {
+      // 1. Clear React Query cache
+      queryClient.removeQueries({ queryKey: ['consumptionDetail'] })
+      queryClient.removeQueries({ queryKey: ['consumption'] })
+      queryClient.removeQueries({ queryKey: ['maxPower'] })
+
+      // 2. Clear localStorage
+      const keysToRemove: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && (
+          key.includes('consumptionDetail') ||
+          key.includes('consumption') ||
+          key.includes('maxPower') ||
+          key.includes('REACT_QUERY_OFFLINE_CACHE')
+        )) {
+          keysToRemove.push(key)
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key))
+
+      // 3. Clear IndexedDB
+      const databases = await indexedDB.databases()
+      for (const db of databases) {
+        if (db.name?.includes('react-query') || db.name?.includes('myelectricaldata')) {
+          indexedDB.deleteDatabase(db.name)
+        }
+      }
+
+      // 4. Clear Redis cache via API
+      const response = await adminApi.clearAllConsumptionCache()
+      if (!response.success) {
+        throw new Error(response.error || 'Échec du vidage du cache Redis')
+      }
+
+      toast.success('Cache vidé avec succès (Navigateur + Redis)')
+
+      // Reset simulation state
+      setSimulationResult(null)
+      setSimulationError(null)
+      setFetchProgress({current: 0, total: 0, phase: ''})
+
+    } catch (error) {
+      console.error('Error clearing cache:', error)
+      toast.error('Erreur lors du vidage du cache')
+    } finally {
+      setIsClearingCache(false)
+    }
+  }
+  */
 
   const exportToPDF = async () => {
     if (!simulationResult || simulationResult.length === 0) return
@@ -1413,7 +1558,7 @@ export default function Simulator() {
         </div>
       )}
 
-      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200 p-6">
+      <div className="card">
         {/* Configuration Header */}
         <div className="flex items-center gap-2 mb-6">
           <Calculator className="text-primary-600 dark:text-primary-400" size={20} />
@@ -1464,68 +1609,54 @@ export default function Simulator() {
         <button
           onClick={handleSimulation}
           disabled={isSimulating || !selectedPdl}
-          className="btn btn-primary w-full py-4 text-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full bg-primary-600 hover:bg-primary-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2"
         >
           {isSimulating ? (
-            <span className="flex items-center justify-center gap-2">
+            <>
               <Loader2 className="animate-spin" size={20} />
-              Récupération en cours...
-            </span>
+              {isDemo ? 'Simulation en cours...' : 'Récupération en cours...'}
+            </>
           ) : (
             'Lancer la simulation'
           )}
         </button>
-        </div>
 
-        {/* Collapsible Progress Section */}
-        <div className="mt-6">
-          <div
-            onClick={() => setIsProgressExpanded(!isProgressExpanded)}
-            className="flex items-center justify-between cursor-pointer hover:opacity-70 transition-opacity"
-          >
-            <div className="flex items-center gap-2">
-              <Activity className="text-primary-600 dark:text-primary-400" size={20} />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Progression de la simulation
-              </h3>
-            </div>
-            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              {isProgressExpanded ? (
-                <span className="text-sm">Réduire</span>
-              ) : (
-                <span className="text-sm">Développer</span>
-              )}
-              {isProgressExpanded ? (
-                <ChevronUp size={20} className="text-gray-500" />
-              ) : (
-                <ChevronDown size={20} className="text-gray-500" />
-              )}
-            </div>
+        {/* Demo mode info */}
+        {isDemo && (
+          <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              <strong>Mode Démo :</strong> Le compte démo dispose déjà de 3 ans de données fictives pré-chargées.
+              Le simulateur fonctionne avec ces données.
+            </p>
           </div>
-
-          {isProgressExpanded && (
-            <div className="animate-in fade-in slide-in-from-top-2 duration-300 mt-4">
-              <SimulatorLoadingProgress
-                isSimulating={isSimulating}
-                fetchProgress={fetchProgress}
-                simulationResult={simulationResult}
-                simulationError={simulationError}
-              />
-            </div>
-          )}
+        )}
         </div>
+
+        {/* Progress Section */}
+        <SimulatorLoadingProgress
+          isSimulating={isSimulating}
+          fetchProgress={fetchProgress}
+          simulationResult={simulationResult}
+          simulationError={simulationError}
+          hasCacheData={hasCacheData}
+        />
       </div>
 
         {/* Simulation Results */}
-        {simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0 && (
-          <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
-            <div className="flex items-center justify-between p-6">
-              <div className="flex items-center gap-2">
-                <Calculator className="text-primary-600 dark:text-primary-400" size={20} />
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Comparaison des offres ({filteredAndSortedResults.length} résultat{filteredAndSortedResults.length > 1 ? 's' : ''})
-                </h2>
-              </div>
+        <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+          <div className={`flex items-center justify-between p-6 ${
+            !(simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0) ? 'opacity-60' : ''
+          }`}>
+            <div className="flex items-center gap-2">
+              <Calculator className="text-primary-600 dark:text-primary-400" size={20} />
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0
+                  ? `Comparaison des offres (${filteredAndSortedResults.length} résultat${filteredAndSortedResults.length > 1 ? 's' : ''})`
+                  : 'Comparaison des offres'
+                }
+              </h2>
+            </div>
+            {simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0 && (
               <button
                 onClick={exportToPDF}
                 className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
@@ -1533,7 +1664,11 @@ export default function Simulator() {
                 <FileDown size={16} className="flex-shrink-0" />
                 <span>Exporter en PDF</span>
               </button>
-            </div>
+            )}
+          </div>
+
+          {simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0 && (
+            <>
 
             {/* Filters */}
             <div className="px-6 pb-4 border-b border-gray-200 dark:border-gray-700">
@@ -2047,8 +2182,9 @@ export default function Simulator() {
               </div>
             )}
             </div>
-          </div>
-        )}
+            </>
+          )}
+        </div>
 
       {/* Information Block - Always visible at bottom */}
       <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200 p-6">

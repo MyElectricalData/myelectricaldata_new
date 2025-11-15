@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Home, LogOut, Moon, Sun, Heart, Shield, BookOpen, Calculator, Users, Menu, X, Calendar, ChevronLeft, ChevronRight, HelpCircle, UserCircle, Zap, TrendingUp } from 'lucide-react'
+import { Home, LogOut, Moon, Sun, Heart, Shield, BookOpen, Calculator, Users, Menu, X, Calendar, ChevronLeft, ChevronRight, HelpCircle, UserCircle, Zap, TrendingUp, Trash2 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useThemeStore } from '@/stores/themeStore'
@@ -7,6 +7,8 @@ import { useState, useEffect } from 'react'
 import toast, { Toaster } from 'react-hot-toast'
 import AdminTabs from './AdminTabs'
 import ApiDocsTabs from './ApiDocsTabs'
+import { useQueryClient } from '@tanstack/react-query'
+import { adminApi } from '@/api/admin'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth()
@@ -15,6 +17,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [isClearingCache, setIsClearingCache] = useState(false)
+  const queryClient = useQueryClient()
 
   // Menu items
   const menuItems = [
@@ -25,6 +29,68 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/tempo', icon: Calendar, label: 'Tempo' },
     { to: '/ecowatt', icon: Zap, label: 'EcoWatt' },
   ]
+
+  // Clear cache function (admin only)
+  const handleClearCache = async () => {
+    if (!user?.is_admin) {
+      toast.error('Accès non autorisé')
+      return
+    }
+
+    const confirmClear = window.confirm(
+      'Êtes-vous sûr de vouloir vider tout le cache (Navigateur + Redis) ?\n\n' +
+      'Cette action supprimera toutes les données en cache pour TOUS les utilisateurs et ne peut pas être annulée.'
+    )
+
+    if (!confirmClear) return
+
+    setIsClearingCache(true)
+
+    try {
+      // 1. Clear React Query cache
+      queryClient.removeQueries({ queryKey: ['consumptionDetail'] })
+      queryClient.removeQueries({ queryKey: ['consumption'] })
+      queryClient.removeQueries({ queryKey: ['maxPower'] })
+
+      // 2. Clear localStorage
+      const keysToRemove: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && (
+          key.includes('consumptionDetail') ||
+          key.includes('consumption') ||
+          key.includes('maxPower') ||
+          key.includes('REACT_QUERY_OFFLINE_CACHE')
+        )) {
+          keysToRemove.push(key)
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key))
+
+      // 3. Clear IndexedDB
+      const databases = await indexedDB.databases()
+      for (const db of databases) {
+        if (db.name?.includes('react-query') || db.name?.includes('myelectricaldata')) {
+          indexedDB.deleteDatabase(db.name)
+        }
+      }
+
+      // 4. Clear Redis cache via API (for all users)
+      const response = await adminApi.clearAllConsumptionCache()
+      if (!response.success) {
+        const errorMessage = typeof response.error === 'string' ? response.error : 'Échec du vidage du cache Redis'
+        throw new Error(errorMessage)
+      }
+
+      toast.success('Cache vidé avec succès (Navigateur + Redis)')
+
+    } catch (error) {
+      console.error('Error clearing cache:', error)
+      toast.error('Erreur lors du vidage du cache')
+    } finally {
+      setIsClearingCache(false)
+    }
+  }
 
   // Add click handler to dismiss toasts on click
   useEffect(() => {
@@ -113,6 +179,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <Shield size={20} className="flex-shrink-0" />
                   {!sidebarCollapsed && <span className="font-medium">Administration</span>}
                 </Link>
+
+                {/* Clear Cache Button (Admin only) */}
+                <button
+                  onClick={handleClearCache}
+                  disabled={isClearingCache}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={sidebarCollapsed ? 'Vider le cache' : ''}
+                >
+                  <Trash2 size={20} className="flex-shrink-0" />
+                  {!sidebarCollapsed && <span className="font-medium">Vider le cache</span>}
+                </button>
               </>
             )}
           </div>
@@ -268,6 +345,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <Shield size={20} />
                   <span className="font-medium">Administration</span>
                 </Link>
+
+                {/* Clear Cache Button (Admin only) */}
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false)
+                    handleClearCache()
+                  }}
+                  disabled={isClearingCache}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Trash2 size={20} />
+                  <span className="font-medium">Vider le cache</span>
+                </button>
               </>
             )}
           </div>

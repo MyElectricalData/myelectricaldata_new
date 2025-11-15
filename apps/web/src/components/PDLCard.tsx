@@ -9,9 +9,10 @@ interface PDLCardProps {
   pdl: PDL
   onViewDetails: () => void
   onDelete: () => void
+  isDemo?: boolean
 }
 
-export default function PDLCard({ pdl, onViewDetails, onDelete }: PDLCardProps) {
+export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false }: PDLCardProps) {
   const [isEditingName, setIsEditingName] = useState(false)
   const [showSyncWarning, setShowSyncWarning] = useState(false)
   const [showDeleteWarning, setShowDeleteWarning] = useState(false)
@@ -89,10 +90,11 @@ export default function PDLCard({ pdl, onViewDetails, onDelete }: PDLCardProps) 
         : [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }]
     }
 
-    // Legacy format: convert object to array
+    // Legacy format: convert object to array and deduplicate
     const values = Object.values(pdl.offpeak_hours).filter(Boolean) as string[]
-    return values.length > 0
-      ? values.flatMap(parseAllRanges)
+    const uniqueValues = Array.from(new Set(values))
+    return uniqueValues.length > 0
+      ? uniqueValues.flatMap(parseAllRanges)
       : [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }]
   })
   const queryClient = useQueryClient()
@@ -143,9 +145,10 @@ export default function PDLCard({ pdl, onViewDetails, onDelete }: PDLCardProps) 
       const parsed = pdl.offpeak_hours.flatMap(parseAllRanges)
       setOffpeakRanges(parsed.length > 0 ? parsed : [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }])
     } else {
-      // Legacy format: convert object to array
+      // Legacy format: convert object to array and deduplicate
       const values = Object.values(pdl.offpeak_hours).filter(Boolean) as string[]
-      const parsed = values.flatMap(parseAllRanges)
+      const uniqueValues = Array.from(new Set(values))
+      const parsed = uniqueValues.flatMap(parseAllRanges)
       setOffpeakRanges(parsed.length > 0 ? parsed : [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }])
     }
   }, [pdl.id, pdl.name, pdl.subscribed_power, pdl.offpeak_hours])
@@ -180,7 +183,12 @@ export default function PDLCard({ pdl, onViewDetails, onDelete }: PDLCardProps) 
 
 
   const fetchContractMutation = useMutation({
-    mutationFn: () => pdlApi.fetchContract(pdl.id),
+    mutationFn: () => {
+      if (isDemo) {
+        return Promise.reject(new Error('Synchronisation désactivée en mode démo'))
+      }
+      return pdlApi.fetchContract(pdl.id)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pdls'] })
       setShowSyncWarning(false)
@@ -203,8 +211,12 @@ export default function PDLCard({ pdl, onViewDetails, onDelete }: PDLCardProps) 
   }
 
   const updateContractMutation = useMutation({
-    mutationFn: (data: { subscribed_power?: number; offpeak_hours?: string[] | Record<string, string> }) =>
-      pdlApi.updateContract(pdl.id, data),
+    mutationFn: (data: { subscribed_power?: number; offpeak_hours?: string[] | Record<string, string> }) => {
+      if (isDemo) {
+        return Promise.reject(new Error('Modifications désactivées en mode démo'))
+      }
+      return pdlApi.updateContract(pdl.id, data)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pdls'] })
       setIsSaving(false)
@@ -215,7 +227,12 @@ export default function PDLCard({ pdl, onViewDetails, onDelete }: PDLCardProps) 
   })
 
   const updateNameMutation = useMutation({
-    mutationFn: (name: string) => pdlApi.updateName(pdl.id, name),
+    mutationFn: (name: string) => {
+      if (isDemo) {
+        return Promise.reject(new Error('Modifications désactivées en mode démo'))
+      }
+      return pdlApi.updateName(pdl.id, name)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pdls'] })
       setIsEditingName(false)
@@ -223,22 +240,36 @@ export default function PDLCard({ pdl, onViewDetails, onDelete }: PDLCardProps) 
   })
 
   const updateTypeMutation = useMutation({
-    mutationFn: ({ has_consumption, has_production }: { has_consumption: boolean; has_production: boolean }) =>
-      pdlApi.updateType(pdl.id, has_consumption, has_production),
+    mutationFn: ({ has_consumption, has_production }: { has_consumption: boolean; has_production: boolean }) => {
+      if (isDemo) {
+        return Promise.reject(new Error('Modifications désactivées en mode démo'))
+      }
+      return pdlApi.updateType(pdl.id, has_consumption, has_production)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pdls'] })
     },
   })
 
   const toggleActiveMutation = useMutation({
-    mutationFn: (is_active: boolean) => pdlApi.toggleActive(pdl.id, is_active),
+    mutationFn: (is_active: boolean) => {
+      if (isDemo) {
+        return Promise.reject(new Error('Modifications désactivées en mode démo'))
+      }
+      return pdlApi.toggleActive(pdl.id, is_active)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pdls'] })
     },
   })
 
   const getConsentUrlMutation = useMutation({
-    mutationFn: () => oauthApi.getAuthorizeUrl(),
+    mutationFn: () => {
+      if (isDemo) {
+        return Promise.reject(new Error('Consentement Enedis désactivé en mode démo'))
+      }
+      return oauthApi.getAuthorizeUrl()
+    },
     onSuccess: (response) => {
       if (response.success && response.data) {
         window.location.href = response.data.authorize_url

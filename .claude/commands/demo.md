@@ -6,9 +6,10 @@ Cette commande génère automatiquement un compte de démonstration avec des don
 
 Créer un compte de démonstration avec :
 - **Identifiants** : login `demo` / mot de passe `demo`
-- **Données fictives** : 6 ans de données de consommation et production
+- **Données fictives** : 3 ans de données de consommation et production
 - **Mocks Enedis** : Tous les appels API Enedis sont mockés
 - **PDLs de démonstration** : Plusieurs compteurs avec différents profils
+- **Restrictions** : Récupération de données et simulations bloquées
 
 ## Fonctionnalités à implémenter
 
@@ -33,15 +34,16 @@ Créer 2-3 PDLs avec des profils différents :
 2. **PDL avec production solaire** (14 chiffres commençant par exemple par `04004253849201`)
    - Puissance souscrite: 9 kVA
    - Type: Mixte (consommation + production)
-   - Heures creuses: Non
+   - Heures creuses: Oui (22h-6h)
    - Production photovoltaïque
 
 3. **PDL Résidence secondaire** (optionnel) (14 chiffres commençant par exemple par `04004253849202`)
    - Puissance souscrite: 3 kVA
    - Type: Consommation seule
+   - Heures creuses: Oui (22h-6h)
    - Consommation saisonnière (pics en été/hiver)
 
-### 3. Génération des données fictives sur 6 ans
+### 3. Génération des données fictives sur 3 ans
 
 Pour chaque PDL, générer des données de consommation quotidienne avec :
 
@@ -103,7 +105,7 @@ Créer un script Python qui :
 1. Vérifie si le compte demo existe déjà
 2. Si oui, propose de le supprimer et recréer
 3. Si non, crée le compte avec les PDLs
-4. Génère les 6 ans de données (environ 2190 jours par PDL)
+4. Génère 3 ans de données (environ 1095 jours par PDL)
 5. Met en cache toutes les données dans Redis
 6. Affiche les credentials du compte (client_id, client_secret)
 

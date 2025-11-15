@@ -4,7 +4,7 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { pdlApi } from '@/api/pdl'
 import { oauthApi } from '@/api/oauth'
 import { logger } from '@/utils/logger'
-import { ExternalLink, CheckCircle, XCircle, ArrowUpDown, GripVertical, UserPlus, Filter, Search, Keyboard, X as CloseIcon } from 'lucide-react'
+import { ExternalLink, CheckCircle, XCircle, ArrowUpDown, GripVertical, UserPlus, Filter, Search, Keyboard, X as CloseIcon, AlertCircle } from 'lucide-react'
 import PDLDetails from '@/components/PDLDetails'
 import PDLCard from '@/components/PDLCard'
 import { PDLCardSkeleton } from '@/components/Skeleton'
@@ -12,6 +12,7 @@ import { WelcomeModal } from '@/components/WelcomeModal'
 import { OnboardingTour, type TourStep } from '@/components/OnboardingTour'
 import { HelpButton, createDashboardHelpOptions } from '@/components/HelpButton'
 import { useAuth } from '@/hooks/useAuth'
+import { useIsDemo } from '@/hooks/useIsDemo'
 import { triggerHaptic } from '@/utils/haptics'
 import { useKeyboardShortcuts, formatShortcut, type KeyboardShortcut } from '@/hooks/useKeyboardShortcuts'
 import {
@@ -42,6 +43,7 @@ export default function Dashboard() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
   const { user } = useAuth()
+  const isDemo = useIsDemo()
 
   // Check if user should see onboarding
   useEffect(() => {
@@ -148,25 +150,52 @@ export default function Dashboard() {
   })
 
   const deletePdlMutation = useMutation({
-    mutationFn: (id: string) => pdlApi.delete(id),
+    mutationFn: (id: string) => {
+      if (isDemo) {
+        return Promise.reject(new Error('Modifications désactivées en mode démo'))
+      }
+      return pdlApi.delete(id)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pdls'] })
+    },
+    onError: (error: Error) => {
+      setNotification({ type: 'error', message: error.message })
+      setTimeout(() => setNotification(null), 5000)
     },
   })
 
   const reorderPdlsMutation = useMutation({
-    mutationFn: (orders: Array<{ id: string; order: number }>) => pdlApi.reorderPdls(orders),
+    mutationFn: (orders: Array<{ id: string; order: number }>) => {
+      if (isDemo) {
+        return Promise.reject(new Error('Modifications désactivées en mode démo'))
+      }
+      return pdlApi.reorderPdls(orders)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pdls'] })
+    },
+    onError: (error: Error) => {
+      setNotification({ type: 'error', message: error.message })
+      setTimeout(() => setNotification(null), 5000)
     },
   })
 
   const getOAuthUrlMutation = useMutation({
-    mutationFn: () => oauthApi.getAuthorizeUrl(),
+    mutationFn: () => {
+      if (isDemo) {
+        return Promise.reject(new Error('Consentement Enedis désactivé en mode démo'))
+      }
+      return oauthApi.getAuthorizeUrl()
+    },
     onSuccess: (response) => {
       if (response.success && response.data) {
         window.location.href = response.data.authorize_url
       }
+    },
+    onError: (error: Error) => {
+      setNotification({ type: 'error', message: error.message })
+      setTimeout(() => setNotification(null), 5000)
     },
   })
 
@@ -528,6 +557,23 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Demo Mode Banner */}
+      {isDemo && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" size={20} />
+            <div>
+              <h3 className="font-semibold text-amber-900 dark:text-amber-100 mb-1">Mode Démonstration</h3>
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                Vous utilisez un compte de démonstration avec 3 ans de données fictives pré-générées.
+                Les modifications (ajout, suppression, renommage de PDL), le consentement Enedis et la récupération de données sont désactivés.
+                Toutes les données affichées sont générées automatiquement pour présenter les fonctionnalités de l'application.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* PDL Management */}
       <div className="card">
         <div className="flex flex-col gap-3 mb-4">
@@ -553,8 +599,9 @@ export default function Dashboard() {
               )}
               <button
                 onClick={handleStartConsent}
-                className="btn btn-primary text-sm flex items-center justify-center gap-1 w-full sm:w-auto whitespace-nowrap"
-                disabled={getOAuthUrlMutation.isPending}
+                className="btn btn-primary text-sm flex items-center justify-center gap-1 w-full sm:w-auto whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={getOAuthUrlMutation.isPending || isDemo}
+                title={isDemo ? 'Consentement désactivé en mode démo' : ''}
                 data-tour="consent-button"
               >
                 <ExternalLink size={16} />
@@ -668,7 +715,7 @@ export default function Dashboard() {
                   animationFillMode: 'backwards'
                 }}
               >
-                {sortOrder === 'custom' && (
+                {sortOrder === 'custom' && !isDemo && (
                   <div
                     className="flex items-center gap-2 mb-1 text-gray-400 cursor-move hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     onMouseDown={() => setIsDraggingEnabled(true)}
@@ -678,11 +725,12 @@ export default function Dashboard() {
                     <span className="text-xs select-none">Glissez pour réorganiser</span>
                   </div>
                 )}
-                <div className="select-text">
+                <div className={`select-text ${isDemo ? 'opacity-60 pointer-events-none' : ''}`}>
                   <PDLCard
                     pdl={pdl}
                     onViewDetails={() => setSelectedPdl(pdl.usage_point_id)}
                     onDelete={() => deletePdlMutation.mutate(pdl.id)}
+                    isDemo={isDemo}
                   />
                 </div>
               </div>

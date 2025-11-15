@@ -762,7 +762,12 @@ async def get_max_power(
             return APIResponse(success=True, data=cached_data)
 
     try:
-        data = await enedis_adapter.get_max_power(usage_point_id, start, end, access_token)
+        # Use appropriate adapter based on user type
+        adapter, is_demo = await get_adapter_for_user(current_user)
+        if is_demo:
+            data = await adapter.get_max_power(usage_point_id, start, end, current_user.client_secret)
+        else:
+            data = await adapter.get_max_power(usage_point_id, start, end, access_token)
 
         # Cache result
         if use_cache:

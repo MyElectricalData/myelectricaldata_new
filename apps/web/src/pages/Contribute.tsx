@@ -310,34 +310,32 @@ export default function Contribute() {
         </div>
       )}
 
-      <div className="mb-8">
-        <div className="flex flex-col gap-4">
-          <div>
-            <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-              <Users className="text-primary-600 dark:text-primary-400" size={32} />
-              Contribuer à la base de données
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Aidez la communauté en ajoutant ou mettant à jour les offres tarifaires des fournisseurs d'énergie.
-              Les administrateurs vérifieront votre contribution avant publication.
-            </p>
-          </div>
-          <button
-            onClick={() => setShowJsonImport(!showJsonImport)}
-            className="btn btn-secondary flex items-center justify-center gap-2 w-full sm:w-auto sm:self-start whitespace-nowrap min-w-[160px]"
-          >
-            <FileJson size={20} />
-            Import JSON
-          </button>
+      <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+            <Users className="text-primary-600 dark:text-primary-400" size={32} />
+            Contribuer à la base de données
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Aidez la communauté en ajoutant ou mettant à jour les offres tarifaires des fournisseurs d'énergie.
+            Les administrateurs vérifieront votre contribution avant publication.
+          </p>
         </div>
+        <button
+          onClick={() => setShowJsonImport(!showJsonImport)}
+          className="btn btn-secondary flex items-center gap-2 whitespace-nowrap"
+        >
+          <FileJson size={20} />
+          Import JSON
+        </button>
       </div>
 
       {/* My Contributions - Compact at top */}
       {Array.isArray(myContributions) && myContributions.length > 0 && (
-        <div className="card mb-6">
+        <div className="card mt-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <List size={20} />
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <List className="text-primary-600 dark:text-primary-400" size={20} />
               Mes contributions ({myContributions.length})
             </h2>
             {myContributions.length > 1 && (
@@ -427,9 +425,9 @@ export default function Contribute() {
 
       {/* JSON Import Section */}
       {showJsonImport && (
-        <div className="card mb-8">
-          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-            <Upload size={24} />
+        <div className="card mt-6">
+          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Upload size={20} />
             Import JSON - Plusieurs offres
           </h2>
 
@@ -499,6 +497,150 @@ export default function Contribute() {
               </div>
             </div>
 
+            <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+              <h3 className="font-semibold mb-2 text-green-900 dark:text-green-100">🤖 Astuce : Utiliser l'IA pour extraire les données</h3>
+              <p className="text-sm text-green-800 dark:text-green-200 mb-3">
+                Vous avez un PDF ou une capture d'écran d'une grille tarifaire ? Utilisez ChatGPT, Claude ou Gemini pour extraire automatiquement les données !
+              </p>
+              <details className="text-xs" open>
+                <summary className="cursor-pointer font-medium mb-2 text-green-900 dark:text-green-100">Voir les détails</summary>
+                <div className="mt-3 space-y-3">
+                  <div className="text-sm space-y-2 text-green-800 dark:text-green-200">
+                    <p className="font-semibold">📸 Étapes :</p>
+                    <ol className="list-decimal list-inside pl-2 space-y-1">
+                      <li>Prenez une capture d'écran ou ouvrez le PDF de la grille tarifaire</li>
+                      <li>Ouvrez ChatGPT, Claude ou Gemini</li>
+                      <li>Uploadez l'image/PDF et collez le prompt ci-dessous (il contient déjà tous les IDs des fournisseurs)</li>
+                      <li>L'IA va extraire les données et générer le JSON avec le bon <code className="bg-green-100 dark:bg-green-900 px-1 rounded">existing_provider_id</code></li>
+                      <li>Copiez le JSON généré</li>
+                      <li>Collez-le dans le champ ci-dessous et importez !</li>
+                    </ol>
+                    <p className="text-xs italic mt-2">
+                      💡 Le prompt contient la liste complète des fournisseurs existants avec leurs IDs. L'IA sélectionnera automatiquement le bon ID !
+                    </p>
+                  </div>
+                  <div className="bg-white dark:bg-gray-900 p-3 rounded">
+                    <p className="font-semibold mb-2 text-green-900 dark:text-green-100">📝 Prompt à copier-coller :</p>
+                    <pre className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+{`Extrait les données tarifaires de cette grille de prix et formate-les en JSON selon ce format.
+
+STRUCTURE GÉNÉRALE :
+{
+  "contribution_type": "NEW_OFFER" ou "NEW_PROVIDER",
+  "existing_provider_id": "UUID du fournisseur (obligatoire si NEW_OFFER)",
+  "provider_name": "Nom du fournisseur (obligatoire si NEW_PROVIDER)",
+  "provider_website": "https://site-du-fournisseur.fr (optionnel si NEW_PROVIDER)",
+  "offer_name": "Nom exact de l'offre tel qu'affiché par le fournisseur",
+  "offer_type": "BASE" | "BASE_WEEKEND" | "HC_HP" | "HC_NUIT_WEEKEND" | "HC_WEEKEND" | "SEASONAL" | "TEMPO" | "EJP",
+  "description": "Description optionnelle de l'offre",
+  "power_kva": 3 | 6 | 9 | 12 | 15 | 18 | 24 | 30 | 36,
+  "pricing_data": { /* Voir exemples ci-dessous selon le type */ },
+  "price_sheet_url": "URL officielle de la grille tarifaire (OBLIGATOIRE)",
+  "screenshot_url": "URL de capture d'écran ou PDF (optionnel)"
+}
+
+VALEURS POSSIBLES DES CHAMPS :
+
+contribution_type :
+  - "NEW_OFFER" : Ajouter une offre pour un fournisseur existant
+  - "NEW_PROVIDER" : Ajouter un nouveau fournisseur + sa première offre
+
+offer_type :
+  - "BASE" : Tarif unique 24h/24, 7j/7
+  - "BASE_WEEKEND" : Tarif unique en semaine + tarif réduit le week-end
+  - "HC_HP" : Heures Creuses / Heures Pleines (selon configuration PDL)
+  - "HC_NUIT_WEEKEND" : HC de 23h à 6h en semaine + tout le week-end en HC
+  - "HC_WEEKEND" : HC selon PDL en semaine + tout le week-end en HC
+  - "SEASONAL" : Tarifs différents hiver (nov-mars) et été (avr-oct)
+  - "TEMPO" : Tarif TEMPO (jours Bleus/Blancs/Rouges)
+  - "EJP" : Effacement Jours de Pointe (22 jours/an)
+
+power_kva (puissance souscrite) :
+  - 3, 6, 9, 12, 15, 18, 24, 30, 36
+  - Créer UNE ENTRÉE PAR PUISSANCE si plusieurs puissances disponibles
+
+existing_provider_id (UNIQUEMENT pour NEW_OFFER) :
+${providersData && providersData.length > 0 ? providersData.map(p => `  - "${p.id}" : ${p.name}${p.website ? ` (${p.website})` : ''}`).join('\n') : '  - Aucun fournisseur en base de données'}
+
+EXEMPLES DE pricing_data SELON LE TYPE D'OFFRE :
+
+1. BASE (Tarif unique 24h/24) :
+{
+  "subscription_price": 12.60,
+  "base_price": 0.2516
+}
+
+2. BASE_WEEKEND (Tarif unique + tarif week-end réduit) :
+{
+  "subscription_price": 12.60,
+  "base_price": 0.2516,
+  "base_price_weekend": 0.2000
+}
+
+3. HC_HP (Heures Creuses / Heures Pleines selon config PDL) :
+{
+  "subscription_price": 13.50,
+  "hc_price": 0.2068,
+  "hp_price": 0.2700
+}
+
+4. HC_NUIT_WEEKEND (HC 23h-6h semaine + tout le week-end) :
+{
+  "subscription_price": 13.50,
+  "hc_price": 0.2068,
+  "hp_price": 0.2700
+}
+
+5. HC_WEEKEND (HC selon PDL semaine + tout le week-end) :
+{
+  "subscription_price": 13.50,
+  "hc_price": 0.2068,
+  "hp_price": 0.2700
+}
+
+6. SEASONAL (Tarifs saisonniers hiver/été) :
+{
+  "subscription_price": 14.00,
+  "hc_price_winter": 0.1940,
+  "hp_price_winter": 0.1317,
+  "hc_price_summer": 0.3113,
+  "hp_price_summer": 0.2294,
+  "peak_day_price": 0.5193
+}
+Note: peak_day_price est optionnel (max 15 jours/an)
+
+7. TEMPO (Jours Bleus/Blancs/Rouges) :
+{
+  "subscription_price": 15.20,
+  "tempo_blue_hc": 0.1296,
+  "tempo_blue_hp": 0.1609,
+  "tempo_white_hc": 0.1486,
+  "tempo_white_hp": 0.1894,
+  "tempo_red_hc": 0.1568,
+  "tempo_red_hp": 0.7562
+}
+
+8. EJP (Effacement Jours de Pointe) :
+{
+  "subscription_price": 13.80,
+  "ejp_normal": 0.1234,
+  "ejp_peak": 0.6789
+}
+
+RÈGLES IMPORTANTES :
+- TOUS LES PRIX DOIVENT ÊTRE EN TTC (Toutes Taxes Comprises)
+- Les prix doivent être en € (pas en centimes)
+- subscription_price en €/mois TTC
+- Les prix du kWh en €/kWh TTC (exemple: 0.2516)
+- power_kva : 3, 6, 9, 12, 15, 18, 24, 30 ou 36
+- Créer une entrée par puissance si plusieurs puissances disponibles
+- Retourner un tableau JSON même pour une seule offre : [...]`}
+                    </pre>
+                  </div>
+                </div>
+              </details>
+            </div>
+
             <div>
               <label className="block text-sm font-medium mb-2">Collez votre JSON ici :</label>
               <textarea
@@ -563,8 +705,8 @@ export default function Contribute() {
       )}
 
       {/* Contribution Form */}
-      <div className="card mb-8">
-        <h2 className="text-2xl font-bold mb-6">Nouvelle contribution</h2>
+      <div className="card mt-6">
+        <h2 className="text-lg font-semibold mb-6">Nouvelle contribution</h2>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Contribution Type */}
@@ -714,12 +856,17 @@ export default function Contribute() {
 
           {/* Pricing */}
           <div className="border-t pt-6">
-            <h3 className="text-lg font-semibold mb-4">Tarification</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Tarification</h3>
+              <span className="text-xs font-semibold px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full">
+                ⚠️ PRIX TTC UNIQUEMENT
+              </span>
+            </div>
 
             {/* Abonnement (toujours affiché) */}
             <div className="mb-4">
               <label className="block text-sm font-medium mb-2">
-                Abonnement (€/mois) <span className="text-red-500">*</span>
+                Abonnement (€/mois TTC) <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
@@ -736,7 +883,7 @@ export default function Contribute() {
             {offerType === 'BASE' && (
               <div>
                 <label className="block text-sm font-medium mb-2">
-                  Prix BASE (€/kWh) <span className="text-red-500">*</span>
+                  Prix BASE (€/kWh TTC) <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -755,7 +902,7 @@ export default function Contribute() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Prix BASE semaine (€/kWh) <span className="text-red-500">*</span>
+                    Prix BASE semaine (€/kWh TTC) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -769,7 +916,7 @@ export default function Contribute() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Prix BASE week-end (€/kWh)
+                    Prix BASE week-end (€/kWh TTC)
                   </label>
                   <input
                     type="number"
@@ -789,7 +936,7 @@ export default function Contribute() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Prix Heures Creuses (€/kWh) <span className="text-red-500">*</span>
+                    Prix Heures Creuses (€/kWh TTC) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -803,7 +950,7 @@ export default function Contribute() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Prix Heures Pleines (€/kWh) <span className="text-red-500">*</span>
+                    Prix Heures Pleines (€/kWh TTC) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -821,13 +968,15 @@ export default function Contribute() {
             {/* HC_NUIT_WEEKEND */}
             {offerType === 'HC_NUIT_WEEKEND' && (
               <div className="space-y-4">
-                <p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded">
-                  💡 HC de nuit (23h-6h) en semaine + tout le week-end en HC
-                </p>
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-sm text-blue-800 dark:text-blue-200">
+                    💡 HC de nuit (23h-6h) en semaine + tout le week-end en HC
+                  </p>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-2">
-                      Prix HC (€/kWh) <span className="text-red-500">*</span>
+                      Prix HC (€/kWh TTC) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -842,7 +991,7 @@ export default function Contribute() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-2">
-                      Prix HP (€/kWh) <span className="text-red-500">*</span>
+                      Prix HP (€/kWh TTC) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -862,13 +1011,15 @@ export default function Contribute() {
             {/* HC_WEEKEND */}
             {offerType === 'HC_WEEKEND' && (
               <div className="space-y-4">
-                <p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded">
-                  💡 HC selon configuration PDL en semaine + tout le week-end en HC
-                </p>
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-sm text-blue-800 dark:text-blue-200">
+                    💡 HC selon configuration PDL en semaine + tout le week-end en HC
+                  </p>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-2">
-                      Prix HC (€/kWh) <span className="text-red-500">*</span>
+                      Prix HC (€/kWh TTC) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -883,7 +1034,7 @@ export default function Contribute() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-2">
-                      Prix HP (€/kWh) <span className="text-red-500">*</span>
+                      Prix HP (€/kWh TTC) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -903,15 +1054,17 @@ export default function Contribute() {
             {/* SEASONAL */}
             {offerType === 'SEASONAL' && (
               <div className="space-y-4">
-                <p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded">
-                  💡 Tarifs différents en hiver (nov-mars) et été (avr-oct)
-                </p>
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-sm text-blue-800 dark:text-blue-200">
+                    💡 Tarifs différents en hiver (nov-mars) et été (avr-oct)
+                  </p>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-4">
                     <h4 className="font-semibold text-blue-700 dark:text-blue-300">❄️ Hiver (Nov-Mars)</h4>
                     <div>
                       <label className="block text-sm font-medium mb-2">
-                        HC Hiver (€/kWh) <span className="text-red-500">*</span>
+                        HC Hiver (€/kWh TTC) <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="number"
@@ -925,7 +1078,7 @@ export default function Contribute() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-2">
-                        HP Hiver (€/kWh) <span className="text-red-500">*</span>
+                        HP Hiver (€/kWh TTC) <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="number"
@@ -942,7 +1095,7 @@ export default function Contribute() {
                     <h4 className="font-semibold text-amber-700 dark:text-amber-300">☀️ Été (Avr-Oct)</h4>
                     <div>
                       <label className="block text-sm font-medium mb-2">
-                        HC Été (€/kWh) <span className="text-red-500">*</span>
+                        HC Été (€/kWh TTC) <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="number"
@@ -956,7 +1109,7 @@ export default function Contribute() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-2">
-                        HP Été (€/kWh) <span className="text-red-500">*</span>
+                        HP Été (€/kWh TTC) <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="number"
@@ -972,7 +1125,7 @@ export default function Contribute() {
                 </div>
                 <div className="border-t pt-4">
                   <label className="block text-sm font-medium mb-2">
-                    ⚡ Prix Jour de Pointe (€/kWh) - Optionnel
+                    ⚡ Prix Jour de Pointe (€/kWh TTC) - Optionnel
                   </label>
                   <input
                     type="number"
@@ -995,7 +1148,7 @@ export default function Contribute() {
                   <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-3">Jours Bleus (300 jours/an)</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium mb-2">Heures Creuses (€/kWh)</label>
+                      <label className="block text-sm font-medium mb-2">Heures Creuses (€/kWh TTC)</label>
                       <input
                         type="number"
                         step="0.0001"
@@ -1006,7 +1159,7 @@ export default function Contribute() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-2">Heures Pleines (€/kWh)</label>
+                      <label className="block text-sm font-medium mb-2">Heures Pleines (€/kWh TTC)</label>
                       <input
                         type="number"
                         step="0.0001"
@@ -1023,7 +1176,7 @@ export default function Contribute() {
                   <h4 className="font-semibold text-gray-800 dark:text-gray-300 mb-3">Jours Blancs (43 jours/an)</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium mb-2">Heures Creuses (€/kWh)</label>
+                      <label className="block text-sm font-medium mb-2">Heures Creuses (€/kWh TTC)</label>
                       <input
                         type="number"
                         step="0.0001"
@@ -1034,7 +1187,7 @@ export default function Contribute() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-2">Heures Pleines (€/kWh)</label>
+                      <label className="block text-sm font-medium mb-2">Heures Pleines (€/kWh TTC)</label>
                       <input
                         type="number"
                         step="0.0001"
@@ -1051,7 +1204,7 @@ export default function Contribute() {
                   <h4 className="font-semibold text-red-800 dark:text-red-300 mb-3">Jours Rouges (22 jours/an)</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium mb-2">Heures Creuses (€/kWh)</label>
+                      <label className="block text-sm font-medium mb-2">Heures Creuses (€/kWh TTC)</label>
                       <input
                         type="number"
                         step="0.0001"
@@ -1062,7 +1215,7 @@ export default function Contribute() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-2">Heures Pleines (€/kWh)</label>
+                      <label className="block text-sm font-medium mb-2">Heures Pleines (€/kWh TTC)</label>
                       <input
                         type="number"
                         step="0.0001"
@@ -1081,7 +1234,7 @@ export default function Contribute() {
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Prix Normal (343 jours, €/kWh)
+                    Prix Normal (343 jours, €/kWh TTC)
                   </label>
                   <input
                     type="number"
@@ -1094,7 +1247,7 @@ export default function Contribute() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Prix Pointe (22 jours, €/kWh)
+                    Prix Pointe (22 jours, €/kWh TTC)
                   </label>
                   <input
                     type="number"
@@ -1173,9 +1326,9 @@ export default function Contribute() {
       </div>
 
       {/* Available Offers */}
-      <div className="card mb-8">
-        <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
-          <List className="text-primary-600 dark:text-primary-400" size={24} />
+      <div className="card mt-6">
+        <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
+          <List className="text-primary-600 dark:text-primary-400" size={20} />
           Offres disponibles
         </h2>
         <p className="text-gray-600 dark:text-gray-400 mb-6">
@@ -1387,8 +1540,11 @@ export default function Contribute() {
 
       {/* My Contributions */}
       {Array.isArray(myContributions) && myContributions.length > 0 && (
-        <div className="card">
-          <h2 className="text-2xl font-bold mb-6">Mes contributions</h2>
+        <div className="card mt-6">
+          <h2 className="text-lg font-semibold mb-6 flex items-center gap-2">
+            <List className="text-primary-600 dark:text-primary-400" size={20} />
+            Mes contributions
+          </h2>
           <div className="space-y-4">
             {myContributions.map((contribution: any) => (
               <div
