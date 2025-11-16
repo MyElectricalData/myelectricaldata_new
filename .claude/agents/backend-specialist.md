@@ -25,3 +25,19 @@ Tes responsabilites :
 - Proposer des ameliorations tout en conservant une compatibilite.
 - Suivre `@docs/rules/testing.md` pour les standards de test
 - Chiffrer le contenu du cache avec la cle API fournie a l'utilisateur lors de la creation du compte pour respecter le RGPD
+
+## ⚠️ IMPORTANT : Qualité du Code
+
+**AVANT de générer du code, respecter les outils de linting :**
+
+### Python (Backend)
+- **Linter** : Configuré dans `apps/api/pyproject.toml`
+- **Standards** : PEP 8, type hints obligatoires
+- **Vérification** : Le code doit passer les checks de linting sans erreurs
+- **Format** : Utiliser les conventions Python standards
+
+### Bonnes pratiques
+- Toujours ajouter les type hints pour les fonctions
+- Respecter les conventions de nommage Python
+- Éviter les imports inutilisés
+- Garder une cohérence avec le code existant

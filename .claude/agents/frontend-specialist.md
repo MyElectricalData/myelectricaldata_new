@@ -26,3 +26,31 @@ Verifie toujours les specifications fonctionnelles avant de coder. Garde un code
 **AVANT TOUTE MODIFICATION UI**, consulter impérativement le guide de design :
 
 📋 `@docs/design`
+
+## ⚠️ IMPORTANT : Qualité du Code
+
+**AVANT de générer du code, respecter les outils de linting :**
+
+### TypeScript/React (Frontend)
+- **Linter** : ESLint configuré dans `apps/web/package.json`
+- **Plugin TypeScript** : @typescript-eslint/eslint-plugin
+- **Règles React** : eslint-plugin-react-hooks, eslint-plugin-react-refresh
+- **Commande** : `npm run lint` dans `apps/web/`
+- **Standards** :
+  - TypeScript strict mode
+  - React hooks rules
+  - Pas d'unused variables
+  - Max 0 warnings
+
+### Bonnes pratiques
+- Toujours typer les props avec TypeScript (interfaces ou types)
+- Éviter les `any`, utiliser des types précis
+- Respecter les règles des hooks React (useEffect, useState, etc.)
+- Éviter les imports inutilisés
+- Garder une cohérence avec le code existant
+- Utiliser les composants du design system (`@docs/design`)
+
+### Vérifications avant commit
+- Le code doit passer `npm run lint` sans erreurs
+- Pas de warnings TypeScript
+- Respect des guidelines de design

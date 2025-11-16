@@ -1,0 +1,12 @@
+{
+  "Exclude": [
+    "docs/themes/",
+    "docs/public/",
+    "docs/archetypes/",
+    "docs/layouts",
+    "env.example",
+    ".devcontainer/zshrc",
+    "CHANGELOG.md",
+    "*.lock"
+  ]
+}
