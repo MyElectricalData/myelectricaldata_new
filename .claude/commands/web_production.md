@@ -19,4 +19,12 @@
 
 ## Description rapide
 
-Page équivalente à `/consumption` mais pour la **production d'énergie solaire**.
+Tu travailles sur la page `/production` de l'application MyElectricalData.
+
+Cette page permet aux utilisateurs de **visualiser et analyser leur production d'énergie solaire** récupérée depuis l'API Enedis. Page équivalente à `/consumption` mais adaptée pour la production (sans puissance max, HC/HP, ni PowerPeaks).
+
+## ⚠️ Statut : Implémentation partielle (~85%)
+
+Structure créée et fonctionnelle, hooks implémentés, mais certains graphiques détaillés restent à implémenter.
+
+**Fichier principal** : `apps/web/src/pages/Production/index.tsx`

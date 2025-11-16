@@ -22,7 +22,10 @@ allConsumption.push({
   value: parseFloat(reading.value), // Valeur en W utilisée comme Wh
 });
 
-const totalKwh = allConsumption.reduce((sum, item) => sum + item.value / 1000, 0);
+const totalKwh = allConsumption.reduce(
+  (sum, item) => sum + item.value / 1000,
+  0
+);
 ```
 
 ### Solution
@@ -134,7 +137,11 @@ const uniqueDates = new Set(allConsumption.map((item) => item.date));
 const hasDuplicates = uniqueDates.size !== allConsumption.length;
 
 if (hasDuplicates) {
-  console.warn(`⚠️ DUPLICATE DETECTED: ${allConsumption.length - uniqueDates.size} duplicate points found!`);
+  console.warn(
+    `⚠️ DUPLICATE DETECTED: ${
+      allConsumption.length - uniqueDates.size
+    } duplicate points found!`
+  );
 }
 ```
 
@@ -159,7 +166,8 @@ Tentative initiale de récupérer `interval_length` une seule fois au début :
 ```typescript
 // ❌ INCORRECT - Suppose que toutes les mesures ont le même intervalle
 const firstPeriod = consumptionData[0];
-const intervalLength = firstPeriod?.meter_reading?.reading_type?.interval_length || "PT30M";
+const intervalLength =
+  firstPeriod?.meter_reading?.reading_type?.interval_length || "PT30M";
 const intervalMinutes = parseInt(intervalLength.match(/PT(\d+)M/)[1]);
 
 // Utilise intervalMinutes pour TOUTES les mesures
@@ -281,7 +289,7 @@ console.log("First 3 samples:", allConsumption.slice(0, 3));
 Un script Python a été créé pour comparer les données en base avec le CSV officiel :
 
 ```bash
-python3 compare_enedis.py
+python3 scripts/compare_enedis.py
 ```
 
 Fonctionnalités :

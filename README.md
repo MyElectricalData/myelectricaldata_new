@@ -20,7 +20,7 @@ Les API Enedis sont réservées aux professionnels disposant d'un SIRET. MyElect
 
 ## Project Structure
 
-```
+```text
 myelectricaldata_new/
 ├── apps/
 │   ├── api/          # FastAPI backend
@@ -197,24 +197,36 @@ Voir [SECURITY.md](apps/api/SECURITY.md) pour plus de détails.
 
 ## 📚 Documentation
 
-### Spécifications fonctionnelles
+### 🚀 Setup & Configuration
 
-- [02-account.md](docs/features-spec/02-account.md) : Gestion des comptes et authentification
-- [05-gateway.md](docs/features-spec/05-gateway.md) : Passerelle API et consentement Enedis
-- [10-cache.md](docs/features-spec/10-cache.md) : Système de cache et rate limiting
-- [11-database.md](docs/features-spec/11-database.md) : Support multi-database (SQLite/PostgreSQL)
+- [Docker Setup](docs/setup/docker.md) : Déploiement Docker complet avec Caddy
+- [Database Configuration](docs/setup/database.md) : Configuration SQLite et PostgreSQL
+- [Dev Mode](docs/setup/dev-mode.md) : Mode développement avec hot-reload
+- [Authentication](docs/setup/authentication.md) : Guide d'authentification OAuth2 et quotas
+- [Admin Panel](docs/setup/admin.md) : Panel administrateur et gestion des utilisateurs
 
-### Guides d'utilisation
+### 📋 Spécifications Fonctionnelles
 
-- [AUTHENTICATION.md](AUTHENTICATION.md) : Guide d'authentification OAuth2 et quotas
-- [ADMIN.md](ADMIN.md) : Panel administrateur et gestion des utilisateurs
-- [DATABASE.md](DATABASE.md) : Configuration SQLite et PostgreSQL
-- [DOCKER.md](DOCKER.md) : Déploiement Docker
+- [Account Management](docs/features-spec/02-account.md) : Gestion des comptes et authentification
+- [API Gateway](docs/features-spec/05-gateway.md) : Passerelle API et consentement Enedis
+- [Cache System](docs/features-spec/10-cache.md) : Système de cache et rate limiting
+- [Database](docs/features-spec/11-database.md) : Support multi-database (SQLite/PostgreSQL)
 
-### Références techniques
+### 🏗️ Architecture
 
-- [docs/enedis-api/](docs/enedis-api/) : Documentation des API Enedis
-- [apps/api/SECURITY.md](apps/api/SECURITY.md) : Sécurité et isolation des données
+- [Architecture Summary](docs/architecture/summary.md) : Vue d'ensemble de l'architecture
+- [Design System](docs/design/README.md) : Guide de design des composants UI
+
+### 🎭 Demo Account
+
+- [Demo Guide](docs/demo/README.md) : Guide complet pour créer un compte démo
+- [Demo Architecture](docs/demo/architecture.md) : Architecture détaillée du système de démo
+- [Demo Implementation](docs/demo/implementation.md) : Guide d'implémentation étape par étape
+
+### 📖 Références Techniques
+
+- [Enedis API Documentation](docs/enedis-api/) : Documentation des API Enedis
+- [API Security](apps/api/SECURITY.md) : Sécurité et isolation des données
 - **API Documentation** : Swagger UI disponible à `/docs` avec support OAuth2 Client Credentials
 
 ## Health Checks
@@ -223,7 +235,3 @@ Both services include health checks:
 
 - API health: `curl http://localhost:8000/ping`
 - Web health: `curl http://localhost:3000`
-
-# myelectricaldata_new
-
-# myelectricaldata_new
