@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tempoApi } from '@/api/tempo'
-import { RefreshCw, Calendar, CheckCircle, XCircle } from 'lucide-react'
+import { RefreshCw, Calendar, CheckCircle, XCircle, Trash2 } from 'lucide-react'
 
 // Helper to capitalize first letter
 const capitalizeFirstLetter = (str: string) => {
@@ -37,8 +37,11 @@ export default function AdminTempo() {
           type: 'success',
           message: `Cache TEMPO mis à jour : ${data.updated_count || 0} jours récupérés`
         })
-        // Refresh the week data after successful update
+        // Invalidate ALL tempo-related queries to refresh all pages
+        queryClient.invalidateQueries({ queryKey: ['tempo'] })
         queryClient.invalidateQueries({ queryKey: ['tempo-week'] })
+        queryClient.invalidateQueries({ queryKey: ['tempo-all'] })
+        queryClient.invalidateQueries({ queryKey: ['tempo-today'] })
         setTimeout(() => setNotification(null), 5000)
       } else {
         // Handle API errors returned as success: false
@@ -59,6 +62,57 @@ export default function AdminTempo() {
       const errorMsg = isPermissionError
         ? "Vous n'avez pas la permission de rafraîchir le cache Tempo. Contactez un administrateur pour obtenir la permission 'admin.tempo.refresh'."
         : error?.message || 'Erreur lors de la mise à jour du cache Tempo'
+
+      setNotification({
+        type: 'error',
+        message: errorMsg
+      })
+      setTimeout(() => setNotification(null), 8000)
+    }
+  })
+
+  const clearAllCacheMutation = useMutation({
+    mutationFn: async () => {
+      const response = await tempoApi.clearAllCache()
+      return response
+    },
+    onSuccess: (response) => {
+      if (response.success) {
+        const data = response.data as any
+        setNotification({
+          type: 'success',
+          message: `Cache TEMPO vidé : ${data.count || 0} jours supprimés. Toutes les pages vont se recharger.`
+        })
+
+        // Clear React Query cache (in-memory)
+        queryClient.invalidateQueries({ queryKey: ['tempo'] })
+        queryClient.invalidateQueries({ queryKey: ['tempo-week'] })
+        queryClient.invalidateQueries({ queryKey: ['tempo-all'] })
+        queryClient.invalidateQueries({ queryKey: ['tempo-today'] })
+
+        // Also clear persisted cache in localStorage
+        queryClient.removeQueries({ queryKey: ['tempo-all'] })
+        queryClient.removeQueries({ queryKey: ['tempo-week'] })
+        queryClient.removeQueries({ queryKey: ['tempo-today'] })
+
+        setTimeout(() => setNotification(null), 5000)
+      } else {
+        const errorMsg = response.error?.message || 'Erreur lors du vidage du cache TEMPO'
+        setNotification({
+          type: 'error',
+          message: errorMsg
+        })
+        setTimeout(() => setNotification(null), 8000)
+      }
+    },
+    onError: (error: any) => {
+      const isPermissionError = error?.response?.status === 403 ||
+                                error?.message?.toLowerCase().includes('permission') ||
+                                error?.message?.toLowerCase().includes('autorisé')
+
+      const errorMsg = isPermissionError
+        ? "Vous n'avez pas la permission de vider le cache Tempo. Contactez un administrateur pour obtenir la permission 'admin.tempo.clear'."
+        : error?.message || 'Erreur lors du vidage du cache Tempo'
 
       setNotification({
         type: 'error',
@@ -148,14 +202,28 @@ export default function AdminTempo() {
             <Calendar className="text-primary-600 dark:text-primary-400" size={24} />
             <h2 className="text-xl font-semibold">Cache Tempo EDF</h2>
           </div>
-          <button
-            onClick={() => refreshTempoMutation.mutate()}
-            disabled={refreshTempoMutation.isPending}
-            className="btn btn-primary flex items-center gap-2"
-          >
-            <RefreshCw size={16} className={refreshTempoMutation.isPending ? 'animate-spin' : ''} />
-            {refreshTempoMutation.isPending ? 'Mise à jour...' : 'Rafraîchir le cache'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                if (confirm('Voulez-vous vraiment vider tout le cache TEMPO ? Cette action supprimera toutes les données et nécessitera un rechargement complet depuis RTE.')) {
+                  clearAllCacheMutation.mutate()
+                }
+              }}
+              disabled={clearAllCacheMutation.isPending}
+              className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
+            >
+              <Trash2 size={16} />
+              {clearAllCacheMutation.isPending ? 'Vidage...' : 'Vider le cache'}
+            </button>
+            <button
+              onClick={() => refreshTempoMutation.mutate()}
+              disabled={refreshTempoMutation.isPending}
+              className="btn btn-primary flex items-center gap-2"
+            >
+              <RefreshCw size={16} className={refreshTempoMutation.isPending ? 'animate-spin' : ''} />
+              {refreshTempoMutation.isPending ? 'Mise à jour...' : 'Rafraîchir le cache'}
+            </button>
+          </div>
         </div>
 
         <div className="mb-4 space-y-2">
@@ -180,7 +248,7 @@ export default function AdminTempo() {
                       todayData.color === 'BLUE'
                         ? 'bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600'
                         : todayData.color === 'WHITE'
-                        ? 'bg-gray-100 dark:bg-gray-800 border-gray-400 dark:border-gray-600'
+                        ? 'bg-white dark:bg-gray-700 border-gray-400 dark:border-gray-500'
                         : 'bg-red-100 dark:bg-red-900/40 border-red-400 dark:border-red-600'
                     }`}
                   >
@@ -199,7 +267,7 @@ export default function AdminTempo() {
                           todayData.color === 'BLUE'
                             ? 'bg-blue-600 text-white'
                             : todayData.color === 'WHITE'
-                            ? 'bg-gray-700 text-white'
+                            ? 'bg-white dark:bg-gray-200 text-gray-900 border-2 border-gray-400'
                             : 'bg-red-600 text-white'
                         }`}
                       >
@@ -219,7 +287,7 @@ export default function AdminTempo() {
                       ? tomorrowData.color === 'BLUE'
                         ? 'bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600'
                         : tomorrowData.color === 'WHITE'
-                        ? 'bg-gray-100 dark:bg-gray-800 border-gray-400 dark:border-gray-600'
+                        ? 'bg-white dark:bg-gray-700 border-gray-400 dark:border-gray-500'
                         : 'bg-red-100 dark:bg-red-900/40 border-red-400 dark:border-red-600'
                       : 'bg-gray-100 dark:bg-gray-800 border-gray-400 dark:border-gray-600'
                   }`}
@@ -239,9 +307,11 @@ export default function AdminTempo() {
                               month: 'long'
                             })}
                       </span>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        {tomorrowData ? 'Disponible à partir de la veille 7h' : 'En attente de RTE'}
-                      </p>
+                      {!tomorrowData && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                          En attente de RTE (disponible à partir de 7h)
+                        </p>
+                      )}
                     </div>
                     <span
                       className={`px-4 py-2 rounded-lg text-base font-bold ${
@@ -249,7 +319,7 @@ export default function AdminTempo() {
                           ? tomorrowData.color === 'BLUE'
                             ? 'bg-blue-600 text-white'
                             : tomorrowData.color === 'WHITE'
-                            ? 'bg-gray-700 text-white'
+                            ? 'bg-white dark:bg-gray-200 text-gray-900 border-2 border-gray-400'
                             : 'bg-red-600 text-white'
                           : 'bg-gray-500 text-white'
                       }`}
@@ -273,7 +343,7 @@ export default function AdminTempo() {
                         day.color === 'BLUE'
                           ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
                           : day.color === 'WHITE'
-                          ? 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                          ? 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600'
                           : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
                       }`}
                     >
@@ -290,7 +360,7 @@ export default function AdminTempo() {
                             day.color === 'BLUE'
                               ? 'bg-blue-600 text-white'
                               : day.color === 'WHITE'
-                              ? 'bg-gray-600 text-white'
+                              ? 'bg-white dark:bg-gray-200 text-gray-900 border border-gray-400'
                               : 'bg-red-600 text-white'
                           }`}
                         >

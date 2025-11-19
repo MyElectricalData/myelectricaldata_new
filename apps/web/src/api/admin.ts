@@ -38,6 +38,10 @@ export const adminApi = {
     return apiClient.delete('admin/cache/consumption/clear-all')
   },
 
+  clearAllProductionCache: async () => {
+    return apiClient.delete('admin/cache/production/clear-all')
+  },
+
   toggleUserDebugMode: async (userId: string) => {
     return apiClient.post(`admin/users/${userId}/toggle-debug`)
   },

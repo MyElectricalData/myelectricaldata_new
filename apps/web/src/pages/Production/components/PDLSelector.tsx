@@ -1,6 +1,7 @@
-import { Loader2, Download, Settings, Lock } from 'lucide-react'
+import { Download, Settings, Lock } from 'lucide-react'
 import type { PDL } from '@/types/api'
 import { useIsDemo } from '@/hooks/useIsDemo'
+import { ModernButton } from './ModernButton'
 
 interface PDLSelectorProps {
   pdls: PDL[]
@@ -94,28 +95,23 @@ export function PDLSelector({
         {/* Fetch Button - Always show if there are active PDLs */}
         {activePdls.length > 0 && (
           <>
-            <button
+            <ModernButton
+              variant="primary"
+              size="lg"
+              fullWidth
               onClick={onFetchData}
               disabled={!selectedPDL || isLoading || isLoadingDetailed || isDemo}
-              className="w-full bg-primary-600 hover:bg-primary-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2"
+              loading={isLoading || isLoadingDetailed}
+              icon={isDemo ? Lock : Download}
+              iconPosition="left"
             >
-              {isLoading || isLoadingDetailed ? (
-                <>
-                  <Loader2 className="animate-spin" size={20} />
-                  Récupération en cours...
-                </>
-              ) : isDemo ? (
-                <>
-                  <Lock size={20} />
-                  Récupération bloquée en mode démo
-                </>
-              ) : (
-                <>
-                  <Download size={20} />
-                  Récupérer l'historique de production
-                </>
-              )}
-            </button>
+              {isLoading || isLoadingDetailed
+                ? 'Récupération en cours...'
+                : isDemo
+                ? 'Récupération bloquée en mode démo'
+                : 'Récupérer l\'historique de production'
+              }
+            </ModernButton>
 
             {isDemo && (
               <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">

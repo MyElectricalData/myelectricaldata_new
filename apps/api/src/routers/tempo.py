@@ -168,6 +168,39 @@ async def refresh_tempo_cache(
         return APIResponse(success=False, error=ErrorDetail(code="RTE_API_ERROR", message=error_msg))
 
 
+@router.delete("/clear-all", response_model=APIResponse)
+async def clear_all_tempo_data(
+    current_user: User = Depends(require_action("tempo", "clear")),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """
+    Clear ALL TEMPO data from cache
+
+    Required permission: admin.tempo.clear
+    This will delete all TEMPO records and force a full refresh from RTE
+    """
+    try:
+        logger.info(f"[TEMPO] Clearing ALL cache data (admin: {current_user.email})")
+
+        # Import here to avoid circular dependency
+        from sqlalchemy import delete
+        from ..models import TempoDay
+
+        result = await db.execute(delete(TempoDay))
+        deleted_count = result.rowcount
+        await db.commit()
+
+        return APIResponse(
+            success=True,
+            data={"message": f"Successfully deleted all {deleted_count} TEMPO records", "count": deleted_count},
+        )
+
+    except Exception as e:
+        logger.error(f"[TEMPO CLEAR ALL ERROR] {str(e)}")
+        await db.rollback()
+        return APIResponse(success=False, error=ErrorDetail(code="SERVER_ERROR", message=str(e)))
+
+
 @router.delete("/clear-old", response_model=APIResponse)
 async def clear_old_tempo_data(
     days_to_keep: int = Query(

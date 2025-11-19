@@ -2,7 +2,11 @@
 
 ## Vue d'ensemble
 
-Les boutons sont définis par des classes CSS réutilisables dans `index.css`. Ils doivent être cohérents visuellement et indiquer clairement leur action.
+Les boutons dans l'application utilisent deux approches :
+1. **Classes CSS** : Classes réutilisables `.btn`, `.btn-primary`, `.btn-secondary` dans `index.css`
+2. **ModernButton Component** : Composant React avec glassmorphism et gradients pour les interfaces modernes (ex: page Consommation)
+
+Les boutons doivent être cohérents visuellement et indiquer clairement leur action.
 
 ## Règles
 
@@ -316,6 +320,617 @@ focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
   <Settings size={20} />
 </button>
 ```
+
+---
+
+## ModernButton Component
+
+### Vue d'ensemble
+
+Le composant `ModernButton` est un bouton React avec design glassmorphism et gradients, utilisé principalement dans les pages modernes comme Consommation. Il remplace les boutons CSS classiques pour des interfaces plus visuelles.
+
+**Localisation** :
+- `apps/web/src/pages/Consumption/components/ModernButton.tsx`
+- `apps/web/src/pages/Simulator/components/ModernButton.tsx`
+- `apps/web/src/pages/Production/components/ModernButton.tsx`
+
+### Variantes
+
+Le composant supporte 5 variantes via la prop `variant` :
+
+1. **primary** - Gradient bleu, action principale
+2. **secondary** - Fond transparent avec bordure, action secondaire
+3. **gradient** - Gradient multicolore (bleu → indigo → violet)
+4. **glass** - Glassmorphism transparent avec backdrop-blur
+5. **tab** - Bouton onglet avec état actif/inactif
+
+### Tailles
+
+Trois tailles disponibles via la prop `size` :
+
+- **sm** : `px-3 py-2 text-sm` (boutons compacts)
+- **md** : `px-3.5 py-2 text-base` (par défaut)
+- **lg** : `px-6 py-3 text-lg` (boutons d'action importants)
+
+### Props
+
+```typescript
+interface ModernButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary' | 'gradient' | 'glass' | 'tab'
+  size?: 'sm' | 'md' | 'lg'
+  icon?: LucideIcon
+  iconPosition?: 'left' | 'right'
+  isActive?: boolean      // Pour variant="tab"
+  loading?: boolean       // Affiche spinner
+  fullWidth?: boolean     // w-full
+}
+```
+
+### Code de référence
+
+#### Bouton Primary (Action Principale)
+
+```tsx
+import { ModernButton } from './components/ModernButton'
+import { Download } from 'lucide-react'
+
+<ModernButton
+  variant="primary"
+  size="lg"
+  icon={Download}
+  iconPosition="left"
+  onClick={handleFetch}
+  disabled={isLoading}
+  loading={isLoading}
+>
+  Récupérer l'historique
+</ModernButton>
+```
+
+#### Bouton Gradient (Export)
+
+```tsx
+import { Download } from 'lucide-react'
+
+<ModernButton
+  variant="gradient"
+  size="sm"
+  icon={Download}
+  iconPosition="left"
+  onClick={handleExport}
+>
+  Export JSON
+</ModernButton>
+```
+
+#### Bouton Tab (Onglets d'années)
+
+```tsx
+<div className="flex gap-2 overflow-x-auto overflow-y-hidden py-3 px-2 no-scrollbar">
+  {years.map((year, index) => (
+    <ModernButton
+      key={year}
+      variant="tab"
+      size="md"
+      isActive={selectedYear === index}
+      onClick={() => setSelectedYear(index)}
+      className="flex-1 min-w-[80px]"
+    >
+      {year}
+    </ModernButton>
+  ))}
+</div>
+```
+
+#### Bouton Secondary
+
+```tsx
+<ModernButton
+  variant="secondary"
+  size="md"
+  onClick={handleCancel}
+>
+  Annuler
+</ModernButton>
+```
+
+#### Bouton avec Loading
+
+```tsx
+<ModernButton
+  variant="primary"
+  size="md"
+  loading={isSubmitting}
+  disabled={isSubmitting}
+>
+  {isSubmitting ? 'En cours...' : 'Valider'}
+</ModernButton>
+```
+
+#### Bouton Full Width
+
+```tsx
+<ModernButton
+  variant="primary"
+  size="lg"
+  fullWidth
+  icon={Download}
+>
+  Télécharger
+</ModernButton>
+```
+
+### Détails des Variantes
+
+#### Primary
+
+- **Design** : Gradient bleu (from-primary-500 → via-primary-600 → to-primary-700)
+- **Hover** : Gradient plus foncé + shadow-xl + scale-[1.01]
+- **Effets** : Shine effect (barre lumineuse qui traverse au hover)
+- **Usage** : Actions principales, validation, confirmation
+
+```tsx
+<ModernButton variant="primary">Action Principale</ModernButton>
+```
+
+#### Secondary
+
+- **Design** : Fond blanc/transparent avec bordure gray-200
+- **Hover** : Bordure primary-400 + shadow-lg + scale-[1.01]
+- **Glassmorphism** : backdrop-blur-sm
+- **Usage** : Actions secondaires, annulation
+
+```tsx
+<ModernButton variant="secondary">Annuler</ModernButton>
+```
+
+#### Gradient
+
+- **Design** : Gradient multicolore (blue-500 → indigo-600 → purple-600)
+- **Hover** : Gradient plus foncé + shadow-lg + scale-[1.01]
+- **Effets** : Shine effect avec opacity 30%
+- **Usage** : Export, téléchargement, actions spéciales
+
+```tsx
+<ModernButton variant="gradient" icon={Download}>Export</ModernButton>
+```
+
+#### Glass
+
+- **Design** : Fond transparent (white/10 dark:gray-900/10) avec backdrop-blur-md
+- **Hover** : Fond plus opaque + bordure plus visible + shadow-xl + scale-[1.01]
+- **Usage** : Boutons sur fonds complexes, overlays
+
+```tsx
+<ModernButton variant="glass">Voir détails</ModernButton>
+```
+
+#### Tab
+
+- **Design Actif** : Gradient primary-500 → primary-600 + border-primary-600
+- **Design Inactif** : Fond white/80 avec bordure gray-200
+- **Hover** : brightness-110 (actif) ou border-primary-400 (inactif)
+- **Critères** : border-2 permanent pour éviter layout shift
+- **Usage** : Sélection d'années, filtres, onglets
+
+```tsx
+<ModernButton variant="tab" isActive={selectedYear === 2025}>
+  2025
+</ModernButton>
+```
+
+### Bonnes Pratiques
+
+#### 1. Conteneur avec scrollbar caché
+
+Pour les rangées de tabs horizontales, toujours utiliser :
+
+```tsx
+<div className="flex gap-2 overflow-x-auto overflow-y-hidden py-3 px-2 no-scrollbar">
+  {/* Tabs ici */}
+</div>
+```
+
+**Raisons** :
+- `overflow-x-auto` : Scroll horizontal si nécessaire
+- `overflow-y-hidden` : Évite scrollbar vertical
+- `py-3 px-2` : Padding généreux pour éviter layout shift
+- `no-scrollbar` : Classe CSS custom pour cacher scrollbar
+
+#### 2. Classe .no-scrollbar
+
+Ajoutée dans `apps/web/src/index.css` :
+
+```css
+/* Hide scrollbar completely for specific elements */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Opera */
+}
+```
+
+#### 3. Éviter les layout shifts
+
+**Problème résolu** : Les boutons tab causaient des "sauts" lors du clic
+
+**Solution** :
+- Border-width constant : `border-2` sur tous les états (actif/inactif)
+- Bouton actif : `border-primary-600` (se fond avec le gradient)
+- Bouton inactif : `border-gray-200` (visible)
+- Transitions spécifiques au lieu de `transition-all`
+
+```tsx
+// ❌ INCORRECT - Cause layout shift
+isActive
+  ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white'  // Pas de border
+  : 'border-2 border-gray-200'  // Border de 2px
+
+// ✅ CORRECT - Pas de layout shift
+`border-2 ${isActive
+  ? 'border-primary-600 bg-gradient-to-r from-primary-500 to-primary-600'
+  : 'border-gray-200'
+}`
+```
+
+#### 4. Optimisation des animations
+
+**Transitions spécifiques** au lieu de `transition-all` :
+
+```tsx
+// ❌ INCORRECT - Anime tout, même les propriétés non voulues
+transition-all duration-300
+
+// ✅ CORRECT - Anime uniquement ce qui est nécessaire
+transition-[background-color,border-color,box-shadow,filter] duration-200
+```
+
+**GPU Acceleration** :
+
+```tsx
+will-change-[filter]  // Prépare GPU pour animations de filtre
+```
+
+**Propriétés optimisées** :
+- `brightness` au lieu de `scale` (pas de layout shift, GPU-accelerated)
+- `filter` pour effets visuels
+- `box-shadow` pour profondeur
+
+#### 5. Taille des icônes
+
+```tsx
+const iconSize = size === 'sm' ? 16 : size === 'md' ? 20 : 24
+```
+
+- **sm** : 16px
+- **md** : 20px (par défaut)
+- **lg** : 24px
+
+#### 6. États de chargement
+
+Le spinner remplace l'icône pendant le chargement :
+
+```tsx
+{loading && iconPosition === 'left' && (
+  <svg className="animate-spin" width={iconSize} height={iconSize}>
+    {/* SVG spinner */}
+  </svg>
+)}
+
+{!loading && Icon && iconPosition === 'left' && (
+  <Icon size={iconSize} />
+)}
+```
+
+### À ne pas faire
+
+#### ❌ Utiliser scale sans précautions
+
+```tsx
+// INCORRECT - Cause scrollbar
+hover:scale-[1.02]
+
+// CORRECT - Utiliser brightness
+hover:brightness-110
+```
+
+#### ❌ Border-width variable sur les tabs
+
+```tsx
+// INCORRECT - Cause layout shift
+isActive ? '' : 'border-2'
+
+// CORRECT - Border constant
+border-2 ${isActive ? 'border-primary-600' : 'border-gray-200'}
+```
+
+#### ❌ Transition-all
+
+```tsx
+// INCORRECT - Performances
+transition-all
+
+// CORRECT - Transitions spécifiques
+transition-[background-color,border-color,box-shadow,filter]
+```
+
+#### ❌ Oublier overflow-y-hidden
+
+```tsx
+// INCORRECT - Scrollbar vertical possible
+<div className="flex gap-2 overflow-x-auto">
+
+// CORRECT - Pas de scrollbar vertical
+<div className="flex gap-2 overflow-x-auto overflow-y-hidden">
+```
+
+#### ❌ Shadow trop prononcée
+
+```tsx
+// INCORRECT - Trop visible
+shadow-lg shadow-primary-500/40
+
+// CORRECT - Subtile
+shadow-sm shadow-primary-500/10 dark:shadow-primary-500/8
+```
+
+### Exemples d'utilisation
+
+#### Page Production
+
+La page Production utilise ModernButton pour :
+
+**Bouton principal de récupération** :
+```tsx
+<ModernButton
+  variant="primary"
+  size="lg"
+  fullWidth
+  onClick={onFetchData}
+  disabled={!selectedPDL || isLoading || isLoadingDetailed || isDemo}
+  loading={isLoading || isLoadingDetailed}
+  icon={isDemo ? Lock : Download}
+  iconPosition="left"
+>
+  {isLoading || isLoadingDetailed
+    ? 'Récupération en cours...'
+    : isDemo
+    ? 'Récupération bloquée en mode démo'
+    : 'Récupérer l\'historique de production'
+  }
+</ModernButton>
+```
+
+**Boutons d'accès rapide** :
+```tsx
+<ModernButton
+  variant="secondary"
+  size="sm"
+  onClick={() => {
+    onWeekOffsetChange(0)
+    setSelectedDetailDay(0)
+    toast.success("Retour à la veille")
+  }}
+>
+  Hier
+</ModernButton>
+```
+
+**Onglets d'années avec zoom** :
+```tsx
+<div className="flex gap-2 flex-1 overflow-x-auto overflow-y-hidden py-3 px-2 no-scrollbar">
+  {[...yearsData].reverse().map((yearData, idx) => (
+    <ModernButton
+      key={yearData.label}
+      variant="tab"
+      size="md"
+      isActive={selectedYears.has(originalIndex)}
+      onClick={() => toggleYearSelection(originalIndex)}
+      className="flex-1 min-w-[100px]"
+    >
+      {yearData.label}
+    </ModernButton>
+  ))}
+</div>
+
+{/* Boutons d'action */}
+<ModernButton
+  variant="gradient"
+  size="sm"
+  icon={ZoomOut}
+  iconPosition="left"
+  onClick={zoomOut}
+  className="bg-gradient-to-r from-purple-500 to-pink-600"
+>
+  Réinitialiser
+</ModernButton>
+
+<ModernButton
+  variant="gradient"
+  size="sm"
+  icon={Download}
+  iconPosition="left"
+  onClick={handleExport}
+>
+  Export JSON
+</ModernButton>
+```
+
+#### Page Simulateur
+
+La page Simulateur utilise ModernButton pour :
+
+**Bouton principal de lancement** :
+```tsx
+<ModernButton
+  variant="primary"
+  size="lg"
+  fullWidth
+  onClick={handleSimulation}
+  disabled={isSimulating || !selectedPdl}
+  loading={isSimulating}
+  icon={isSimulating ? undefined : Calculator}
+  iconPosition="left"
+>
+  {isSimulating
+    ? 'Simulation en cours...'
+    : 'Lancer la simulation'
+  }
+</ModernButton>
+```
+
+**Bouton export PDF** :
+```tsx
+<ModernButton
+  variant="gradient"
+  size="sm"
+  icon={FileDown}
+  iconPosition="left"
+  onClick={exportToPDF}
+>
+  Exporter en PDF
+</ModernButton>
+```
+
+#### Groupe de tabs d'années
+
+```tsx
+<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+  {/* Tabs à gauche */}
+  <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-hidden py-3 px-2 no-scrollbar">
+    {years.map((year, idx) => (
+      <ModernButton
+        key={year}
+        variant="tab"
+        size="md"
+        isActive={selectedYear === idx}
+        onClick={() => setSelectedYear(idx)}
+        className="flex-1 min-w-[80px]"
+      >
+        {year}
+      </ModernButton>
+    ))}
+  </div>
+
+  {/* Boutons d'action à droite */}
+  <div className="flex gap-2">
+    <ModernButton
+      variant="gradient"
+      size="sm"
+      icon={Download}
+      iconPosition="left"
+      onClick={handleExport}
+    >
+      Export JSON
+    </ModernButton>
+  </div>
+</div>
+```
+
+#### Boutons d'accès rapide
+
+```tsx
+<div className="flex gap-2 flex-wrap">
+  <ModernButton
+    variant="secondary"
+    size="sm"
+    onClick={() => handleQuickAccess('yesterday')}
+  >
+    Hier
+  </ModernButton>
+  <ModernButton
+    variant="secondary"
+    size="sm"
+    onClick={() => handleQuickAccess('last-week')}
+  >
+    Semaine dernière
+  </ModernButton>
+  <ModernButton
+    variant="secondary"
+    size="sm"
+    onClick={() => handleQuickAccess('year-ago')}
+  >
+    Il y a un an
+  </ModernButton>
+</div>
+```
+
+#### Bouton avec zoom reset
+
+```tsx
+{zoomDomain && (
+  <ModernButton
+    variant="gradient"
+    size="sm"
+    icon={ZoomOut}
+    iconPosition="left"
+    onClick={zoomOut}
+    title="Réinitialiser le zoom"
+    className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700"
+  >
+    Réinitialiser
+  </ModernButton>
+)}
+```
+
+### Migration depuis les boutons CSS
+
+Si vous migrez des anciens boutons vers ModernButton :
+
+```tsx
+// AVANT (classe CSS)
+<button className="btn btn-primary flex items-center gap-2">
+  <Download size={18} />
+  Télécharger
+</button>
+
+// APRÈS (ModernButton)
+<ModernButton
+  variant="primary"
+  size="md"
+  icon={Download}
+  iconPosition="left"
+>
+  Télécharger
+</ModernButton>
+```
+
+**Avantages** :
+- Design plus moderne (glassmorphism, gradients)
+- Animations optimisées (GPU-accelerated)
+- Props TypeScript typées
+- Gestion automatique du loading state
+- Icônes intégrées avec sizing automatique
+- Pas de layout shift
+
+### Performance
+
+Le composant ModernButton est optimisé pour :
+
+1. **GPU Acceleration** : `will-change-[filter]` pour les animations de filtre
+2. **Transitions ciblées** : Seulement les propriétés nécessaires
+3. **Pas de layout shift** : Border constant, brightness au lieu de scale
+4. **Durée optimale** : 200ms (compromise entre smoothness et réactivité)
+
+### Accessibilité
+
+```tsx
+<ModernButton
+  variant="primary"
+  aria-label="Télécharger les données"
+  title="Télécharger les données au format JSON"
+  disabled={!hasData}
+>
+  Télécharger
+</ModernButton>
+```
+
+Le composant hérite de `ButtonHTMLAttributes<HTMLButtonElement>`, donc tous les attributs HTML standard sont supportés.
+
+---
 
 ## Voir aussi
 

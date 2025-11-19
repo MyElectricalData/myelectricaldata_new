@@ -345,10 +345,20 @@ export function useProductionFetch({
   const clearCache = async () => {
     setIsClearingCache(true)
     try {
+      // Clear backend production cache (Redis) FIRST
+      await adminApi.clearAllProductionCache()
+
+      // Clear ALL React Query cache (includes production, productionDetail, and pdls)
       queryClient.clear()
+
+      // IMPORTANT: Remove React Query persister key to prevent cache restoration on reload
+      localStorage.removeItem('myelectricaldata-query-cache')
+
+      // Clear localStorage and sessionStorage
       localStorage.clear()
       sessionStorage.clear()
 
+      // Clear IndexedDB
       if ('indexedDB' in window) {
         const databases = await indexedDB.databases()
         for (const db of databases) {
@@ -358,10 +368,9 @@ export function useProductionFetch({
         }
       }
 
-      await adminApi.clearAllConsumptionCache()
+      toast.success('Cache de production vidé avec succès')
 
-      toast.success('Cache vidé avec succès')
-
+      // Reload immediately - cache should be completely empty now
       setTimeout(() => {
         window.location.reload()
       }, 1000)

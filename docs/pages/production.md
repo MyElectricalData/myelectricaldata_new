@@ -51,6 +51,7 @@ Page équivalente à `/consumption` mais pour la **production d'énergie solaire
 - React Query
 - Recharts
 - Tailwind CSS
+- ModernButton component (glassmorphism + gradients)
 
 ## Fichiers liés
 
@@ -65,4 +66,49 @@ Page équivalente à `/consumption` mais pour la **production d'énergie solaire
 ✅ Hooks implémentés (sans puissance ni HC/HP)
 ✅ Page principale fonctionnelle
 ✅ Route et navigation configurées (icône Sun ☀️)
+✅ Design moderne avec ModernButton
 ⚠️ Graphiques détaillés à implémenter
+
+## Design moderne
+
+### Boutons modernisés
+
+La page utilise le composant `ModernButton` pour une expérience utilisateur améliorée :
+
+**Bouton "Récupérer l'historique de production"** :
+- Variant : `primary` avec gradient bleu
+- Taille : `lg` (large) avec `fullWidth`
+- États : Loading avec spinner, icône Lock en mode démo
+- Gestion automatique du disabled state
+
+**Boutons d'accès rapide** (Hier, Semaine dernière, Il y a un an) :
+- Variant : `secondary` avec fond transparent
+- Taille : `sm` (compact)
+- Effet glassmorphism avec bordure
+
+**Onglets de sélection d'années** :
+- Variant : `tab` avec état actif/inactif
+- Multi-sélection supportée
+- Scrollbar cachée avec `.no-scrollbar`
+- Transitions optimisées GPU
+
+**Boutons d'export** :
+- Variant : `gradient` (bleu → indigo → violet)
+- Icône Download intégrée
+- Double présence pour responsive (desktop/mobile)
+
+**Bouton "Réinitialiser" (zoom)** :
+- Gradient personnalisé (purple → pink)
+- Affichage conditionnel si zoom actif
+- Icône ZoomOut
+
+### Avantages du design
+
+- **Glassmorphism** : Effet de transparence avec backdrop-blur
+- **Gradients animés** : Shine effect au hover
+- **Performance** : Animations GPU-accelerated
+- **Accessibilité** : Support complet des attributs ARIA
+- **Dark mode** : Variantes optimisées pour mode sombre
+- **Responsive** : Adapté mobile avec boutons full-width et grid responsive
+
+Voir documentation complète : `docs/design/components/07-buttons.md`

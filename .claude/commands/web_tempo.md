@@ -1,4 +1,4 @@
-# Page EcoWatt
+# Page Tempo
 
 ## 🎯 Directives d'agent
 
@@ -9,18 +9,19 @@
 
 **Toutes les spécifications détaillées de cette page sont disponibles dans :**
 
-👉 `@docs/pages/ecowatt.md`
+👉 `@docs/pages/tempo.md`
 
-**Documentation de l'API RTE Ecowatt :**
+**Documentation de l'API RTE Tempo :**
 
-👉 `@docs/rte-api/ecowatt/`
+👉 `@docs/rte-api/tempo/`
 
 **Avant de commencer à travailler sur cette page :**
 
 1. Lis le fichier de spécifications complet ci-dessus
-2. Respecte l'ordre d'affichage des fonctionnalités défini dans les specs
-3. Consulte les notes techniques importantes pour les détails d'implémentation
+2. Consulte la documentation de l'API RTE Tempo pour comprendre les données disponibles
+3. Respecte l'ordre d'affichage des fonctionnalités défini dans les specs
+4. Consulte les notes techniques importantes pour les détails d'implémentation
 
 ## Description rapide
 
-Page affichant les **informations EcoWatt de RTE** sur l'état du réseau électrique français en temps réel et les prévisions.
+Page affichant le **calendrier TEMPO d'EDF** avec les couleurs des jours (bleu, blanc, rouge) et les statistiques associées.

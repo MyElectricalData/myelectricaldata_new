@@ -1,6 +1,7 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Download } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { ModernButton } from './ModernButton'
 
 interface YearlyProductionProps {
   chartData: {
@@ -26,13 +27,15 @@ export function YearlyProduction({ chartData, isDarkMode }: YearlyProductionProp
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           Comparaison mensuelle par année
         </h3>
-        <button
+        <ModernButton
+          variant="gradient"
+          size="sm"
+          icon={Download}
+          iconPosition="left"
           onClick={handleExportMonthly}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
         >
-          <Download size={16} className="flex-shrink-0" />
-          <span>Export JSON</span>
-        </button>
+          Export JSON
+        </ModernButton>
       </div>
       <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
         <ResponsiveContainer width="100%" height={350}>

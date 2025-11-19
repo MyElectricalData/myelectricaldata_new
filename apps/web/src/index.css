@@ -67,6 +67,16 @@
   *::-webkit-scrollbar-corner {
     background: transparent;
   }
+
+  /* Hide scrollbar completely for specific elements */
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari, Opera */
+  }
 }
 
 @layer components {

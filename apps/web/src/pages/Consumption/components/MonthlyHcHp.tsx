@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Brush, ReferenceArea } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea } from 'recharts'
 import { Download, ZoomOut } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { ModernButton } from './ModernButton'
 
 interface MonthlyData {
   month: string
@@ -147,21 +148,20 @@ export function MonthlyHcHp({ monthlyHcHpByYear, selectedPDLDetails, isDarkMode 
       {/* Tabs and buttons - responsive layout */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         {/* Tabs on the left - Allow multiple selection */}
-        <div className="flex gap-2 flex-1 overflow-x-auto">
+        <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-hidden py-3 px-2 no-scrollbar">
           {monthlyHcHpByYear.map((yearData, idx) => {
             const isSelected = selectedYears.has(idx)
             return (
-              <button
+              <ModernButton
                 key={yearData.year}
+                variant="tab"
+                size="md"
+                isActive={isSelected}
                 onClick={() => toggleYearSelection(idx)}
-                className={`flex-1 px-4 py-2.5 font-semibold rounded-lg transition-all duration-200 ${
-                  isSelected
-                    ? 'bg-primary-600 text-white shadow-lg'
-                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-primary-400 dark:hover:border-primary-600'
-                }`}
+                className="flex-1 min-w-[80px]"
               >
                 {yearData.year}
-              </button>
+              </ModernButton>
             )
           })}
         </div>
@@ -169,22 +169,27 @@ export function MonthlyHcHp({ monthlyHcHpByYear, selectedPDLDetails, isDarkMode 
         {/* Action buttons on the right */}
         <div className="flex gap-2">
           {zoomDomain && (
-            <button
+            <ModernButton
+              variant="gradient"
+              size="sm"
+              icon={ZoomOut}
+              iconPosition="left"
               onClick={zoomOut}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
               title="Réinitialiser le zoom"
+              className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700"
             >
-              <ZoomOut size={16} className="flex-shrink-0" />
-              <span>Réinitialiser</span>
-            </button>
+              Réinitialiser
+            </ModernButton>
           )}
-          <button
+          <ModernButton
+            variant="gradient"
+            size="sm"
+            icon={Download}
+            iconPosition="left"
             onClick={handleExport}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
           >
-            <Download size={16} className="flex-shrink-0" />
-            <span>Export JSON</span>
-          </button>
+            Export JSON
+          </ModernButton>
         </div>
       </div>
 

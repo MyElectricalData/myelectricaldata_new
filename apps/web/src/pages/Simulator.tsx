@@ -10,6 +10,7 @@ import type { PDL } from '@/types/api'
 import jsPDF from 'jspdf'
 import { logger } from '@/utils/logger'
 import { SimulatorLoadingProgress } from './Simulator/SimulatorLoadingProgress'
+import { ModernButton } from './Simulator/components/ModernButton'
 import { useIsDemo } from '@/hooks/useIsDemo'
 // import { useAuth } from '@/hooks/useAuth' // Unused for now
 // import toast from 'react-hot-toast' // Unused for now
@@ -1606,20 +1607,21 @@ export default function Simulator() {
         })()}
 
         {/* Submit Button */}
-        <button
+        <ModernButton
+          variant="primary"
+          size="lg"
+          fullWidth
           onClick={handleSimulation}
           disabled={isSimulating || !selectedPdl}
-          className="w-full bg-primary-600 hover:bg-primary-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2"
+          loading={isSimulating}
+          icon={isSimulating ? undefined : Calculator}
+          iconPosition="left"
         >
-          {isSimulating ? (
-            <>
-              <Loader2 className="animate-spin" size={20} />
-              {isDemo ? 'Simulation en cours...' : 'Récupération en cours...'}
-            </>
-          ) : (
-            'Lancer la simulation'
-          )}
-        </button>
+          {isSimulating
+            ? (isDemo ? 'Simulation en cours...' : 'Récupération en cours...')
+            : 'Lancer la simulation'
+          }
+        </ModernButton>
 
         {/* Demo mode info */}
         {isDemo && (
@@ -1657,13 +1659,15 @@ export default function Simulator() {
               </h2>
             </div>
             {simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0 && (
-              <button
+              <ModernButton
+                variant="gradient"
+                size="sm"
+                icon={FileDown}
+                iconPosition="left"
                 onClick={exportToPDF}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
               >
-                <FileDown size={16} className="flex-shrink-0" />
-                <span>Exporter en PDF</span>
-              </button>
+                Exporter en PDF
+              </ModernButton>
             )}
           </div>
 
@@ -1743,7 +1747,7 @@ export default function Simulator() {
                       setFilterProvider('all')
                       setShowOnlyRecent(false)
                     }}
-                    className="text-xs text-primary-600 dark:text-primary-400 hover:underline ml-auto"
+                    className="text-xs text-primary-600 dark:text-primary-400 hover:underline ml-auto transition-colors"
                   >
                     Réinitialiser
                   </button>

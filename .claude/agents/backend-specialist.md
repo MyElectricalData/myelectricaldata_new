@@ -31,13 +31,30 @@ Tes responsabilites :
 **AVANT de générer du code, respecter les outils de linting :**
 
 ### Python (Backend)
+
 - **Linter** : Configuré dans `apps/api/pyproject.toml`
 - **Standards** : PEP 8, type hints obligatoires
 - **Vérification** : Le code doit passer les checks de linting sans erreurs
 - **Format** : Utiliser les conventions Python standards
 
 ### Bonnes pratiques
+
 - Toujours ajouter les type hints pour les fonctions
 - Respecter les conventions de nommage Python
 - Éviter les imports inutilisés
 - Garder une cohérence avec le code existant
+
+## Mode Développement - Auto-refresh
+
+**IMPORTANT** : En mode développement (`make dev`), les services backend et frontend sont configurés avec auto-reload/hot-reload :
+
+- **Backend** : Uvicorn en mode `--reload` détecte automatiquement les changements Python
+- **Frontend** : Vite HMR (Hot Module Replacement) recharge instantanément les composants React
+
+**Conséquence** : Après avoir modifié du code, **NE PAS** redémarrer les services Docker. Les changements sont appliqués automatiquement en quelques secondes.
+
+**Exception** : Restart nécessaire uniquement si :
+
+- Modification de variables d'environnement (`.env.api`)
+- Ajout de dépendances (`pyproject.toml` ou `package.json`)
+- Changement de configuration Docker (`docker-compose.yml`, `Dockerfile`)

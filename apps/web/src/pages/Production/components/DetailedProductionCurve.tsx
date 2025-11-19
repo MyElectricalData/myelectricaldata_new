@@ -4,6 +4,7 @@ import { Calendar, Download, BarChart3, Loader2, CalendarDays, CalendarRange } f
 import toast from 'react-hot-toast'
 import { useQueryClient } from '@tanstack/react-query'
 import { logger } from '@/utils/logger'
+import { ModernButton } from './ModernButton'
 
 interface DetailedProductionCurveProps {
   detailByDayData: any[]
@@ -465,37 +466,40 @@ export function DetailedProductionCurve({
 
           {/* Quick access buttons - responsive grid on mobile */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 lg:flex lg:items-center lg:gap-3 lg:flex-shrink-0">
-            <button
+            <ModernButton
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 onWeekOffsetChange(0)
                 setSelectedDetailDay(0)
                 toast.success("Retour à la veille")
               }}
-              className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-medium border border-gray-300 dark:border-gray-600 transition-colors text-sm sm:text-base"
             >
               Hier
-            </button>
-            <button
+            </ModernButton>
+            <ModernButton
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 onWeekOffsetChange(1)
                 setSelectedDetailDay(0)
                 toast.success("Semaine dernière sélectionnée")
               }}
-              className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-medium border border-gray-300 dark:border-gray-600 transition-colors text-sm sm:text-base"
             >
               Semaine dernière
-            </button>
-            <button
+            </ModernButton>
+            <ModernButton
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 const weeksInYear = 52
                 onWeekOffsetChange(weeksInYear)
                 setSelectedDetailDay(0)
                 toast.success("Il y a un an sélectionné")
               }}
-              className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-medium border border-gray-300 dark:border-gray-600 transition-colors text-sm sm:text-base"
             >
               Il y a un an
-            </button>
+            </ModernButton>
           </div>
         </div>
       </div>
@@ -621,13 +625,15 @@ export function DetailedProductionCurve({
             <CalendarDays size={16} className="flex-shrink-0" />
             <span>Semaine -1</span>
           </button>
-          <button
+          <ModernButton
+            variant="gradient"
+            size="sm"
+            icon={Download}
+            iconPosition="left"
             onClick={handleExport}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
           >
-            <Download size={16} className="flex-shrink-0" />
-            <span>Export JSON</span>
-          </button>
+            Export JSON
+          </ModernButton>
         </div>
       </div>
 
@@ -669,13 +675,15 @@ export function DetailedProductionCurve({
           <CalendarDays size={16} className="flex-shrink-0" />
           <span>Semaine -1</span>
         </button>
-        <button
+        <ModernButton
+          variant="gradient"
+          size="sm"
+          icon={Download}
+          iconPosition="left"
           onClick={handleExport}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
         >
-          <Download size={16} className="flex-shrink-0" />
-          <span>Export JSON</span>
-        </button>
+          Export JSON
+        </ModernButton>
       </div>
 
       {/* Graph */}

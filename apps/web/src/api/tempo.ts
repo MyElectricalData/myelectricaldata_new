@@ -36,4 +36,9 @@ export const tempoApi = {
   clearOldData: async (daysToKeep: number = 30) => {
     return apiClient.delete(`tempo/clear-old?days_to_keep=${daysToKeep}`)
   },
+
+  // Clear ALL cache (admin only)
+  clearAllCache: async () => {
+    return apiClient.delete('tempo/clear-all')
+  },
 }

@@ -32,6 +32,7 @@ Verifie toujours les specifications fonctionnelles avant de coder. Garde un code
 **AVANT de générer du code, respecter les outils de linting :**
 
 ### TypeScript/React (Frontend)
+
 - **Linter** : ESLint configuré dans `apps/web/package.json`
 - **Plugin TypeScript** : @typescript-eslint/eslint-plugin
 - **Règles React** : eslint-plugin-react-hooks, eslint-plugin-react-refresh
@@ -43,6 +44,7 @@ Verifie toujours les specifications fonctionnelles avant de coder. Garde un code
   - Max 0 warnings
 
 ### Bonnes pratiques
+
 - Toujours typer les props avec TypeScript (interfaces ou types)
 - Éviter les `any`, utiliser des types précis
 - Respecter les règles des hooks React (useEffect, useState, etc.)
@@ -51,6 +53,22 @@ Verifie toujours les specifications fonctionnelles avant de coder. Garde un code
 - Utiliser les composants du design system (`@docs/design`)
 
 ### Vérifications avant commit
+
 - Le code doit passer `npm run lint` sans erreurs
 - Pas de warnings TypeScript
 - Respect des guidelines de design
+
+## Mode Développement - Auto-refresh
+
+**IMPORTANT** : En mode développement (`make dev`), les services backend et frontend sont configurés avec auto-reload/hot-reload :
+
+- **Backend** : Uvicorn en mode `--reload` détecte automatiquement les changements Python
+- **Frontend** : Vite HMR (Hot Module Replacement) recharge instantanément les composants React
+
+**Conséquence** : Après avoir modifié du code, **NE PAS** redémarrer les services Docker. Les changements sont appliqués automatiquement en quelques secondes.
+
+**Exception** : Restart nécessaire uniquement si :
+
+- Modification de variables d'environnement (`.env.api`)
+- Ajout de dépendances (`pyproject.toml` ou `package.json`)
+- Changement de configuration Docker (`docker-compose.yml`, `Dockerfile`)

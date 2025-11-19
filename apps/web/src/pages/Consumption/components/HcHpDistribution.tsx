@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { Download, Info } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { ModernButton } from './ModernButton'
 
 interface HcHpData {
   year: string
@@ -43,35 +44,36 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
       {/* Tabs and export button - responsive layout */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         {/* Tabs on the left */}
-        <div className="flex gap-2 flex-1 overflow-x-auto">
+        <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-hidden py-3 px-2 no-scrollbar">
           {hcHpByYear.map((yearData, index) => {
             // Extract the year from the end date
             const endYear = yearData.year.split(' - ')[1]?.split(' ').pop() || yearData.year
 
             return (
-              <button
+              <ModernButton
                 key={yearData.year}
+                variant="tab"
+                size="md"
+                isActive={selectedHcHpPeriod === index}
                 onClick={() => setSelectedHcHpPeriod(index)}
-                className={`flex-1 px-4 py-2.5 font-semibold rounded-lg transition-all duration-200 ${
-                  selectedHcHpPeriod === index
-                    ? 'bg-primary-600 text-white shadow-lg'
-                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-primary-400 dark:hover:border-primary-600'
-                }`}
+                className="flex-1 min-w-[80px]"
               >
                 {endYear}
-              </button>
+              </ModernButton>
             )
           })}
         </div>
 
         {/* Export button on the right */}
-        <button
+        <ModernButton
+          variant="gradient"
+          size="sm"
+          icon={Download}
+          iconPosition="left"
           onClick={handleExportAll}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
         >
-          <Download size={16} className="flex-shrink-0" />
-          <span>Export JSON</span>
-        </button>
+          Export JSON
+        </ModernButton>
       </div>
 
       {/* Selected Period Chart */}
@@ -91,12 +93,15 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
               <h4 className="text-base font-semibold text-gray-900 dark:text-white">
                 {yearData.year}
               </h4>
-              <button
+              <ModernButton
+                variant="gradient"
+                size="sm"
+                icon={Download}
                 onClick={() => handleExportPeriod(yearData)}
-                className="p-1.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded shadow-sm hover:shadow-md transition-all duration-200"
+                className="!px-2 !py-1.5"
               >
-                <Download size={14} />
-              </button>
+                <span className="sr-only">Export période</span>
+              </ModernButton>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

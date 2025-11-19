@@ -119,11 +119,13 @@ class RTEService:
         updated_count = 0
 
         # 1. Fetch today and tomorrow (if available after 7am)
+        # Note: With start_date interpretation, we need end_date to be +2 days to get tomorrow's data
+        # Use 00:00:00 instead of 23:59:59 to avoid API errors
         start_date = now_paris.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
         if now_paris.hour >= 7:
-            end_date = now_paris.replace(hour=23, minute=59, second=59, microsecond=0) + timedelta(days=1)
+            end_date = now_paris.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=2)
         else:
-            end_date = now_paris.replace(hour=23, minute=59, second=59, microsecond=0)
+            end_date = now_paris.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
         logger.info("[RTE] Fetching today/tomorrow data...")
         tempo_values = await self.fetch_tempo_calendar(start_date, end_date)
@@ -164,15 +166,15 @@ class RTEService:
         for value in tempo_values:
             try:
                 # Parse dates from RTE response
-                # RTE API: start_date=04 00:00 + end_date=05 00:00 means data for Oct 5 (not Oct 4)
-                # So we use end_date to identify the day
+                # RTE API: start_date represents the day the color applies to
+                # Example: start_date=2025-11-19 00:00 + end_date=2025-11-20 00:00 means color for Nov 19
                 day_start = datetime.fromisoformat(value["start_date"])
                 day_end = datetime.fromisoformat(value["end_date"])
                 color_str = value["value"]
                 updated_date_str = value.get("updated_date")
 
-                # Use end_date as the reference date (this is the actual day the color applies to)
-                date_id = day_end.strftime("%Y-%m-%d")
+                # Use start_date as the reference date (this is the actual day the color applies to)
+                date_id = day_start.strftime("%Y-%m-%d")
 
                 # Parse RTE update date if provided
                 rte_updated = None
@@ -189,10 +191,10 @@ class RTEService:
                     existing.rte_updated_date = rte_updated
                     existing.updated_at = datetime.now(UTC)
                 else:
-                    # Create new record (use end_date as the actual day)
+                    # Create new record (use start_date as the actual day)
                     tempo_day = TempoDay(
                         id=date_id,
-                        date=day_end,
+                        date=day_start,
                         color=TempoColor(color_str),
                         rte_updated_date=rte_updated,
                     )

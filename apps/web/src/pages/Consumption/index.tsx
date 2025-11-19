@@ -154,7 +154,7 @@ export default function Consumption() {
   // Use custom hooks
   const {
     pdls,
-    activePdls,
+    activePdls: allActivePdls,
     consumptionData,
     maxPowerData,
     detailData,
@@ -163,6 +163,11 @@ export default function Consumption() {
     isLoadingPower,
     isLoadingDetail
   } = useConsumptionData(selectedPDL, dateRange, detailDateRange, selectedPDLDetails)
+
+  // Filter PDLs to only show those with consumption capability
+  const activePdls = useMemo(() => {
+    return allActivePdls.filter(pdl => pdl.has_consumption === true)
+  }, [allActivePdls])
 
   const {
     chartData,
@@ -538,13 +543,9 @@ export default function Consumption() {
         selectedPDLDetails={selectedPDLDetails}
         onPDLSelect={setSelectedPDL}
         onFetchData={fetchConsumptionData}
-        onClearCache={handleClearCacheClick}
-        isClearingCache={isClearingCache}
         isLoading={isLoading}
         isLoadingDetailed={isLoadingDetailed}
-        hasDataInCache={hasDataInCache}
         dataLimitWarning={dataLimitWarning}
-        user={user}
       >
         {/* Loading Progress Component as child */}
         <LoadingProgress

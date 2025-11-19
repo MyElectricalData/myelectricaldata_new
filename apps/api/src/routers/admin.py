@@ -162,6 +162,41 @@ async def clear_all_consumption_cache(
     )
 
 
+@router.delete("/cache/production/clear-all", response_model=APIResponse)
+async def clear_all_production_cache(
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Clear ALL cached production data for all PDLs (admin only)"""
+
+    # Get all PDLs
+    pdl_result = await db.execute(select(PDL))
+    pdls = pdl_result.scalars().all()
+
+    deleted_count = 0
+    if cache_service.redis_client:
+        # Delete all production cache keys
+        patterns = [
+            "production:detail:*",
+            "production:daily:*",
+            "production:yearly:*"
+        ]
+
+        for pattern in patterns:
+            count = await cache_service.delete_pattern(pattern)
+            deleted_count += count
+            logger.info(f"[CACHE] Deleted {count} keys matching pattern {pattern}")
+
+    return APIResponse(
+        success=True,
+        data={
+            "message": f"All production cache cleared",
+            "total_pdls": len(pdls),
+            "deleted_keys": deleted_count
+        }
+    )
+
+
 @router.get("/users/stats", response_model=APIResponse)
 async def get_user_stats(
     current_user: User = Depends(require_permission('users')),

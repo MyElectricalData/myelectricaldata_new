@@ -33,21 +33,21 @@ export default function Tempo() {
   // TEMPO season: Sept Year N to Aug Year N+1 = Season "N/N+1"
   const groupedBySeason: Record<string, Record<string, TempoDay[]>> = {}
   allDays.forEach((day) => {
-    const date = new Date(day.date)
-    const year = date.getFullYear()
-    const month = date.getMonth() // 0-11 (0=Jan, 8=Sept)
+    // Parse date as local date (YYYY-MM-DD) to avoid timezone issues
+    const [year, month, dayNum] = day.date.split('-').map(Number)
+    const monthIndex = month - 1 // Convert to 0-based index (0=Jan, 8=Sept)
 
     // TEMPO season starts Sept 1 (month 8)
-    const seasonStart = month >= 8 ? year : year - 1
+    const seasonStart = monthIndex >= 8 ? year : year - 1
     const seasonKey = `${seasonStart}/${seasonStart + 1}`
 
     if (!groupedBySeason[seasonKey]) {
       groupedBySeason[seasonKey] = {}
     }
-    if (!groupedBySeason[seasonKey][month]) {
-      groupedBySeason[seasonKey][month] = []
+    if (!groupedBySeason[seasonKey][monthIndex]) {
+      groupedBySeason[seasonKey][monthIndex] = []
     }
-    groupedBySeason[seasonKey][month].push(day)
+    groupedBySeason[seasonKey][monthIndex].push(day)
   })
 
   const seasons = Object.keys(groupedBySeason).sort((a, b) => {
@@ -61,7 +61,7 @@ export default function Tempo() {
       case 'BLUE':
         return 'bg-blue-500 text-white'
       case 'WHITE':
-        return 'bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white'
+        return 'bg-white dark:bg-white text-gray-900 dark:text-gray-900 border border-gray-400 dark:border-gray-500'
       case 'RED':
         return 'bg-red-500 text-white'
       default:
@@ -88,8 +88,8 @@ export default function Tempo() {
     const days = groupedBySeason[season][month] || []
     if (days.length === 0) return null
 
-    // Sort days by date
-    days.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    // Sort days by date (using string comparison for YYYY-MM-DD format)
+    days.sort((a, b) => a.date.localeCompare(b.date))
 
     // Get actual year for this month (Sept-Dec uses first year, Jan-Aug uses second year)
     const [year1, year2] = season.split('/').map(Number)
@@ -106,7 +106,8 @@ export default function Tempo() {
     // Create array for all days in month
     const calendarDays: (TempoDay | null)[] = Array(daysInMonth).fill(null)
     days.forEach((day) => {
-      const dayNum = new Date(day.date).getDate()
+      // Extract day number from YYYY-MM-DD format (avoids timezone issues)
+      const dayNum = parseInt(day.date.split('-')[2], 10)
       calendarDays[dayNum - 1] = day
     })
 
@@ -240,10 +241,10 @@ export default function Tempo() {
             </div>
 
             {/* White days */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border-l-4 border-gray-400">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border-l-4 border-gray-500">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-semibold text-gray-600 dark:text-gray-400">Jours Blancs Restants</span>
-                <span className="text-2xl font-bold text-gray-600 dark:text-gray-400">
+                <span className="text-2xl font-bold text-gray-700 dark:text-gray-300">
                   {currentSeasonStats.whiteRemaining}
                 </span>
               </div>
@@ -253,7 +254,7 @@ export default function Tempo() {
               </div>
               <div className="mt-2 bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
                 <div
-                  className="bg-gray-400 h-full transition-all"
+                  className="bg-gray-500 h-full transition-all"
                   style={{ width: `${(currentSeasonStats.whiteUsed / 43) * 100}%` }}
                 />
               </div>
@@ -289,7 +290,7 @@ export default function Tempo() {
           <span className="text-sm">Jour Bleu (300 jours/an)</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-gray-200 dark:bg-gray-600 rounded"></div>
+          <div className="w-6 h-6 bg-white dark:bg-gray-200 border border-gray-400 rounded"></div>
           <span className="text-sm">Jour Blanc (43 jours/an)</span>
         </div>
         <div className="flex items-center gap-2">
@@ -329,7 +330,7 @@ export default function Tempo() {
                     <span className="text-blue-600 dark:text-blue-400">
                       {stats.BLUE} jours bleus
                     </span>
-                    <span className="text-gray-600 dark:text-gray-400">
+                    <span className="text-gray-700 dark:text-gray-300">
                       {stats.WHITE} jours blancs
                     </span>
                     <span className="text-red-600 dark:text-red-400">

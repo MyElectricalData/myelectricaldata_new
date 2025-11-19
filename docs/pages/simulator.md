@@ -66,6 +66,7 @@ Page permettant de **comparer automatiquement toutes les offres d'électricité*
 - jsPDF (génération PDF)
 - Tailwind CSS
 - Lucide React
+- ModernButton component (glassmorphism + gradients)
 
 ## Fichiers liés
 
@@ -87,3 +88,32 @@ Page permettant de **comparer automatiquement toutes les offres d'électricité*
 - Filtrage automatique selon puissance PDL
 - Couleurs TEMPO en temps réel (API RTE)
 - Support complet mode sombre
+
+## Design moderne
+
+### Boutons modernisés
+
+La page utilise le composant `ModernButton` pour une expérience utilisateur améliorée :
+
+**Bouton principal "Lancer la simulation"** :
+- Variant : `primary` avec gradient bleu
+- Taille : `lg` (large) avec `fullWidth`
+- États : Loading avec spinner animé
+- Icône : Calculator (masquée pendant le loading)
+
+**Bouton "Exporter en PDF"** :
+- Variant : `gradient` (bleu → indigo → violet)
+- Taille : `sm` (compact)
+- Icône : FileDown à gauche
+- Affichage conditionnel (seulement si résultats disponibles)
+
+### Avantages du design
+
+- **Glassmorphism** : Effet de transparence avec backdrop-blur
+- **Gradients animés** : Shine effect au hover
+- **Performance** : Animations GPU-accelerated
+- **Accessibilité** : Support complet des attributs ARIA
+- **Dark mode** : Variantes optimisées pour mode sombre
+- **Responsive** : Adapté mobile avec boutons full-width
+
+Voir documentation complète : `docs/design/components/07-buttons.md`
