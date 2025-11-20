@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Info, Trash2, RefreshCw, Edit2, Save, X, Zap, Clock, Factory, Plus, Minus, Eye, EyeOff, Calendar, MoreVertical, AlertCircle } from 'lucide-react'
+import { Info, Trash2, RefreshCw, Edit2, Save, X, Zap, Clock, Factory, Plus, Minus, Eye, EyeOff, Calendar, MoreVertical, AlertCircle, ChevronUp, ChevronDown } from 'lucide-react'
 import { pdlApi } from '@/api/pdl'
 import { oauthApi } from '@/api/oauth'
 import type { PDL } from '@/types/api'
@@ -386,6 +386,32 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
     }, 500)
   }
 
+  const handleIncrementField = (index: number, field: 'startHour' | 'startMin' | 'endHour' | 'endMin') => {
+    const range = offpeakRanges[index]
+    let newValue = parseInt(range[field])
+
+    if (field === 'startHour' || field === 'endHour') {
+      newValue = (newValue + 1) % 24
+    } else {
+      newValue = (newValue + 1) % 60
+    }
+
+    handleOffpeakFieldChange(index, field, newValue.toString().padStart(2, '0'))
+  }
+
+  const handleDecrementField = (index: number, field: 'startHour' | 'startMin' | 'endHour' | 'endMin') => {
+    const range = offpeakRanges[index]
+    let newValue = parseInt(range[field])
+
+    if (field === 'startHour' || field === 'endHour') {
+      newValue = (newValue - 1 + 24) % 24
+    } else {
+      newValue = (newValue - 1 + 60) % 60
+    }
+
+    handleOffpeakFieldChange(index, field, newValue.toString().padStart(2, '0'))
+  }
+
   const handleSaveName = () => {
     updateNameMutation.mutate(editedName)
   }
@@ -394,6 +420,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
     setEditedName(pdl.name || '')
     setIsEditingName(false)
   }
+
 
   return (
     <div className={`p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border relative transition-all ${
@@ -714,7 +741,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                     })
                   }
                   disabled={updateTypeMutation.isPending}
-                  className="w-5 h-5 flex-shrink-0 text-primary-600 bg-white dark:bg-gray-800 border-2 border-gray-400 dark:border-gray-500 rounded cursor-pointer focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed accent-primary-600"
+                  className="w-5 h-5 flex-shrink-0 rounded-md border-2 border-blue-400 dark:border-blue-500 bg-white dark:bg-gray-800 checked:bg-blue-600 dark:checked:bg-blue-500 checked:border-blue-600 dark:checked:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </label>
 
@@ -729,7 +756,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                     <select
                       value={editedPower}
                       onChange={(e) => handlePowerChange(e.target.value)}
-                      className="input w-32 text-sm py-1"
+                      className="w-32 px-3 py-1.5 text-sm font-medium bg-white dark:bg-gray-800 border-2 border-blue-300 dark:border-blue-700 rounded-lg text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 cursor-pointer transition-all shadow-sm hover:shadow"
                     >
                       <option value="">Sélectionner</option>
                       <option value="3">3 kVA</option>
@@ -745,96 +772,202 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                   </div>
 
                   {/* Offpeak Hours */}
-                  <div className="space-y-2" data-tour="pdl-offpeak">
+                  <div className="space-y-3" data-tour="pdl-offpeak">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                         <Clock size={16} />
                         <span>Heures creuses :</span>
                       </div>
+                      <button
+                        onClick={handleAddOffpeakRange}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-700 dark:hover:bg-emerald-800 rounded-lg shadow-sm hover:shadow transition-all duration-200"
+                        title="Ajouter une plage horaire"
+                      >
+                        <Plus size={16} />
+                        <span>Ajouter</span>
+                      </button>
                     </div>
-                    {offpeakRanges.map((range, index) => (
-                      <div key={index} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          Plage {index + 1}
-                        </span>
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                          {/* Time ranges */}
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+
+                    {/* Hour markers above timeline */}
+                    <div className="relative h-4 mb-1">
+                      <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 font-mono">
+                        <span>0h</span>
+                        <span>6h</span>
+                        <span>12h</span>
+                        <span>18h</span>
+                        <span>24h</span>
+                      </div>
+                    </div>
+
+                    {/* Visual timeline */}
+                    <div className="relative h-8 bg-gradient-to-r from-red-100 via-red-50 to-red-100 dark:from-red-800/40 dark:via-red-700/30 dark:to-red-800/40 rounded-lg border border-gray-300 dark:border-gray-600 overflow-visible mb-2"
+                    >
+                      {/* Hour grid lines */}
+                      <div className="absolute inset-0 flex pointer-events-none">
+                        {Array.from({ length: 24 }, (_, i) => (
+                          <div
+                            key={i}
+                            className="flex-1 border-r border-gray-400/50 dark:border-gray-400/50 last:border-r-0"
+                          />
+                        ))}
+                      </div>
+
+                      {/* Off-peak ranges visualization */}
+                      {offpeakRanges.map((range, index) => {
+                        const startHour = parseInt(range.startHour) + parseInt(range.startMin) / 60
+                        const endHour = parseInt(range.endHour) + parseInt(range.endMin) / 60
+
+                        // Skip if no valid range
+                        if (startHour === 0 && endHour === 0) return null
+
+                        // Handle wrap-around (e.g., 22h to 6h crosses midnight)
+                        if (endHour < startHour) {
+                          // Split into two ranges: start to midnight, and midnight to end
+                          return (
+                            <>
+                              {/* First part: from start to 24h */}
+                              <div
+                                key={`${index}-end`}
+                                className="absolute inset-0 bg-emerald-500/70 dark:bg-emerald-500/70 border-l-2 border-r-2 border-emerald-700 dark:border-emerald-600 transition-all duration-300 flex items-center justify-center"
+                                style={{
+                                  left: `${(startHour / 24) * 100}%`,
+                                  width: `${((24 - startHour) / 24) * 100}%`
+                                }}
+                                title={`Plage ${index + 1}: ${range.startHour}:${range.startMin} → 24:00 (suite à 00:00)`}
+                              >
+                                <span className="text-white font-bold text-xs drop-shadow-md pointer-events-none">
+                                  {index + 1}
+                                </span>
+                              </div>
+                              {/* Second part: from 0h to end */}
+                              <div
+                                key={`${index}-start`}
+                                className="absolute inset-0 bg-emerald-500/70 dark:bg-emerald-500/70 border-l-2 border-r-2 border-emerald-700 dark:border-emerald-600 transition-all duration-300 flex items-center justify-center"
+                                style={{
+                                  left: '0%',
+                                  width: `${(endHour / 24) * 100}%`
+                                }}
+                                title={`Plage ${index + 1}: 00:00 → ${range.endHour}:${range.endMin} (suite de ${range.startHour}:${range.startMin})`}
+                              >
+                                <span className="text-white font-bold text-xs drop-shadow-md pointer-events-none">
+                                  {index + 1}
+                                </span>
+                              </div>
+                            </>
+                          )
+                        }
+
+                        // Normal case: no wrap-around
+                        const left = (startHour / 24) * 100
+                        const width = ((endHour - startHour) / 24) * 100
+
+                        return (
+                          <div
+                            key={index}
+                            className="absolute inset-0 bg-emerald-500/70 dark:bg-emerald-500/70 border-l-2 border-r-2 border-emerald-700 dark:border-emerald-600 transition-all duration-300 flex items-center justify-center"
+                            style={{
+                              left: `${Math.max(0, left)}%`,
+                              width: `${Math.max(0, width)}%`
+                            }}
+                            title={`Plage ${index + 1}: ${range.startHour}:${range.startMin} → ${range.endHour}:${range.endMin}`}
+                          >
+                            <span className="text-white font-bold text-xs drop-shadow-md pointer-events-none">
+                              {index + 1}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Time range cards */}
+                    <div className="space-y-1.5">
+                      {offpeakRanges.map((range, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-3 p-2 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/30 rounded-lg"
+                        >
+                          {/* Range number badge */}
+                          <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-blue-500 dark:bg-blue-600 text-white text-xs font-bold rounded-full">
+                            {index + 1}
+                          </div>
+
+                          {/* Time inputs - full width */}
+                          <div className="flex-1 flex items-center gap-3">
                             {/* Start time */}
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs text-gray-500 dark:text-gray-400 w-12 sm:hidden">Début:</span>
+                            <div className="flex-1 flex items-center gap-1.5">
                               <select
                                 value={range.startHour}
                                 onChange={(e) => handleOffpeakFieldChange(index, 'startHour', e.target.value)}
-                                className="input text-xs sm:text-sm font-mono w-14 sm:w-16 py-1 px-1"
+                                className="flex-1 px-2 py-1 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded text-sm font-semibold text-center text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 cursor-pointer"
                               >
-                                {Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0')).map(h => (
-                                  <option key={h} value={h}>{h}</option>
+                                {Array.from({ length: 24 }, (_, i) => (
+                                  <option key={i} value={i.toString().padStart(2, '0')}>
+                                    {i.toString().padStart(2, '0')}
+                                  </option>
                                 ))}
                               </select>
-                              <span className="text-gray-500 text-xs">:</span>
+                              <span className="text-gray-600 dark:text-gray-400 text-xs">h</span>
+                              <span className="text-blue-600 dark:text-blue-400 font-bold">:</span>
                               <select
                                 value={range.startMin}
                                 onChange={(e) => handleOffpeakFieldChange(index, 'startMin', e.target.value)}
-                                className="input text-xs sm:text-sm font-mono w-14 sm:w-16 py-1 px-1"
+                                className="flex-1 px-2 py-1 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded text-sm font-semibold text-center text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 cursor-pointer"
                               >
-                                {Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0')).map(m => (
-                                  <option key={m} value={m}>{m}</option>
+                                {Array.from({ length: 60 }, (_, i) => (
+                                  <option key={i} value={i.toString().padStart(2, '0')}>
+                                    {i.toString().padStart(2, '0')}
+                                  </option>
                                 ))}
                               </select>
+                              <span className="text-gray-600 dark:text-gray-400 text-xs">min</span>
                             </div>
 
-                            <span className="text-gray-500 text-xs hidden sm:inline">→</span>
+                            {/* Arrow separator */}
+                            <span className="text-blue-600 dark:text-blue-400 font-bold flex-shrink-0">→</span>
 
                             {/* End time */}
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs text-gray-500 dark:text-gray-400 w-12 sm:hidden">Fin:</span>
+                            <div className="flex-1 flex items-center gap-1.5">
                               <select
                                 value={range.endHour}
                                 onChange={(e) => handleOffpeakFieldChange(index, 'endHour', e.target.value)}
-                                className="input text-xs sm:text-sm font-mono w-14 sm:w-16 py-1 px-1"
+                                className="flex-1 px-2 py-1 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded text-sm font-semibold text-center text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 cursor-pointer"
                               >
-                                {Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0')).map(h => (
-                                  <option key={h} value={h}>{h}</option>
+                                {Array.from({ length: 24 }, (_, i) => (
+                                  <option key={i} value={i.toString().padStart(2, '0')}>
+                                    {i.toString().padStart(2, '0')}
+                                  </option>
                                 ))}
                               </select>
-                              <span className="text-gray-500 text-xs">:</span>
+                              <span className="text-gray-600 dark:text-gray-400 text-xs">h</span>
+                              <span className="text-blue-600 dark:text-blue-400 font-bold">:</span>
                               <select
                                 value={range.endMin}
                                 onChange={(e) => handleOffpeakFieldChange(index, 'endMin', e.target.value)}
-                                className="input text-xs sm:text-sm font-mono w-14 sm:w-16 py-1 px-1"
+                                className="flex-1 px-2 py-1 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded text-sm font-semibold text-center text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 cursor-pointer"
                               >
-                                {Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0')).map(m => (
-                                  <option key={m} value={m}>{m}</option>
+                                {Array.from({ length: 60 }, (_, i) => (
+                                  <option key={i} value={i.toString().padStart(2, '0')}>
+                                    {i.toString().padStart(2, '0')}
+                                  </option>
                                 ))}
                               </select>
+                              <span className="text-gray-600 dark:text-gray-400 text-xs">min</span>
                             </div>
                           </div>
 
-                          {/* Actions */}
-                          <div className="flex items-center gap-1 w-[68px] justify-end">
-                            {offpeakRanges.length > 1 && (
-                              <button
-                                onClick={() => handleRemoveOffpeakRange(index)}
-                                className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded flex-shrink-0"
-                                title="Supprimer cette plage"
-                              >
-                                <Minus size={16} />
-                              </button>
-                            )}
-                            {index === offpeakRanges.length - 1 && (
-                              <button
-                                onClick={handleAddOffpeakRange}
-                                className="p-1 hover:bg-green-100 dark:hover:bg-green-900/30 text-green-600 dark:text-green-400 rounded flex-shrink-0"
-                                title="Ajouter une plage"
-                              >
-                                <Plus size={16} />
-                              </button>
-                            )}
-                          </div>
+                          {/* Delete button */}
+                          {offpeakRanges.length > 1 && (
+                            <button
+                              onClick={() => handleRemoveOffpeakRange(index)}
+                              className="flex-shrink-0 p-1.5 text-white bg-red-500 hover:bg-red-600 dark:bg-red-700 dark:hover:bg-red-800 rounded transition-all"
+                              title="Supprimer cette plage"
+                            >
+                              <Minus size={14} />
+                            </button>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -862,7 +995,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                   })
                 }
                 disabled={updateTypeMutation.isPending}
-                className="w-5 h-5 flex-shrink-0 text-primary-600 bg-white dark:bg-gray-800 border-2 border-gray-400 dark:border-gray-500 rounded cursor-pointer focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed accent-primary-600"
+                className="w-5 h-5 flex-shrink-0 rounded-md border-2 border-green-400 dark:border-green-500 bg-white dark:bg-gray-800 checked:bg-green-600 dark:checked:bg-green-500 checked:border-green-600 dark:checked:border-green-500 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </label>
 
@@ -881,7 +1014,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                       value={pdl.linked_production_pdl_id || ''}
                       onChange={(e) => linkProductionMutation.mutate(e.target.value || null)}
                       disabled={linkProductionMutation.isPending}
-                      className="input text-sm py-1 w-48"
+                      className="w-48 px-3 py-1.5 text-sm font-medium bg-white dark:bg-gray-800 border-2 border-green-300 dark:border-green-700 rounded-lg text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 dark:focus:ring-green-400 focus:border-green-500 dark:focus:border-green-400 cursor-pointer transition-all shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <option value="">Aucun</option>
                       {productionPdls.map(p => (
