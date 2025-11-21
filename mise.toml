@@ -1,3 +1,4 @@
 [tools]
 claude = "latest"
+github-cli = "latest"
 node = "24.9.0"

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Info, Trash2, RefreshCw, Edit2, Save, X, Zap, Clock, Factory, Plus, Minus, Eye, EyeOff, Calendar, MoreVertical, AlertCircle, ChevronUp, ChevronDown } from 'lucide-react'
 import { pdlApi } from '@/api/pdl'
@@ -423,12 +423,12 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
 
 
   return (
-    <div className={`p-4 bg-white dark:bg-gray-800/90 rounded-lg border-2 shadow-lg hover:shadow-xl relative transition-all ${
+    <div className={`p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border-2 shadow-lg hover:shadow-xl relative transition-all ${
       hasConsentError
         ? 'border-red-400 dark:border-red-500'
         : 'border-gray-300 dark:border-gray-600'
     } ${fetchContractMutation.isPending ? 'pointer-events-none' : ''} ${
-      !(pdl.is_active ?? true) ? 'opacity-60 bg-gray-100 dark:bg-gray-800' : ''
+      !(pdl.is_active ?? true) ? 'opacity-60 bg-gray-100 dark:bg-gray-700/30' : ''
     }`}>
       {/* Loading overlay */}
       {fetchContractMutation.isPending && (
@@ -723,11 +723,11 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
         {!hasConsentError && (
           <>
             {/* Consumption Section */}
-            <div className="border-2 border-blue-100 dark:border-blue-900/50 rounded-lg overflow-hidden shadow-sm">
+            <div className="border-2 border-blue-200 dark:border-blue-700 rounded-lg overflow-hidden shadow-md">
               {/* Consumption Header */}
-              <label className="flex items-center gap-3 py-2 px-3 bg-blue-50/50 dark:bg-blue-900/10 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" data-tour="pdl-consumption">
-                <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-medium">
-                  <Zap size={18} className="text-blue-500 dark:text-blue-400" />
+              <label className="flex items-center gap-3 py-2 px-3 bg-blue-100/70 dark:bg-blue-900/30 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors" data-tour="pdl-consumption">
+                <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-semibold">
+                  <Zap size={18} className="text-blue-600 dark:text-blue-400" />
                   <span>Consommation</span>
                 </div>
                 <div className="flex-1"></div>
@@ -824,10 +824,9 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                         if (endHour < startHour) {
                           // Split into two ranges: start to midnight, and midnight to end
                           return (
-                            <>
+                            <React.Fragment key={`range-${index}`}>
                               {/* First part: from start to 24h */}
                               <div
-                                key={`${index}-end`}
                                 className="absolute inset-0 bg-emerald-500/70 dark:bg-emerald-500/70 border-l-2 border-r-2 border-emerald-700 dark:border-emerald-600 transition-all duration-300 flex items-center justify-center"
                                 style={{
                                   left: `${(startHour / 24) * 100}%`,
@@ -841,7 +840,6 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                               </div>
                               {/* Second part: from 0h to end */}
                               <div
-                                key={`${index}-start`}
                                 className="absolute inset-0 bg-emerald-500/70 dark:bg-emerald-500/70 border-l-2 border-r-2 border-emerald-700 dark:border-emerald-600 transition-all duration-300 flex items-center justify-center"
                                 style={{
                                   left: '0%',
@@ -853,7 +851,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                                   {index + 1}
                                 </span>
                               </div>
-                            </>
+                            </React.Fragment>
                           )
                         }
 
@@ -977,11 +975,11 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
 
         {/* Production Section */}
         {!hasConsentError && (
-          <div className="border-2 border-green-100 dark:border-green-900/50 rounded-lg overflow-hidden shadow-sm">
+          <div className="border-2 border-green-200 dark:border-green-700 rounded-lg overflow-hidden shadow-md">
             {/* Production Header */}
-            <label className="flex items-center gap-3 py-2 px-3 bg-green-50/50 dark:bg-green-900/10 cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors" data-tour="pdl-production">
-              <div className="flex items-center gap-2 text-green-600 dark:text-green-400 font-medium">
-                <Factory size={18} className="text-green-500 dark:text-green-400" />
+            <label className="flex items-center gap-3 py-2 px-3 bg-green-100/70 dark:bg-green-900/30 cursor-pointer hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors" data-tour="pdl-production">
+              <div className="flex items-center gap-2 text-green-700 dark:text-green-300 font-semibold">
+                <Factory size={18} className="text-green-600 dark:text-green-400" />
                 <span>Production</span>
               </div>
               <div className="flex-1"></div>

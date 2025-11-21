@@ -17,6 +17,10 @@ export const enedisApi = {
     return apiClient.get(`enedis/consumption/detail/${usagePointId}`, params)
   },
 
+  getConsumptionDetailBatch: async (usagePointId: string, params: EnedisDataParams) => {
+    return apiClient.get(`enedis/consumption/detail/batch/${usagePointId}`, params)
+  },
+
   getMaxPower: async (usagePointId: string, params: EnedisDataParams) => {
     return apiClient.get(`enedis/power/${usagePointId}`, params)
   },
@@ -27,6 +31,10 @@ export const enedisApi = {
 
   getProductionDetail: async (usagePointId: string, params: EnedisDataParams) => {
     return apiClient.get(`enedis/production/detail/${usagePointId}`, params)
+  },
+
+  getProductionDetailBatch: async (usagePointId: string, params: EnedisDataParams) => {
+    return apiClient.get(`enedis/production/detail/batch/${usagePointId}`, params)
   },
 
   getContract: async (usagePointId: string, useCache?: boolean) => {

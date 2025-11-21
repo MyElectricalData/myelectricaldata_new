@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, Request, HTTPException, Path
+from fastapi import APIRouter, Depends, Request, HTTPException, Path, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from datetime import datetime, UTC
 import logging
+import json
+from typing import Optional
 from ..models import User, PDL
 from ..models.database import get_db
 from ..middleware import require_admin, require_permission, get_current_user
@@ -94,7 +96,7 @@ async def clear_user_cache(
     current_user: User = Depends(require_permission('users')),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
-    """Clear all cached consumption data for a user (admin only)"""
+    """Clear ALL cached data for a user: consumption, production, daily, reading types (admin only)"""
 
     # Check if user exists
     result = await db.execute(select(User).where(User.id == user_id))
@@ -103,23 +105,73 @@ async def clear_user_cache(
     if not user:
         return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
 
-    # Clear all cache keys for this user (consumption data)
-    # Pattern: consumption:detail:{usage_point_id}:*
-    # We need to get all PDLs for this user first
+    # Get all PDLs for this user
     pdl_result = await db.execute(select(PDL).where(PDL.user_id == user_id))
     pdls = pdl_result.scalars().all()
 
     deleted_count = 0
     if cache_service.redis_client:
         for pdl in pdls:
-            pattern = f"consumption:detail:{pdl.usage_point_id}:*"
-            count = await cache_service.delete_pattern(pattern)
-            deleted_count += count
+            # Clear ALL cache types for each PDL
+            patterns = [
+                f"consumption:detail:{pdl.usage_point_id}:*",
+                f"consumption:daily:{pdl.usage_point_id}:*",
+                f"consumption:reading_type:{pdl.usage_point_id}",
+                f"production:detail:{pdl.usage_point_id}:*",
+                f"production:daily:{pdl.usage_point_id}:*",
+                f"production:reading_type:{pdl.usage_point_id}",
+            ]
+            for pattern in patterns:
+                count = await cache_service.delete_pattern(pattern)
+                deleted_count += count
 
     return APIResponse(
         success=True,
         data={
-            "message": f"Cache cleared for user {user.email}",
+            "message": f"Cache global vidé pour {user.email}",
+            "user_id": user_id,
+            "pdl_count": len(pdls),
+            "deleted_keys": deleted_count
+        }
+    )
+
+
+@router.delete("/users/{user_id}/clear-blacklist", response_model=APIResponse)
+async def clear_user_blacklist(
+    user_id: str = Path(..., description="User ID (UUID)", openapi_examples={"user_uuid": {"summary": "User UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    current_user: User = Depends(require_permission('users')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Clear all blacklisted dates for a user (admin only)"""
+
+    # Check if user exists
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
+
+    # Get all PDLs for this user
+    pdl_result = await db.execute(select(PDL).where(PDL.user_id == user_id))
+    pdls = pdl_result.scalars().all()
+
+    deleted_count = 0
+    if cache_service.redis_client:
+        for pdl in pdls:
+            # Clear blacklist and fail counters for each PDL
+            # Pattern: enedis:blacklist:{usage_point_id}:* and enedis:fail:{usage_point_id}:*
+            patterns = [
+                f"enedis:blacklist:{pdl.usage_point_id}:*",
+                f"enedis:fail:{pdl.usage_point_id}:*",
+            ]
+            for pattern in patterns:
+                count = await cache_service.delete_pattern(pattern)
+                deleted_count += count
+
+    return APIResponse(
+        success=True,
+        data={
+            "message": f"Blacklist vidée pour {user.email}",
             "user_id": user_id,
             "pdl_count": len(pdls),
             "deleted_keys": deleted_count
@@ -191,6 +243,44 @@ async def clear_all_production_cache(
         success=True,
         data={
             "message": f"All production cache cleared",
+            "total_pdls": len(pdls),
+            "deleted_keys": deleted_count
+        }
+    )
+
+
+@router.delete("/cache/clear-all", response_model=APIResponse)
+async def clear_all_cache(
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Clear ALL cached data (consumption + production) for all PDLs (admin only)"""
+
+    # Get all PDLs
+    pdl_result = await db.execute(select(PDL))
+    pdls = pdl_result.scalars().all()
+
+    deleted_count = 0
+    if cache_service.redis_client:
+        # Delete all cache keys (consumption + production)
+        patterns = [
+            "consumption:detail:*",
+            "consumption:daily:*",
+            "consumption:yearly:*",
+            "production:detail:*",
+            "production:daily:*",
+            "production:yearly:*"
+        ]
+
+        for pattern in patterns:
+            count = await cache_service.delete_pattern(pattern)
+            deleted_count += count
+            logger.info(f"[CACHE] Deleted {count} keys matching pattern {pattern}")
+
+    return APIResponse(
+        success=True,
+        data={
+            "message": f"All cache cleared (consumption + production)",
             "total_pdls": len(pdls),
             "deleted_keys": deleted_count
         }
@@ -619,3 +709,126 @@ async def refresh_ecowatt_cache(
     except Exception as e:
         logger.error(f"Error refreshing EcoWatt cache: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/logs", response_model=APIResponse)
+async def get_logs(
+    level: Optional[str] = Query(None, description="Filter by log level (info, warning, error, critical, debug)"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of logs to retrieve"),
+    offset: int = Query(0, ge=0, description="Number of logs to skip"),
+    current_user: User = Depends(require_permission('logs'))
+) -> APIResponse:
+    """Get application logs from Redis (requires logs permission)"""
+
+    if not cache_service.redis_client:
+        return APIResponse(
+            success=False,
+            error={"code": "REDIS_NOT_AVAILABLE", "message": "Redis is not available"}
+        )
+
+    try:
+        logs = []
+
+        # Determine patterns to search based on level filter
+        if level:
+            patterns = [f"logs:{level.lower()}:*"]
+        else:
+            # Search all log levels
+            patterns = [
+                "logs:debug:*",
+                "logs:info:*",
+                "logs:warning:*",
+                "logs:error:*",
+                "logs:critical:*"
+            ]
+
+        # Collect all matching keys
+        all_keys = []
+        for pattern in patterns:
+            async for key in cache_service.redis_client.scan_iter(match=pattern):
+                all_keys.append(key)
+
+        # Sort keys by timestamp (descending - newest first)
+        # Keys format: logs:level:timestamp_ms
+        all_keys.sort(reverse=True, key=lambda k: int(k.decode('utf-8').split(':')[-1]))
+
+        # Apply offset and limit
+        selected_keys = all_keys[offset:offset + limit]
+
+        # Retrieve log entries
+        for key in selected_keys:
+            value = await cache_service.redis_client.get(key)
+            if value:
+                try:
+                    log_entry = json.loads(value)
+                    logs.append(log_entry)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to decode log entry: {key}")
+
+        return APIResponse(
+            success=True,
+            data={
+                "logs": logs,
+                "total": len(all_keys),
+                "count": len(logs),
+                "offset": offset,
+                "limit": limit
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error retrieving logs from Redis: {e}")
+        return APIResponse(
+            success=False,
+            error={"code": "LOG_RETRIEVAL_ERROR", "message": str(e)}
+        )
+
+
+@router.delete("/logs/clear", response_model=APIResponse)
+async def clear_logs(
+    level: Optional[str] = Query(None, description="Clear logs of specific level only (info, warning, error, critical, debug)"),
+    current_user: User = Depends(require_permission('logs.delete'))
+) -> APIResponse:
+    """Clear application logs from Redis (requires logs.delete permission)"""
+
+    if not cache_service.redis_client:
+        return APIResponse(
+            success=False,
+            error={"code": "REDIS_NOT_AVAILABLE", "message": "Redis is not available"}
+        )
+
+    try:
+        deleted_count = 0
+
+        # Determine patterns to delete based on level filter
+        if level:
+            patterns = [f"logs:{level.lower()}:*"]
+        else:
+            # Delete all log levels
+            patterns = [
+                "logs:debug:*",
+                "logs:info:*",
+                "logs:warning:*",
+                "logs:error:*",
+                "logs:critical:*"
+            ]
+
+        # Delete all matching keys
+        for pattern in patterns:
+            count = await cache_service.delete_pattern(pattern)
+            deleted_count += count
+
+        return APIResponse(
+            success=True,
+            data={
+                "message": f"Logs cleared{' for level ' + level if level else ''}",
+                "deleted_count": deleted_count
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error clearing logs from Redis: {e}")
+        return APIResponse(
+            success=False,
+            error={"code": "LOG_CLEAR_ERROR", "message": str(e)}
+        )

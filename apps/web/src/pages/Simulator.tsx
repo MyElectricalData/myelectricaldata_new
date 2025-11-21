@@ -240,163 +240,83 @@ export default function Simulator() {
       // Année glissante : de aujourd'hui - 365 jours jusqu'à hier
       const yearStart = new Date(today)
       yearStart.setDate(yearStart.getDate() - 365)
-      const endDate = yesterday
+      const startDate = yearStart.toISOString().split('T')[0]
+      const endDate = yesterday.toISOString().split('T')[0]
 
-      // Générer les périodes de 7 jours avec chevauchement d'1 jour pour éviter les trous
-      const periods: { start: string; end: string }[] = []
-      let currentStart = new Date(yearStart)
+      setFetchProgress({ current: 0, total: 1, phase: 'Récupération des données de consommation (année glissante)...' })
 
-      while (currentStart < endDate) {
-        const currentEnd = new Date(currentStart)
-        currentEnd.setDate(currentEnd.getDate() + 6) // 7 jours (jour de départ inclus)
+      logger.log(`Fetching consumption data via batch endpoint: ${startDate} to ${endDate}`)
 
-        // Si la date de fin dépasse la date limite, on ajuste
-        if (currentEnd > endDate) {
-          periods.push({
-            start: currentStart.toISOString().split('T')[0],
-            end: endDate.toISOString().split('T')[0],
-          })
-          break
-        } else {
-          periods.push({
-            start: currentStart.toISOString().split('T')[0],
-            end: currentEnd.toISOString().split('T')[0],
-          })
-          // Avancer de seulement 6 jours au lieu de 7 pour chevaucher d'1 jour
-          currentStart.setDate(currentStart.getDate() + 6)
-        }
-      }
+      // Use the batch endpoint - single call for the entire year
+      setFetchProgress({
+        current: 1,
+        total: 1,
+        phase: `${startDate} → ${endDate} (via batch endpoint)`
+      })
 
-      setFetchProgress({ current: 0, total: periods.length, phase: 'Récupération des données de consommation...' })
+      const response = await queryClient.fetchQuery({
+        queryKey: ['consumptionDetailBatch', selectedPdl, startDate, endDate],
+        queryFn: () => enedisApi.getConsumptionDetailBatch(selectedPdl, {
+          start: startDate,
+          end: endDate,
+          use_cache: true,
+        }),
+        staleTime: 7 * 24 * 60 * 60 * 1000,
+      })
 
-      logger.log(`Fetching ${periods.length} periods of consumption data`)
-
-      // Récupérer les données pour chaque période
-      const allData: any[] = []
-
-      for (let i = 0; i < periods.length; i++) {
-        const period = periods[i]
-        setFetchProgress({
-          current: i + 1,
-          total: periods.length,
-          phase: `${period.start} → ${period.end} (${i + 1}/${periods.length})`
+      // Cache day by day for future use (same format as Consumption page)
+      if (response?.data?.meter_reading?.interval_reading) {
+        const dataByDate: Record<string, any[]> = {}
+        response.data.meter_reading.interval_reading.forEach((point: any) => {
+          let date = point.date.split(' ')[0].split('T')[0]
+          const time = point.date.split(' ')[1] || point.date.split('T')[1] || '00:00:00'
+          if (time.startsWith('00:00')) {
+            const dateObj = new Date(date + 'T00:00:00Z')
+            dateObj.setUTCDate(dateObj.getUTCDate() - 1)
+            date = dateObj.toISOString().split('T')[0]
+          }
+          if (!dataByDate[date]) dataByDate[date] = []
+          dataByDate[date].push(point)
         })
 
-        logger.log(`Fetching period ${i + 1}/${periods.length}: ${period.start} to ${period.end}`)
-
-        // Try to build response from day-by-day cache (shared with Consumption page)
-        // Consumption page stores data with keys: ['consumptionDetail', pdl, date, date]
-        const startDate = new Date(period.start + 'T00:00:00Z')
-        const endDate = new Date(period.end + 'T00:00:00Z')
-        const cachedDayData: any[] = []
-        let hasMissingDays = false
-
-        const currentDate = new Date(startDate)
-        while (currentDate <= endDate) {
-          const dateStr = currentDate.toISOString().split('T')[0]
-          const dayCacheKey = ['consumptionDetail', selectedPdl, dateStr, dateStr]
-          const dayData = queryClient.getQueryData(dayCacheKey) as any
-
-          if (dayData?.data?.meter_reading?.interval_reading) {
-            cachedDayData.push(...dayData.data.meter_reading.interval_reading)
-          } else {
-            hasMissingDays = true
-          }
-          currentDate.setUTCDate(currentDate.getUTCDate() + 1)
-        }
-
-        let response: any
-
-        if (!hasMissingDays && cachedDayData.length > 0) {
-          // All days are in cache, build response from cached data
-          logger.log(`✅ [Cache HIT] Using cached data for ${period.start} → ${period.end}`)
-          response = {
-            success: true,
-            data: {
-              meter_reading: {
-                interval_reading: cachedDayData
-              }
+        Object.entries(dataByDate).forEach(([date, points]) => {
+          queryClient.setQueryData(
+            ['consumptionDetail', selectedPdl, date, date],
+            {
+              success: true,
+              data: { meter_reading: { interval_reading: points } }
             }
-          }
-        } else {
-          // Some or all days are missing, fetch from API
-          logger.log(`❌ [Cache MISS] Fetching from API for ${period.start} → ${period.end}`)
-          const cacheKey = ['consumptionDetail', selectedPdl, period.start, period.end]
-          response = await queryClient.fetchQuery({
-            queryKey: cacheKey,
-            queryFn: () => enedisApi.getConsumptionDetail(selectedPdl, {
-              start: period.start,
-              end: period.end,
-              use_cache: true,
-            }),
-            staleTime: 7 * 24 * 60 * 60 * 1000,
-          })
-
-          // Also cache day by day for future use (same format as Consumption page)
-          if (response?.data?.meter_reading?.interval_reading) {
-            const dataByDate: Record<string, any[]> = {}
-            response.data.meter_reading.interval_reading.forEach((point: any) => {
-              let date = point.date.split(' ')[0].split('T')[0]
-              const time = point.date.split(' ')[1] || point.date.split('T')[1] || '00:00:00'
-              if (time.startsWith('00:00')) {
-                const dateObj = new Date(date + 'T00:00:00Z')
-                dateObj.setUTCDate(dateObj.getUTCDate() - 1)
-                date = dateObj.toISOString().split('T')[0]
-              }
-              if (!dataByDate[date]) dataByDate[date] = []
-              dataByDate[date].push(point)
-            })
-
-            Object.entries(dataByDate).forEach(([date, points]) => {
-              queryClient.setQueryData(
-                ['consumptionDetail', selectedPdl, date, date],
-                {
-                  success: true,
-                  data: { meter_reading: { interval_reading: points } }
-                }
-              )
-            })
-          }
-        }
-
-        if (!response.success || !response.data) {
-          // Check error type
-          const errorCode = response.error?.code
-          const errorMessage = response.error?.message || ''
-
-          logger.log('[Simulator] API Error detected:', { errorCode, errorMessage, response })
-
-          // Check for Enedis error ADAM-ERR0123 (period before meter activation)
-          if (errorMessage.includes('ADAM-ERR0123') || errorMessage.includes('anterior to the meter')) {
-            logger.log(`⚠️ Stopping simulation at ${period.start} - meter not activated yet. Processing data already collected.`)
-            break // Stop fetching but process what we have
-          }
-
-          // Check for rate limit error
-          if (errorCode === 'RATE_LIMIT_EXCEEDED') {
-            throw new Error(`Quota d'appels API dépassé. Vous avez atteint la limite quotidienne d'appels à l'API Enedis. Veuillez réessayer demain ou contactez l'administrateur pour augmenter votre quota.`)
-          }
-
-          throw new Error(`Impossible de récupérer les données pour la période ${period.start} - ${period.end}. ${errorMessage}`)
-        }
-
-        // Log the number of points in this period
-        const data = response.data as any
-        const pointsCount = data?.meter_reading?.interval_reading?.length || 0
-        logger.log(`Period ${i + 1}/${periods.length} (${period.start} to ${period.end}): ${pointsCount} points`)
-
-        allData.push(response.data)
+          )
+        })
       }
 
-      setFetchProgress({ current: periods.length, total: periods.length, phase: 'Calcul des simulations en cours...' })
+      if (!response.success || !response.data) {
+        // Check error type
+        const errorCode = response.error?.code
+        const errorMessage = response.error?.message || ''
+
+        logger.log('[Simulator] API Error detected:', { errorCode, errorMessage, response })
+
+        // Check for rate limit error
+        if (errorCode === 'RATE_LIMIT_EXCEEDED') {
+          throw new Error(`Quota d'appels API dépassé. Vous avez atteint la limite quotidienne d'appels à l'API Enedis. Veuillez réessayer demain ou contactez l'administrateur pour augmenter votre quota.`)
+        }
+
+        throw new Error(`Impossible de récupérer les données pour la période ${startDate} - ${endDate}. ${errorMessage}`)
+      }
+
+      // Log the number of points received
+      const pointsCount = response.data?.meter_reading?.interval_reading?.length || 0
+      logger.log(`Batch response: ${pointsCount} points for ${startDate} to ${endDate}`)
+
+      const allData = [response.data]
+
+      setFetchProgress({ current: 1, total: 1, phase: 'Calcul des simulations en cours...' })
 
       // Fetch TEMPO colors for the period
       let tempoColors: TempoDay[] = []
       try {
-        const tempoResponse = await tempoApi.getDays(
-          yearStart.toISOString().split('T')[0],
-          endDate.toISOString().split('T')[0]
-        )
+        const tempoResponse = await tempoApi.getDays(startDate, endDate)
         logger.log('[TEMPO API] Response:', tempoResponse)
         if (tempoResponse.success && Array.isArray(tempoResponse.data)) {
           tempoColors = tempoResponse.data

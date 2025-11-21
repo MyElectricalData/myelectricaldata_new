@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/useAuth'
 import type { PDL } from '@/types/api'
 import { useIsDemo } from '@/hooks/useIsDemo'
+import { logger } from '@/utils/logger'
 
 // Import custom hooks
 import { useProductionData } from './hooks/useProductionData'
@@ -122,29 +123,38 @@ export default function Production() {
     setIsClearingCache,
   })
 
-  // Check if yesterday's data is in cache
-  const hasYesterdayDataInCache = useMemo(() => {
-    if (!selectedPDL) return false
+  // Check if ANY production data is in cache (to determine if we should auto-load)
+  const hasDataInCache = useMemo(() => {
+    if (!selectedPDL) {
+      logger.log('[Cache Detection] No PDL selected')
+      return false
+    }
 
-    const todayUTC = new Date()
-    const yesterdayUTC = new Date(Date.UTC(
-      todayUTC.getUTCFullYear(),
-      todayUTC.getUTCMonth(),
-      todayUTC.getUTCDate() - 1,
-      0, 0, 0, 0
-    ))
+    logger.log('[Cache Detection] Checking production cache for PDL:', selectedPDL)
 
-    const yesterdayStr = yesterdayUTC.getUTCFullYear() + '-' +
-                        String(yesterdayUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                        String(yesterdayUTC.getUTCDate()).padStart(2, '0')
+    // Get all queries in cache
+    const allQueries = queryClient.getQueryCache().getAll()
 
-    const detailedCacheKey = ['productionDetail', selectedPDL, yesterdayStr, yesterdayStr]
-    const detailedQuery = queryClient.getQueryData(detailedCacheKey) as any
+    // Find ALL productionDetail queries for this PDL with data
+    const detailedQueries = allQueries.filter(q => {
+      if (q.queryKey[0] !== 'productionDetail') return false
+      if (q.queryKey[1] !== selectedPDL) return false
 
-    if (detailedQuery?.data?.meter_reading?.interval_reading?.length > 0) {
+      const data = q.state.data as any
+      const hasReadings = data?.data?.meter_reading?.interval_reading?.length > 0
+      return hasReadings
+    })
+
+    logger.log('[Cache Detection] Found', detailedQueries.length, 'detailed production cache entries with data')
+
+    if (detailedQueries.length > 0) {
+      // Log first and last dates in cache
+      const dates = detailedQueries.map(q => q.queryKey[2] as string).sort()
+      logger.log('[Cache Detection] ✓ Production cache found! Date range:', dates[0], 'to', dates[dates.length - 1])
       return true
     }
 
+    logger.log('[Cache Detection] ✗ No production cache found')
     return false
   }, [selectedPDL, queryClient])
 
@@ -189,7 +199,7 @@ export default function Production() {
 
       if (isDemo) {
         fetchProductionData()
-      } else if (hasYesterdayDataInCache) {
+      } else if (hasDataInCache) {
         const todayUTC = new Date()
         const yesterdayUTC = new Date(Date.UTC(
           todayUTC.getUTCFullYear(),
@@ -215,7 +225,7 @@ export default function Production() {
         setIsDetailSectionExpanded(true)
       }
     }
-  }, [selectedPDL, hasYesterdayDataInCache, hasAttemptedAutoLoad, fetchProductionData, isDemo])
+  }, [selectedPDL, hasDataInCache, hasAttemptedAutoLoad, fetchProductionData, isDemo])
 
   // Get production response from React Query
   const productionResponse = queryClient.getQueryData(['production', selectedPDL, dateRange?.start, dateRange?.end])
@@ -244,7 +254,7 @@ export default function Production() {
         isClearingCache={isClearingCache}
         isLoading={isLoading}
         isLoadingDetailed={isLoadingDetailed}
-        hasDataInCache={hasYesterdayDataInCache}
+        hasDataInCache={hasDataInCache}
         dataLimitWarning={dataLimitWarning}
         user={user}
       >
@@ -256,7 +266,7 @@ export default function Production() {
           dateRange={dateRange}
           isLoadingProduction={isLoadingProduction}
           productionResponse={productionResponse}
-          hasYesterdayDataInCache={hasYesterdayDataInCache}
+          hasDataInCache={hasDataInCache}
         />
       </PDLSelector>
 

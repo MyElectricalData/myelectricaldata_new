@@ -9,7 +9,7 @@ interface LoadingProgressProps {
   dateRange: any
   isLoadingProduction: boolean
   productionResponse: any
-  hasYesterdayDataInCache: boolean
+  hasDataInCache: boolean
 }
 
 export function LoadingProgress({
@@ -20,7 +20,7 @@ export function LoadingProgress({
   dateRange,
   isLoadingProduction,
   productionResponse,
-  hasYesterdayDataInCache
+  hasDataInCache
 }: LoadingProgressProps) {
   const [isProgressExpanded, setIsProgressExpanded] = useState(false)
   const [wasManuallyExpanded, setWasManuallyExpanded] = useState(false)
@@ -34,7 +34,7 @@ export function LoadingProgress({
     }
   }, [allLoadingComplete, isProgressExpanded, wasManuallyExpanded])
 
-  const hasAnyActivity = dateRange || isLoadingProduction || isLoadingDetailed || allLoadingComplete || hasYesterdayDataInCache
+  const hasAnyActivity = dateRange || isLoadingProduction || isLoadingDetailed || allLoadingComplete || hasDataInCache
 
   if (!hasAnyActivity) {
     return null
@@ -153,7 +153,7 @@ export function LoadingProgress({
                   {productionResponse?.success === false ? (
                     <span className="text-red-600 dark:text-red-400">Erreur lors de la récupération des données</span>
                   ) : dailyLoadingComplete ? (
-                    hasYesterdayDataInCache ?
+                    hasDataInCache ?
                       'Données récupérées depuis le cache (pas de requête API)' :
                       'Données récupérées avec succès depuis l\'API Enedis'
                   ) : isLoadingProduction ? (

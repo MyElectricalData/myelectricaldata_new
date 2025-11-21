@@ -209,65 +209,36 @@ export default function Consumption() {
     setIsClearingCache,
   })
 
-  // Check if there's data in cache for the selected PDL
+  // Check if ANY consumption data is in cache (to determine if we should auto-load)
   const hasDataInCache = useMemo(() => {
-    if (!selectedPDL) return false
-    const queries = queryClient.getQueryCache().getAll()
-    return queries.some(q =>
-      q.queryKey[0] === 'consumption' &&
-      q.queryKey[1] === selectedPDL &&
-      q.state.data
-    )
-  }, [selectedPDL, queryClient])
-
-  // Check if yesterday's data is in cache (to determine if we need to auto-fetch)
-  const hasYesterdayDataInCache = useMemo(() => {
     if (!selectedPDL) {
       logger.log('[Cache Detection] No PDL selected')
       return false
     }
 
-    // Calculate yesterday's date in UTC
-    const todayUTC = new Date()
-    const yesterdayUTC = new Date(Date.UTC(
-      todayUTC.getUTCFullYear(),
-      todayUTC.getUTCMonth(),
-      todayUTC.getUTCDate() - 1,
-      0, 0, 0, 0
-    ))
+    logger.log('[Cache Detection] Checking cache for PDL:', selectedPDL)
 
-    const yesterdayStr = yesterdayUTC.getUTCFullYear() + '-' +
-                        String(yesterdayUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                        String(yesterdayUTC.getUTCDate()).padStart(2, '0')
-
-    logger.log('[Cache Detection] Checking cache for PDL:', selectedPDL, 'yesterday:', yesterdayStr)
-
-    // Log all cache keys to see what's actually stored
+    // Get all queries in cache
     const allQueries = queryClient.getQueryCache().getAll()
     logger.log('[Cache Detection] Total queries in cache:', allQueries.length)
 
-    const relevantQueries = allQueries.filter(q =>
-      q.queryKey.includes(selectedPDL) &&
-      (q.queryKey[0] === 'consumptionDetail' || q.queryKey[0] === 'consumption')
-    )
-    logger.log('[Cache Detection] Relevant queries for this PDL:', relevantQueries.map(q => ({
-      key: q.queryKey,
-      hasData: !!q.state.data
-    })))
+    // Find ALL consumptionDetail queries for this PDL with data
+    const detailedQueries = allQueries.filter(q => {
+      if (q.queryKey[0] !== 'consumptionDetail') return false
+      if (q.queryKey[1] !== selectedPDL) return false
 
-    // Check if we have detailed consumption data for yesterday (day-by-day cache)
-    const detailedCacheKey = ['consumptionDetail', selectedPDL, yesterdayStr, yesterdayStr]
-    const detailedQuery = queryClient.getQueryData(detailedCacheKey) as any
+      const data = q.state.data as any
+      const hasReadings = data?.data?.meter_reading?.interval_reading?.length > 0
+      return hasReadings
+    })
 
-    logger.log('[Cache Detection] Detailed cache key:', detailedCacheKey)
-    logger.log('[Cache Detection] Detailed query result:', detailedQuery ? 'Found' : 'Not found')
+    logger.log('[Cache Detection] Found', detailedQueries.length, 'detailed cache entries with data')
 
-    if (detailedQuery?.data?.meter_reading?.interval_reading) {
-      logger.log('[Cache Detection] Detailed cache has', detailedQuery.data.meter_reading.interval_reading.length, 'readings')
-      if (detailedQuery.data.meter_reading.interval_reading.length > 0) {
-        logger.log('[Cache Detection] ✓ Cache found via detailed query!')
-        return true
-      }
+    if (detailedQueries.length > 0) {
+      // Log first and last dates in cache
+      const dates = detailedQueries.map(q => q.queryKey[2] as string).sort()
+      logger.log('[Cache Detection] ✓ Cache found! Date range:', dates[0], 'to', dates[dates.length - 1])
+      return true
     }
 
     // Also check daily consumption data
@@ -293,14 +264,8 @@ export default function Consumption() {
       return false
     }
 
-    // Check if any reading matches yesterday's date
-    const hasYesterday = readings.some((reading: any) => {
-      const readingDate = reading.date?.split('T')[0]
-      return readingDate === yesterdayStr
-    })
-
-    logger.log('[Cache Detection]', hasYesterday ? '✓' : '✗', 'Yesterday data in daily consumption cache:', hasYesterday)
-    return hasYesterday
+    logger.log('[Cache Detection] ✓ Daily cache found with', readings.length, 'days')
+    return true
   }, [selectedPDL, queryClient])
 
   // Auto-set selectedPDL when there's only one active PDL
@@ -356,7 +321,7 @@ export default function Consumption() {
 
   // Auto-fetch data on first load only for demo accounts or if cache has data
   useEffect(() => {
-    logger.log('[Auto-load] Effect triggered - hasAttemptedAutoLoad:', hasAttemptedAutoLoad, 'selectedPDL:', selectedPDL, 'hasCache:', hasYesterdayDataInCache, 'isDemo:', isDemo)
+    logger.log('[Auto-load] Effect triggered - hasAttemptedAutoLoad:', hasAttemptedAutoLoad, 'selectedPDL:', selectedPDL, 'hasCache:', hasDataInCache, 'isDemo:', isDemo)
 
     if (!hasAttemptedAutoLoad && selectedPDL) {
       setHasAttemptedAutoLoad(true)
@@ -366,7 +331,7 @@ export default function Consumption() {
       if (isDemo) {
         logger.log('[Auto-load] Demo account - fetching data')
         fetchConsumptionData()
-      } else if (hasYesterdayDataInCache) {
+      } else if (hasDataInCache) {
         logger.log('[Auto-load] Cache detected - displaying cached data without fetching')
 
         // If data is already in cache, just set states to show cached data
@@ -409,7 +374,7 @@ export default function Consumption() {
       }
       // For regular accounts without cache: do nothing, user must click the button manually
     }
-  }, [selectedPDL, hasYesterdayDataInCache, hasAttemptedAutoLoad, fetchConsumptionData, isDemo])
+  }, [selectedPDL, hasDataInCache, hasAttemptedAutoLoad, fetchConsumptionData, isDemo])
 
   // Mark daily consumption loading as complete (whether success or error)
   useEffect(() => {
@@ -562,7 +527,7 @@ export default function Consumption() {
           isLoadingPower={isLoadingPower}
           consumptionResponse={consumptionResponse}
           maxPowerResponse={maxPowerResponse}
-          hasYesterdayDataInCache={hasYesterdayDataInCache}
+          hasDataInCache={hasDataInCache}
         />
       </PDLSelector>
 
