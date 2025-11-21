@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { RefreshCw, AlertCircle, ChevronUp, ChevronDown, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { RefreshCw, AlertCircle, ChevronUp, ChevronDown, ChevronRight, Copy } from 'lucide-react';
 import { getAdminLogs } from '../api/admin';
 
 type SortField = 'timestamp' | 'level' | 'module' | 'message';
@@ -8,31 +8,92 @@ type SortOrder = 'asc' | 'desc';
 interface LogEntry {
   timestamp: string;
   level: string;
-  module: string;
+  logger: string;
   message: string;
+  pathname: string;
+  lineno: number;
+  funcName: string;
+  exception?: string;
 }
 
-interface LogsResponse {
+interface GetLogsResponse {
   logs: LogEntry[];
-  total: number;
-  level_filter: string | null;
-  lines_requested: number;
-  all_modules?: string[];
 }
 
 const AdminLogs: React.FC = () => {
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [levelFilters, setLevelFilters] = useState<Set<string>>(new Set(['INFO']));
-  const [moduleFilters, setModuleFilters] = useState<Set<string>>(new Set());
+  const [newLogIds, setNewLogIds] = useState<Set<string>>(new Set());
+  const [seenTimestamps, setSeenTimestamps] = useState<Set<string>>(new Set());
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Load level filters from localStorage or use default
+  const [levelFilters, setLevelFilters] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem('adminLogs_levelFilters');
+    return saved ? new Set(JSON.parse(saved)) : new Set(['INFO', 'WARNING', 'ERROR', 'DEBUG']);
+  });
+
+  // Load module filters from localStorage or use empty set
+  const [moduleFilters, setModuleFilters] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem('adminLogs_moduleFilters');
+    return saved ? new Set(JSON.parse(saved)) : new Set();
+  });
+
+  // Load visible columns from localStorage or use default
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem('adminLogs_visibleColumns');
+    return saved ? new Set(JSON.parse(saved)) : new Set(['timestamp', 'level', 'module', 'message']);
+  });
+
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [linesCount, setLinesCount] = useState<number>(100);
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set()); // Use timestamp instead of index
   const [sortField, setSortField] = useState<SortField>('timestamp');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [autoRefresh, setAutoRefresh] = useState<number>(10000); // 10s by default
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  // Filters panel collapsed state
+  const [isFiltersPanelCollapsed, setIsFiltersPanelCollapsed] = useState(() => {
+    const saved = localStorage.getItem('adminLogs_filtersPanelCollapsed');
+    return saved ? JSON.parse(saved) === true : false;
+  });
+
+  // Save filters to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('adminLogs_levelFilters', JSON.stringify(Array.from(levelFilters)));
+  }, [levelFilters]);
+
+  useEffect(() => {
+    localStorage.setItem('adminLogs_moduleFilters', JSON.stringify(Array.from(moduleFilters)));
+  }, [moduleFilters]);
+
+  useEffect(() => {
+    localStorage.setItem('adminLogs_visibleColumns', JSON.stringify(Array.from(visibleColumns)));
+  }, [visibleColumns]);
+
+  useEffect(() => {
+    localStorage.setItem('adminLogs_filtersPanelCollapsed', JSON.stringify(isFiltersPanelCollapsed));
+  }, [isFiltersPanelCollapsed]);
+
+  // Keyboard shortcut for search (Ctrl+K or Cmd+K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+K (Windows/Linux) or Cmd+K (Mac)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -45,41 +106,156 @@ const AdminLogs: React.FC = () => {
     }
   };
 
-  const toggleRow = (index: number) => {
+  const toggleRow = (timestamp: string) => {
     const newExpanded = new Set(expandedRows);
-    if (newExpanded.has(index)) {
-      newExpanded.delete(index);
+    if (newExpanded.has(timestamp)) {
+      newExpanded.delete(timestamp);
     } else {
-      newExpanded.add(index);
+      newExpanded.add(timestamp);
     }
     setExpandedRows(newExpanded);
   };
 
+  const copyToClipboard = (text: string, fieldName: string) => {
+    navigator.clipboard.writeText(text);
+    setToastMessage(`${fieldName} copié`);
+    setTimeout(() => setToastMessage(null), 2000);
+  };
+
   const fetchLogs = async () => {
-    setLoading(true);
+    // Save scroll position and state before refresh
+    const container = tableContainerRef.current;
+    const scrollTop = container?.scrollTop || 0;
+
+    // Consider "at top" if within 10px from top, otherwise preserve exact position
+    const isAtTop = scrollTop < 10;
+
+    // Find the first visible log timestamp to anchor scroll position
+    let anchorTimestamp: string | null = null;
+    let anchorOffsetTop = 0;
+
+    if (!isAtTop && container) {
+      const rows = container.querySelectorAll('tbody tr[data-timestamp]');
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i] as HTMLElement;
+        const rect = row.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+
+        if (rect.top >= containerRect.top) {
+          anchorTimestamp = row.getAttribute('data-timestamp');
+          anchorOffsetTop = rect.top - containerRect.top;
+          break;
+        }
+      }
+    }
+
+    // Only show loading state on initial load, not on refresh
+    if (isInitialLoad) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
     setError(null);
     try {
       // Fetch all logs without server-side filtering (we'll filter client-side)
-      const response = await getAdminLogs(undefined, linesCount);
-      setLogs(response.logs);
-      // Update all modules list if provided by API
-      if (response.all_modules && Array.isArray(response.all_modules)) {
-        setAllModules(response.all_modules);
+      const response = await getAdminLogs(undefined, linesCount, 0) as GetLogsResponse;
 
-        // On initial load, select src and httpx modules by default
-        if (isInitialLoad) {
-          const defaultModules = response.all_modules.filter(m => {
+      // Detect truly new logs by comparing with seenTimestamps
+      const newLogs = response.logs.filter((log: LogEntry) =>
+        !seenTimestamps.has(log.timestamp)
+      );
+
+      // Update seenTimestamps with all timestamps from response
+      setSeenTimestamps(prevSeen => {
+        const updated = new Set(prevSeen);
+        response.logs.forEach((log: LogEntry) => updated.add(log.timestamp));
+        return updated;
+      });
+
+      // Mark new logs for animation
+      if (newLogs.length > 0 && !isInitialLoad) {
+        const newIds = new Set(newLogs.map((log: LogEntry) => log.timestamp));
+        setNewLogIds(newIds);
+
+        // Only add new logs to the beginning, don't replace all logs
+        // Keep the total count within linesCount limit
+        setLogs(prevLogs => {
+          const combined = [...newLogs, ...prevLogs];
+          // Remove duplicates based on timestamp and limit to linesCount
+          const uniqueLogs = combined.filter((log, index, self) =>
+            index === self.findIndex(l => l.timestamp === log.timestamp)
+          );
+          return uniqueLogs.slice(0, linesCount);
+        });
+
+        // Remove animation after 5 seconds
+        setTimeout(() => {
+          setNewLogIds(new Set());
+        }, 5000);
+      } else {
+        // Initial load or no new logs
+        setLogs(response.logs);
+      }
+
+      // Extract unique modules from logs
+      const uniqueModules = Array.from(new Set(response.logs.map((log: LogEntry) => log.logger)));
+
+      // Only update modules list if new modules appeared
+      setAllModules((prevModules: string[]) => {
+        const prevModulesSet = new Set(prevModules);
+
+        // Check if there are new modules
+        const hasNewModules = uniqueModules.some(m => !prevModulesSet.has(m));
+
+        return hasNewModules ? uniqueModules : prevModules;
+      });
+
+      // On initial load only, select src and httpx modules by default if no filters are saved
+      if (isInitialLoad) {
+        const hasSavedFilters = localStorage.getItem('adminLogs_moduleFilters');
+        if (!hasSavedFilters) {
+          const defaultModules = uniqueModules.filter(m => {
             const category = m.split('.')[0];
             return category === 'src' || category === 'httpx';
           });
           setModuleFilters(new Set(defaultModules));
-          setIsInitialLoad(false);
         }
+        setIsInitialLoad(false);
+        setLoading(false); // Stop loading after initial load
+      } else {
+        setRefreshing(false);
+        // Restore scroll position after refresh (with a small delay to ensure DOM is updated)
+        setTimeout(() => {
+          if (container) {
+            if (isAtTop) {
+              // If user was at the top, stay at top to see new logs
+              container.scrollTop = 0;
+            } else if (anchorTimestamp) {
+              // Find the anchor element and restore position relative to it
+              const anchorRow = container.querySelector(`tbody tr[data-timestamp="${anchorTimestamp}"]`);
+              if (anchorRow) {
+                const rect = anchorRow.getBoundingClientRect();
+                const containerRect = container.getBoundingClientRect();
+                const currentOffsetTop = rect.top - containerRect.top;
+                const offsetDiff = currentOffsetTop - anchorOffsetTop;
+
+                // Adjust scroll to maintain the same visual position
+                container.scrollTop = container.scrollTop + offsetDiff;
+              }
+            } else {
+              // Fallback: restore exact scroll position
+              container.scrollTop = scrollTop;
+            }
+          }
+        }, 0);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch logs');
-    } finally {
-      setLoading(false);
+      if (isInitialLoad) {
+        setLoading(false);
+      } else {
+        setRefreshing(false);
+      }
     }
   };
 
@@ -108,6 +284,7 @@ const AdminLogs: React.FC = () => {
   };
 
   const toggleModuleFilter = (module: string) => {
+    // Toggle module in multi-select mode
     const newFilters = new Set(moduleFilters);
     if (newFilters.has(module)) {
       newFilters.delete(module);
@@ -115,6 +292,19 @@ const AdminLogs: React.FC = () => {
       newFilters.add(module);
     }
     setModuleFilters(newFilters);
+  };
+
+  const toggleColumn = (column: string) => {
+    const newColumns = new Set(visibleColumns);
+    if (newColumns.has(column)) {
+      // Ne pas permettre de masquer toutes les colonnes
+      if (newColumns.size > 1) {
+        newColumns.delete(column);
+      }
+    } else {
+      newColumns.add(column);
+    }
+    setVisibleColumns(newColumns);
   };
 
   const handleLinesChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
@@ -174,7 +364,7 @@ const AdminLogs: React.FC = () => {
       // Si aucun filtre de niveau sélectionné, ne rien afficher
       const matchesLevel = levelFilters.size > 0 && levelFilters.has(log.level);
       // Si aucun filtre de module sélectionné, afficher tous les modules
-      const matchesModule = moduleFilters.size === 0 || moduleFilters.has(log.module);
+      const matchesModule = moduleFilters.size === 0 || moduleFilters.has(log.logger);
       return matchesSearch && matchesLevel && matchesModule;
     })
     .sort((a, b) => {
@@ -188,7 +378,7 @@ const AdminLogs: React.FC = () => {
           comparison = a.level.localeCompare(b.level);
           break;
         case 'module':
-          comparison = (a.module || '').localeCompare(b.module || '');
+          comparison = (a.logger || '').localeCompare(b.logger || '');
           break;
         case 'message':
           comparison = a.message.localeCompare(b.message);
@@ -199,8 +389,8 @@ const AdminLogs: React.FC = () => {
     });
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="flex flex-col overflow-hidden pt-6 pb-6" style={{ height: 'calc(100vh - 64px)' }}>
+      <div className="flex justify-between items-center mb-4 flex-shrink-0">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
           Logs d'application
         </h1>
@@ -225,55 +415,30 @@ const AdminLogs: React.FC = () => {
           </div>
           <button
             onClick={fetchLogs}
-            disabled={loading}
+            disabled={loading || refreshing}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             Rafraîchir
           </button>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-        <div className="space-y-4">
-          {/* Ligne 1: Rechercher et Lignes */}
-          <div className="flex gap-4">
-            {/* Search */}
-            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-200 dark:border-gray-600 flex-1">
-              <label htmlFor="search" className="text-sm font-semibold text-gray-700 dark:text-gray-300 block mb-2">
-                Rechercher
-              </label>
-              <input
-                id="search"
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Filtrer les messages..."
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
-              />
-            </div>
-
-            {/* Lines count */}
-            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-200 dark:border-gray-600 w-32">
-              <label htmlFor="lines-count" className="text-sm font-semibold text-gray-700 dark:text-gray-300 block mb-2">
-                Lignes
-              </label>
-              <select
-                id="lines-count"
-                value={linesCount}
-                onChange={handleLinesChange}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
-              >
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-                <option value={200}>200</option>
-                <option value={500}>500</option>
-                <option value={1000}>1000</option>
-              </select>
-            </div>
+      <div className={`bg-white dark:bg-gray-800 rounded-lg shadow transition-all duration-300 mb-4 flex-shrink-0`}>
+        <div className="p-4">
+          <div className={`flex items-center justify-between ${isFiltersPanelCollapsed ? '' : 'mb-3'}`}>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Filtres</h2>
+            <button
+              onClick={() => setIsFiltersPanelCollapsed(!isFiltersPanelCollapsed)}
+              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              title={isFiltersPanelCollapsed ? 'Afficher les filtres' : 'Masquer les filtres'}
+            >
+              <ChevronDown className={`w-5 h-5 text-gray-600 dark:text-gray-400 transition-transform ${isFiltersPanelCollapsed ? '-rotate-90' : ''}`} />
+            </button>
           </div>
-
-          {/* Ligne 2: Niveau et Modules */}
+          {!isFiltersPanelCollapsed && (
+        <div className="space-y-4">
+          {/* Ligne 1: Niveau et Modules */}
           <div className="flex gap-4">
             {/* Niveau filter */}
             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
@@ -389,140 +554,391 @@ const AdminLogs: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Ligne 2: Rechercher, Colonnes et Lignes */}
+          <div className="flex gap-4">
+            {/* Search */}
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-200 dark:border-gray-600 flex-1">
+              <label htmlFor="search" className="text-sm font-semibold text-gray-700 dark:text-gray-300 block mb-2">
+                Rechercher
+              </label>
+              <div className="relative">
+                <input
+                  ref={searchInputRef}
+                  id="search"
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Filtrer les messages..."
+                  className="px-3 py-2 pr-16 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                />
+                <kbd className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded shadow-sm">
+                  Ctrl+K
+                </kbd>
+              </div>
+            </div>
+
+            {/* Columns selector */}
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Colonnes
+                </label>
+                <button
+                  onClick={() => setVisibleColumns(new Set(['timestamp', 'level', 'module', 'message']))}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  Toutes
+                </button>
+              </div>
+              <div className="flex gap-2">
+                {[
+                  { id: 'timestamp', label: 'Timestamp' },
+                  { id: 'level', label: 'Niveau' },
+                  { id: 'module', label: 'Module' },
+                  { id: 'message', label: 'Message' },
+                ].map(({ id, label }) => (
+                  <button
+                    key={id}
+                    onClick={() => toggleColumn(id)}
+                    className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                      visibleColumns.has(id)
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Lines count */}
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-200 dark:border-gray-600 w-32">
+              <label htmlFor="lines-count" className="text-sm font-semibold text-gray-700 dark:text-gray-300 block mb-2">
+                Lignes
+              </label>
+              <select
+                id="lines-count"
+                value={linesCount}
+                onChange={handleLinesChange}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+              >
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+                <option value={500}>500</option>
+                <option value={1000}>1000</option>
+              </select>
+            </div>
+          </div>
+        </div>
+          )}
         </div>
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+        <div className="flex items-center gap-2 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg mb-4 flex-shrink-0">
           <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
           <p className="text-red-800 dark:text-red-200">{error}</p>
         </div>
       )}
 
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <RefreshCw className="w-8 h-8 text-blue-600 animate-spin" />
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow flex-1 flex flex-col p-4 min-h-0">
+        <div className="pb-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            {filteredLogs.length} log(s) trouvé(s)
+          </p>
         </div>
-      ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-          <div className="p-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              {filteredLogs.length} log(s) trouvé(s)
-            </p>
 
-            <div className="overflow-auto max-h-[70vh]">
-              {filteredLogs.length === 0 ? (
-                <p className="text-gray-500 p-4 text-center">Aucun log trouvé</p>
-              ) : (
-                <table className="w-full font-mono text-sm">
-                  <thead className="sticky top-0 bg-gray-800 text-gray-300 border-b border-gray-700">
+          <div ref={tableContainerRef} className="overflow-auto pb-4 min-h-0" style={{ flex: 1 }}>
+            {loading && logs.length === 0 ? (
+              <div className="flex justify-center py-12">
+                <RefreshCw className="w-8 h-8 text-blue-600 animate-spin" />
+              </div>
+            ) : filteredLogs.length === 0 ? (
+              <p className="text-gray-500 p-4 text-center">Aucun log trouvé</p>
+            ) : (
+                <table className="w-full font-mono text-xs border-separate border-spacing-0">
+                  <thead className="sticky top-0 bg-gray-800 text-gray-300 border-b border-gray-700 z-10">
                     <tr>
-                      <th
-                        className="px-3 py-2 text-left whitespace-nowrap w-44 cursor-pointer hover:bg-gray-700 select-none"
-                        onClick={() => handleSort('timestamp')}
-                      >
-                        <div className="flex items-center gap-1">
-                          Timestamp
-                          {sortField === 'timestamp' && (
-                            sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="px-3 py-2 text-left whitespace-nowrap w-24 cursor-pointer hover:bg-gray-700 select-none"
-                        onClick={() => handleSort('level')}
-                      >
-                        <div className="flex items-center gap-1">
-                          Niveau
-                          {sortField === 'level' && (
-                            sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="px-3 py-2 text-left whitespace-nowrap w-48 cursor-pointer hover:bg-gray-700 select-none"
-                        onClick={() => handleSort('module')}
-                      >
-                        <div className="flex items-center gap-1">
-                          Module
-                          {sortField === 'module' && (
-                            sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="px-3 py-2 text-left cursor-pointer hover:bg-gray-700 select-none"
-                        onClick={() => handleSort('message')}
-                      >
-                        <div className="flex items-center gap-1">
-                          Message
-                          {sortField === 'message' && (
-                            sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                          )}
-                        </div>
-                      </th>
+                      {visibleColumns.has('timestamp') && (
+                        <th
+                          className="px-2 py-1 text-left whitespace-nowrap w-40 cursor-pointer hover:bg-gray-700 select-none"
+                          onClick={() => handleSort('timestamp')}
+                        >
+                          <div className="flex items-center gap-1">
+                            Timestamp
+                            {sortField === 'timestamp' && (
+                              sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                            )}
+                          </div>
+                        </th>
+                      )}
+                      {visibleColumns.has('level') && (
+                        <th
+                          className="px-2 py-1 text-left whitespace-nowrap w-20 cursor-pointer hover:bg-gray-700 select-none"
+                          onClick={() => handleSort('level')}
+                        >
+                          <div className="flex items-center gap-1">
+                            Niveau
+                            {sortField === 'level' && (
+                              sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                            )}
+                          </div>
+                        </th>
+                      )}
+                      {visibleColumns.has('module') && (
+                        <th
+                          className="px-2 py-1 text-left whitespace-nowrap w-40 cursor-pointer hover:bg-gray-700 select-none"
+                          onClick={() => handleSort('module')}
+                        >
+                          <div className="flex items-center gap-1">
+                            Module
+                            {sortField === 'module' && (
+                              sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                            )}
+                          </div>
+                        </th>
+                      )}
+                      {visibleColumns.has('message') && (
+                        <th
+                          className="px-2 py-1 text-left cursor-pointer hover:bg-gray-700 select-none"
+                          onClick={() => handleSort('message')}
+                        >
+                          <div className="flex items-center gap-1">
+                            Message
+                            {sortField === 'message' && (
+                              sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                            )}
+                          </div>
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="bg-gray-900">
-                    {filteredLogs.map((log, index) => {
-                      const isExpanded = expandedRows.has(index);
-                      const isMultiline = log.message.includes('\n') || log.message.length > 100;
+                    {filteredLogs.map((log) => {
+                      const isExpanded = expandedRows.has(log.timestamp);
+                      const isNewLog = newLogIds.has(log.timestamp);
+
+                      // Get background color based on log level
+                      const getRowBgColor = (level: string) => {
+                        switch (level) {
+                          case 'ERROR':
+                          case 'CRITICAL':
+                            return 'bg-red-900/10 dark:bg-red-900/20';
+                          case 'WARNING':
+                            return 'bg-yellow-900/10 dark:bg-yellow-900/20';
+                          case 'DEBUG':
+                            return 'bg-blue-900/10 dark:bg-blue-900/20';
+                          default:
+                            return '';
+                        }
+                      };
 
                       return (
-                        <tr
-                          key={index}
-                          className={`border-b border-gray-800 hover:bg-gray-800/50 ${
-                            log.level === 'ERROR' ? 'bg-red-900/10' : ''
-                          }`}
-                        >
-                          <td className="px-3 py-2 text-gray-500 whitespace-nowrap text-xs h-12 align-middle">
-                            {log.timestamp}
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap h-12 align-middle">
-                            <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${getLevelColor(log.level)}`}>
-                              {log.level}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-blue-400 whitespace-nowrap text-xs h-12 align-middle">
-                            <button
-                              onClick={() => {
-                                // Toggle module filter
-                                const newFilters = new Set(moduleFilters);
-                                if (newFilters.has(log.module)) {
-                                  newFilters.delete(log.module);
-                                } else {
-                                  newFilters.clear();
-                                  newFilters.add(log.module);
-                                }
-                                setModuleFilters(newFilters);
-                              }}
-                              className="hover:underline cursor-pointer text-left"
-                            >
-                              {log.module || '-'}
-                            </button>
-                          </td>
-                          <td className={`px-3 py-2 h-12 max-w-[800px] ${
-                            log.level === 'ERROR' ? 'text-red-400' : 'text-gray-100'
-                          }`}>
-                            <div className="flex items-center justify-between gap-2 h-full">
-                              <div className={`flex-1 min-w-0 ${isExpanded ? 'whitespace-pre-wrap break-words' : 'truncate'}`}>
-                                {log.message}
-                              </div>
-                              {isMultiline && (
-                                <button
-                                  className="text-blue-400 hover:text-blue-300 flex-shrink-0 p-1 hover:bg-gray-700 rounded transition-all"
+                        <>
+                          <tr
+                            key={log.timestamp}
+                            data-timestamp={log.timestamp}
+                            onClick={() => toggleRow(log.timestamp)}
+                            className={`border-b border-gray-800 hover:bg-gray-800/50 transition-all duration-500 cursor-pointer ${
+                              getRowBgColor(log.level)
+                            } ${
+                              isNewLog ? 'animate-pulse-green' : ''
+                            }`}
+                          >
+                            {visibleColumns.has('timestamp') && (
+                              <td className="px-2 py-1 text-gray-500 whitespace-nowrap align-middle">
+                                <div className="flex items-center gap-2">
+                                  <ChevronRight className={`w-3 h-3 transition-transform flex-shrink-0 text-gray-400 ${isExpanded ? 'rotate-90' : ''}`} />
+                                  {log.timestamp}
+                                </div>
+                              </td>
+                            )}
+                            {visibleColumns.has('level') && (
+                              <td className="px-2 py-1 whitespace-nowrap align-middle text-center">
+                                <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${getLevelColor(log.level)}`}>
+                                  {log.level}
+                                </span>
+                              </td>
+                            )}
+                            {visibleColumns.has('module') && (
+                              <td className="px-2 py-1 text-blue-400 whitespace-nowrap align-middle">
+                                <span
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    toggleRow(index);
+                                    // If the module is already the only one selected, deselect it
+                                    if (moduleFilters.size === 1 && moduleFilters.has(log.logger)) {
+                                      setModuleFilters(new Set());
+                                    } else {
+                                      // Otherwise, select only this module
+                                      setModuleFilters(new Set([log.logger]));
+                                    }
                                   }}
-                                  title={isExpanded ? 'Réduire' : 'Développer'}
+                                  className="hover:underline cursor-pointer"
                                 >
-                                  <ChevronRight className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
+                                  {log.logger || '-'}
+                                </span>
+                              </td>
+                            )}
+                            {visibleColumns.has('message') && (
+                              <td className={`px-2 py-1 max-w-[800px] ${
+                                log.level === 'ERROR' ? 'text-red-400' : 'text-gray-100'
+                              }`}>
+                                <div className={`${isExpanded ? 'whitespace-pre-wrap break-words' : 'truncate'}`}>
+                                  {log.message}
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                          {isExpanded && (
+                            <tr className={`border-b border-gray-800 ${getRowBgColor(log.level)}`}>
+                              <td colSpan={4} className="px-2 py-3">
+                                <div className="text-xs space-y-3">
+                                  {/* Fields grid */}
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-gray-900 p-2 rounded group relative">
+                                      <div className="flex items-start justify-between">
+                                        <span className="text-gray-500 font-semibold">timestamp:</span>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            copyToClipboard(log.timestamp, 'Timestamp');
+                                          }}
+                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
+                                          title="Copier"
+                                        >
+                                          <Copy className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                      <div className="text-gray-300 mt-1 font-mono">{log.timestamp}</div>
+                                    </div>
+                                    <div className="bg-gray-900 p-2 rounded group relative">
+                                      <div className="flex items-start justify-between">
+                                        <span className="text-gray-500 font-semibold">level:</span>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            copyToClipboard(log.level, 'Level');
+                                          }}
+                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
+                                          title="Copier"
+                                        >
+                                          <Copy className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                      <div className="text-gray-300 mt-1 font-mono">{log.level}</div>
+                                    </div>
+                                    <div className="bg-gray-900 p-2 rounded group relative">
+                                      <div className="flex items-start justify-between">
+                                        <span className="text-gray-500 font-semibold">logger:</span>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            copyToClipboard(log.logger, 'Logger');
+                                          }}
+                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
+                                          title="Copier"
+                                        >
+                                          <Copy className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                      <div className="text-gray-300 mt-1 font-mono">{log.logger}</div>
+                                    </div>
+                                    <div className="bg-gray-900 p-2 rounded group relative">
+                                      <div className="flex items-start justify-between">
+                                        <span className="text-gray-500 font-semibold">function:</span>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            copyToClipboard(log.funcName, 'Function');
+                                          }}
+                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
+                                          title="Copier"
+                                        >
+                                          <Copy className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                      <div className="text-gray-300 mt-1 font-mono">{log.funcName}</div>
+                                    </div>
+                                    <div className="bg-gray-900 p-2 rounded col-span-2 group relative">
+                                      <div className="flex items-start justify-between">
+                                        <span className="text-gray-500 font-semibold">pathname:</span>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            copyToClipboard(`${log.pathname}:${log.lineno}`, 'Pathname');
+                                          }}
+                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
+                                          title="Copier"
+                                        >
+                                          <Copy className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                      <div className="text-gray-300 mt-1 font-mono">{log.pathname}:{log.lineno}</div>
+                                    </div>
+                                    <div className="bg-gray-900 p-2 rounded col-span-2 group relative">
+                                      <div className="flex items-start justify-between">
+                                        <span className="text-gray-500 font-semibold">message:</span>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            copyToClipboard(log.message, 'Message');
+                                          }}
+                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
+                                          title="Copier"
+                                        >
+                                          <Copy className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                      <div className="text-gray-300 mt-1 font-mono whitespace-pre-wrap break-words">{log.message}</div>
+                                    </div>
+                                    {log.exception && (
+                                      <div className="bg-gray-900 p-2 rounded col-span-2 group relative">
+                                        <div className="flex items-start justify-between">
+                                          <span className="text-gray-500 font-semibold">exception:</span>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              copyToClipboard(log.exception || '', 'Exception');
+                                            }}
+                                            className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
+                                            title="Copier"
+                                          >
+                                            <Copy className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                        <div className="text-red-400 mt-1 font-mono whitespace-pre-wrap text-xs">{log.exception}</div>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* JSON expandable section */}
+                                  <details className="bg-gray-900 rounded">
+                                    <summary className="cursor-pointer px-3 py-2 hover:bg-gray-800 rounded flex items-center justify-between">
+                                      <span className="font-semibold text-gray-400">Voir le JSON complet</span>
+                                      <button
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          copyToClipboard(JSON.stringify(log, null, 2), 'JSON');
+                                        }}
+                                        className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
+                                        title="Copier le JSON"
+                                      >
+                                        Copier
+                                      </button>
+                                    </summary>
+                                    <pre className="p-3 overflow-x-auto text-gray-300 font-mono text-xs border-t border-gray-800">
+                                      {JSON.stringify(log, null, 2)}
+                                    </pre>
+                                  </details>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
                       );
                     })}
                   </tbody>
@@ -530,8 +946,14 @@ const AdminLogs: React.FC = () => {
               )}
             </div>
           </div>
-        </div>
-      )}
+
+        {/* Toast notification */}
+        {toastMessage && (
+          <div className="fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <Copy className="w-4 h-4" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
     </div>
   );
 };

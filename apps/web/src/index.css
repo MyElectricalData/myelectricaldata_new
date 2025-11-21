@@ -129,4 +129,46 @@
   .dark .recharts-active-shape {
     fill: rgba(59, 130, 246, 0.2) !important;
   }
+
+  /* Faster tooltip appearance */
+  [title] {
+    --tooltip-delay: 100ms;
+  }
+
+  @supports (selector(:has(*))) {
+    button[title]:hover::before,
+    button[title]:hover::after {
+      transition-delay: var(--tooltip-delay);
+    }
+  }
+}
+
+@layer utilities {
+  /* Animation for new log entries */
+  @keyframes pulse-green {
+    0%, 100% {
+      background-color: transparent;
+    }
+    50% {
+      background-color: rgba(34, 197, 94, 0.25);
+    }
+  }
+
+  .animate-pulse-green {
+    animation: pulse-green 5s ease-in-out;
+  }
+
+  /* Dark mode variant */
+  .dark .animate-pulse-green {
+    animation: pulse-green-dark 5s ease-in-out;
+  }
+
+  @keyframes pulse-green-dark {
+    0%, 100% {
+      background-color: transparent;
+    }
+    50% {
+      background-color: rgba(34, 197, 94, 0.2);
+    }
+  }
 }

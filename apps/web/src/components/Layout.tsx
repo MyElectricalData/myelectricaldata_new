@@ -456,12 +456,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {location.pathname.startsWith('/api-docs') && <ApiDocsTabs />}
 
         {/* Main Content */}
-        <main className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
-          <div className={`container mx-auto px-3 sm:px-4 lg:px-6 max-w-[1920px] pb-6`}>
+        <main className={`flex-1 bg-gray-50 dark:bg-gray-900 ${location.pathname === '/admin/logs' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+          <div className={`container mx-auto px-3 sm:px-4 lg:px-6 max-w-[1920px] ${location.pathname === '/admin/logs' ? 'h-full pb-0' : 'pb-6'}`}>
             {children}
 
             {/* Spacer to push footer down - only on desktop */}
-            <div className="hidden md:block pb-20"></div>
+            {location.pathname !== '/admin/logs' && <div className="hidden md:block pb-20"></div>}
           </div>
         </main>
 

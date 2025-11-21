@@ -1,13 +1,14 @@
 import asyncio
-from datetime import datetime, UTC
-from typing import Any, Optional
-import httpx
-from ..config import settings
 import logging
+from datetime import UTC, datetime
+from typing import Any, Optional
 
+import httpx
 
+from ..config import settings
 
 logger = logging.getLogger(__name__)
+
 
 class RateLimiter:
     """Rate limiter for Enedis API calls (5 req/sec)"""
@@ -63,6 +64,7 @@ class EnedisAdapter:
     def _get_headers(self, access_token: str) -> dict[str, str]:
         """Get common headers for Enedis API requests including required Host header"""
         from urllib.parse import urlparse
+
         parsed = urlparse(self.base_url)
 
         return {
@@ -70,7 +72,7 @@ class EnedisAdapter:
             "accept": "application/json",
             "Content-Type": "application/json",
             "User-Agent": "software",
-            "Host": parsed.netloc
+            "Host": parsed.netloc,
         }
 
     async def _make_request(
@@ -87,21 +89,21 @@ class EnedisAdapter:
         await self.rate_limiter.acquire()
 
         if settings.DEBUG:
-            logger.info("=" * 80)
+            logger.debug("=" * 80)
             logger.debug(f"[ENEDIS API REQUEST] {method} {url}")
-            logger.debug(f"[ENEDIS API REQUEST] Headers:")
+            logger.debug("[ENEDIS API REQUEST] Headers:")
             if headers:
                 for key, value in headers.items():
                     if key.lower() == "authorization":
                         # Mask token but show format
                         if value.startswith("Bearer "):
-                            logger.info(f"  {key}: Bearer {value[7:27]}...")
+                            logger.debug(f"  {key}: Bearer {value[7:27]}...")
                         elif value.startswith("Basic "):
-                            logger.info(f"  {key}: Basic {value[6:26]}...")
+                            logger.debug(f"  {key}: Basic {value[6:26]}...")
                         else:
-                            logger.info(f"  {key}: {value[:20]}...")
+                            logger.debug(f"  {key}: {value[:20]}...")
                     else:
-                        logger.info(f"  {key}: {value}")
+                        logger.debug(f"  {key}: {value}")
             else:
                 logger.debug("  (no headers)")
 
@@ -110,7 +112,7 @@ class EnedisAdapter:
 
             if data:
                 logger.debug(f"[ENEDIS API REQUEST] Body data: {data}")
-            logger.info("=" * 80)
+            logger.debug("=" * 80)
 
         client = await self.get_client()
         try:
@@ -123,16 +125,18 @@ class EnedisAdapter:
             response_json = response.json()
 
             if settings.DEBUG:
-                logger.debug(f"[ENEDIS API RESPONSE] Success - keys: {list(response_json.keys()) if isinstance(response_json, dict) else 'not a dict'}")
-                logger.info("=" * 80)
+                logger.debug(
+                    f"[ENEDIS API RESPONSE] Success - keys: {list(response_json.keys()) if isinstance(response_json, dict) else 'not a dict'}"
+                )
+                logger.debug("=" * 80)
 
             return response_json
         except httpx.HTTPStatusError as e:
             if settings.DEBUG:
                 logger.error(f"[ENEDIS API ERROR] HTTP {e.response.status_code}")
-                logger.error(f"[ENEDIS API ERROR] Response headers: {dict(e.response.headers)}")
-                logger.error(f"[ENEDIS API ERROR] Response body: {e.response.text}")
-                logger.info("=" * 80)
+                logger.debug(f"[ENEDIS API ERROR] Response headers: {dict(e.response.headers)}")
+                logger.debug(f"[ENEDIS API ERROR] Response body: {e.response.text}")
+                logger.debug("=" * 80)
 
             # Parse JSON error from Enedis (e.g., ADAM-ERR0123)
             try:
@@ -140,8 +144,8 @@ class EnedisAdapter:
                 if "error" in error_json:
                     # Return the error JSON so the router can handle it
                     # Special case for ADAM-ERR0123 (data older than meter activation)
-                    if error_json.get('error') == 'ADAM-ERR0123':
-                        logger.warning(f"[ENEDIS] Data requested is anterior to meter activation date")
+                    if error_json.get("error") == "ADAM-ERR0123":
+                        logger.warning("[ENEDIS] Data requested is anterior to meter activation date")
                         return error_json  # Return error as dict for router to handle
                     # For other errors, raise exception
                     error_msg = f"{error_json.get('error')}: {error_json.get('error_description', 'Unknown error')}"
@@ -171,7 +175,7 @@ class EnedisAdapter:
             "redirect_uri": redirect_uri,
         }
 
-        logger.info(f"[ENEDIS] ===== REQUETE TOKEN EXCHANGE =====")
+        logger.info("[ENEDIS] ===== REQUETE TOKEN EXCHANGE =====")
         logger.info(f"[ENEDIS] URL: {url}")
         logger.debug(f"[ENEDIS] client_id: {self.client_id}")
         logger.info(f"[ENEDIS] client_secret: {self.client_secret[:10]}...")
@@ -192,17 +196,16 @@ class EnedisAdapter:
         encoded_credentials = base64.b64encode(credentials.encode()).decode()
 
         from urllib.parse import urlparse
+
         parsed = urlparse(self.base_url)
 
         headers = {
             "Content-Type": "application/x-www-form-urlencoded",
             "Authorization": f"Basic {encoded_credentials}",
-            "Host": parsed.netloc
+            "Host": parsed.netloc,
         }
 
-        data = {
-            "grant_type": "client_credentials"
-        }
+        data = {"grant_type": "client_credentials"}
 
         logger.info(f"[ENEDIS] Getting client credentials token from {url}")
         return await self._make_request("POST", url, headers=headers, data=data)
@@ -251,47 +254,6 @@ class EnedisAdapter:
         response = await self._make_request("GET", url, headers=headers, params=params)
 
         # Check if date range includes a Saturday and log what we got back
-        from datetime import datetime, timedelta
-        start_date = datetime.strptime(start, "%Y-%m-%d")
-        end_date = datetime.strptime(end, "%Y-%m-%d")
-
-        # Find all Saturdays in range (day 5 = Saturday in Python)
-        saturdays = []
-        current = start_date
-        while current <= end_date:
-            if current.weekday() == 5:  # Saturday
-                saturdays.append(current.strftime("%Y-%m-%d"))
-            current += timedelta(days=1)
-
-        if saturdays:
-            logger.info(f"🔍 [SATURDAY ENEDIS] Requested range {start} → {end} includes Saturdays: {saturdays}")
-
-            # Extract readings
-            readings = []
-            if isinstance(response, dict):
-                if "meter_reading" in response and "interval_reading" in response["meter_reading"]:
-                    readings = response["meter_reading"]["interval_reading"]
-                elif "interval_reading" in response:
-                    readings = response["interval_reading"]
-
-            logger.info(f"🔍 [SATURDAY ENEDIS] Got {len(readings)} total readings from Enedis")
-
-            # Check which Saturday dates appear in the readings
-            if readings:
-                saturday_readings = []
-                for saturday in saturdays:
-                    sat_reads = [r for r in readings if r.get("date", "").startswith(saturday)]
-                    saturday_readings.extend(sat_reads)
-                    logger.info(f"🔍 [SATURDAY ENEDIS] Saturday {saturday}: {len(sat_reads)} readings in response")
-
-                if saturday_readings:
-                    logger.info(f"🔍 [SATURDAY ENEDIS] Sample Saturday reading: {saturday_readings[0]}")
-                    logger.info(f"🔍 [SATURDAY ENEDIS] First 5 Saturday reading dates: {[r.get('date') for r in saturday_readings[:5]]}")
-                else:
-                    logger.warning(f"🔍 [SATURDAY ENEDIS] ⚠️ NO Saturday readings found in Enedis response!")
-                    logger.info(f"🔍 [SATURDAY ENEDIS] First 5 readings in response: {[r.get('date') for r in readings[:5]]}")
-                    logger.info(f"🔍 [SATURDAY ENEDIS] Last 5 readings in response: {[r.get('date') for r in readings[-5:]]}")
-
         return response
 
     async def get_max_power(self, usage_point_id: str, start: str, end: str, access_token: str) -> dict[str, Any]:

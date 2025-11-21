@@ -43,7 +43,7 @@ class DemoAdapter:
         Returns:
             Mock consumption data in Enedis format
         """
-        logger.info(f"[DEMO] Generating dynamic consumption data for {usage_point_id} from {start} to {end}")
+        logger.debug(f"[DEMO] Generating dynamic consumption data for {usage_point_id} from {start} to {end}")
 
         # Generate daily consumption data dynamically
         from datetime import datetime, timedelta
@@ -104,7 +104,7 @@ class DemoAdapter:
 
             current_date += timedelta(days=1)
 
-        logger.info(f"[DEMO] Generated {len(interval_reading)} consumption records")
+        logger.debug(f"[DEMO] Generated {len(interval_reading)} consumption records")
 
         return {
             "meter_reading": {
@@ -133,7 +133,7 @@ class DemoAdapter:
 
         For demo purposes, we generate 30-minute intervals from daily data.
         """
-        logger.info(f"[DEMO] Fetching mock detailed consumption data for {usage_point_id}")
+        logger.debug(f"[DEMO] Fetching mock detailed consumption data for {usage_point_id}")
 
         # Get daily data first
         daily_data = await self.get_consumption_daily(usage_point_id, start, end, client_secret)
@@ -205,7 +205,7 @@ class DemoAdapter:
         client_secret: str,
     ) -> dict[str, Any]:
         """Generate mock daily production data dynamically (no cache)"""
-        logger.info(f"[DEMO] Generating dynamic production data for {usage_point_id} from {start} to {end}")
+        logger.debug(f"[DEMO] Generating dynamic production data for {usage_point_id} from {start} to {end}")
 
         # Only PDL 04004253849201 (Maison avec panneaux solaires) has production
         if usage_point_id != "04004253849201":
@@ -256,7 +256,7 @@ class DemoAdapter:
 
             current_date += timedelta(days=1)
 
-        logger.info(f"[DEMO] Generated {len(interval_reading)} production records")
+        logger.debug(f"[DEMO] Generated {len(interval_reading)} production records")
 
         return {
             "meter_reading": {
@@ -281,7 +281,7 @@ class DemoAdapter:
         client_secret: str,
     ) -> dict[str, Any]:
         """Get mock detailed production data (30-minute intervals)"""
-        logger.info(f"[DEMO] Fetching mock detailed production data for {usage_point_id}")
+        logger.debug(f"[DEMO] Fetching mock detailed production data for {usage_point_id}")
 
         # Get daily data first
         daily_data = await self.get_production_daily(usage_point_id, start, end, client_secret)
@@ -354,7 +354,7 @@ class DemoAdapter:
         Get mock max power data.
         Generate realistic daily max power data based on consumption patterns.
         """
-        logger.info(f"[DEMO] Fetching mock max power data for {usage_point_id} from {start} to {end}")
+        logger.debug(f"[DEMO] Fetching mock max power data for {usage_point_id} from {start} to {end}")
 
         # Get consumption data to derive max power
         cache_key = f"demo:consumption:daily:{usage_point_id}"
@@ -397,7 +397,7 @@ class DemoAdapter:
                 "measure_type": "B",
             })
 
-        logger.info(f"[DEMO] Returning {len(interval_reading)} max power records")
+        logger.debug(f"[DEMO] Returning {len(interval_reading)} max power records")
 
         return {
             "meter_reading": {
@@ -420,7 +420,7 @@ class DemoAdapter:
         client_secret: str,
     ) -> dict[str, Any]:
         """Get mock contract information"""
-        logger.info(f"[DEMO] Fetching mock contract for {usage_point_id}")
+        logger.debug(f"[DEMO] Fetching mock contract for {usage_point_id}")
 
         cache_key = f"demo:contract:{usage_point_id}"
         cached_data = await self.cache_service.get(cache_key, client_secret)
@@ -452,7 +452,7 @@ class DemoAdapter:
         client_secret: str,
     ) -> dict[str, Any]:
         """Get mock address information"""
-        logger.info(f"[DEMO] Fetching mock address for {usage_point_id}")
+        logger.debug(f"[DEMO] Fetching mock address for {usage_point_id}")
 
         cache_key = f"demo:address:{usage_point_id}"
         cached_data = await self.cache_service.get(cache_key, client_secret)
@@ -493,7 +493,7 @@ class DemoAdapter:
         client_secret: str,
     ) -> dict[str, Any]:
         """Get mock customer information"""
-        logger.info(f"[DEMO] Fetching mock customer for {usage_point_id}")
+        logger.debug(f"[DEMO] Fetching mock customer for {usage_point_id}")
 
         return {
             "customer": {
@@ -511,7 +511,7 @@ class DemoAdapter:
         client_secret: str,
     ) -> dict[str, Any]:
         """Get mock contact information"""
-        logger.info(f"[DEMO] Fetching mock contact for {usage_point_id}")
+        logger.debug(f"[DEMO] Fetching mock contact for {usage_point_id}")
 
         return {
             "customer": {

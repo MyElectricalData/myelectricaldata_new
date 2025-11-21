@@ -1,5 +1,5 @@
-from contextlib import asynccontextmanager
 import logging
+from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import Depends, FastAPI, Query, Request, status
@@ -37,12 +37,12 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
-    # Setup logging first
-    setup_logging(debug_sql=settings.DEBUG_SQL)
-
     # Startup
     await init_db()
     await cache_service.connect()
+
+    # Setup logging with Redis support (after cache_service is connected)
+    setup_logging(debug_sql=settings.DEBUG_SQL, cache_service=cache_service, redis_url=settings.REDIS_URL)
 
     # Start background tasks (TEMPO cache refresh, etc.)
     start_background_tasks()
