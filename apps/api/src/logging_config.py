@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from .services.cache import CacheService
 
 # Thread pool for async Redis operations
-_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="redis_log")
+_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="redis_log")
 
 # Log directory and file
 LOG_DIR = Path("/logs")
@@ -125,11 +125,17 @@ class RedisLogHandler(logging.Handler):
                     import redis.asyncio as redis
 
                     async def store():
-                        client = await redis.from_url(self.redis_url, encoding="utf-8", decode_responses=False)
+                        client = await redis.from_url(
+                            self.redis_url,
+                            encoding="utf-8",
+                            decode_responses=False,
+                            socket_connect_timeout=1,  # Fast timeout
+                            socket_timeout=1
+                        )
                         try:
                             await client.setex(redis_key, LOG_RETENTION_SECONDS, json.dumps(log_entry))
                         finally:
-                            await client.close()
+                            await client.aclose()  # Use aclose() instead of close()
 
                     asyncio.run(store())
                 except Exception:

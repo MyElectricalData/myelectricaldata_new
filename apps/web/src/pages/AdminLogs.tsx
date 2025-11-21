@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { RefreshCw, AlertCircle, ChevronUp, ChevronDown, ChevronRight, Copy } from 'lucide-react';
+import { RefreshCw, AlertCircle, ChevronUp, ChevronDown, ChevronRight, Copy, FileText } from 'lucide-react';
 import { getAdminLogs } from '../api/admin';
 
 type SortField = 'timestamp' | 'level' | 'module' | 'message';
@@ -87,13 +87,20 @@ const AdminLogs: React.FC = () => {
       // Ctrl+K (Windows/Linux) or Cmd+K (Mac)
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        // Déplier le panneau de filtres si nécessaire
+        if (isFiltersPanelCollapsed) {
+          setIsFiltersPanelCollapsed(false);
+        }
+        // Focus sur le champ de recherche après un court délai pour laisser le panneau s'ouvrir
+        setTimeout(() => {
+          searchInputRef.current?.focus();
+        }, 100);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isFiltersPanelCollapsed]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -160,41 +167,66 @@ const AdminLogs: React.FC = () => {
       // Fetch all logs without server-side filtering (we'll filter client-side)
       const response = await getAdminLogs(undefined, linesCount, 0) as GetLogsResponse;
 
-      // Detect truly new logs by comparing with seenTimestamps
-      const newLogs = response.logs.filter((log: LogEntry) =>
-        !seenTimestamps.has(log.timestamp)
-      );
+      // Always update seenTimestamps with current logs FIRST (before detecting new logs)
+      const currentTimestamps = response.logs.map((log: LogEntry) => log.timestamp);
 
-      // Update seenTimestamps with all timestamps from response
-      setSeenTimestamps(prevSeen => {
-        const updated = new Set(prevSeen);
-        response.logs.forEach((log: LogEntry) => updated.add(log.timestamp));
-        return updated;
-      });
-
-      // Mark new logs for animation
-      if (newLogs.length > 0 && !isInitialLoad) {
-        const newIds = new Set(newLogs.map((log: LogEntry) => log.timestamp));
-        setNewLogIds(newIds);
-
-        // Only add new logs to the beginning, don't replace all logs
-        // Keep the total count within linesCount limit
-        setLogs(prevLogs => {
-          const combined = [...newLogs, ...prevLogs];
-          // Remove duplicates based on timestamp and limit to linesCount
-          const uniqueLogs = combined.filter((log, index, self) =>
-            index === self.findIndex(l => l.timestamp === log.timestamp)
-          );
-          return uniqueLogs.slice(0, linesCount);
-        });
-
-        // Remove animation after 5 seconds
-        setTimeout(() => {
-          setNewLogIds(new Set());
-        }, 5000);
-      } else {
-        // Initial load or no new logs
+      if (isInitialLoad) {
+        // Initial load: just set the logs and mark all as seen
         setLogs(response.logs);
+        setSeenTimestamps(new Set(currentTimestamps));
+        console.log('[AdminLogs] Initial load:', response.logs.length, 'logs');
+      } else {
+        // Refresh: detect truly new logs by comparing with seenTimestamps
+        console.log('[AdminLogs] Refresh - seenTimestamps size before:', seenTimestamps.size);
+        const newLogs = response.logs.filter((log: LogEntry) => {
+          const isSeen = seenTimestamps.has(log.timestamp);
+          if (!isSeen) {
+            console.log('[AdminLogs] New log detected:', log.timestamp, log.message.substring(0, 50));
+          }
+          return !isSeen;
+        });
+        console.log('[AdminLogs] Found', newLogs.length, 'new logs out of', response.logs.length);
+
+        if (newLogs.length > 0) {
+          // Mark new logs for animation
+          const newIds = new Set(newLogs.map((log: LogEntry) => log.timestamp));
+          setNewLogIds(newIds);
+          console.log('[AdminLogs] Marking', newIds.size, 'logs with green animation');
+
+          // Only add new logs to the beginning, don't replace all logs
+          // Keep the total count within linesCount limit
+          setLogs(prevLogs => {
+            const combined = [...newLogs, ...prevLogs];
+            // Remove duplicates based on timestamp and limit to linesCount
+            const uniqueLogs = combined.filter((log, index, self) =>
+              index === self.findIndex(l => l.timestamp === log.timestamp)
+            );
+            return uniqueLogs.slice(0, linesCount);
+          });
+
+          // Update seenTimestamps with all timestamps from response
+          setSeenTimestamps(prevSeen => {
+            const updated = new Set(prevSeen);
+            response.logs.forEach((log: LogEntry) => updated.add(log.timestamp));
+            console.log('[AdminLogs] Updated seenTimestamps size:', updated.size);
+            return updated;
+          });
+
+          // Remove animation after 5 seconds
+          setTimeout(() => {
+            setNewLogIds(new Set());
+            console.log('[AdminLogs] Cleared green animation');
+          }, 5000);
+        } else {
+          console.log('[AdminLogs] No new logs, updating seenTimestamps');
+          // No new logs, keep existing seenTimestamps and just add any new ones from response
+          setSeenTimestamps(prevSeen => {
+            const updated = new Set(prevSeen);
+            response.logs.forEach((log: LogEntry) => updated.add(log.timestamp));
+            console.log('[AdminLogs] Updated seenTimestamps size (no new logs):', updated.size);
+            return updated;
+          });
+        }
       }
 
       // Extract unique modules from logs
@@ -389,11 +421,17 @@ const AdminLogs: React.FC = () => {
     });
 
   return (
-    <div className="flex flex-col overflow-hidden pt-6 pb-6" style={{ height: 'calc(100vh - 64px)' }}>
-      <div className="flex justify-between items-center mb-4 flex-shrink-0">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          Logs d'application
-        </h1>
+    <div className="pt-6 flex flex-col h-[calc(100vh-64px)] overflow-hidden pb-6">
+      <div className="flex justify-between items-start mb-6 flex-shrink-0">
+        <div>
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+            <FileText className="text-primary-600 dark:text-primary-400" size={32} />
+            <span className="text-gray-900 dark:text-white">Logs d'application</span>
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Visualisez et analysez les logs de l'application en temps réel
+          </p>
+        </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <label htmlFor="auto-refresh" className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -403,7 +441,7 @@ const AdminLogs: React.FC = () => {
               id="auto-refresh"
               value={autoRefresh}
               onChange={(e) => setAutoRefresh(Number(e.target.value))}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             >
               <option value={0}>Désactivé</option>
               <option value={5000}>5s</option>
@@ -416,7 +454,7 @@ const AdminLogs: React.FC = () => {
           <button
             onClick={fetchLogs}
             disabled={loading || refreshing}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="btn btn-primary flex items-center gap-2"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             Rafraîchir
@@ -424,19 +462,17 @@ const AdminLogs: React.FC = () => {
         </div>
       </div>
 
-      <div className={`bg-white dark:bg-gray-800 rounded-lg shadow transition-all duration-300 mb-4 flex-shrink-0`}>
-        <div className="p-4">
-          <div className={`flex items-center justify-between ${isFiltersPanelCollapsed ? '' : 'mb-3'}`}>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Filtres</h2>
-            <button
-              onClick={() => setIsFiltersPanelCollapsed(!isFiltersPanelCollapsed)}
-              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-              title={isFiltersPanelCollapsed ? 'Afficher les filtres' : 'Masquer les filtres'}
-            >
-              <ChevronDown className={`w-5 h-5 text-gray-600 dark:text-gray-400 transition-transform ${isFiltersPanelCollapsed ? '-rotate-90' : ''}`} />
-            </button>
-          </div>
-          {!isFiltersPanelCollapsed && (
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow transition-all duration-300 mb-4 flex-shrink-0">
+        <div
+          className={`flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors p-4 ${isFiltersPanelCollapsed ? '' : 'border-b border-gray-200 dark:border-gray-700'} ${isFiltersPanelCollapsed ? 'rounded-lg' : 'rounded-t-lg'}`}
+          onClick={() => setIsFiltersPanelCollapsed(!isFiltersPanelCollapsed)}
+          title={isFiltersPanelCollapsed ? 'Afficher les filtres' : 'Masquer les filtres'}
+        >
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Filtres</h2>
+          <ChevronDown className={`w-5 h-5 text-gray-600 dark:text-gray-400 transition-transform ${isFiltersPanelCollapsed ? '-rotate-90' : ''}`} />
+        </div>
+        {!isFiltersPanelCollapsed && (
+        <div className="p-4 pt-3">
         <div className="space-y-4">
           {/* Ligne 1: Niveau et Modules */}
           <div className="flex gap-4">
@@ -449,13 +485,13 @@ const AdminLogs: React.FC = () => {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setLevelFilters(new Set(['INFO', 'WARNING', 'ERROR', 'DEBUG']))}
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                    className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
                   >
                     Tous
                   </button>
                   <button
                     onClick={() => setLevelFilters(new Set())}
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                    className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
                   >
                     Aucun
                   </button>
@@ -468,7 +504,7 @@ const AdminLogs: React.FC = () => {
                       type="checkbox"
                       checked={levelFilters.has(level)}
                       onChange={() => toggleLevelFilter(level)}
-                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                      className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
                     />
                     <span className={`text-sm ${getLevelColor(level)} px-2 py-0.5 rounded font-medium`}>
                       {level}
@@ -487,13 +523,13 @@ const AdminLogs: React.FC = () => {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setModuleFilters(new Set(filteredModules))}
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                    className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
                   >
                     Tous
                   </button>
                   <button
                     onClick={() => setModuleFilters(new Set())}
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                    className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
                   >
                     Aucun
                   </button>
@@ -528,7 +564,7 @@ const AdminLogs: React.FC = () => {
                             }
                             setModuleFilters(newFilters);
                           }}
-                          className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                          className="text-xs text-primary-600 dark:text-primary-400 hover:underline font-medium"
                         >
                           {modulesByCategory[category].every(m => moduleFilters.has(m)) ? 'Aucun' : 'Tous'}
                         </button>
@@ -541,7 +577,7 @@ const AdminLogs: React.FC = () => {
                             type="checkbox"
                             checked={moduleFilters.has(module)}
                             onChange={() => toggleModuleFilter(module)}
-                            className="w-3.5 h-3.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 flex-shrink-0"
+                            className="w-3.5 h-3.5 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 flex-shrink-0"
                           />
                           <span className="text-xs text-gray-700 dark:text-gray-300 font-mono truncate group-hover:text-gray-900 dark:group-hover:text-white" title={module}>
                             {module.replace(`${category}.`, '')}
@@ -570,7 +606,7 @@ const AdminLogs: React.FC = () => {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Filtrer les messages..."
-                  className="px-3 py-2 pr-16 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                  className="px-3 py-2 pr-16 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 w-full"
                 />
                 <kbd className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded shadow-sm">
                   Ctrl+K
@@ -586,7 +622,7 @@ const AdminLogs: React.FC = () => {
                 </label>
                 <button
                   onClick={() => setVisibleColumns(new Set(['timestamp', 'level', 'module', 'message']))}
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
                 >
                   Toutes
                 </button>
@@ -603,7 +639,7 @@ const AdminLogs: React.FC = () => {
                     onClick={() => toggleColumn(id)}
                     className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                       visibleColumns.has(id)
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-primary-600 text-white'
                         : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
                     }`}
                   >
@@ -622,7 +658,7 @@ const AdminLogs: React.FC = () => {
                 id="lines-count"
                 value={linesCount}
                 onChange={handleLinesChange}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 w-full"
               >
                 <option value={50}>50</option>
                 <option value={100}>100</option>
@@ -633,8 +669,8 @@ const AdminLogs: React.FC = () => {
             </div>
           </div>
         </div>
-          )}
         </div>
+        )}
       </div>
 
       {error && (
@@ -654,17 +690,17 @@ const AdminLogs: React.FC = () => {
           <div ref={tableContainerRef} className="overflow-auto pb-4 min-h-0" style={{ flex: 1 }}>
             {loading && logs.length === 0 ? (
               <div className="flex justify-center py-12">
-                <RefreshCw className="w-8 h-8 text-blue-600 animate-spin" />
+                <RefreshCw className="w-8 h-8 text-primary-600 animate-spin" />
               </div>
             ) : filteredLogs.length === 0 ? (
               <p className="text-gray-500 p-4 text-center">Aucun log trouvé</p>
             ) : (
                 <table className="w-full font-mono text-xs border-separate border-spacing-0">
-                  <thead className="sticky top-0 bg-gray-800 text-gray-300 border-b border-gray-700 z-10">
+                  <thead className="sticky top-0 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 z-10">
                     <tr>
                       {visibleColumns.has('timestamp') && (
                         <th
-                          className="px-2 py-1 text-left whitespace-nowrap w-40 cursor-pointer hover:bg-gray-700 select-none"
+                          className="px-2 py-1 text-left whitespace-nowrap w-40 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 select-none"
                           onClick={() => handleSort('timestamp')}
                         >
                           <div className="flex items-center gap-1">
@@ -677,7 +713,7 @@ const AdminLogs: React.FC = () => {
                       )}
                       {visibleColumns.has('level') && (
                         <th
-                          className="px-2 py-1 text-left whitespace-nowrap w-20 cursor-pointer hover:bg-gray-700 select-none"
+                          className="px-2 py-1 text-left whitespace-nowrap w-20 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 select-none"
                           onClick={() => handleSort('level')}
                         >
                           <div className="flex items-center gap-1">
@@ -690,7 +726,7 @@ const AdminLogs: React.FC = () => {
                       )}
                       {visibleColumns.has('module') && (
                         <th
-                          className="px-2 py-1 text-left whitespace-nowrap w-40 cursor-pointer hover:bg-gray-700 select-none"
+                          className="px-2 py-1 text-left whitespace-nowrap w-40 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 select-none"
                           onClick={() => handleSort('module')}
                         >
                           <div className="flex items-center gap-1">
@@ -703,7 +739,7 @@ const AdminLogs: React.FC = () => {
                       )}
                       {visibleColumns.has('message') && (
                         <th
-                          className="px-2 py-1 text-left cursor-pointer hover:bg-gray-700 select-none"
+                          className="px-2 py-1 text-left cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 select-none"
                           onClick={() => handleSort('message')}
                         >
                           <div className="flex items-center gap-1">
@@ -716,7 +752,7 @@ const AdminLogs: React.FC = () => {
                       )}
                     </tr>
                   </thead>
-                  <tbody className="bg-gray-900">
+                  <tbody className="bg-white dark:bg-gray-900">
                     {filteredLogs.map((log) => {
                       const isExpanded = expandedRows.has(log.timestamp);
                       const isNewLog = newLogIds.has(log.timestamp);
@@ -742,16 +778,16 @@ const AdminLogs: React.FC = () => {
                             key={log.timestamp}
                             data-timestamp={log.timestamp}
                             onClick={() => toggleRow(log.timestamp)}
-                            className={`border-b border-gray-800 hover:bg-gray-800/50 transition-all duration-500 cursor-pointer ${
+                            className={`border-b border-gray-200 dark:border-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-all duration-500 cursor-pointer ${
                               getRowBgColor(log.level)
                             } ${
                               isNewLog ? 'animate-pulse-green' : ''
                             }`}
                           >
                             {visibleColumns.has('timestamp') && (
-                              <td className="px-2 py-1 text-gray-500 whitespace-nowrap align-middle">
+                              <td className="px-2 py-1 text-gray-600 dark:text-gray-500 whitespace-nowrap align-middle">
                                 <div className="flex items-center gap-2">
-                                  <ChevronRight className={`w-3 h-3 transition-transform flex-shrink-0 text-gray-400 ${isExpanded ? 'rotate-90' : ''}`} />
+                                  <ChevronRight className={`w-3 h-3 transition-transform flex-shrink-0 text-gray-500 dark:text-gray-400 ${isExpanded ? 'rotate-90' : ''}`} />
                                   {log.timestamp}
                                 </div>
                               </td>
@@ -764,7 +800,7 @@ const AdminLogs: React.FC = () => {
                               </td>
                             )}
                             {visibleColumns.has('module') && (
-                              <td className="px-2 py-1 text-blue-400 whitespace-nowrap align-middle">
+                              <td className="px-2 py-1 text-primary-600 dark:text-primary-400 whitespace-nowrap align-middle">
                                 <span
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -784,7 +820,7 @@ const AdminLogs: React.FC = () => {
                             )}
                             {visibleColumns.has('message') && (
                               <td className={`px-2 py-1 max-w-[800px] ${
-                                log.level === 'ERROR' ? 'text-red-400' : 'text-gray-100'
+                                log.level === 'ERROR' ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'
                               }`}>
                                 <div className={`${isExpanded ? 'whitespace-pre-wrap break-words' : 'truncate'}`}>
                                   {log.message}
@@ -793,121 +829,107 @@ const AdminLogs: React.FC = () => {
                             )}
                           </tr>
                           {isExpanded && (
-                            <tr className={`border-b border-gray-800 ${getRowBgColor(log.level)}`}>
+                            <tr className={`border-b border-gray-200 dark:border-gray-800 ${getRowBgColor(log.level)}`}>
                               <td colSpan={4} className="px-2 py-3">
                                 <div className="text-xs space-y-3">
                                   {/* Fields grid */}
                                   <div className="grid grid-cols-2 gap-3">
-                                    <div className="bg-gray-900 p-2 rounded group relative">
+                                    <div
+                                      className="bg-gray-900 p-2 rounded group relative cursor-pointer hover:bg-gray-800 transition-colors"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        copyToClipboard(log.timestamp, 'Timestamp');
+                                      }}
+                                      title="Cliquer pour copier"
+                                    >
                                       <div className="flex items-start justify-between">
                                         <span className="text-gray-500 font-semibold">timestamp:</span>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            copyToClipboard(log.timestamp, 'Timestamp');
-                                          }}
-                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
-                                          title="Copier"
-                                        >
-                                          <Copy className="w-3 h-3" />
-                                        </button>
+                                        <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400" />
                                       </div>
                                       <div className="text-gray-300 mt-1 font-mono">{log.timestamp}</div>
                                     </div>
-                                    <div className="bg-gray-900 p-2 rounded group relative">
+                                    <div
+                                      className="bg-gray-900 p-2 rounded group relative cursor-pointer hover:bg-gray-800 transition-colors"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        copyToClipboard(log.level, 'Level');
+                                      }}
+                                      title="Cliquer pour copier"
+                                    >
                                       <div className="flex items-start justify-between">
                                         <span className="text-gray-500 font-semibold">level:</span>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            copyToClipboard(log.level, 'Level');
-                                          }}
-                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
-                                          title="Copier"
-                                        >
-                                          <Copy className="w-3 h-3" />
-                                        </button>
+                                        <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400" />
                                       </div>
                                       <div className="text-gray-300 mt-1 font-mono">{log.level}</div>
                                     </div>
-                                    <div className="bg-gray-900 p-2 rounded group relative">
+                                    <div
+                                      className="bg-gray-900 p-2 rounded group relative cursor-pointer hover:bg-gray-800 transition-colors"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        copyToClipboard(log.logger, 'Logger');
+                                      }}
+                                      title="Cliquer pour copier"
+                                    >
                                       <div className="flex items-start justify-between">
                                         <span className="text-gray-500 font-semibold">logger:</span>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            copyToClipboard(log.logger, 'Logger');
-                                          }}
-                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
-                                          title="Copier"
-                                        >
-                                          <Copy className="w-3 h-3" />
-                                        </button>
+                                        <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400" />
                                       </div>
                                       <div className="text-gray-300 mt-1 font-mono">{log.logger}</div>
                                     </div>
-                                    <div className="bg-gray-900 p-2 rounded group relative">
+                                    <div
+                                      className="bg-gray-900 p-2 rounded group relative cursor-pointer hover:bg-gray-800 transition-colors"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        copyToClipboard(log.funcName, 'Function');
+                                      }}
+                                      title="Cliquer pour copier"
+                                    >
                                       <div className="flex items-start justify-between">
                                         <span className="text-gray-500 font-semibold">function:</span>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            copyToClipboard(log.funcName, 'Function');
-                                          }}
-                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
-                                          title="Copier"
-                                        >
-                                          <Copy className="w-3 h-3" />
-                                        </button>
+                                        <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400" />
                                       </div>
                                       <div className="text-gray-300 mt-1 font-mono">{log.funcName}</div>
                                     </div>
-                                    <div className="bg-gray-900 p-2 rounded col-span-2 group relative">
+                                    <div
+                                      className="bg-gray-900 p-2 rounded col-span-2 group relative cursor-pointer hover:bg-gray-800 transition-colors"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        copyToClipboard(`${log.pathname}:${log.lineno}`, 'Pathname');
+                                      }}
+                                      title="Cliquer pour copier"
+                                    >
                                       <div className="flex items-start justify-between">
                                         <span className="text-gray-500 font-semibold">pathname:</span>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            copyToClipboard(`${log.pathname}:${log.lineno}`, 'Pathname');
-                                          }}
-                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
-                                          title="Copier"
-                                        >
-                                          <Copy className="w-3 h-3" />
-                                        </button>
+                                        <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400" />
                                       </div>
                                       <div className="text-gray-300 mt-1 font-mono">{log.pathname}:{log.lineno}</div>
                                     </div>
-                                    <div className="bg-gray-900 p-2 rounded col-span-2 group relative">
+                                    <div
+                                      className="bg-gray-900 p-2 rounded col-span-2 group relative cursor-pointer hover:bg-gray-800 transition-colors"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        copyToClipboard(log.message, 'Message');
+                                      }}
+                                      title="Cliquer pour copier"
+                                    >
                                       <div className="flex items-start justify-between">
                                         <span className="text-gray-500 font-semibold">message:</span>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            copyToClipboard(log.message, 'Message');
-                                          }}
-                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
-                                          title="Copier"
-                                        >
-                                          <Copy className="w-3 h-3" />
-                                        </button>
+                                        <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400" />
                                       </div>
                                       <div className="text-gray-300 mt-1 font-mono whitespace-pre-wrap break-words">{log.message}</div>
                                     </div>
                                     {log.exception && (
-                                      <div className="bg-gray-900 p-2 rounded col-span-2 group relative">
+                                      <div
+                                        className="bg-gray-900 p-2 rounded col-span-2 group relative cursor-pointer hover:bg-gray-800 transition-colors"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          copyToClipboard(log.exception || '', 'Exception');
+                                        }}
+                                        title="Cliquer pour copier"
+                                      >
                                         <div className="flex items-start justify-between">
                                           <span className="text-gray-500 font-semibold">exception:</span>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              copyToClipboard(log.exception || '', 'Exception');
-                                            }}
-                                            className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-400"
-                                            title="Copier"
-                                          >
-                                            <Copy className="w-3 h-3" />
-                                          </button>
+                                          <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400" />
                                         </div>
                                         <div className="text-red-400 mt-1 font-mono whitespace-pre-wrap text-xs">{log.exception}</div>
                                       </div>
@@ -924,7 +946,7 @@ const AdminLogs: React.FC = () => {
                                           e.stopPropagation();
                                           copyToClipboard(JSON.stringify(log, null, 2), 'JSON');
                                         }}
-                                        className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
+                                        className="text-primary-400 hover:text-primary-300 text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
                                         title="Copier le JSON"
                                       >
                                         Copier
