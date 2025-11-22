@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Sun, BarChart3 } from 'lucide-react'
+import { BarChart3 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/useAuth'
+import { usePdlStore } from '@/stores/pdlStore'
+import { useDataFetchStore } from '@/stores/dataFetchStore'
 import type { PDL } from '@/types/api'
 import { useIsDemo } from '@/hooks/useIsDemo'
 import { logger } from '@/utils/logger'
@@ -12,21 +14,18 @@ import { useProductionFetch } from './hooks/useProductionFetch'
 import { useProductionCalcs } from './hooks/useProductionCalcs'
 
 // Import components
-import { PDLSelector } from './components/PDLSelector'
-import { LoadingProgress } from './components/LoadingProgress'
 import { YearlyProductionCards } from './components/YearlyProductionCards'
 import { YearlyProduction } from './components/YearlyProduction'
 import { AnnualProductionCurve } from './components/AnnualProductionCurve'
 import { DetailedProductionCurve } from './components/DetailedProductionCurve'
 
 export default function Production() {
-  const { user } = useAuth()
   const queryClient = useQueryClient()
   const isDemo = useIsDemo()
+  const { selectedPdl: selectedPDL, setSelectedPdl: setSelectedPDL } = usePdlStore()
 
   // States
-  const [selectedPDL, setSelectedPDL] = useState<string>('')
-  const [isClearingCache, setIsClearingCache] = useState(false)
+  const [, setIsClearingCache] = useState(false)
   const [isChartsExpanded, setIsChartsExpanded] = useState(false)
   const [dateRange, setDateRange] = useState<{start: string, end: string} | null>(null)
   const [hasAttemptedAutoLoad, setHasAttemptedAutoLoad] = useState(false)
@@ -92,7 +91,6 @@ export default function Production() {
 
   // Use custom hooks
   const {
-    pdls,
     activePdls,
     productionData,
     detailData,
@@ -109,7 +107,7 @@ export default function Production() {
     detailData,
   })
 
-  const { fetchProductionData, clearCache } = useProductionFetch({
+  const { fetchProductionData } = useProductionFetch({
     selectedPDL,
     selectedPDLDetails,
     setDateRange,
@@ -122,6 +120,10 @@ export default function Production() {
     setLoadingProgress,
     setIsClearingCache,
   })
+
+  // NOTE: Fetch function registration is now handled by the unified hook in PageHeader
+  // We don't register fetchProductionData here to avoid conflicts and infinite loops
+  // The PageHeader component uses useUnifiedDataFetch which fetches all data types
 
   // Check if ANY production data is in cache (to determine if we should auto-load)
   const hasDataInCache = useMemo(() => {
@@ -227,48 +229,20 @@ export default function Production() {
     }
   }, [selectedPDL, hasDataInCache, hasAttemptedAutoLoad, fetchProductionData, isDemo])
 
-  // Get production response from React Query
+  // Get production response from React Query (needed for status badges)
   const productionResponse = queryClient.getQueryData(['production', selectedPDL, dateRange?.start, dateRange?.end])
 
   return (
     <div className="pt-6 w-full">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-          <Sun className="text-yellow-600 dark:text-yellow-400" size={32} />
-          Production
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Visualisez et analysez votre production d'énergie solaire
-        </p>
-      </div>
-
-      {/* PDL Selector Component with Loading Progress inside */}
-      <PDLSelector
-        pdls={pdls}
-        activePdls={activePdls}
-        selectedPDL={selectedPDL}
-        selectedPDLDetails={selectedPDLDetails}
-        onPDLSelect={setSelectedPDL}
-        onFetchData={fetchProductionData}
-        onClearCache={clearCache}
-        isClearingCache={isClearingCache}
-        isLoading={isLoading}
-        isLoadingDetailed={isLoadingDetailed}
-        hasDataInCache={hasDataInCache}
-        dataLimitWarning={dataLimitWarning}
-        user={user}
-      >
-        <LoadingProgress
-          isLoadingDetailed={isLoadingDetailed}
-          dailyLoadingComplete={dailyLoadingComplete}
-          loadingProgress={loadingProgress}
-          allLoadingComplete={allLoadingComplete}
-          dateRange={dateRange}
-          isLoadingProduction={isLoadingProduction}
-          productionResponse={productionResponse}
-          hasDataInCache={hasDataInCache}
-        />
-      </PDLSelector>
+      {/* Warning if PDL has limited data */}
+      {dataLimitWarning && (
+        <div className="mb-6 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center gap-2">
+          <span className="text-blue-600 dark:text-blue-400 text-lg flex-shrink-0">ℹ️</span>
+          <p className="text-sm text-blue-800 dark:text-blue-200">
+            {dataLimitWarning}
+          </p>
+        </div>
+      )}
 
       {/* Statistics Section */}
       <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">

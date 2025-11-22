@@ -1,6 +1,8 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useCallback } from 'react'
+import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { enedisApi } from '@/api/enedis'
 import { adminApi } from '@/api/admin'
+import { pdlApi } from '@/api/pdl'
 import { logger } from '@/utils/logger'
 import toast from 'react-hot-toast'
 import type { PDL } from '@/types/api'
@@ -43,11 +45,22 @@ export function useConsumptionFetch({
 }: UseConsumptionFetchParams) {
   const queryClient = useQueryClient()
 
-  const fetchConsumptionData = async () => {
+  // Get the list of PDLs to find production PDL details
+  const { data: pdlsResponse } = useQuery({
+    queryKey: ['pdls'],
+    queryFn: pdlApi.list,
+  })
+  const allPDLs: PDL[] = Array.isArray(pdlsResponse) ? pdlsResponse : []
+
+  const fetchConsumptionData = useCallback(async () => {
     if (!selectedPDL) {
       toast.error('Veuillez sélectionner un PDL')
       return
     }
+
+    // Invalidate existing queries to force refetch
+    queryClient.invalidateQueries({ queryKey: ['consumption', selectedPDL] })
+    queryClient.invalidateQueries({ queryKey: ['maxPower', selectedPDL] })
 
     // Collapse all sections before fetching new data
     setIsChartsExpanded(false)
@@ -154,11 +167,11 @@ export function useConsumptionFetch({
           success: batchData?.success,
           hasError: !!batchData?.error,
           errorCode: batchData?.error?.code,
-          dataPoints: batchData?.data?.meter_reading?.interval_reading?.length || 0
+          dataPoints: (batchData as any)?.data?.meter_reading?.interval_reading?.length || 0
         })
 
-        if (batchData?.success && batchData?.data?.meter_reading?.interval_reading) {
-          const readings = batchData.data.meter_reading.interval_reading
+        if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
+          const readings = (batchData as any).data.meter_reading.interval_reading
 
           // Group data points by date for caching
           const dataByDate: Record<string, any[]> = {}
@@ -235,12 +248,171 @@ export function useConsumptionFetch({
         toast.error(errorMsg)
       } finally {
         setIsLoadingDetailed(false)
-        setLoadingProgress({ current: 0, total: 0, currentRange: '' })
+        // Don't reset loadingProgress here - keep the final state (1/1 for success)
       }
     }
-  }
 
-  const clearCache = async () => {
+    // If this consumption PDL is linked to a production PDL, fetch production data too
+    if (selectedPDLDetails?.linked_production_pdl_id) {
+      const productionPDL = allPDLs.find(p => p.id === selectedPDLDetails.linked_production_pdl_id)
+
+      if (!productionPDL) {
+        logger.log(`Production PDL not found in list: ${selectedPDLDetails.linked_production_pdl_id}`)
+        return
+      }
+
+      const productionPdlUsagePointId = productionPDL.usage_point_id
+      logger.log(`Linked production PDL detected: ${productionPdlUsagePointId}, fetching production data...`)
+
+      try {
+        // Invalidate production queries to force refetch
+        queryClient.invalidateQueries({ queryKey: ['production', productionPdlUsagePointId] })
+
+        // Fetch production daily data (3 years)
+        const todayUTC = new Date()
+        const yesterdayUTC = new Date(Date.UTC(
+          todayUTC.getUTCFullYear(),
+          todayUTC.getUTCMonth(),
+          todayUTC.getUTCDate() - 1,
+          0, 0, 0, 0
+        ))
+
+        const threeYearsAgo = new Date(Date.UTC(
+          yesterdayUTC.getUTCFullYear(),
+          yesterdayUTC.getUTCMonth(),
+          yesterdayUTC.getUTCDate() - 1095,
+          0, 0, 0, 0
+        ))
+
+        const startDate3y = threeYearsAgo.getUTCFullYear() + '-' +
+                           String(threeYearsAgo.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                           String(threeYearsAgo.getUTCDate()).padStart(2, '0')
+        const endDate = yesterdayUTC.getUTCFullYear() + '-' +
+                       String(yesterdayUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                       String(yesterdayUTC.getUTCDate()).padStart(2, '0')
+
+        logger.log(`Fetching production daily data: ${startDate3y} → ${endDate}`)
+
+        // Note: We don't await these - they will be fetched and cached in background
+        // The production page will use the cached data when the user navigates to it
+        enedisApi.getProductionDaily(productionPdlUsagePointId, {
+          start: startDate3y,
+          end: endDate,
+          use_cache: true,
+        }).then(dailyData => {
+          if (dailyData?.success) {
+            queryClient.setQueryData(
+              ['production', productionPdlUsagePointId, startDate3y, endDate],
+              dailyData
+            )
+            logger.log('Production daily data cached successfully')
+          }
+        }).catch(err => {
+          logger.log('Error fetching production daily data:', err)
+        })
+
+        // Fetch production detailed data (2 years) via batch endpoint
+        const today = new Date(Date.UTC(
+          todayUTC.getUTCFullYear(),
+          todayUTC.getUTCMonth(),
+          todayUTC.getUTCDate(),
+          0, 0, 0, 0
+        ))
+
+        const twoYearsAgo = new Date(Date.UTC(
+          today.getUTCFullYear() - 2,
+          today.getUTCMonth(),
+          today.getUTCDate(),
+          0, 0, 0, 0
+        ))
+
+        const startDate2y = twoYearsAgo.getUTCFullYear() + '-' +
+                           String(twoYearsAgo.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                           String(twoYearsAgo.getUTCDate()).padStart(2, '0')
+
+        logger.log(`Fetching production detail batch: ${startDate2y} → ${endDate}`)
+
+        enedisApi.getProductionDetailBatch(productionPdlUsagePointId, {
+          start: startDate2y,
+          end: endDate,
+          use_cache: true,
+        }).then(batchData => {
+          if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
+            const readings = (batchData as any).data.meter_reading.interval_reading
+
+            // Group data points by date for caching
+            const dataByDate: Record<string, any[]> = {}
+
+            readings.forEach((point: any) => {
+              let date = point.date.split(' ')[0].split('T')[0]
+
+              // Handle Enedis convention for 00:00 timestamps
+              const time = point.date.split(' ')[1] || point.date.split('T')[1] || '00:00:00'
+              if (time.startsWith('00:00')) {
+                const dateObj = new Date(date + 'T00:00:00Z')
+                dateObj.setUTCDate(dateObj.getUTCDate() - 1)
+                date = dateObj.getUTCFullYear() + '-' +
+                       String(dateObj.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                       String(dateObj.getUTCDate()).padStart(2, '0')
+              }
+
+              if (!dataByDate[date]) {
+                dataByDate[date] = []
+              }
+              dataByDate[date].push(point)
+            })
+
+            // Cache each day separately
+            Object.entries(dataByDate).forEach(([date, points]) => {
+              queryClient.setQueryData(
+                ['productionDetail', productionPdlUsagePointId, date, date],
+                {
+                  success: true,
+                  data: {
+                    meter_reading: {
+                      interval_reading: points
+                    }
+                  }
+                }
+              )
+            })
+
+            const dayCount = Object.keys(dataByDate).length
+            logger.log(`Production detail data cached successfully: ${dayCount} days, ${readings.length} points`)
+
+            // Invalidate the detail query to make it available
+            queryClient.invalidateQueries({ queryKey: ['productionDetail'] })
+          }
+        }).catch(err => {
+          logger.log('Error fetching production detail batch:', err)
+        })
+
+        logger.log('Production data fetch initiated in background')
+      } catch (error: any) {
+        logger.log('Error initiating production data fetch:', error)
+        // Don't show error to user - this is a background operation
+      }
+    }
+  }, [
+    selectedPDL,
+    selectedPDLDetails,
+    allPDLs,
+    setDateRange,
+    setIsChartsExpanded,
+    setIsDetailSectionExpanded,
+    setIsStatsSectionExpanded,
+    setIsPowerSectionExpanded,
+    setHcHpCalculationComplete,
+    setDailyLoadingComplete,
+    setPowerLoadingComplete,
+    setAllLoadingComplete,
+    setIsLoadingDetailed,
+    setLoadingProgress,
+    setHcHpCalculationTrigger,
+    queryClient
+  ])
+
+  const clearCache = useCallback(async () => {
     setIsClearingCache(true)
     try {
       // Clear server-side cache for all consumption data FIRST
@@ -273,7 +445,7 @@ export function useConsumptionFetch({
     } finally {
       setIsClearingCache(false)
     }
-  }
+  }, [setIsClearingCache, queryClient])
 
   return {
     fetchConsumptionData,

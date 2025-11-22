@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { enedisApi } from '@/api/enedis'
 import { adminApi } from '@/api/admin'
@@ -35,11 +36,14 @@ export function useProductionFetch({
 }: UseProductionFetchParams) {
   const queryClient = useQueryClient()
 
-  const fetchProductionData = async () => {
+  const fetchProductionData = useCallback(async () => {
     if (!selectedPDL) {
       toast.error('Veuillez sélectionner un PDL')
       return
     }
+
+    // Invalidate existing queries to force refetch
+    queryClient.invalidateQueries({ queryKey: ['production', selectedPDL] })
 
     // Collapse all sections before fetching new data
     setIsChartsExpanded(false)
@@ -136,11 +140,11 @@ export function useProductionFetch({
           success: batchData?.success,
           hasError: !!batchData?.error,
           errorCode: batchData?.error?.code,
-          dataPoints: batchData?.data?.meter_reading?.interval_reading?.length || 0
+          dataPoints: (batchData as any)?.data?.meter_reading?.interval_reading?.length || 0
         })
 
-        if (batchData?.success && batchData?.data?.meter_reading?.interval_reading) {
-          const readings = batchData.data.meter_reading.interval_reading
+        if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
+          const readings = (batchData as any).data.meter_reading.interval_reading
 
           // Group data points by date for caching
           const dataByDate: Record<string, any[]> = {}
@@ -215,12 +219,24 @@ export function useProductionFetch({
         toast.error(errorMsg)
       } finally {
         setIsLoadingDetailed(false)
-        setLoadingProgress({ current: 0, total: 0, currentRange: '' })
+        // Don't reset loadingProgress here - keep the final state (1/1 for success)
       }
     }
-  }
+  }, [
+    selectedPDL,
+    selectedPDLDetails,
+    setDateRange,
+    setIsChartsExpanded,
+    setIsDetailSectionExpanded,
+    setIsStatsSectionExpanded,
+    setDailyLoadingComplete,
+    setAllLoadingComplete,
+    setIsLoadingDetailed,
+    setLoadingProgress,
+    queryClient
+  ])
 
-  const clearCache = async () => {
+  const clearCache = useCallback(async () => {
     setIsClearingCache(true)
     try {
       // Clear backend production cache (Redis) FIRST
@@ -253,7 +269,7 @@ export function useProductionFetch({
     } finally {
       setIsClearingCache(false)
     }
-  }
+  }, [setIsClearingCache, queryClient])
 
   return {
     fetchProductionData,

@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import toast, { Toaster } from 'react-hot-toast'
 import AdminTabs from './AdminTabs'
 import ApiDocsTabs from './ApiDocsTabs'
+import PageHeader from './PageHeader'
 import { useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/api/admin'
 
@@ -297,7 +298,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Mobile Menu Button */}
       <button
         onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-        className="md:hidden fixed top-4 left-4 z-50 p-2 rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 shadow-lg"
+        className="md:hidden fixed top-[12px] left-4 z-50 p-2 rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 shadow-lg"
         aria-label="Menu"
       >
         {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
@@ -454,6 +455,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Admin/API Docs Tabs - Full Width at the very top */}
         {location.pathname.startsWith('/admin') && <AdminTabs />}
         {location.pathname.startsWith('/api-docs') && <ApiDocsTabs />}
+
+        {/* Page Header - Visible sur toutes les pages avec titre + sélecteur PDL optionnel */}
+        <PageHeader />
 
         {/* Main Content */}
         <main className={`flex-1 bg-gray-50 dark:bg-gray-900 ${location.pathname === '/admin/logs' ? 'overflow-hidden' : 'overflow-y-auto'}`}>

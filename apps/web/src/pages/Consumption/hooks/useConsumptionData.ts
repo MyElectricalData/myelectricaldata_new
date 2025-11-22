@@ -116,6 +116,7 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
     enabled: !!selectedPDL && !!dateRange,
     staleTime: 1000 * 60 * 60, // 1 hour - data is considered fresh
     gcTime: 1000 * 60 * 60 * 24, // 24 hours - keep in cache
+    refetchOnMount: true, // Always refetch on component mount if data is stale
   })
 
   // Fetch max power data with React Query
@@ -210,6 +211,7 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
     enabled: !!selectedPDL && !!dateRange,
     staleTime: 1000 * 60 * 60, // 1 hour
     gcTime: 1000 * 60 * 60 * 24, // 24 hours
+    refetchOnMount: true, // Always refetch on component mount if data is stale
   })
 
   // Fetch detailed consumption data (load curve - 30min intervals)

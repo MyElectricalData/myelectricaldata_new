@@ -5,6 +5,8 @@ import { pdlApi } from '@/api/pdl'
 import { enedisApi } from '@/api/enedis'
 import { adminApi } from '@/api/admin'
 import { useAuth } from '@/hooks/useAuth'
+import { usePdlStore } from '@/stores/pdlStore'
+import { useDataFetchStore } from '@/stores/dataFetchStore'
 import type { PDL } from '@/types/api'
 import toast from 'react-hot-toast'
 import { parseOffpeakHours, isOffpeakTime } from '@/utils/offpeakHours'
@@ -32,8 +34,6 @@ import { useConsumptionFetch } from './hooks/useConsumptionFetch'
 import { useConsumptionCalcs } from './hooks/useConsumptionCalcs'
 
 // Import components
-import { PDLSelector } from './components/PDLSelector'
-import { LoadingProgress } from './components/LoadingProgress'
 import { InfoBlock } from './components/InfoBlock'
 import { ConfirmModal } from './components/ConfirmModal'
 import { YearlyConsumption } from './components/YearlyConsumption'
@@ -50,9 +50,9 @@ export default function Consumption() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const isDemo = useIsDemo()
+  const { selectedPdl: selectedPDL, setSelectedPdl: setSelectedPDL } = usePdlStore()
 
   // States
-  const [selectedPDL, setSelectedPDL] = useState<string>('')
   const [isClearingCache, setIsClearingCache] = useState(false)
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [isChartsExpanded, setIsChartsExpanded] = useState(false)
@@ -208,6 +208,10 @@ export default function Consumption() {
     setHcHpCalculationTrigger,
     setIsClearingCache,
   })
+
+  // NOTE: Fetch function registration is now handled by the unified hook in PageHeader
+  // We don't register fetchConsumptionData here to avoid conflicts and infinite loops
+  // The PageHeader component uses useUnifiedDataFetch which fetches all data types
 
   // Check if ANY consumption data is in cache (to determine if we should auto-load)
   const hasDataInCache = useMemo(() => {
@@ -482,57 +486,22 @@ export default function Consumption() {
     await clearCache()
   }
 
-  // Get consumption response from React Query
-  const consumptionResponse = queryClient.getQueryData(['consumption', selectedPDL, dateRange?.start, dateRange?.end])
-  const maxPowerResponse = queryClient.getQueryData(['maxPower', selectedPDL, dateRange?.start, dateRange?.end])
-
   // For now, return the simplified version with working components
   // The rest of the components will be added incrementally
   return (
     <div className="pt-6 w-full">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-          <TrendingUp className="text-primary-600 dark:text-primary-400" size={32} />
-          Consommation
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Visualisez et analysez votre consommation électrique
-        </p>
-      </div>
-
-      {/* PDL Selector Component with Loading Progress inside */}
-      <PDLSelector
-        pdls={pdls}
-        activePdls={activePdls}
-        selectedPDL={selectedPDL}
-        selectedPDLDetails={selectedPDLDetails}
-        onPDLSelect={setSelectedPDL}
-        onFetchData={fetchConsumptionData}
-        isLoading={isLoading}
-        isLoadingDetailed={isLoadingDetailed}
-        dataLimitWarning={dataLimitWarning}
-      >
-        {/* Loading Progress Component as child */}
-        <LoadingProgress
-          isLoadingDaily={isLoadingDaily}
-          isLoadingDetailed={isLoadingDetailed}
-          dailyLoadingComplete={dailyLoadingComplete}
-          powerLoadingComplete={powerLoadingComplete}
-          loadingProgress={loadingProgress}
-          hcHpCalculationComplete={hcHpCalculationComplete}
-          hcHpCalculationTrigger={hcHpCalculationTrigger}
-          allLoadingComplete={allLoadingComplete}
-          dateRange={dateRange}
-          isLoadingConsumption={isLoadingConsumption}
-          isLoadingPower={isLoadingPower}
-          consumptionResponse={consumptionResponse}
-          maxPowerResponse={maxPowerResponse}
-          hasDataInCache={hasDataInCache}
-        />
-      </PDLSelector>
+      {/* Warning if PDL has limited data */}
+      {dataLimitWarning && (
+        <div className="mb-6 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center gap-2">
+          <span className="text-blue-600 dark:text-blue-400 text-lg flex-shrink-0">ℹ️</span>
+          <p className="text-sm text-blue-800 dark:text-blue-200">
+            {dataLimitWarning}
+          </p>
+        </div>
+      )}
 
       {/* Statistics Section - Collapsible */}
-      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+      <div className="mt-2 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
         <div
           className={`flex items-center justify-between p-6 ${
             allLoadingComplete ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
@@ -768,7 +737,7 @@ export default function Consumption() {
 
 
       {/* Info Block Component */}
-      <InfoBlock dataLimitWarning={dataLimitWarning} />
+      <InfoBlock />
 
       {/* Confirm Modal Component */}
       <ConfirmModal
