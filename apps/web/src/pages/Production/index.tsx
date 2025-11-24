@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
 import { BarChart3 } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/useAuth'
 import { usePdlStore } from '@/stores/pdlStore'
 import { useDataFetchStore } from '@/stores/dataFetchStore'
@@ -20,7 +19,6 @@ import { AnnualProductionCurve } from './components/AnnualProductionCurve'
 import { DetailedProductionCurve } from './components/DetailedProductionCurve'
 
 export default function Production() {
-  const queryClient = useQueryClient()
   const isDemo = useIsDemo()
   const { selectedPdl: selectedPDL, setSelectedPdl: setSelectedPDL } = usePdlStore()
 
@@ -84,20 +82,18 @@ export default function Production() {
     return { start: startDate, end: endDate }
   }, [dateRange])
 
-  // Get selected PDL details
-  const selectedPDLDetails = useMemo(() => {
-    return queryClient.getQueryData<PDL[]>(['pdls'])?.find(p => p.usage_point_id === selectedPDL)
-  }, [selectedPDL, queryClient])
-
   // Use custom hooks
   const {
+    pdls,
     activePdls,
+    selectedPDLDetails,
     productionData,
     detailData,
     isLoading,
     isLoadingProduction,
-    isLoadingDetail
-  } = useProductionData(selectedPDL, dateRange, detailDateRange, selectedPDLDetails)
+    isLoadingDetail,
+    queryClient
+  } = useProductionData(selectedPDL, dateRange, detailDateRange)
 
   const {
     chartData,
@@ -194,38 +190,59 @@ export default function Production() {
     }
   }, [dailyLoadingComplete, isLoadingDetailed])
 
-  // Auto-fetch data on first load only for demo accounts or if cache has data
+  // Auto-load dateRange from cache when page loads (ALWAYS if cache exists)
   useEffect(() => {
+    // Only set dateRange if it's null and we have cache
+    if (!dateRange && selectedPDL && hasDataInCache) {
+      logger.log('[Auto-load] No dateRange set but cache detected - setting dateRange from cache')
+
+      // Calculate date range (same as in fetchProductionData)
+      const todayUTC = new Date()
+      const yesterdayUTC = new Date(Date.UTC(
+        todayUTC.getUTCFullYear(),
+        todayUTC.getUTCMonth(),
+        todayUTC.getUTCDate() - 1,
+        0, 0, 0, 0
+      ))
+      const yesterday = yesterdayUTC
+      const startDate_obj = new Date(Date.UTC(
+        yesterdayUTC.getUTCFullYear(),
+        yesterdayUTC.getUTCMonth(),
+        yesterdayUTC.getUTCDate() - 1094,
+        0, 0, 0, 0
+      ))
+      const startDate = startDate_obj.toISOString().split('T')[0]
+      const endDate = yesterday.toISOString().split('T')[0]
+
+      logger.log('[Auto-load] Setting date range:', startDate, 'to', endDate)
+
+      setDateRange({ start: startDate, end: endDate })
+      setDailyLoadingComplete(true)
+      setAllLoadingComplete(true)
+      setIsChartsExpanded(true)
+      setIsStatsSectionExpanded(true)
+      setIsDetailSectionExpanded(true)
+
+      logger.log('[Auto-load] All states set - graphs should be visible')
+    }
+  }, [selectedPDL, hasDataInCache, dateRange])
+
+  // Auto-fetch data on first load only for demo accounts
+  useEffect(() => {
+    logger.log('[Auto-load] Effect triggered - hasAttemptedAutoLoad:', hasAttemptedAutoLoad, 'selectedPDL:', selectedPDL, 'hasCache:', hasDataInCache, 'isDemo:', isDemo)
+
     if (!hasAttemptedAutoLoad && selectedPDL) {
       setHasAttemptedAutoLoad(true)
+      logger.log('[Auto-load] First load detected')
 
+      // For demo accounts, ALWAYS fetch data to ensure detailed data is loaded
       if (isDemo) {
+        logger.log('[Auto-load] Demo account - fetching data')
         fetchProductionData()
-      } else if (hasDataInCache) {
-        const todayUTC = new Date()
-        const yesterdayUTC = new Date(Date.UTC(
-          todayUTC.getUTCFullYear(),
-          todayUTC.getUTCMonth(),
-          todayUTC.getUTCDate() - 1,
-          0, 0, 0, 0
-        ))
-        const yesterday = yesterdayUTC
-        const startDate_obj = new Date(Date.UTC(
-          yesterdayUTC.getUTCFullYear(),
-          yesterdayUTC.getUTCMonth(),
-          yesterdayUTC.getUTCDate() - 1094,
-          0, 0, 0, 0
-        ))
-        const startDate = startDate_obj.toISOString().split('T')[0]
-        const endDate = yesterday.toISOString().split('T')[0]
-
-        setDateRange({ start: startDate, end: endDate })
-        setDailyLoadingComplete(true)
-        setAllLoadingComplete(true)
-        setIsChartsExpanded(true)
-        setIsStatsSectionExpanded(true)
-        setIsDetailSectionExpanded(true)
+      } else if (!hasDataInCache) {
+        logger.log('[Auto-load] No cache - user must click button manually')
       }
+      // For regular accounts with cache: dateRange is set by the effect above
     }
   }, [selectedPDL, hasDataInCache, hasAttemptedAutoLoad, fetchProductionData, isDemo])
 

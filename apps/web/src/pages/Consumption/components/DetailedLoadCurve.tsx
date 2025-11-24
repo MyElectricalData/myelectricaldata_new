@@ -47,53 +47,25 @@ export function DetailedLoadCurve({
     const hasUserNavigated = detailWeekOffset !== 0 || selectedDetailDay !== 0
     if (!selectedPDL || !detailDateRange || hasAutoSelected || hasUserNavigated) return
 
-    // Calculate yesterday (J-1)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const yesterday = new Date(today)
-    yesterday.setDate(today.getDate() - 1)
-
-    // Search backwards for up to 30 days to find the most recent day with data
-    let foundDate: Date | null = null
-    for (let daysBack = 0; daysBack < 30; daysBack++) {
-      const checkDate = new Date(yesterday)
-      checkDate.setDate(yesterday.getDate() - daysBack)
-
-      // Format date as YYYY-MM-DD
-      const dateStr = checkDate.getFullYear() + '-' +
-                     String(checkDate.getMonth() + 1).padStart(2, '0') + '-' +
-                     String(checkDate.getDate()).padStart(2, '0')
-
-      // Check if this day has data in cache
-      const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPDL, dateStr, dateStr]) as any
-      const hasData = !!cachedData?.data?.meter_reading?.interval_reading &&
-                      cachedData.data.meter_reading.interval_reading.length > 0
-
-      if (hasData) {
-        foundDate = checkDate
-        break
-      }
+    // Use detailByDayData which is already filtered by date range and minimum points
+    // This ensures we select a day that's actually visible in the UI
+    if (detailByDayData.length === 0) {
+      setHasAutoSelected(true)
+      return
     }
 
-    // If we found a date with data, select it
-    if (foundDate) {
-      const daysDiff = Math.floor((yesterday.getTime() - foundDate.getTime()) / (1000 * 60 * 60 * 24))
-      const newWeekOffset = Math.floor(daysDiff / 7)
-      const newDayIndex = daysDiff % 7
+    // detailByDayData is sorted newest first, so index 0 = most recent day with data
+    // Just select index 0 directly since the data is already correctly filtered
+    setSelectedDetailDay(0)
+    setHasAutoSelected(true)
 
-      onWeekOffsetChange(newWeekOffset)
-      setSelectedDetailDay(newDayIndex)
-      setHasAutoSelected(true)
-      logger.info('Auto-selected most recent day with data', {
-        date: foundDate.toISOString().split('T')[0],
-        weekOffset: newWeekOffset,
-        dayIndex: newDayIndex
-      })
-    } else {
-      // No data found, still mark as auto-selected to prevent re-running
-      setHasAutoSelected(true)
-    }
-  }, [selectedPDL, detailDateRange, queryClient, hasAutoSelected])
+    logger.info('Auto-selected most recent day with data', {
+      date: detailByDayData[0].date,
+      totalDays: detailByDayData.length,
+      weekOffset: detailWeekOffset,
+      dayIndex: 0
+    })
+  }, [selectedPDL, detailDateRange, detailByDayData, hasAutoSelected, detailWeekOffset, selectedDetailDay])
 
   // Auto-adjust selected day when data changes
   useEffect(() => {
@@ -115,19 +87,31 @@ export function DetailedLoadCurve({
       return
     }
 
-    // Calculate current date
-    const today = new Date()
-    const yesterday = new Date(today)
-    yesterday.setDate(today.getDate() - 1)
-    const currentDate = new Date(yesterday)
-    currentDate.setDate(yesterday.getDate() - (detailWeekOffset * 7) - selectedDetailDay)
+    // Calculate current date in UTC
+    const todayUTC = new Date()
+    const yesterdayUTC = new Date(Date.UTC(
+      todayUTC.getUTCFullYear(),
+      todayUTC.getUTCMonth(),
+      todayUTC.getUTCDate() - 1,
+      0, 0, 0, 0
+    ))
+    const currentDateUTC = new Date(Date.UTC(
+      yesterdayUTC.getUTCFullYear(),
+      yesterdayUTC.getUTCMonth(),
+      yesterdayUTC.getUTCDate() - (detailWeekOffset * 7) - selectedDetailDay,
+      0, 0, 0, 0
+    ))
 
     // Check week-1 availability
-    const weekAgoDate = new Date(currentDate)
-    weekAgoDate.setDate(currentDate.getDate() - 7)
-    const weekAgoDateStr = weekAgoDate.getUTCFullYear() + '-' +
-                          String(weekAgoDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                          String(weekAgoDate.getUTCDate()).padStart(2, '0')
+    const weekAgoDateUTC = new Date(Date.UTC(
+      currentDateUTC.getUTCFullYear(),
+      currentDateUTC.getUTCMonth(),
+      currentDateUTC.getUTCDate() - 7,
+      0, 0, 0, 0
+    ))
+    const weekAgoDateStr = weekAgoDateUTC.getUTCFullYear() + '-' +
+                          String(weekAgoDateUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                          String(weekAgoDateUTC.getUTCDate()).padStart(2, '0')
 
     const weekAgoData = queryClient.getQueryData(['consumptionDetail', selectedPDL, weekAgoDateStr, weekAgoDateStr]) as any
     const weekAvailable = !!weekAgoData?.data?.meter_reading?.interval_reading
@@ -138,11 +122,15 @@ export function DetailedLoadCurve({
     }
 
     // Check year-1 availability
-    const yearAgoDate = new Date(currentDate)
-    yearAgoDate.setFullYear(yearAgoDate.getFullYear() - 1)
-    const yearAgoDateStr = yearAgoDate.getUTCFullYear() + '-' +
-                          String(yearAgoDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                          String(yearAgoDate.getUTCDate()).padStart(2, '0')
+    const yearAgoDateUTC = new Date(Date.UTC(
+      currentDateUTC.getUTCFullYear() - 1,
+      currentDateUTC.getUTCMonth(),
+      currentDateUTC.getUTCDate(),
+      0, 0, 0, 0
+    ))
+    const yearAgoDateStr = yearAgoDateUTC.getUTCFullYear() + '-' +
+                          String(yearAgoDateUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                          String(yearAgoDateUTC.getUTCDate()).padStart(2, '0')
 
     const yearAgoData = queryClient.getQueryData(['consumptionDetail', selectedPDL, yearAgoDateStr, yearAgoDateStr]) as any
     const yearAvailable = !!yearAgoData?.data?.meter_reading?.interval_reading
@@ -178,25 +166,37 @@ export function DetailedLoadCurve({
 
     let mergedData: MergedDataPoint[] = currentData.map((d: { time: string; power: number; energyKwh: number }) => ({ ...d }))
 
-    // Calculate current date
-    const today = new Date()
-    const yesterday = new Date(today)
-    yesterday.setDate(today.getDate() - 1)
-    const currentDate = new Date(yesterday)
-    currentDate.setDate(yesterday.getDate() - (detailWeekOffset * 7) - selectedDetailDay)
+    // Calculate current date in UTC
+    const todayUTC = new Date()
+    const yesterdayUTC = new Date(Date.UTC(
+      todayUTC.getUTCFullYear(),
+      todayUTC.getUTCMonth(),
+      todayUTC.getUTCDate() - 1,
+      0, 0, 0, 0
+    ))
+    const currentDateUTC = new Date(Date.UTC(
+      yesterdayUTC.getUTCFullYear(),
+      yesterdayUTC.getUTCMonth(),
+      yesterdayUTC.getUTCDate() - (detailWeekOffset * 7) - selectedDetailDay,
+      0, 0, 0, 0
+    ))
 
     // Add week -1 comparison
     if (showDetailWeekComparison && selectedPDL) {
-      const weekAgoDate = new Date(currentDate)
-      weekAgoDate.setDate(currentDate.getDate() - 7)
+      const weekAgoDateUTC = new Date(Date.UTC(
+        currentDateUTC.getUTCFullYear(),
+        currentDateUTC.getUTCMonth(),
+        currentDateUTC.getUTCDate() - 7,
+        0, 0, 0, 0
+      ))
 
       // Format date for cache key
-      const weekAgoDateStr = weekAgoDate.getUTCFullYear() + '-' +
-                            String(weekAgoDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                            String(weekAgoDate.getUTCDate()).padStart(2, '0')
+      const weekAgoDateStr = weekAgoDateUTC.getUTCFullYear() + '-' +
+                            String(weekAgoDateUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                            String(weekAgoDateUTC.getUTCDate()).padStart(2, '0')
 
       logger.log('🔍 Looking for week-1 data:', {
-        currentDate: currentDate.toISOString().split('T')[0],
+        currentDate: currentDateUTC.toISOString().split('T')[0],
         weekAgoDate: weekAgoDateStr,
         selectedPDL
       })
@@ -238,16 +238,20 @@ export function DetailedLoadCurve({
 
     // Add year -1 comparison
     if (showDetailYearComparison && selectedPDL) {
-      const yearAgoDate = new Date(currentDate)
-      yearAgoDate.setFullYear(yearAgoDate.getFullYear() - 1)
+      const yearAgoDateUTC = new Date(Date.UTC(
+        currentDateUTC.getUTCFullYear() - 1,
+        currentDateUTC.getUTCMonth(),
+        currentDateUTC.getUTCDate(),
+        0, 0, 0, 0
+      ))
 
       // Format date for cache key
-      const yearAgoDateStr = yearAgoDate.getUTCFullYear() + '-' +
-                            String(yearAgoDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                            String(yearAgoDate.getUTCDate()).padStart(2, '0')
+      const yearAgoDateStr = yearAgoDateUTC.getUTCFullYear() + '-' +
+                            String(yearAgoDateUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                            String(yearAgoDateUTC.getUTCDate()).padStart(2, '0')
 
       logger.log('🔍 Looking for year-1 data:', {
-        currentDate: currentDate.toISOString().split('T')[0],
+        currentDate: currentDateUTC.toISOString().split('T')[0],
         yearAgoDate: yearAgoDateStr,
         selectedPDL
       })
@@ -291,9 +295,14 @@ export function DetailedLoadCurve({
   }
 
   const renderCalendar = () => {
-    const today = new Date()
-    const yesterday = new Date(today)
-    yesterday.setDate(today.getDate() - 1)
+    // Use UTC for all calendar calculations
+    const todayUTC = new Date()
+    const yesterdayUTC = new Date(Date.UTC(
+      todayUTC.getUTCFullYear(),
+      todayUTC.getUTCMonth(),
+      todayUTC.getUTCDate() - 1,
+      0, 0, 0, 0
+    ))
 
     const currentMonth = viewMonth.getMonth()
     const currentYear = viewMonth.getFullYear()
@@ -308,11 +317,15 @@ export function DetailedLoadCurve({
     for (let i = 0; i < totalCells; i++) {
       const dayNumber = i - startingDayOfWeek + 1
       const isValidDay = dayNumber > 0 && dayNumber <= daysInMonth
-      const dayDate = isValidDay ? new Date(currentYear, currentMonth, dayNumber) : null
+      const dayDate = isValidDay ? new Date(Date.UTC(currentYear, currentMonth, dayNumber, 0, 0, 0, 0)) : null
 
-      const twoYearsAgo = new Date(yesterday)
-      twoYearsAgo.setFullYear(yesterday.getFullYear() - 2)
-      const isInRange = dayDate && dayDate <= yesterday && dayDate >= twoYearsAgo
+      const twoYearsAgoUTC = new Date(Date.UTC(
+        yesterdayUTC.getUTCFullYear() - 2,
+        yesterdayUTC.getUTCMonth(),
+        yesterdayUTC.getUTCDate(),
+        0, 0, 0, 0
+      ))
+      const isInRange = dayDate && dayDate <= yesterdayUTC && dayDate >= twoYearsAgoUTC
 
       // Check if data exists for this day
       let hasData = false
@@ -320,16 +333,32 @@ export function DetailedLoadCurve({
         const dateStr = dayDate.getFullYear() + '-' +
                        String(dayDate.getMonth() + 1).padStart(2, '0') + '-' +
                        String(dayDate.getDate()).padStart(2, '0')
-        const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPDL, dateStr, dateStr]) as any
-        hasData = !!cachedData?.data?.meter_reading?.interval_reading && cachedData.data.meter_reading.interval_reading.length > 0
+
+        // Get all detail data from unified cache key
+        const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPDL]) as any
+
+        if (cachedData?.data?.meter_reading?.interval_reading) {
+          // Check if any readings exist for this specific date
+          const readings = cachedData.data.meter_reading.interval_reading
+          hasData = readings.some((reading: any) => {
+            if (!reading.date) return false
+            const readingDate = reading.date.split(' ')[0].split('T')[0]
+            return readingDate === dateStr
+          })
+        }
       }
 
-      const currentSelectedDate = new Date(yesterday)
-      currentSelectedDate.setDate(yesterday.getDate() - (detailWeekOffset * 7) - selectedDetailDay)
+      // Calculate currently selected date in UTC
+      const currentSelectedDateUTC = new Date(Date.UTC(
+        yesterdayUTC.getUTCFullYear(),
+        yesterdayUTC.getUTCMonth(),
+        yesterdayUTC.getUTCDate() - (detailWeekOffset * 7) - selectedDetailDay,
+        0, 0, 0, 0
+      ))
       const isSelected = dayDate &&
-        dayDate.getDate() === currentSelectedDate.getDate() &&
-        dayDate.getMonth() === currentSelectedDate.getMonth() &&
-        dayDate.getFullYear() === currentSelectedDate.getFullYear()
+        dayDate.getUTCDate() === currentSelectedDateUTC.getUTCDate() &&
+        dayDate.getUTCMonth() === currentSelectedDateUTC.getUTCMonth() &&
+        dayDate.getUTCFullYear() === currentSelectedDateUTC.getUTCFullYear()
 
       calendarDays.push({
         dayNumber,
@@ -389,13 +418,32 @@ export function DetailedLoadCurve({
               disabled={!day.isValidDay || !day.hasData}
               onClick={() => {
                 if (day.date && day.hasData) {
-                  const daysDiff = Math.floor((yesterday.getTime() - day.date.getTime()) / (1000 * 60 * 60 * 24))
+                  // Format clicked date as YYYY-MM-DD for matching
+                  const clickedDateStr = day.date.getUTCFullYear() + '-' +
+                                        String(day.date.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                                        String(day.date.getUTCDate()).padStart(2, '0')
+
+                  // Calculate which week this date belongs to (for loading correct week's data)
+                  const daysDiff = Math.floor((yesterdayUTC.getTime() - day.date.getTime()) / (1000 * 60 * 60 * 24))
                   const newWeekOffset = Math.floor(daysDiff / 7)
-                  const newDayIndex = daysDiff % 7
-                  onWeekOffsetChange(newWeekOffset)
-                  setSelectedDetailDay(newDayIndex)
-                  setShowDatePicker(false)
-                  toast.success(`Date sélectionnée : ${day.date.toLocaleDateString('fr-FR')}`)
+
+                  // Find the exact index of this date in the current detailByDayData
+                  // detailByDayData is filtered by detailDateRange and sorted newest first
+                  const currentDataIndex = detailByDayData.findIndex(d => d.date === clickedDateStr)
+
+                  if (currentDataIndex !== -1) {
+                    // Date is already in current week's data, just select it
+                    setSelectedDetailDay(currentDataIndex)
+                    setShowDatePicker(false)
+                    toast.success(`Date sélectionnée : ${day.date.toLocaleDateString('fr-FR')}`)
+                  } else {
+                    // Date is in a different week, load that week
+                    onWeekOffsetChange(newWeekOffset)
+                    // Reset to first day of the new week (index 0 = most recent in range)
+                    setSelectedDetailDay(0)
+                    setShowDatePicker(false)
+                    toast.success(`Chargement des données...`)
+                  }
                 }
               }}
               title={day.isValidDay && day.isInRange && !day.hasData ? 'Aucune donnée disponible pour ce jour' : ''}
@@ -434,12 +482,9 @@ export function DetailedLoadCurve({
               className="w-full px-4 py-3 rounded-xl border-2 border-primary-300 dark:border-primary-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 cursor-pointer hover:border-primary-400 dark:hover:border-primary-600 text-center"
             >
               {(() => {
-                if (!detailDateRange) return 'Sélectionner...'
-                const today = new Date()
-                const yesterday = new Date(today)
-                yesterday.setDate(today.getDate() - 1)
-                const selectedDate = new Date(yesterday)
-                selectedDate.setDate(yesterday.getDate() - (detailWeekOffset * 7) - selectedDetailDay)
+                if (!detailDateRange || !detailByDayData[selectedDetailDay]) return 'Sélectionner...'
+                // Use the actual date from the selected day data
+                const selectedDate = new Date(detailByDayData[selectedDetailDay].date + 'T00:00:00')
                 return selectedDate.toLocaleDateString('fr-FR', {
                   weekday: 'long',
                   day: 'numeric',
@@ -699,17 +744,22 @@ export function DetailedLoadCurve({
               </div>
               {/* Warning message if viewing yesterday (J-1) and no data yet */}
               {(() => {
-                const today = new Date()
-                today.setHours(0, 0, 0, 0)
-                const yesterday = new Date(today)
-                yesterday.setDate(today.getDate() - 1)
+                // Calculate yesterday in UTC
+                const todayUTC = new Date()
+                const yesterdayUTC = new Date(Date.UTC(
+                  todayUTC.getUTCFullYear(),
+                  todayUTC.getUTCMonth(),
+                  todayUTC.getUTCDate() - 1,
+                  0, 0, 0, 0
+                ))
 
-                // Get the actual date from the data
-                const selectedDataDate = new Date(detailByDayData[selectedDetailDay].date)
-                selectedDataDate.setHours(0, 0, 0, 0)
+                // Get the actual date from the data (parse as UTC)
+                const dateStr = detailByDayData[selectedDetailDay].date
+                const [year, month, day] = dateStr.split('-').map(Number)
+                const selectedDataDateUTC = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0))
 
                 // Check if selected date is J-1 (yesterday)
-                const isYesterday = selectedDataDate.getTime() === yesterday.getTime()
+                const isYesterday = selectedDataDateUTC.getTime() === yesterdayUTC.getTime()
 
                 // Check if we have data (less than expected 48 points for a full day)
                 const hasIncompleteData = detailByDayData[selectedDetailDay].data.length < 40
@@ -815,19 +865,24 @@ export function DetailedLoadCurve({
                     {(() => {
                       if (!detailDateRange) return null
 
-                      const today = new Date()
-                      today.setHours(0, 0, 0, 0)
-                      const yesterday = new Date(today)
-                      yesterday.setDate(today.getDate() - 1)
+                      // Calculate yesterday in UTC
+                      const todayUTC = new Date()
+                      const yesterdayUTC = new Date(Date.UTC(
+                        todayUTC.getUTCFullYear(),
+                        todayUTC.getUTCMonth(),
+                        todayUTC.getUTCDate() - 1,
+                        0, 0, 0, 0
+                      ))
 
-                      // Parse the date range to check if we're viewing yesterday
-                      const startDate = new Date(detailDateRange.start)
-                      startDate.setHours(0, 0, 0, 0)
-                      const endDate = new Date(detailDateRange.end)
-                      endDate.setHours(0, 0, 0, 0)
+                      // Parse the date range to check if we're viewing yesterday (parse as UTC)
+                      const startParts = detailDateRange.start.split('-').map(Number)
+                      const startDateUTC = new Date(Date.UTC(startParts[0], startParts[1] - 1, startParts[2], 0, 0, 0, 0))
+
+                      const endParts = detailDateRange.end.split('-').map(Number)
+                      const endDateUTC = new Date(Date.UTC(endParts[0], endParts[1] - 1, endParts[2], 0, 0, 0, 0))
 
                       // Check if the range includes yesterday
-                      const isYesterday = (startDate.getTime() <= yesterday.getTime()) && (yesterday.getTime() <= endDate.getTime())
+                      const isYesterday = (startDateUTC.getTime() <= yesterdayUTC.getTime()) && (yesterdayUTC.getTime() <= endDateUTC.getTime())
 
                       if (isYesterday) {
                         return (

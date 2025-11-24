@@ -409,19 +409,34 @@ export default function Simulator() {
     const uniqueDates = new Set(allConsumption.map(item => item.date))
     const hasDuplicates = uniqueDates.size !== allConsumption.length
 
-    logger.log('Total consumption points:', allConsumption.length)
+    logger.log('Total consumption points (before deduplication):', allConsumption.length)
     logger.log('Unique dates:', uniqueDates.size)
     logger.log('Has duplicates?', hasDuplicates)
 
     if (hasDuplicates) {
-      logger.warn(`⚠️ DUPLICATE DETECTED: ${allConsumption.length - uniqueDates.size} duplicate points found!`)
+      logger.warn(`⚠️ DUPLICATE DETECTED: ${allConsumption.length - uniqueDates.size} duplicate points found! Filtering duplicates...`)
     }
 
+    // Filter duplicates: keep only first occurrence of each date
+    const seenDates = new Set<string>()
+    const dedupedConsumption = allConsumption.filter(item => {
+      if (seenDates.has(item.date)) {
+        return false // Skip duplicate
+      }
+      seenDates.add(item.date)
+      return true // Keep first occurrence
+    })
+
+    logger.log('Total consumption points (after deduplication):', dedupedConsumption.length)
+
+    // Use deduplicated data for calculations
+    const allConsumptionFinal = dedupedConsumption
+
     // Calculate total kWh
-    const totalKwh = allConsumption.reduce((sum, item) => sum + (item.value / 1000), 0) // Convert Wh to kWh
+    const totalKwh = allConsumptionFinal.reduce((sum, item) => sum + (item.value / 1000), 0) // Convert Wh to kWh
 
     logger.log('Total kWh for year:', totalKwh)
-    logger.log('First 3 consumption samples:', JSON.stringify(allConsumption.slice(0, 3), null, 2))
+    logger.log('First 3 consumption samples:', JSON.stringify(allConsumptionFinal.slice(0, 3), null, 2))
 
     // Simulate each offer
     const results = offers.map((offer) => {
@@ -443,7 +458,7 @@ export default function Simulator() {
         // BASE calculation with weekend pricing support
         if (offer.base_price_weekend) {
           // Separate weekday and weekend consumption
-          allConsumption.forEach((item) => {
+          allConsumptionFinal.forEach((item) => {
             const kwh = item.value / 1000
             if (isWeekend(item.date)) {
               baseWeekendKwh += kwh
@@ -488,7 +503,7 @@ export default function Simulator() {
         const isEnerocoopSpecialOffer = offer.name.includes('Flexi WATT') &&
           (offer.name.includes('nuit & weekend') || offer.name.includes('2 saisons') || offer.name.includes('Pointe'))
 
-        allConsumption.forEach((item) => {
+        allConsumptionFinal.forEach((item) => {
           const hour = item.hour || 0
           const kwh = item.value / 1000
           const itemIsWinter = isWinterSeason(item.date)
@@ -554,7 +569,7 @@ export default function Simulator() {
         const isHcNuitWeekend = offer.offer_type === 'HC_NUIT_WEEKEND'
         const isHcWeekend = offer.offer_type === 'HC_WEEKEND'
 
-        allConsumption.forEach((item, index) => {
+        allConsumptionFinal.forEach((item, index) => {
           const hour = item.hour || 0
           const kwh = item.value / 1000
           const itemIsWeekend = isWeekend(item.date)
@@ -647,7 +662,7 @@ export default function Simulator() {
         // TEMPO calculation with real colors from RTE
         let colorStats = { BLUE: 0, WHITE: 0, RED: 0, UNKNOWN: 0 }
 
-        allConsumption.forEach((item, index) => {
+        allConsumptionFinal.forEach((item, index) => {
           const hour = item.hour || 0
           const kwh = item.value / 1000
           const color = tempoColorMap.get(item.dateOnly)

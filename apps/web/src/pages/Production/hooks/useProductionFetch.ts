@@ -147,7 +147,7 @@ export function useProductionFetch({
           const readings = (batchData as any).data.meter_reading.interval_reading
 
           // Group data points by date for caching
-          const dataByDate: Record<string, any[]> = {}
+          const dataByDate: Record<string, Map<string, any>> = {}
 
           readings.forEach((point: any) => {
             // Extract YYYY-MM-DD from date
@@ -164,20 +164,24 @@ export function useProductionFetch({
             }
 
             if (!dataByDate[date]) {
-              dataByDate[date] = []
+              dataByDate[date] = new Map()
             }
-            dataByDate[date].push(point)
+            // Use full timestamp as key to automatically deduplicate
+            dataByDate[date].set(point.date, point)
           })
 
-          // Cache each day separately
-          Object.entries(dataByDate).forEach(([date, points]) => {
+          // Cache each day separately with deduplicated points
+          Object.entries(dataByDate).forEach(([date, pointsMap]) => {
+            // Convert Map values to array (automatically deduplicated)
+            const uniquePoints = Array.from(pointsMap.values())
+
             queryClient.setQueryData(
               ['productionDetail', selectedPDL, date, date],
               {
                 success: true,
                 data: {
                   meter_reading: {
-                    interval_reading: points
+                    interval_reading: uniquePoints
                   }
                 }
               }
@@ -195,7 +199,19 @@ export function useProductionFetch({
             duration: 4000,
           })
 
-          setLoadingProgress({ current: 1, total: 1, currentRange: 'Terminé !' })
+          // Show cache persistence indicator
+          const persistToast = toast.loading('💾 Mise en cache des données...', { duration: 2000 })
+          setTimeout(() => {
+            toast.dismiss(persistToast)
+            setLoadingProgress({ current: 1, total: 1, currentRange: 'Terminé !' })
+
+            // Expand all sections to show the data
+            setIsChartsExpanded(true)
+            setIsDetailSectionExpanded(true)
+            setIsStatsSectionExpanded(true)
+            setDailyLoadingComplete(true)
+            setAllLoadingComplete(true)
+          }, 1500)
         } else if (batchData?.error) {
           // Handle partial data or errors
           const errorMsg = batchData.error.message || 'Erreur lors du chargement des données de production'

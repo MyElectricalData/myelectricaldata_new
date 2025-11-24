@@ -5,6 +5,7 @@ import { logger } from '@/utils/logger'
 import toast from 'react-hot-toast'
 import type { PDL } from '@/types/api'
 import { useDataFetchStore } from '@/stores/dataFetchStore'
+import { useCacheBroadcast } from './useCacheBroadcast'
 
 interface UseUnifiedDataFetchParams {
   selectedPDL: string
@@ -19,6 +20,7 @@ export function useUnifiedDataFetch({
 }: UseUnifiedDataFetchParams) {
   const queryClient = useQueryClient()
   const { updateConsumptionStatus, updateProductionStatus, resetLoadingStatus } = useDataFetchStore()
+  const { broadcast } = useCacheBroadcast()
 
   const fetchAllData = useCallback(async () => {
     if (!selectedPDL || !selectedPDLDetails) {
@@ -82,7 +84,7 @@ export function useUnifiedDataFetch({
     // === CONSUMPTION DATA ===
     if (selectedPDLDetails.has_consumption) {
       // Invalidate existing consumption queries
-      queryClient.invalidateQueries({ queryKey: ['consumption', selectedPDL] })
+      queryClient.invalidateQueries({ queryKey: ['consumptionDaily', selectedPDL] })
       queryClient.invalidateQueries({ queryKey: ['maxPower', selectedPDL] })
 
       // Fetch consumption daily data (3 years)
@@ -98,7 +100,7 @@ export function useUnifiedDataFetch({
             })
 
             if (dailyData?.success) {
-              queryClient.setQueryData(['consumption', selectedPDL, startDate3y, endDate], dailyData)
+              queryClient.setQueryData(['consumptionDaily', selectedPDL], dailyData)
               updateConsumptionStatus({ daily: 'success' })
               logger.log('Consumption daily data fetched successfully')
             } else {
@@ -125,7 +127,7 @@ export function useUnifiedDataFetch({
             })
 
             if (powerData?.success) {
-              queryClient.setQueryData(['maxPower', selectedPDL, startDate3y, endDate], powerData)
+              queryClient.setQueryData(['maxPower', selectedPDL], powerData)
               updateConsumptionStatus({ powerMax: 'success' })
               logger.log('Max power data fetched successfully')
             } else {
@@ -153,41 +155,39 @@ export function useUnifiedDataFetch({
 
             if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
               const readings = (batchData as any).data.meter_reading.interval_reading
-              const dataByDate: Record<string, any[]> = {}
 
+              // Deduplicate readings using a Map with timestamp as key
+              const uniqueReadingsMap = new Map()
               readings.forEach((point: any) => {
-                let date = point.date.split(' ')[0].split('T')[0]
-                const time = point.date.split(' ')[1] || point.date.split('T')[1] || '00:00:00'
-                if (time.startsWith('00:00')) {
-                  const dateObj = new Date(date + 'T00:00:00Z')
-                  dateObj.setUTCDate(dateObj.getUTCDate() - 1)
-                  date = formatDate(dateObj)
+                uniqueReadingsMap.set(point.date, point)
+              })
+              const uniqueReadings = Array.from(uniqueReadingsMap.values())
+
+              // Store all detail data in a single cache key
+              queryClient.setQueryData(['consumptionDetail', selectedPDL], {
+                success: true,
+                data: {
+                  meter_reading: {
+                    interval_reading: uniqueReadings
+                  }
                 }
-                if (!dataByDate[date]) dataByDate[date] = []
-                dataByDate[date].push(point)
               })
 
-              Object.entries(dataByDate).forEach(([date, points]) => {
-                queryClient.setQueryData(['consumptionDetail', selectedPDL, date, date], {
-                  success: true,
-                  data: { meter_reading: { interval_reading: points } }
-                })
-              })
-
-              const dayCount = Object.keys(dataByDate).length
-              updateConsumptionStatus({
-                detail: 'success',
-                detailProgress: { current: 1, total: 1 }
-              })
-
+              // Calculate period statistics for toast
+              const dates = new Set(uniqueReadings.map((p: any) => p.date.split(' ')[0].split('T')[0]))
+              const dayCount = dates.size
               const years = Math.floor(dayCount / 365)
               const remainingDays = dayCount % 365
               const yearsText = years > 0 ? `${years} an${years > 1 ? 's' : ''}` : ''
               const daysText = remainingDays > 0 ? `${remainingDays} jour${remainingDays > 1 ? 's' : ''}` : ''
               const periodText = [yearsText, daysText].filter(Boolean).join(' et ')
 
-              toast.success(`Consommation détaillée: ${periodText}, ${readings.length} points`, { duration: 4000 })
-              queryClient.invalidateQueries({ queryKey: ['consumptionDetail'] })
+              updateConsumptionStatus({
+                detail: 'success',
+                detailProgress: { current: 1, total: 1 }
+              })
+
+              toast.success(`Consommation détaillée: ${periodText}, ${uniqueReadings.length} points`, { duration: 4000 })
             } else if (batchData?.error) {
               updateConsumptionStatus({ detail: 'error' })
               if (batchData.error.code === 'PARTIAL_DATA') {
@@ -223,7 +223,7 @@ export function useUnifiedDataFetch({
       logger.log(`Fetching production data for PDL: ${productionPdlUsagePointId}`)
 
       // Invalidate existing production queries
-      queryClient.invalidateQueries({ queryKey: ['production', productionPdlUsagePointId] })
+      queryClient.invalidateQueries({ queryKey: ['productionDaily', productionPdlUsagePointId] })
 
       // Fetch production daily data (3 years)
       updateProductionStatus({ daily: 'loading' })
@@ -238,7 +238,7 @@ export function useUnifiedDataFetch({
             })
 
             if (dailyData?.success) {
-              queryClient.setQueryData(['production', productionPdlUsagePointId, startDate3y, endDate], dailyData)
+              queryClient.setQueryData(['productionDaily', productionPdlUsagePointId], dailyData)
               updateProductionStatus({ daily: 'success' })
               logger.log('Production daily data fetched successfully')
             } else {
@@ -266,41 +266,39 @@ export function useUnifiedDataFetch({
 
             if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
               const readings = (batchData as any).data.meter_reading.interval_reading
-              const dataByDate: Record<string, any[]> = {}
 
+              // Deduplicate readings using a Map with timestamp as key
+              const uniqueReadingsMap = new Map()
               readings.forEach((point: any) => {
-                let date = point.date.split(' ')[0].split('T')[0]
-                const time = point.date.split(' ')[1] || point.date.split('T')[1] || '00:00:00'
-                if (time.startsWith('00:00')) {
-                  const dateObj = new Date(date + 'T00:00:00Z')
-                  dateObj.setUTCDate(dateObj.getUTCDate() - 1)
-                  date = formatDate(dateObj)
+                uniqueReadingsMap.set(point.date, point)
+              })
+              const uniqueReadings = Array.from(uniqueReadingsMap.values())
+
+              // Store all detail data in a single cache key
+              queryClient.setQueryData(['productionDetail', productionPdlUsagePointId], {
+                success: true,
+                data: {
+                  meter_reading: {
+                    interval_reading: uniqueReadings
+                  }
                 }
-                if (!dataByDate[date]) dataByDate[date] = []
-                dataByDate[date].push(point)
               })
 
-              Object.entries(dataByDate).forEach(([date, points]) => {
-                queryClient.setQueryData(['productionDetail', productionPdlUsagePointId, date, date], {
-                  success: true,
-                  data: { meter_reading: { interval_reading: points } }
-                })
-              })
-
-              const dayCount = Object.keys(dataByDate).length
-              updateProductionStatus({
-                detail: 'success',
-                detailProgress: { current: 1, total: 1 }
-              })
-
+              // Calculate period statistics for toast
+              const dates = new Set(uniqueReadings.map((p: any) => p.date.split(' ')[0].split('T')[0]))
+              const dayCount = dates.size
               const years = Math.floor(dayCount / 365)
               const remainingDays = dayCount % 365
               const yearsText = years > 0 ? `${years} an${years > 1 ? 's' : ''}` : ''
               const daysText = remainingDays > 0 ? `${remainingDays} jour${remainingDays > 1 ? 's' : ''}` : ''
               const periodText = [yearsText, daysText].filter(Boolean).join(' et ')
 
-              toast.success(`Production détaillée: ${periodText}, ${readings.length} points`, { duration: 4000 })
-              queryClient.invalidateQueries({ queryKey: ['productionDetail'] })
+              updateProductionStatus({
+                detail: 'success',
+                detailProgress: { current: 1, total: 1 }
+              })
+
+              toast.success(`Production détaillée: ${periodText}, ${uniqueReadings.length} points`, { duration: 4000 })
             } else if (batchData?.error) {
               updateProductionStatus({ detail: 'error' })
               if (batchData.error.code === 'PARTIAL_DATA') {
@@ -322,7 +320,26 @@ export function useUnifiedDataFetch({
     await Promise.all(fetchPromises)
 
     logger.log('Unified data fetch completed')
-  }, [selectedPDL, selectedPDLDetails, allPDLs, queryClient, updateConsumptionStatus, updateProductionStatus, resetLoadingStatus])
+
+    // Show a toast to indicate cache persistence is happening
+    const persistToast = toast.loading('💾 Mise en cache des données...', { duration: 3000 })
+
+    // Wait a bit for React Query Persist to save to localStorage
+    // This gives time for the persistence mechanism to complete
+    setTimeout(() => {
+      toast.dismiss(persistToast)
+      toast.success('✅ Données mises en cache avec succès !', { duration: 3000 })
+
+      // Broadcast cache update to other tabs
+      logger.log('[UnifiedFetch] Broadcasting CACHE_UPDATED to other tabs')
+      broadcast({
+        type: 'CACHE_UPDATED',
+        timestamp: Date.now(),
+        source: 'unified-fetch'
+      })
+      logger.log('[UnifiedFetch] Broadcast sent')
+    }, 1500)
+  }, [selectedPDL, selectedPDLDetails, allPDLs, queryClient, updateConsumptionStatus, updateProductionStatus, resetLoadingStatus, broadcast])
 
   return {
     fetchAllData,

@@ -157,10 +157,10 @@ User → Frontend (React) → Backend (FastAPI) → Adapter → Enedis API
 ### Backend Structure (`apps/api/src/`)
 
 - **`adapters/`**: Enedis API wrapper with rate limiting (5 req/sec)
-- **`routers/`**: FastAPI endpoints (accounts, pdl, enedis, admin)
-- **`models/`**: SQLAlchemy models (User, PDL, Token, Role)
+- **`routers/`**: FastAPI endpoints (accounts, pdl, enedis, admin, energy_offers)
+- **`models/`**: SQLAlchemy models (User, PDL, Token, Role, EnergyProvider, EnergyOffer)
 - **`middleware/`**: Auth verification, admin checks
-- **`services/`**: Cache (Redis with Fernet encryption), email, rate limiter
+- **`services/`**: Cache (Redis with Fernet encryption), email, rate limiter, **price scrapers**
 - **`schemas/`**: Pydantic request/response validation
 - **`config/`**: Settings with auto-detection of database type
 
@@ -190,6 +190,26 @@ Key relationships:
 - **User** → has many Tokens (cascade delete)
 - **PDL** → has `usage_point_id` (14-digit Enedis identifier)
 - **Token** → stores Enedis OAuth tokens (per PDL or global)
+- **EnergyProvider** → has many EnergyOffers (with `scraper_urls` JSON field)
+- **EnergyOffer** → belongs to EnergyProvider (with `is_active` flag)
+
+### Energy Provider Scrapers
+
+**Automatic price scraping system** for energy providers:
+
+- **4 providers supported**: EDF, Enercoop, TotalEnergies, Priméo Énergie
+- **Dynamic URLs**: Scraper URLs stored in database (`scraper_urls` JSON field), editable via admin interface
+- **Provider logos**: Via Clearbit Logo API (`https://logo.clearbit.com/{domain}`)
+- **Fallback mechanism**: Manual pricing data if scraping fails
+- **Preview mode**: DRY RUN to compare current vs new offers before applying
+- **Admin interface**: `/admin/offers` with logo display, URL management, preview/refresh actions
+
+**Scraper types**:
+- PDF parsing (EDF, Enercoop, TotalEnergies, Priméo)
+- Fallback data for all providers
+- ~133 total offers across 4 providers
+
+See `docs/features-spec/energy-providers-scrapers.md` for detailed documentation.
 
 ## Design System
 

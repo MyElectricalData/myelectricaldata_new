@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
 import { BrowserRouter } from 'react-router-dom'
@@ -31,11 +32,25 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       client={queryClient}
       persistOptions={{
         persister,
+        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days - keep persisted data for one week
         dehydrateOptions: {
           shouldDehydrateQuery: (query) => {
-            // Don't persist auth-related queries to avoid session issues
             const queryKey = query.queryKey[0] as string
-            return queryKey !== 'user' && queryKey !== 'admin-users'
+
+            // Don't persist auth-related queries to avoid session issues
+            if (queryKey === 'user' || queryKey === 'admin-users') {
+              return false
+            }
+
+            // Always persist detail queries if they have data
+            // (data is populated via setQueryData by useUnifiedDataFetch)
+            // Check if query has data regardless of status (queryFn returns null, data comes from setQueryData)
+            if (queryKey === 'consumptionDetail' || queryKey === 'productionDetail') {
+              return query.state.data != null
+            }
+
+            // Persist other queries only if they have data
+            return query.state.status === 'success'
           }
         }
       }}
@@ -48,6 +63,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       >
         <App />
       </BrowserRouter>
+      <ReactQueryDevtools initialIsOpen={false} />
     </PersistQueryClientProvider>
   </React.StrictMode>
 )

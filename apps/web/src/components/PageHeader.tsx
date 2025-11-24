@@ -30,7 +30,13 @@ export default function PageHeader() {
   // Récupérer la liste des PDLs
   const { data: pdlsResponse } = useQuery({
     queryKey: ['pdls'],
-    queryFn: pdlApi.list,
+    queryFn: async () => {
+      const response = await pdlApi.list()
+      if (response.success && Array.isArray(response.data)) {
+        return response.data as PDL[]
+      }
+      return []
+    },
   })
 
   const pdls: PDL[] = Array.isArray(pdlsResponse) ? pdlsResponse : []
@@ -96,7 +102,12 @@ export default function PageHeader() {
           </div>
 
           {/* Sélecteur de PDL et bouton de récupération (uniquement sur certaines pages) */}
-          {showPdlSelector && activePdls.length > 0 && (
+          {showPdlSelector && (
+            activePdls.length === 0 ? (
+              <div className="text-sm text-gray-600 dark:text-gray-400 italic">
+                Aucun point de livraison actif trouvé
+              </div>
+            ) : (
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full lg:w-auto">
               {/* Sélecteur de PDL OU statut de chargement */}
               {isLoading ? (
@@ -151,6 +162,7 @@ export default function PageHeader() {
                 </>
               )}
             </div>
+            )
           )}
         </div>
       </div>

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
 import httpx
@@ -48,6 +48,100 @@ class EnedisAdapter:
         self.client_secret = settings.ENEDIS_CLIENT_SECRET
         self.rate_limiter = RateLimiter(max_calls=settings.ENEDIS_RATE_LIMIT)
         self._client: Optional[httpx.AsyncClient] = None
+
+    def _parse_iso8601_duration_to_minutes(self, duration: str) -> int:
+        """
+        Parse ISO 8601 duration format to minutes.
+
+        Examples:
+            PT5M -> 5
+            PT10M -> 10
+            PT15M -> 15
+            PT30M -> 30
+            PT60M -> 60
+            PT1H -> 60
+        """
+        import re
+
+        # Match PTxxM or PTxxH format
+        match = re.match(r'PT(\d+)([HM])', duration)
+        if not match:
+            logger.warning(f"[ENEDIS] Could not parse duration '{duration}', defaulting to 30 minutes")
+            return 30
+
+        value = int(match.group(1))
+        unit = match.group(2)
+
+        if unit == 'H':
+            return value * 60
+        else:  # unit == 'M'
+            return value
+
+    def _shift_timestamps_to_interval_start(self, response: dict[str, Any]) -> dict[str, Any]:
+        """
+        Shift timestamps from interval END to interval START.
+
+        Enedis API returns timestamps representing the END of each measurement interval.
+        For better UX and to avoid confusion with midnight timestamps, we shift all timestamps
+        backwards by the interval_length to represent the START of each interval.
+
+        Example with 30min intervals:
+            API returns:  2025-11-22 00:30:00 (end of 00:00-00:30 interval)
+            We transform: 2025-11-22 00:00:00 (start of 00:00-00:30 interval)
+
+        This also fixes the midnight edge case where:
+            API returns:  2025-11-23 00:00:00 (end of 23:30-00:00 interval of day 22)
+            We transform: 2025-11-22 23:30:00 (start of that interval, correctly on day 22)
+        """
+        if "meter_reading" not in response:
+            return response
+
+        meter_reading = response["meter_reading"]
+
+        # Get interval readings
+        interval_reading = meter_reading.get("interval_reading", [])
+        if not interval_reading:
+            return response
+
+        shifted_count = 0
+
+        # Shift each timestamp backwards by its individual interval_length
+        for reading in interval_reading:
+            if "date" not in reading or "interval_length" not in reading:
+                continue
+
+            original_date = reading["date"]
+            interval_length_iso = reading["interval_length"]
+
+            # Parse ISO 8601 duration to minutes
+            interval_minutes = self._parse_iso8601_duration_to_minutes(interval_length_iso)
+
+            # Parse datetime (handle both formats: "YYYY-MM-DD HH:MM:SS" and "YYYY-MM-DDTHH:MM:SS")
+            try:
+                if "T" in original_date:
+                    dt = datetime.fromisoformat(original_date.replace("Z", "+00:00"))
+                else:
+                    dt = datetime.strptime(original_date, "%Y-%m-%d %H:%M:%S")
+
+                # Shift backwards by interval_length
+                shifted_dt = dt - timedelta(minutes=interval_minutes)
+
+                # Format back to original format
+                if "T" in original_date:
+                    reading["date"] = shifted_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                else:
+                    reading["date"] = shifted_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+                shifted_count += 1
+
+            except Exception as e:
+                logger.warning(f"[ENEDIS] Failed to shift timestamp '{original_date}': {e}")
+                continue
+
+        if shifted_count > 0:
+            logger.info(f"[ENEDIS] Shifted {shifted_count} timestamps from interval END → START")
+
+        return response
 
     async def get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client"""
@@ -253,7 +347,9 @@ class EnedisAdapter:
 
         response = await self._make_request("GET", url, headers=headers, params=params)
 
-        # Check if date range includes a Saturday and log what we got back
+        # Shift timestamps from interval END to interval START
+        response = self._shift_timestamps_to_interval_start(response)
+
         return response
 
     async def get_max_power(self, usage_point_id: str, start: str, end: str, access_token: str) -> dict[str, Any]:
@@ -282,7 +378,12 @@ class EnedisAdapter:
         headers = self._get_headers(access_token)
         params = {"usage_point_id": usage_point_id, "start": start, "end": end}
 
-        return await self._make_request("GET", url, headers=headers, params=params)
+        response = await self._make_request("GET", url, headers=headers, params=params)
+
+        # Shift timestamps from interval END to interval START
+        response = self._shift_timestamps_to_interval_start(response)
+
+        return response
 
     async def get_contract(self, usage_point_id: str, access_token: str) -> dict[str, Any]:
         """Get contract data"""
