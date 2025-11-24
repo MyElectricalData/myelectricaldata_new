@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { QueryClient } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
+import { get, set, del } from 'idb-keyval'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import './index.css'
@@ -19,12 +19,20 @@ const queryClient = new QueryClient({
   },
 })
 
-// Create persister for localStorage to persist React Query cache across page reloads
-// Exclude auth-related queries from persistence to avoid session issues
-const persister = createSyncStoragePersister({
-  storage: window.localStorage,
-  key: 'myelectricaldata-query-cache',
-})
+// Create persister for IndexedDB to persist React Query cache across page reloads
+// Using IndexedDB instead of localStorage to handle large data (detail queries ~3MB each)
+// IndexedDB has much higher limits (~50MB-1GB) compared to localStorage (~5-10MB)
+const persister = {
+  persistClient: async (client: any) => {
+    await set('myelectricaldata-query-cache', client)
+  },
+  restoreClient: async () => {
+    return await get('myelectricaldata-query-cache')
+  },
+  removeClient: async () => {
+    await del('myelectricaldata-query-cache')
+  },
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -43,8 +51,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             }
 
             // Always persist detail queries if they have data
-            // (data is populated via setQueryData by useUnifiedDataFetch)
-            // Check if query has data regardless of status (queryFn returns null, data comes from setQueryData)
+            // Using IndexedDB persister to handle large data (~3MB per query)
             if (queryKey === 'consumptionDetail' || queryKey === 'productionDetail') {
               return query.state.data != null
             }

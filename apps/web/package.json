@@ -19,6 +19,7 @@
     "axios": "^1.7.9",
     "clsx": "^2.1.1",
     "html2canvas": "^1.4.1",
+    "idb-keyval": "^6.2.2",
     "jspdf": "^3.0.3",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",

@@ -223,16 +223,21 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
   // but we read data via subscription to avoid race conditions
 
   // 1. Create query entry (needed for React Query Persist)
+  // CRITICAL: queryFn reads from cache, making the query "succeed" with persisted data
   useQuery({
     queryKey: ['consumptionDetail', selectedPDL],
     queryFn: async () => {
-      // This should never run - data comes from setQueryData
-      // But we need a valid queryFn for React Query
-      return null
+      // Read from cache - this makes the query succeed with status: 'success'
+      // Data is written to cache via setQueryData in useUnifiedDataFetch
+      const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPDL])
+      return cachedData || null
     },
-    enabled: false, // Never fetch
-    staleTime: Infinity,
+    enabled: !!selectedPDL, // Run once when PDL is set (reads persisted data)
+    staleTime: Infinity, // Never refetch - data only comes from setQueryData
     gcTime: 1000 * 60 * 60 * 24 * 7, // 7 days
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 
   // 2. Read data via direct cache access + subscription (avoids race conditions)
