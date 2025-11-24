@@ -5,6 +5,9 @@ export interface EnergyProvider {
   name: string
   logo_url?: string
   website?: string
+  scraper_urls?: string[]
+  active_offers_count?: number
+  last_update?: string
 }
 
 export interface EnergyOffer {
@@ -97,6 +100,25 @@ export interface Contribution {
   review_comment?: string
 }
 
+export interface OfferChange {
+  offer_name: string
+  offer_type: string
+  power_kva?: number
+  old_price?: number
+  new_price: number
+  change_type: 'new' | 'update' | 'deactivate'
+  subscription_price?: number
+}
+
+export interface RefreshPreview {
+  provider: string
+  new_offers: OfferChange[]
+  updated_offers: OfferChange[]
+  deactivated_offers: OfferChange[]
+  total_changes: number
+  last_update?: string
+}
+
 export const energyApi = {
   // Public endpoints
   getProviders: async () => {
@@ -144,5 +166,20 @@ export const energyApi = {
 
   updateProvider: async (providerId: string, data: Partial<EnergyProvider>) => {
     return apiClient.put(`energy/providers/${providerId}`, data)
+  },
+
+  // Preview and refresh offers
+  previewRefresh: async (provider?: string) => {
+    const params = provider ? { provider } : {}
+    return apiClient.get('admin/offers/preview', params)
+  },
+
+  refreshOffers: async (provider?: string) => {
+    const params = provider ? { provider } : {}
+    return apiClient.post('admin/offers/refresh', params)
+  },
+
+  purgeProviderOffers: async (provider: string) => {
+    return apiClient.delete('admin/offers/purge', { provider })
   },
 }

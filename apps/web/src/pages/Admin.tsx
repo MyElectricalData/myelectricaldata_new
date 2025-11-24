@@ -43,7 +43,7 @@ export default function Admin() {
   }
 
   const clearAllCacheMutation = useMutation({
-    mutationFn: () => adminApi.clearAllConsumptionCache(),
+    mutationFn: () => adminApi.clearAllCache(),
     onSuccess: (response) => {
       const data = response.data as any
       showNotification('success', `Cache vidé : ${data.deleted_keys} clés (${data.total_pdls} PDL)`)
@@ -109,7 +109,7 @@ export default function Admin() {
                   Vider tout le cache ?
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                  Cette action va <strong>supprimer tout le cache de consommation</strong> pour tous les utilisateurs et tous les PDL.
+                  Cette action va <strong>supprimer tout le cache de consommation ET de production</strong> pour tous les utilisateurs et tous les PDL.
                 </p>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   Les données devront être récupérées à nouveau depuis Enedis lors des prochaines requêtes. Cette opération est <strong>irréversible</strong>.
@@ -409,7 +409,7 @@ export default function Admin() {
               className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
             >
               <Trash2 size={18} />
-              Vider tout le cache Redis de consommation
+              Vider tout le cache Redis (consommation + production)
             </button>
           </div>
         </div>

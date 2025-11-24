@@ -10,6 +10,7 @@ interface UseConsumptionCalcsProps {
   selectedPDL: string | null
   selectedPDLDetails: any
   hcHpCalculationTrigger: number
+  detailDateRange: { start: string; end: string } | null
 }
 
 export function useConsumptionCalcs({
@@ -18,7 +19,8 @@ export function useConsumptionCalcs({
   detailData,
   selectedPDL,
   selectedPDLDetails,
-  hcHpCalculationTrigger
+  hcHpCalculationTrigger,
+  detailDateRange
 }: UseConsumptionCalcsProps) {
   const queryClient = useQueryClient()
   const [selectedPowerYear, setSelectedPowerYear] = useState(0)
@@ -310,7 +312,7 @@ export function useConsumptionCalcs({
 
   // Process detailed consumption data by day (load curve)
   const detailByDayData = useMemo(() => {
-    if (!detailData?.meter_reading?.interval_reading) {
+    if (!detailData?.meter_reading?.interval_reading || !detailDateRange) {
       return []
     }
 
@@ -352,25 +354,23 @@ export function useConsumptionCalcs({
       if (!reading.date) return
 
       // Parse the API datetime
-      let apiDateTime: Date
+      // NOTE: Backend already shifted timestamps to interval START (not END)
+      let measurementDateTime: Date
 
       if (reading.date.includes('T')) {
-        apiDateTime = new Date(reading.date)
+        measurementDateTime = new Date(reading.date)
       } else if (reading.date.includes(' ')) {
-        apiDateTime = new Date(reading.date.replace(' ', 'T'))
+        measurementDateTime = new Date(reading.date.replace(' ', 'T'))
       } else {
-        apiDateTime = new Date(reading.date + 'T00:00:00')
+        measurementDateTime = new Date(reading.date + 'T00:00:00')
       }
 
-      // Shift backwards by interval duration to get measurement START time
-      const actualDateTime = new Date(apiDateTime.getTime() - intervalDurationMinutes * 60 * 1000)
-
-      // Extract date and time from the actual measurement start time
-      const year = actualDateTime.getFullYear()
-      const month = String(actualDateTime.getMonth() + 1).padStart(2, '0')
-      const day = String(actualDateTime.getDate()).padStart(2, '0')
-      const hours = String(actualDateTime.getHours()).padStart(2, '0')
-      const minutes = String(actualDateTime.getMinutes()).padStart(2, '0')
+      // Extract date and time from the measurement start time
+      const year = measurementDateTime.getFullYear()
+      const month = String(measurementDateTime.getMonth() + 1).padStart(2, '0')
+      const day = String(measurementDateTime.getDate()).padStart(2, '0')
+      const hours = String(measurementDateTime.getHours()).padStart(2, '0')
+      const minutes = String(measurementDateTime.getMinutes()).padStart(2, '0')
 
       const dateStr = `${year}-${month}-${day}`
       const time = `${hours}:${minutes}`
@@ -391,23 +391,28 @@ export function useConsumptionCalcs({
         energyWh,
         energyKwh,
         rawValue,
-        datetime: actualDateTime.toISOString(),
+        datetime: measurementDateTime.toISOString(),
         apiDatetime: reading.date
       })
     })
 
+    // Filter by detailDateRange
+    const startDateStr = detailDateRange.start
+    const endDateStr = detailDateRange.end
+
     // Convert to array and sort by date
     const days = Object.entries(dayMap)
+      .filter(([date]) => date >= startDateStr && date <= endDateStr) // ✅ Filter by date range
       .map(([date, data]) => ({
         date,
         data: data.sort((a, b) => a.time.localeCompare(b.time)),
         totalEnergyKwh: data.reduce((sum, d) => sum + d.energyKwh, 0)
       }))
-      .filter(day => day.data.length >= 40) // Filter incomplete days
-      .sort((a, b) => b.date.localeCompare(a.date))
+      .filter(day => day.data.length >= 10) // Filter days with very few data points (keep days with at least 10 points = 5h of data)
+      .sort((a, b) => b.date.localeCompare(a.date)) // Sort newest first
 
     return days
-  }, [detailData])
+  }, [detailData, detailDateRange])
 
   // Calculate HC/HP statistics by year from all cached detailed data
   const hcHpByYear = useMemo(() => {

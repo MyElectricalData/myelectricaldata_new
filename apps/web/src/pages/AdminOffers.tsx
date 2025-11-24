@@ -1,12 +1,20 @@
 import { useState, useEffect as React_useEffect } from 'react'
 import * as React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Zap, Edit2, Trash2, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, CheckSquare, Square, X } from 'lucide-react'
-import { energyApi, type EnergyProvider, type EnergyOffer } from '@/api/energy'
+import { Zap, Edit2, Trash2, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, CheckSquare, Square, X, Eye, RefreshCw, Loader2 } from 'lucide-react'
+import { energyApi, type EnergyProvider, type EnergyOffer, type RefreshPreview } from '@/api/energy'
 import { usePermissions } from '@/hooks/usePermissions'
+import toast from 'react-hot-toast'
 
 type SortField = 'name' | 'offer_type' | 'subscription_price' | 'base_price'
 type SortDirection = 'asc' | 'desc'
+
+// Helper function to safely convert price to number and format
+const formatPrice = (price: number | string | undefined | null, decimals: number = 2): string => {
+  if (price === undefined || price === null) return '-'
+  const num = typeof price === 'string' ? parseFloat(price) : price
+  return isNaN(num) ? '-' : num.toFixed(decimals)
+}
 
 export default function AdminOffers() {
   const queryClient = useQueryClient()
@@ -56,6 +64,19 @@ export default function AdminOffers() {
   // Old tariff warning toggle
   const [showOldTariffWarning, setShowOldTariffWarning] = useState(true)
 
+  // Preview modal state
+  const [previewData, setPreviewData] = useState<RefreshPreview | null>(null)
+  const [previewModalOpen, setPreviewModalOpen] = useState(false)
+  const [applyProgress, setApplyProgress] = useState(0)
+  const [previewActiveTab, setPreviewActiveTab] = useState<'new' | 'updated' | 'deactivated'>('new')
+  const [loadingPreview, setLoadingPreview] = useState<string | null>(null)
+  const [refreshingProvider, setRefreshingProvider] = useState<string | null>(null)
+
+  // Edit scraper URLs modal state
+  const [editingScraperUrls, setEditingScraperUrls] = useState<EnergyProvider | null>(null)
+  const [scraperUrlsInput, setScraperUrlsInput] = useState<string[]>([])
+  const [savingScraperUrls, setSavingScraperUrls] = useState(false)
+
   // Helper function to check if tariff is older than 6 months
   const isOldTariff = (validFrom: string | undefined) => {
     if (!validFrom) return false
@@ -94,6 +115,155 @@ export default function AdminOffers() {
     setTimeout(() => setNotification(null), 5000)
   }
 
+  // Preview refresh handler
+  const handlePreviewRefresh = async (providerId: string, providerName: string) => {
+    setLoadingPreview(providerId)
+    try {
+      const response = await energyApi.previewRefresh(providerName)
+      if (response.success && response.data) {
+        // Map backend response to frontend format
+        const preview = (response.data as any).preview?.[providerName]
+        if (preview) {
+          const mappedData: RefreshPreview = {
+            provider: providerName,
+            new_offers: preview.offers_to_create || [],
+            updated_offers: preview.offers_to_update || [],
+            deactivated_offers: preview.offers_to_deactivate || [],
+            total_changes: (preview.offers_to_create?.length || 0) + (preview.offers_to_update?.length || 0) + (preview.offers_to_deactivate?.length || 0),
+            last_update: (response.data as any).timestamp
+          }
+          setPreviewData(mappedData)
+          setPreviewModalOpen(true)
+          // Auto-select first non-empty tab
+          if (mappedData.new_offers.length > 0) {
+            setPreviewActiveTab('new')
+          } else if (mappedData.updated_offers.length > 0) {
+            setPreviewActiveTab('updated')
+          } else if (mappedData.deactivated_offers.length > 0) {
+            setPreviewActiveTab('deactivated')
+          }
+        } else {
+          toast.error('Données de prévisualisation invalides')
+        }
+      } else {
+        // Extract error message from backend response
+        const errorMsg = response.error?.message || response.error || 'Impossible de charger la prévisualisation'
+        toast.error(`Erreur de scraping : ${errorMsg}`)
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la prévisualisation'
+      toast.error(errorMessage)
+    } finally {
+      setLoadingPreview(null)
+    }
+  }
+
+  // Refresh offers handler
+  const handleRefreshOffers = async (providerId: string, providerName: string, fromPreview = false) => {
+    setRefreshingProvider(providerId)
+    setApplyProgress(0)
+
+    try {
+      // Simulate progress steps
+      setApplyProgress(10) // Starting
+
+      const response = await energyApi.refreshOffers(providerName)
+      setApplyProgress(60) // API call done
+
+      if (response.success) {
+        setApplyProgress(80) // Invalidating cache
+        await queryClient.invalidateQueries({ queryKey: ['energy-offers'] })
+        await queryClient.invalidateQueries({ queryKey: ['energy-providers'] })
+
+        setApplyProgress(100) // Complete
+        toast.success(`Offres de ${providerName} rafraîchies avec succès`)
+
+        if (fromPreview) {
+          // Wait a bit to show 100% before closing
+          await new Promise(resolve => setTimeout(resolve, 300))
+          setPreviewModalOpen(false)
+          setPreviewData(null)
+        }
+      } else {
+        toast.error('Échec du rafraîchissement des offres')
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors du rafraîchissement'
+      toast.error(errorMessage)
+    } finally {
+      setRefreshingProvider(null)
+      setApplyProgress(0)
+    }
+  }
+
+  // Edit scraper URLs handlers
+  const handleOpenEditScraperUrls = (provider: EnergyProvider) => {
+    setEditingScraperUrls(provider)
+    setScraperUrlsInput(provider.scraper_urls || [])
+  }
+
+  const handleSaveScraperUrls = async () => {
+    if (!editingScraperUrls) return
+
+    setSavingScraperUrls(true)
+    try {
+      const response = await energyApi.updateProvider(editingScraperUrls.id, {
+        scraper_urls: scraperUrlsInput.filter(url => url.trim() !== '')
+      })
+
+      if (response.success) {
+        await queryClient.invalidateQueries({ queryKey: ['energy-providers'] })
+        toast.success('URLs du scraper mises à jour avec succès')
+        setEditingScraperUrls(null)
+        setScraperUrlsInput([])
+      } else {
+        toast.error('Échec de la mise à jour des URLs')
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la mise à jour'
+      toast.error(errorMessage)
+    } finally {
+      setSavingScraperUrls(false)
+    }
+  }
+
+  const handleUpdateScraperUrl = (index: number, value: string) => {
+    const newUrls = [...scraperUrlsInput]
+    newUrls[index] = value
+    setScraperUrlsInput(newUrls)
+  }
+
+  // Purge provider offers handler
+  const handlePurgeProvider = async (providerId: string, providerName: string) => {
+    // Show confirmation dialog
+    setConfirmDialog({
+      title: `Purger ${providerName}`,
+      message: `Êtes-vous sûr de vouloir supprimer toutes les offres de ${providerName} ? Cette action est irréversible.`,
+      confirmText: 'Supprimer tout',
+      type: 'danger',
+      onConfirm: async () => {
+        setRefreshingProvider(providerId)
+        try {
+          const response = await energyApi.purgeProviderOffers(providerName)
+          if (response.success) {
+            const deletedCount = (response.data as { deleted_count?: number })?.deleted_count || 0
+            await queryClient.invalidateQueries({ queryKey: ['energy-offers'] })
+            await queryClient.invalidateQueries({ queryKey: ['energy-providers'] })
+            toast.success(`${deletedCount} offre${deletedCount > 1 ? 's' : ''} supprimée${deletedCount > 1 ? 's' : ''} pour ${providerName}`)
+          } else {
+            toast.error('Échec de la suppression des offres')
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la suppression'
+          toast.error(errorMessage)
+        } finally {
+          setRefreshingProvider(null)
+          setConfirmDialog(null)
+        }
+      }
+    })
+  }
+
   // Update offer mutation
   const updateMutation = useMutation({
     mutationFn: async ({ offerId, data }: { offerId: string; data: Partial<EnergyOffer> }) => {
@@ -105,7 +275,7 @@ export default function AdminOffers() {
       setEditFormData({})
       showNotification('success', 'Offre mise à jour avec succès')
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       showNotification('error', error.message || 'Une erreur est survenue')
     },
   })
@@ -119,23 +289,28 @@ export default function AdminOffers() {
       queryClient.invalidateQueries({ queryKey: ['energy-offers'] })
       showNotification('success', 'Offre supprimée avec succès')
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       showNotification('error', error.message || 'Une erreur est survenue')
     },
   })
 
   // Delete provider mutation
-  const deleteProviderMutation = useMutation({
+  const deleteProviderMutation = useMutation<
+    { success: boolean; data?: { deleted_offers_count?: number } },
+    Error,
+    string
+  >({
     mutationFn: async (providerId: string) => {
-      return await energyApi.deleteProvider(providerId)
+      const response = await energyApi.deleteProvider(providerId)
+      return response as { success: boolean; data?: { deleted_offers_count?: number } }
     },
-    onSuccess: (response: any) => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['energy-offers'] })
       queryClient.invalidateQueries({ queryKey: ['energy-providers'] })
       const count = response.data?.deleted_offers_count || 0
       showNotification('success', `Fournisseur et ${count} offre(s) supprimé(s) avec succès`)
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       showNotification('error', error.message || 'Une erreur est survenue')
     },
   })
@@ -151,7 +326,7 @@ export default function AdminOffers() {
       setEditProviderName('')
       showNotification('success', 'Fournisseur renommé avec succès')
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       showNotification('error', error.message || 'Une erreur est survenue')
     },
   })
@@ -307,8 +482,8 @@ export default function AdminOffers() {
       return true
     })
     .sort((a, b) => {
-      let aValue: any
-      let bValue: any
+      let aValue: string | number
+      let bValue: string | number
 
       switch (sortField) {
         case 'name':
@@ -336,8 +511,17 @@ export default function AdminOffers() {
       return 0
     })
 
-  // Group by provider
+  // Group by provider (for display in the list - uses filtered offers)
   const offersByProvider = filteredAndSortedOffers?.reduce((acc, offer) => {
+    if (!acc[offer.provider_id]) {
+      acc[offer.provider_id] = []
+    }
+    acc[offer.provider_id].push(offer)
+    return acc
+  }, {} as Record<string, EnergyOffer[]>)
+
+  // Group by provider (for counts - uses ALL offers, not filtered)
+  const allOffersByProvider = offersData?.reduce((acc, offer) => {
     if (!acc[offer.provider_id]) {
       acc[offer.provider_id] = []
     }
@@ -454,6 +638,187 @@ export default function AdminOffers() {
             Gérez les offres d'énergie : éditer, supprimer ou désactiver
           </p>
         </div>
+
+      {/* Provider Management Section */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 transition-colors duration-200 p-6">
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Zap className="text-primary-600 dark:text-primary-400" size={20} />
+          Gestion des Fournisseurs
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.isArray(providersData) &&
+            providersData
+              .sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }))
+              .map((provider) => {
+                const allProviderOffers = allOffersByProvider?.[provider.id] || []
+                const activeCount = allProviderOffers.filter(o => o.is_active).length
+                const isLoadingPreview = loadingPreview === provider.id
+                const isRefreshing = refreshingProvider === provider.id
+                const hasProvider = ['EDF', 'Enercoop', 'TotalEnergies', 'Priméo Énergie', 'Engie', 'ALPIQ', 'Alterna', 'Ekwateur'].includes(provider.name)
+
+                // Find the most recent tariff date
+                const mostRecentDate = allProviderOffers
+                  .filter(o => o.valid_from)
+                  .map(o => new Date(o.valid_from!))
+                  .sort((a, b) => b.getTime() - a.getTime())[0]
+
+                return (
+                  <div
+                    key={provider.id}
+                    className={`bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg p-4 hover:shadow-lg transition-shadow duration-200 ${
+                      !hasProvider ? 'opacity-60 bg-gray-50 dark:bg-gray-900' : ''
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
+                          {provider.name}
+                        </h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          {activeCount} offre{activeCount > 1 ? 's' : ''} active{activeCount > 1 ? 's' : ''}
+                        </p>
+                        {mostRecentDate && (
+                          <p className="text-xs text-green-600 dark:text-green-400 font-medium mt-1">
+                            Tarif du {mostRecentDate.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}
+                          </p>
+                        )}
+                        {provider.last_update && (
+                          <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                            Mise à jour : {new Date(provider.last_update).toLocaleDateString('fr-FR')}
+                          </p>
+                        )}
+                      </div>
+                      {provider.logo_url ? (
+                        <div className="w-16 h-16 flex items-center justify-center">
+                          <img
+                            src={provider.logo_url}
+                            alt={`Logo ${provider.name}`}
+                            className="max-w-full max-h-full object-contain"
+                            onError={(e) => {
+                              // Si le logo ne charge pas, afficher l'icône par défaut
+                              e.currentTarget.style.display = 'none'
+                              const icon = document.createElement('div')
+                              icon.innerHTML = '<svg class="text-primary-600 dark:text-primary-400" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>'
+                              e.currentTarget.parentElement?.appendChild(icon)
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <Zap className="text-primary-600 dark:text-primary-400" size={32} />
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      {/* Détection si le fournisseur a un scraper - déjà défini plus haut */}
+                      {(() => {
+                        const isDisabled = !hasProvider || isLoadingPreview || isRefreshing
+
+                        return (
+                          <>
+                            {/* Boutons Prévisualiser et Purger côte à côte */}
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handlePreviewRefresh(provider.id, provider.name)}
+                                disabled={isDisabled}
+                                className={`btn btn-primary flex-1 text-sm flex items-center justify-center gap-2 ${
+                                  !hasProvider ? 'opacity-50 cursor-not-allowed' : ''
+                                }`}
+                                title={!hasProvider ? 'Scraper non disponible pour ce fournisseur' : ''}
+                              >
+                                {isLoadingPreview && loadingPreview === provider.id ? (
+                                  <>
+                                    <Loader2 className="animate-spin" size={16} />
+                                    Chargement...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Eye size={16} />
+                                    Prévisualiser
+                                  </>
+                                )}
+                              </button>
+
+                              {/* Bouton Purger - Uniquement avec permission delete */}
+                              {hasAction('offers', 'delete') && (
+                                <button
+                                  onClick={() => handlePurgeProvider(provider.id, provider.name)}
+                                  disabled={isRefreshing}
+                                  className="btn bg-red-600 hover:bg-red-700 text-white dark:bg-red-700 dark:hover:bg-red-800 flex-1 text-sm flex items-center justify-center gap-2"
+                                >
+                                  <Trash2 size={16} />
+                                  Purger
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Message si pas de scraper */}
+                            {!hasProvider && (
+                              <div className="text-xs text-gray-500 dark:text-gray-400 italic text-center">
+                                Scraper non disponible
+                              </div>
+                            )}
+
+                            {/* Affichage des sources du scraper */}
+                            {hasProvider && provider.scraper_urls && provider.scraper_urls.length > 0 && (() => {
+                              // Labels pour les URLs en fonction du fournisseur
+                              const urlLabels: Record<string, string[]> = {
+                                'EDF': ['Tarif Bleu (réglementé)', 'Zen Week-End (marché)'],
+                                'Enercoop': ['Grille tarifaire (PDF officiel)'],
+                                'TotalEnergies': ['Offre Essentielle (Eco Electricité)', 'Offre Verte Fixe'],
+                                'Priméo Énergie': ['Offre Fixe -20% (PDF)'],
+                                'Engie': ['Elec Référence 1 an (PDF officiel)'],
+                                'ALPIQ': ['Électricité Stable (PDF officiel)'],
+                                'Alterna': ['Électricité verte 100% locale', 'Électricité verte 100% française', 'Électricité verte 100% VE'],
+                                'Ekwateur': ['Prix kwh électricité et abonnement']
+                              }
+                              const labels = urlLabels[provider.name] || []
+
+                              return (
+                                <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                      Source{provider.scraper_urls.length > 1 ? 's' : ''} du scraper :
+                                    </p>
+                                    {hasAction('offers', 'edit') && (
+                                      <button
+                                        onClick={() => handleOpenEditScraperUrls(provider)}
+                                        className="text-xs text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400"
+                                        title="Éditer les URLs"
+                                      >
+                                        <Edit2 size={12} />
+                                      </button>
+                                    )}
+                                  </div>
+                                  {provider.scraper_urls.map((url, idx) => (
+                                    <div key={idx} className="mb-1">
+                                      {labels[idx] && (
+                                        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                                          {labels[idx]} :{' '}
+                                        </span>
+                                      )}
+                                      <a
+                                        href={url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                                        title={url}
+                                      >
+                                        {url.length > 50 ? `${url.substring(0, 47)}...` : url}
+                                      </a>
+                                    </div>
+                                  ))}
+                                </div>
+                              )
+                            })()}
+                          </>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                )
+              })}
+        </div>
+      </div>
 
       {/* Filters */}
       <div className="card mb-6">
@@ -752,51 +1117,50 @@ export default function AdminOffers() {
                                 <span className="text-gray-400">-</span>
                               )}
                             </td>
-                            <td className="px-2 py-1.5 text-xs text-right">{offer.subscription_price.toFixed(2)}</td>
+                            <td className="px-2 py-1.5 text-xs text-right">{formatPrice(offer.subscription_price, 2)}</td>
                             <td className="px-2 py-1.5 text-xs text-right">
                               {offer.offer_type === 'BASE' && offer.base_price && (
                                 <div className="space-y-0.5">
-                                  <div>{offer.base_price.toFixed(4)}</div>
+                                  <div>{formatPrice(offer.base_price, 5)}</div>
                                   {offer.base_price_weekend && (
-                                    <div className="text-green-600">WE: {offer.base_price_weekend.toFixed(4)}</div>
+                                    <div className="text-green-600">WE: {formatPrice(offer.base_price_weekend, 5)}</div>
                                   )}
                                 </div>
                               )}
                               {offer.offer_type === 'HC_HP' && (
                                 <div className="space-y-0.5">
-                                  {offer.hc_price && <div className="text-blue-600">HC: {offer.hc_price.toFixed(4)}</div>}
-                                  {offer.hp_price && <div className="text-orange-600">HP: {offer.hp_price.toFixed(4)}</div>}
-                                  {offer.hc_price_weekend && <div className="text-green-600 text-xs">WE-HC: {offer.hc_price_weekend.toFixed(4)}</div>}
+                                  {offer.hc_price && <div className="text-blue-600">HC: {formatPrice(offer.hc_price, 5)}</div>}
+                                  {offer.hp_price && <div className="text-orange-600">HP: {formatPrice(offer.hp_price, 5)}</div>}
+                                  {offer.hc_price_weekend && <div className="text-green-600 text-xs">WE-HC: {formatPrice(offer.hc_price_weekend, 5)}</div>}
                                 </div>
                               )}
                               {offer.offer_type === 'TEMPO' && (
                                 <div className="space-y-0.5">
-                                  <div className="text-blue-600">B: {offer.tempo_blue_hc?.toFixed(4)}/{offer.tempo_blue_hp?.toFixed(4)}</div>
-                                  <div className="text-gray-600">W: {offer.tempo_white_hc?.toFixed(4)}/{offer.tempo_white_hp?.toFixed(4)}</div>
-                                  <div className="text-red-600">R: {offer.tempo_red_hc?.toFixed(4)}/{offer.tempo_red_hp?.toFixed(4)}</div>
+                                  <div className="text-blue-600">B: {formatPrice(offer.tempo_blue_hc, 5)}/{formatPrice(offer.tempo_blue_hp, 5)}</div>
+                                  <div className="text-gray-600">W: {formatPrice(offer.tempo_white_hc, 5)}/{formatPrice(offer.tempo_white_hp, 5)}</div>
+                                  <div className="text-red-600">R: {formatPrice(offer.tempo_red_hc, 5)}/{formatPrice(offer.tempo_red_hp, 5)}</div>
                                 </div>
                               )}
                               {offer.offer_type === 'EJP' && (
                                 <div className="space-y-0.5">
-                                  {offer.ejp_normal && <div>N: {offer.ejp_normal.toFixed(4)}</div>}
-                                  {offer.ejp_peak && <div className="text-red-600">P: {offer.ejp_peak.toFixed(4)}</div>}
+                                  {offer.ejp_normal && <div>N: {formatPrice(offer.ejp_normal, 5)}</div>}
+                                  {offer.ejp_peak && <div className="text-red-600">P: {formatPrice(offer.ejp_peak, 5)}</div>}
                                 </div>
                               )}
                               {(offer.hc_price_winter || offer.hc_price_summer) && (
                                 <div className="space-y-0.5">
-                                  <div className="text-blue-600">❄️ {offer.hc_price_winter?.toFixed(5)}/{offer.hp_price_winter?.toFixed(5)}</div>
-                                  <div className="text-amber-600">☀️ {offer.hc_price_summer?.toFixed(5)}/{offer.hp_price_summer?.toFixed(5)}</div>
-                                  {offer.peak_day_price && <div className="text-red-600 text-xs">⚡{offer.peak_day_price.toFixed(5)}</div>}
+                                  <div className="text-blue-600">❄️ {formatPrice(offer.hc_price_winter, 5)}/{formatPrice(offer.hp_price_winter, 5)}</div>
+                                  <div className="text-amber-600">☀️ {formatPrice(offer.hc_price_summer, 5)}/{formatPrice(offer.hp_price_summer, 5)}</div>
+                                  {offer.peak_day_price && <div className="text-red-600 text-xs">⚡{formatPrice(offer.peak_day_price, 5)}</div>}
                                 </div>
                               )}
                             </td>
                             <td className="px-2 py-1.5 text-xs text-center">
                               {offer.valid_from && (
-                                <div className="text-green-600 dark:text-green-400">
+                                <div className="text-green-600 dark:text-green-400 font-medium" title={`Tarif valide depuis le ${new Date(offer.valid_from).toLocaleDateString('fr-FR')}`}>
                                   {new Date(offer.valid_from).toLocaleDateString('fr-FR', {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: '2-digit'
+                                    month: 'short',
+                                    year: 'numeric'
                                   })}
                                 </div>
                               )}
@@ -1366,6 +1730,639 @@ export default function AdminOffers() {
                   disabled={updateProviderMutation.isPending || !editProviderName.trim()}
                 >
                   {updateProviderMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {previewModalOpen && previewData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-gray-300 dark:border-gray-700">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold flex items-center gap-2">
+                  <Eye className="text-primary-600 dark:text-primary-400" size={24} />
+                  Prévisualisation des changements - {previewData.provider}
+                </h2>
+                <button
+                  onClick={() => {
+                    setPreviewModalOpen(false)
+                    setPreviewData(null)
+                  }}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              {previewData.last_update && (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Dernière mise à jour : {new Date(previewData.last_update).toLocaleString('fr-FR')}
+                </p>
+              )}
+
+              {/* Tabs */}
+              <div className="flex gap-2 mt-4 border-b border-gray-300 dark:border-gray-700">
+                <button
+                  onClick={() => setPreviewActiveTab('new')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    previewActiveTab === 'new'
+                      ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+                  }`}
+                >
+                  Nouvelles offres ({previewData.new_offers?.length || 0})
+                </button>
+                <button
+                  onClick={() => setPreviewActiveTab('updated')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    previewActiveTab === 'updated'
+                      ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+                  }`}
+                >
+                  Mises à jour ({previewData.updated_offers?.length || 0})
+                </button>
+                <button
+                  onClick={() => setPreviewActiveTab('deactivated')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    previewActiveTab === 'deactivated'
+                      ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+                  }`}
+                >
+                  Désactivations ({previewData.deactivated_offers?.length || 0})
+                </button>
+              </div>
+            </div>
+
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {previewActiveTab === 'new' && (
+                <div>
+                  {previewData.new_offers && previewData.new_offers.length > 0 ? (
+                    <div className="space-y-3">
+                      {previewData.new_offers.map((offer: any, index) => (
+                        <div
+                          key={index}
+                          className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-gray-900 dark:text-white">
+                                {offer.name}
+                              </h3>
+                              <div className="flex items-center gap-3 mt-2 text-sm text-gray-600 dark:text-gray-400">
+                                <span className="px-2 py-1 bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-300 rounded">
+                                  {offer.offer_type}
+                                </span>
+                                {offer.power_kva && (
+                                  <span>{offer.power_kva} kVA</span>
+                                )}
+                                {offer.valid_from && (
+                                  <span className="text-xs italic">
+                                    Tarif du {new Date(offer.valid_from).toLocaleDateString('fr-FR', { year: 'numeric', month: 'short' })}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              {offer.subscription_price && (
+                                <div className="text-sm text-gray-600 dark:text-gray-400">
+                                  Abo: {formatPrice(offer.subscription_price, 2)} €/mois
+                                </div>
+                              )}
+
+                              {/* BASE simple (sans week-end) */}
+                              {offer.base_price && !offer.base_price_weekend && (
+                                <div className="text-lg font-semibold text-green-600 dark:text-green-400">
+                                  {formatPrice(offer.base_price, 5)} €/kWh
+                                </div>
+                              )}
+
+                              {/* BASE WEEKEND - afficher les 2 prix */}
+                              {offer.base_price && offer.base_price_weekend && (
+                                <div className="space-y-1">
+                                  <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                                    Semaine: {formatPrice(offer.base_price, 5)} €
+                                  </div>
+                                  <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                                    Week-end: {formatPrice(offer.base_price_weekend, 5)} €
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* HC/HP simple */}
+                              {offer.hp_price && offer.hc_price && !offer.hp_price_weekend && (
+                                <div className="space-y-1">
+                                  <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                                    HP: {formatPrice(offer.hp_price, 5)} €
+                                  </div>
+                                  <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                                    HC: {formatPrice(offer.hc_price, 5)} €
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* HC/HP WEEKEND - afficher les 4 prix */}
+                              {offer.hp_price && offer.hc_price && offer.hp_price_weekend && offer.hc_price_weekend && (
+                                <div className="space-y-1">
+                                  <div className="text-xs font-semibold text-green-700 dark:text-green-300">
+                                    HP Sem: {formatPrice(offer.hp_price, 5)} €
+                                  </div>
+                                  <div className="text-xs font-semibold text-green-700 dark:text-green-300">
+                                    HC Sem: {formatPrice(offer.hc_price, 5)} €
+                                  </div>
+                                  <div className="text-xs font-semibold text-green-600 dark:text-green-400">
+                                    HP WE: {formatPrice(offer.hp_price_weekend, 5)} €
+                                  </div>
+                                  <div className="text-xs font-semibold text-green-600 dark:text-green-400">
+                                    HC WE: {formatPrice(offer.hc_price_weekend, 5)} €
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* TEMPO */}
+                              {offer.tempo_blue_hp && (
+                                <div className="text-xs space-y-1">
+                                  <div className="text-blue-600 dark:text-blue-400">
+                                    Bleu HP/HC: {formatPrice(offer.tempo_blue_hp, 5)} / {formatPrice(offer.tempo_blue_hc, 5)} €
+                                  </div>
+                                  <div className="text-gray-600 dark:text-gray-400">
+                                    Blanc HP/HC: {formatPrice(offer.tempo_white_hp, 5)} / {formatPrice(offer.tempo_white_hc, 5)} €
+                                  </div>
+                                  <div className="text-red-600 dark:text-red-400">
+                                    Rouge HP/HC: {formatPrice(offer.tempo_red_hp, 5)} / {formatPrice(offer.tempo_red_hc, 5)} €
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* SEASONAL (Flex) */}
+                              {offer.hc_price_winter && offer.hp_price_winter && (
+                                <div className="text-xs space-y-1">
+                                  <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                                    HC Éco: {formatPrice(offer.hc_price_winter, 5)} €
+                                  </div>
+                                  <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                                    HP Éco: {formatPrice(offer.hp_price_winter, 5)} €
+                                  </div>
+                                  {offer.hc_price_summer && offer.hp_price_summer && (
+                                    <>
+                                      <div className="text-xs text-orange-600 dark:text-orange-400">
+                                        HC Sobriété: {formatPrice(offer.hc_price_summer, 5)} €
+                                      </div>
+                                      <div className="text-xs text-red-600 dark:text-red-400">
+                                        HP Sobriété: {formatPrice(offer.hp_price_summer, 5)} €
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      Aucune nouvelle offre
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {previewActiveTab === 'updated' && (
+                <div>
+                  {previewData.updated_offers && previewData.updated_offers.length > 0 ? (
+                    <div className="space-y-4">
+                      {previewData.updated_offers.map((offer: any, index) => (
+                        <div
+                          key={index}
+                          className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4"
+                        >
+                          <div className="mb-3">
+                            <h3 className="font-semibold text-gray-900 dark:text-white">
+                              {offer.name}
+                            </h3>
+                            <div className="flex items-center gap-3 mt-2 text-sm text-gray-600 dark:text-gray-400">
+                              <span className="px-2 py-1 bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-300 rounded">
+                                {offer.offer_type}
+                              </span>
+                              {offer.power_kva && (
+                                <span>{offer.power_kva} kVA</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Changements détaillés */}
+                          {offer.changes && Object.keys(offer.changes).length > 0 && (
+                            <div className="space-y-2 mt-3 pl-4 border-l-2 border-blue-300 dark:border-blue-700">
+                              <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                                Changements détectés :
+                              </div>
+                              {Object.entries(offer.changes).map(([field, change]: [string, any]) => {
+                                const oldValue = change.old
+                                const newValue = change.new
+
+                                // Nom de champ en français
+                                const fieldNames: Record<string, string> = {
+                                  'subscription_price': 'Abonnement',
+                                  'base_price': 'Prix BASE',
+                                  'hp_price': 'Prix HP',
+                                  'hc_price': 'Prix HC',
+                                  'tempo_blue_hc': 'Tempo Bleu HC',
+                                  'tempo_blue_hp': 'Tempo Bleu HP',
+                                  'tempo_white_hc': 'Tempo Blanc HC',
+                                  'tempo_white_hp': 'Tempo Blanc HP',
+                                  'tempo_red_hc': 'Tempo Rouge HC',
+                                  'tempo_red_hp': 'Tempo Rouge HP',
+                                  'description': 'Description',
+                                }
+
+                                // Check if it's a numeric field
+                                const isNumeric = typeof oldValue === 'number' && typeof newValue === 'number'
+                                const percentChange = isNumeric ? ((newValue - oldValue) / oldValue) * 100 : 0
+                                const isIncrease = newValue > oldValue
+
+                                return (
+                                  <div key={field} className="text-sm">
+                                    <div className="text-gray-700 dark:text-gray-300 font-medium mb-1">
+                                      {fieldNames[field] || field}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {isNumeric ? (
+                                        <>
+                                          <span className="text-gray-500 dark:text-gray-400 line-through">
+                                            {formatPrice(oldValue, 5)} €
+                                          </span>
+                                          <span className="text-gray-400 dark:text-gray-600">→</span>
+                                          <span className="font-semibold text-blue-600 dark:text-blue-400">
+                                            {formatPrice(newValue, 5)} €
+                                          </span>
+                                          {Math.abs(percentChange) > 0.01 && (
+                                            <span className={`text-xs font-medium ${
+                                              isIncrease
+                                                ? 'text-red-600 dark:text-red-400'
+                                                : 'text-green-600 dark:text-green-400'
+                                            }`}>
+                                              {isIncrease ? '↗' : '↘'} {Math.abs(percentChange).toFixed(1)}%
+                                            </span>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span className="text-gray-500 dark:text-gray-400 line-through text-xs">
+                                            {String(oldValue)}
+                                          </span>
+                                          <span className="text-gray-400 dark:text-gray-600">→</span>
+                                          <span className="font-semibold text-blue-600 dark:text-blue-400 text-xs">
+                                            {String(newValue)}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      Aucune mise à jour
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {previewActiveTab === 'deactivated' && (
+                <div>
+                  {previewData.deactivated_offers && previewData.deactivated_offers.length > 0 ? (
+                    <div className="space-y-3">
+                      {previewData.deactivated_offers.map((offer: any, index) => {
+                        // Extract current offer data
+                        const currentOffer = offer as any
+
+                        return (
+                          <div
+                            key={index}
+                            className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4"
+                          >
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex-1">
+                                <h3 className="font-semibold text-gray-900 dark:text-white">
+                                  {currentOffer.name || currentOffer.offer_name}
+                                </h3>
+                                <div className="flex items-center gap-3 mt-2 text-sm text-gray-600 dark:text-gray-400">
+                                  <span className="px-2 py-1 bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-300 rounded">
+                                    {currentOffer.offer_type}
+                                  </span>
+                                  {currentOffer.power_kva && (
+                                    <span>{currentOffer.power_kva} kVA</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm text-red-600 dark:text-red-400 font-semibold">
+                                  Sera désactivée
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Current offer details */}
+                            <div className="mt-3 pt-3 border-t border-red-200 dark:border-red-800">
+                              <div className="text-sm text-gray-700 dark:text-gray-300">
+                                <div className="font-semibold mb-2">Tarifs actuels :</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {currentOffer.subscription_price && (
+                                    <div>
+                                      <span className="text-gray-600 dark:text-gray-400">Abonnement :</span>{' '}
+                                      <span className="font-mono">{formatPrice(currentOffer.subscription_price, 2)} €/mois</span>
+                                    </div>
+                                  )}
+
+                                  {/* BASE pricing */}
+                                  {currentOffer.base_price && !currentOffer.base_price_weekend && (
+                                    <div>
+                                      <span className="text-gray-600 dark:text-gray-400">Prix base :</span>{' '}
+                                      <span className="font-mono">{formatPrice(currentOffer.base_price, 5)} €/kWh</span>
+                                    </div>
+                                  )}
+
+                                  {/* BASE Weekend pricing - show both semaine and weekend */}
+                                  {currentOffer.base_price && currentOffer.base_price_weekend && (
+                                    <>
+                                      <div>
+                                        <span className="text-gray-600 dark:text-gray-400">Heures semaine :</span>{' '}
+                                        <span className="font-mono">{formatPrice(currentOffer.base_price, 5)} €/kWh</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-600 dark:text-gray-400">Heures week-end :</span>{' '}
+                                        <span className="font-mono">{formatPrice(currentOffer.base_price_weekend, 5)} €/kWh</span>
+                                      </div>
+                                    </>
+                                  )}
+
+                                  {/* HC/HP pricing */}
+                                  {currentOffer.hp_price && (
+                                    <div>
+                                      <span className="text-gray-600 dark:text-gray-400">HP :</span>{' '}
+                                      <span className="font-mono">{formatPrice(currentOffer.hp_price, 5)} €/kWh</span>
+                                    </div>
+                                  )}
+                                  {currentOffer.hc_price && (
+                                    <div>
+                                      <span className="text-gray-600 dark:text-gray-400">HC :</span>{' '}
+                                      <span className="font-mono">{formatPrice(currentOffer.hc_price, 5)} €/kWh</span>
+                                    </div>
+                                  )}
+
+                                  {/* HC/HP Weekend pricing */}
+                                  {currentOffer.hp_price_weekend && (
+                                    <div>
+                                      <span className="text-gray-600 dark:text-gray-400">HP week-end :</span>{' '}
+                                      <span className="font-mono">{formatPrice(currentOffer.hp_price_weekend, 5)} €/kWh</span>
+                                    </div>
+                                  )}
+                                  {currentOffer.hc_price_weekend && (
+                                    <div>
+                                      <span className="text-gray-600 dark:text-gray-400">HC week-end :</span>{' '}
+                                      <span className="font-mono">{formatPrice(currentOffer.hc_price_weekend, 5)} €/kWh</span>
+                                    </div>
+                                  )}
+
+                                  {/* TEMPO pricing */}
+                                  {currentOffer.tempo_blue_hp && (
+                                    <>
+                                      <div className="col-span-2 font-semibold mt-2">Tarifs TEMPO :</div>
+                                      <div>
+                                        <span className="text-gray-600 dark:text-gray-400">Bleu HP/HC :</span>{' '}
+                                        <span className="font-mono">{formatPrice(currentOffer.tempo_blue_hp, 5)} / {formatPrice(currentOffer.tempo_blue_hc, 5)} €</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-600 dark:text-gray-400">Blanc HP/HC :</span>{' '}
+                                        <span className="font-mono">{formatPrice(currentOffer.tempo_white_hp, 5)} / {formatPrice(currentOffer.tempo_white_hc, 5)} €</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-600 dark:text-gray-400">Rouge HP/HC :</span>{' '}
+                                        <span className="font-mono">{formatPrice(currentOffer.tempo_red_hp, 5)} / {formatPrice(currentOffer.tempo_red_hc, 5)} €</span>
+                                      </div>
+                                    </>
+                                  )}
+
+                                  {/* Seasonal pricing */}
+                                  {currentOffer.hc_price_winter && (
+                                    <>
+                                      <div>
+                                        <span className="text-gray-600 dark:text-gray-400">HC hiver :</span>{' '}
+                                        <span className="font-mono">{formatPrice(currentOffer.hc_price_winter, 5)} €/kWh</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-600 dark:text-gray-400">HP hiver :</span>{' '}
+                                        <span className="font-mono">{formatPrice(currentOffer.hp_price_winter, 5)} €/kWh</span>
+                                      </div>
+                                    </>
+                                  )}
+                                  {currentOffer.hc_price_summer && (
+                                    <>
+                                      <div>
+                                        <span className="text-gray-600 dark:text-gray-400">HC été :</span>{' '}
+                                        <span className="font-mono">{formatPrice(currentOffer.hc_price_summer, 5)} €/kWh</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-600 dark:text-gray-400">HP été :</span>{' '}
+                                        <span className="font-mono">{formatPrice(currentOffer.hp_price_summer, 5)} €/kWh</span>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+
+                                {/* Description if available */}
+                                {currentOffer.description && (
+                                  <div className="mt-3 text-xs text-gray-600 dark:text-gray-400 italic">
+                                    {currentOffer.description}
+                                  </div>
+                                )}
+
+                                {/* Last update info */}
+                                {currentOffer.price_updated_at && (
+                                  <div className="mt-2 text-xs text-gray-500 dark:text-gray-500">
+                                    Dernière mise à jour : {new Date(currentOffer.price_updated_at).toLocaleDateString('fr-FR')}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      Aucune désactivation
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Progress bar */}
+            {refreshingProvider && applyProgress > 0 && (
+              <div className="mx-6 mb-6 mt-4 p-4 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg">
+                <div className="mb-3 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="animate-spin text-primary-600 dark:text-primary-400" size={20} />
+                    <span className="text-base font-semibold text-primary-900 dark:text-primary-100">
+                      Application des changements...
+                    </span>
+                  </div>
+                  <span className="text-xl font-bold text-primary-600 dark:text-primary-400">
+                    {applyProgress}%
+                  </span>
+                </div>
+                <div className="w-full bg-primary-100 dark:bg-primary-900/40 rounded-full h-4 overflow-hidden shadow-inner">
+                  <div
+                    className="bg-gradient-to-r from-primary-500 to-primary-600 dark:from-primary-400 dark:to-primary-500 h-4 rounded-full transition-all duration-500 ease-out shadow-lg"
+                    style={{ width: `${applyProgress}%` }}
+                  >
+                    <div className="h-full w-full bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse"></div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="p-6 border-t border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Total des changements : <span className="font-semibold">{previewData.total_changes}</span>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setPreviewModalOpen(false)
+                      setPreviewData(null)
+                    }}
+                    className="btn btn-secondary"
+                    disabled={refreshingProvider !== null}
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={() => {
+                      const provider = providersData?.find(p => p.name === previewData.provider)
+                      if (provider) {
+                        handleRefreshOffers(provider.id, provider.name, true)
+                      }
+                    }}
+                    className="btn btn-primary flex items-center gap-2"
+                    disabled={refreshingProvider !== null}
+                  >
+                    {refreshingProvider ? (
+                      <>
+                        <Loader2 className="animate-spin" size={18} />
+                        Application...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={18} />
+                        Appliquer les changements
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal d'édition des URLs du scraper */}
+      {editingScraperUrls && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  Éditer les URLs du scraper - {editingScraperUrls.name}
+                </h2>
+                <button
+                  onClick={() => {
+                    setEditingScraperUrls(null)
+                    setScraperUrlsInput([])
+                  }}
+                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Les URLs sont utilisées par le scraper pour récupérer automatiquement les tarifs depuis le site du fournisseur.
+                </p>
+
+                {(() => {
+                  // Labels pour les URLs en fonction du fournisseur
+                  const urlLabels: Record<string, string[]> = {
+                    'EDF': ['Tarif Bleu (réglementé)', 'Zen Week-End (marché)'],
+                    'Enercoop': ['Grille tarifaire (PDF officiel)'],
+                    'TotalEnergies': ['Offre Essentielle (Eco Electricité)', 'Offre Verte Fixe'],
+                    'Priméo Énergie': ['Offre Fixe -20% (PDF)'],
+                    'Engie': ['Elec Référence 1 an (PDF officiel)'],
+                    'ALPIQ': ['Électricité Stable (PDF officiel)'],
+                    'Alterna': ['Électricité verte 100% locale', 'Électricité verte 100% française', 'Électricité verte 100% VE'],
+                    'Ekwateur': ['Prix kwh électricité et abonnement']
+                  }
+                  const labels = urlLabels[editingScraperUrls?.name || ''] || []
+
+                  return scraperUrlsInput.map((url, index) => (
+                    <div key={index} className="space-y-1">
+                      {labels[index] && (
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                          {labels[index]}
+                        </label>
+                      )}
+                      <input
+                        type="url"
+                        value={url}
+                        onChange={(e) => handleUpdateScraperUrl(index, e.target.value)}
+                        placeholder="https://..."
+                        className="input w-full"
+                      />
+                    </div>
+                  ))
+                })()}
+              </div>
+
+              <div className="flex gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <button
+                  onClick={() => {
+                    setEditingScraperUrls(null)
+                    setScraperUrlsInput([])
+                  }}
+                  className="btn btn-secondary flex-1"
+                  disabled={savingScraperUrls}
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleSaveScraperUrls}
+                  className="btn btn-primary flex-1"
+                  disabled={savingScraperUrls}
+                >
+                  {savingScraperUrls ? (
+                    <>
+                      <Loader2 className="animate-spin" size={18} />
+                      Enregistrement...
+                    </>
+                  ) : (
+                    'Enregistrer'
+                  )}
                 </button>
               </div>
             </div>

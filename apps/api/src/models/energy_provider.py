@@ -1,6 +1,7 @@
-from sqlalchemy import String, Float, Boolean, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import String, Float, Boolean, DateTime, Text, JSON, ForeignKey, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, UTC
+from decimal import Decimal
 import uuid
 from .base import Base
 
@@ -14,6 +15,7 @@ class EnergyProvider(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     logo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     website: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    scraper_urls: Mapped[list | None] = mapped_column(JSON, nullable=True)  # List of URLs used by the scraper
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -32,37 +34,37 @@ class EnergyOffer(Base):
     offer_type: Mapped[str] = mapped_column(String(50), nullable=False)  # BASE, HC_HP, TEMPO, EJP, etc.
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Pricing
-    subscription_price: Mapped[float] = mapped_column(Float, nullable=False)  # €/month
-    base_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for BASE
-    hc_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for Heures Creuses
-    hp_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for Heures Pleines
+    # Pricing - Using Numeric(10,5) for exact decimal precision (no float rounding)
+    subscription_price: Mapped[Decimal] = mapped_column(Numeric(10, 5), nullable=False)  # €/month
+    base_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)  # €/kWh for BASE
+    hc_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)  # €/kWh for Heures Creuses
+    hp_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)  # €/kWh for Heures Pleines
 
     # Weekend pricing (for offers with different weekend rates)
-    base_price_weekend: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for BASE on weekends
-    hp_price_weekend: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for HP on weekends
-    hc_price_weekend: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for HC on weekends (optional)
+    base_price_weekend: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)  # €/kWh for BASE on weekends
+    hp_price_weekend: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)  # €/kWh for HP on weekends
+    hc_price_weekend: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)  # €/kWh for HC on weekends (optional)
 
     # Tempo prices (6 rates)
-    tempo_blue_hc: Mapped[float | None] = mapped_column(Float, nullable=True)
-    tempo_blue_hp: Mapped[float | None] = mapped_column(Float, nullable=True)
-    tempo_white_hc: Mapped[float | None] = mapped_column(Float, nullable=True)
-    tempo_white_hp: Mapped[float | None] = mapped_column(Float, nullable=True)
-    tempo_red_hc: Mapped[float | None] = mapped_column(Float, nullable=True)
-    tempo_red_hp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tempo_blue_hc: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)
+    tempo_blue_hp: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)
+    tempo_white_hc: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)
+    tempo_white_hp: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)
+    tempo_red_hc: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)
+    tempo_red_hp: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)
 
     # EJP prices
-    ejp_normal: Mapped[float | None] = mapped_column(Float, nullable=True)
-    ejp_peak: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ejp_normal: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)
+    ejp_peak: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)
 
     # Seasonal pricing (for offers like Enercoop Flexi WATT 2 saisons)
-    hc_price_winter: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh HC hiver (nov-mars)
-    hp_price_winter: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh HP hiver
-    hc_price_summer: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh HC été (avril-oct)
-    hp_price_summer: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh HP été
+    hc_price_winter: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)  # €/kWh HC hiver (nov-mars)
+    hp_price_winter: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)  # €/kWh HP hiver
+    hc_price_summer: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)  # €/kWh HC été (avril-oct)
+    hp_price_summer: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)  # €/kWh HP été
 
     # Peak day pricing (for offers like Enercoop Flexi WATT 2 saisons Pointe)
-    peak_day_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # €/kWh for special peak days
+    peak_day_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)  # €/kWh for special peak days
 
     # HC/HP schedules (JSON format: {"monday": "22:00-06:00", ...})
     hc_schedules: Mapped[dict | None] = mapped_column(JSON, nullable=True)

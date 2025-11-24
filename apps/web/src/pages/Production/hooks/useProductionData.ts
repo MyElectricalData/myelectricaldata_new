@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
 import { pdlApi } from '@/api/pdl'
 import { enedisApi } from '@/api/enedis'
 import type { PDL } from '@/types/api'
 import type { DateRange } from '../types/production.types'
 
-export function useProductionData(selectedPDL: string, dateRange: DateRange | null, detailDateRange: DateRange | null, selectedPDLDetails: PDL | undefined) {
+export function useProductionData(selectedPDL: string, dateRange: DateRange | null, detailDateRange: DateRange | null) {
   const queryClient = useQueryClient()
 
   // Fetch PDLs
@@ -24,9 +25,14 @@ export function useProductionData(selectedPDL: string, dateRange: DateRange | nu
   // Filter only active PDLs that have production enabled
   const activePdls = pdls.filter(p => p.is_active !== false && p.has_production === true)
 
+  // Get selected PDL details
+  const selectedPDLDetails = pdls.find(p => p.usage_point_id === selectedPDL)
+
   // Fetch production data with React Query
+  // Use a single cache key per PDL (no date in key to avoid cache fragmentation)
   const { data: productionResponse, isLoading: isLoadingProduction } = useQuery({
-    queryKey: ['production', selectedPDL, dateRange?.start, dateRange?.end],
+    queryKey: ['productionDaily', selectedPDL],
+    enabled: !!selectedPDL && !!dateRange,
     queryFn: async () => {
       if (!selectedPDL || !dateRange) return null
 
@@ -106,7 +112,6 @@ export function useProductionData(selectedPDL: string, dateRange: DateRange | nu
         }
       }
     },
-    enabled: !!selectedPDL && !!dateRange,
     staleTime: 1000 * 60 * 60, // 1 hour - data is considered fresh
     gcTime: 1000 * 60 * 60 * 24, // 24 hours - keep in cache
   })
@@ -114,58 +119,52 @@ export function useProductionData(selectedPDL: string, dateRange: DateRange | nu
   // Production doesn't have max power data - skip this query
 
   // Fetch detailed production data (load curve)
-  const shouldFetchDetail = !!selectedPDL &&
-                           !!detailDateRange &&
-                           selectedPDLDetails?.is_active &&
-                           selectedPDLDetails?.has_production
+  // HYBRID APPROACH: useQuery creates the cache entry for persistence,
+  // but we read data via subscription to avoid race conditions
 
-  const { data: detailResponse, isLoading: isLoadingDetail } = useQuery({
-    queryKey: ['productionDetail', selectedPDL, detailDateRange?.start, detailDateRange?.end],
+  // 1. Create query entry (needed for React Query Persist)
+  useQuery({
+    queryKey: ['productionDetail', selectedPDL],
     queryFn: async () => {
-      if (!selectedPDL || !detailDateRange) return null
-
-      try {
-        // Get all days in the range from cache (day by day)
-        const startDate = new Date(detailDateRange.start + 'T00:00:00Z')
-        const endDate = new Date(detailDateRange.end + 'T00:00:00Z')
-        const allPoints: any[] = []
-
-        // Iterate through each day in the range
-        const currentDate = new Date(startDate)
-        while (currentDate <= endDate) {
-          const dateStr = currentDate.getUTCFullYear() + '-' +
-                         String(currentDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                         String(currentDate.getUTCDate()).padStart(2, '0')
-
-          // Try to get this day's data from cache
-          const dayData = queryClient.getQueryData(['productionDetail', selectedPDL, dateStr, dateStr]) as any
-
-          if (dayData?.data?.meter_reading?.interval_reading) {
-            allPoints.push(...dayData.data.meter_reading.interval_reading)
-          }
-
-          // Move to next day
-          currentDate.setUTCDate(currentDate.getUTCDate() + 1)
-        }
-
-        // Return combined data in the same format as API response
-        return allPoints.length > 0 ? {
-          success: true,
-          data: {
-            meter_reading: {
-              interval_reading: allPoints
-            }
-          }
-        } : null
-      } catch (error) {
-        console.error('Error in detailResponse queryFn:', error)
-        return null
-      }
+      // This should never run - data comes from setQueryData
+      // But we need a valid queryFn for React Query
+      return null
     },
-    enabled: shouldFetchDetail,
-    staleTime: 1000 * 60 * 60, // 1 hour
-    gcTime: 1000 * 60 * 60 * 24, // 24 hours
+    enabled: false, // Never fetch
+    staleTime: Infinity,
+    gcTime: 1000 * 60 * 60 * 24 * 7, // 7 days
   })
+
+  // 2. Read data via direct cache access + subscription (avoids race conditions)
+  const [detailResponse, setDetailResponse] = useState<any>(null)
+  const [isLoadingDetail] = useState(false)
+
+  useEffect(() => {
+    if (!selectedPDL) {
+      setDetailResponse(null)
+      return
+    }
+
+    // Read current data from cache (includes persisted data)
+    const initialData = queryClient.getQueryData(['productionDetail', selectedPDL])
+    if (initialData) {
+      setDetailResponse(initialData)
+    }
+
+    // Subscribe to future changes (when setQueryData is called)
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (
+        event?.type === 'updated' &&
+        event?.query?.queryKey?.[0] === 'productionDetail' &&
+        event?.query?.queryKey?.[1] === selectedPDL
+      ) {
+        const updatedData = queryClient.getQueryData(['productionDetail', selectedPDL])
+        setDetailResponse(updatedData)
+      }
+    })
+
+    return () => unsubscribe()
+  }, [selectedPDL, queryClient])
 
   const productionData = (productionResponse as any)?.success ? (productionResponse as any).data : null
   const detailData = (detailResponse as any)?.success ? (detailResponse as any).data : null
@@ -174,6 +173,7 @@ export function useProductionData(selectedPDL: string, dateRange: DateRange | nu
   return {
     pdls,
     activePdls,
+    selectedPDLDetails,
     productionData,
     detailData,
     isLoading,

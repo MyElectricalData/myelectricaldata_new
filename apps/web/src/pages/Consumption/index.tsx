@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import { TrendingUp, Loader2, AlertCircle, Download, Trash2, BarChart3, Calendar, Info, ChevronDown, ChevronUp } from 'lucide-react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
 import { enedisApi } from '@/api/enedis'
 import { adminApi } from '@/api/admin'
 import { useAuth } from '@/hooks/useAuth'
+import { usePdlStore } from '@/stores/pdlStore'
 import type { PDL } from '@/types/api'
 import toast from 'react-hot-toast'
 import { parseOffpeakHours, isOffpeakTime } from '@/utils/offpeakHours'
@@ -32,8 +33,6 @@ import { useConsumptionFetch } from './hooks/useConsumptionFetch'
 import { useConsumptionCalcs } from './hooks/useConsumptionCalcs'
 
 // Import components
-import { PDLSelector } from './components/PDLSelector'
-import { LoadingProgress } from './components/LoadingProgress'
 import { InfoBlock } from './components/InfoBlock'
 import { ConfirmModal } from './components/ConfirmModal'
 import { YearlyConsumption } from './components/YearlyConsumption'
@@ -48,11 +47,10 @@ import { useIsDemo } from '@/hooks/useIsDemo'
 // Re-export as default for backwards compatibility
 export default function Consumption() {
   const { user } = useAuth()
-  const queryClient = useQueryClient()
   const isDemo = useIsDemo()
+  const { selectedPdl: selectedPDL, setSelectedPdl: setSelectedPDL } = usePdlStore()
 
   // States
-  const [selectedPDL, setSelectedPDL] = useState<string>('')
   const [isClearingCache, setIsClearingCache] = useState(false)
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [isChartsExpanded, setIsChartsExpanded] = useState(false)
@@ -146,23 +144,20 @@ export default function Consumption() {
     return { start: startDate, end: endDate }
   }, [dateRange, detailWeekOffset])
 
-  // Get selected PDL details
-  const selectedPDLDetails = useMemo(() => {
-    return queryClient.getQueryData<PDL[]>(['pdls'])?.find(p => p.usage_point_id === selectedPDL)
-  }, [selectedPDL, queryClient])
-
   // Use custom hooks
   const {
     pdls,
     activePdls: allActivePdls,
+    selectedPDLDetails,
     consumptionData,
     maxPowerData,
     detailData,
     isLoading,
     isLoadingConsumption,
     isLoadingPower,
-    isLoadingDetail
-  } = useConsumptionData(selectedPDL, dateRange, detailDateRange, selectedPDLDetails)
+    isLoadingDetail,
+    queryClient
+  } = useConsumptionData(selectedPDL, dateRange, detailDateRange)
 
   // Filter PDLs to only show those with consumption capability
   const activePdls = useMemo(() => {
@@ -183,7 +178,8 @@ export default function Consumption() {
     detailData,
     selectedPDL,
     selectedPDLDetails,
-    hcHpCalculationTrigger
+    hcHpCalculationTrigger,
+    detailDateRange
   })
 
   // Sync power year selection
@@ -209,99 +205,68 @@ export default function Consumption() {
     setIsClearingCache,
   })
 
-  // Check if there's data in cache for the selected PDL
+  // NOTE: Fetch function registration is now handled by the unified hook in PageHeader
+  // We don't register fetchConsumptionData here to avoid conflicts and infinite loops
+  // The PageHeader component uses useUnifiedDataFetch which fetches all data types
+
+  // Check if ANY consumption data is in cache (to determine if we should auto-load)
+  // Use state to track cache instead of useMemo for better reactivity
+  const [cacheCheckTrigger, setCacheCheckTrigger] = useState(0)
+
   const hasDataInCache = useMemo(() => {
+    // Force recalculation by depending on cacheCheckTrigger
+    void cacheCheckTrigger
+
     if (!selectedPDL) return false
-    const queries = queryClient.getQueryCache().getAll()
-    return queries.some(q =>
-      q.queryKey[0] === 'consumption' &&
-      q.queryKey[1] === selectedPDL &&
-      q.state.data
-    )
-  }, [selectedPDL, queryClient])
 
-  // Check if yesterday's data is in cache (to determine if we need to auto-fetch)
-  const hasYesterdayDataInCache = useMemo(() => {
-    if (!selectedPDL) {
-      logger.log('[Cache Detection] No PDL selected')
-      return false
-    }
+    // Check for consumptionDetail data (unified cache key)
+    const detailQuery = queryClient.getQueryCache().find({
+      queryKey: ['consumptionDetail', selectedPDL],
+    })
 
-    // Calculate yesterday's date in UTC
-    const todayUTC = new Date()
-    const yesterdayUTC = new Date(Date.UTC(
-      todayUTC.getUTCFullYear(),
-      todayUTC.getUTCMonth(),
-      todayUTC.getUTCDate() - 1,
-      0, 0, 0, 0
-    ))
-
-    const yesterdayStr = yesterdayUTC.getUTCFullYear() + '-' +
-                        String(yesterdayUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                        String(yesterdayUTC.getUTCDate()).padStart(2, '0')
-
-    logger.log('[Cache Detection] Checking cache for PDL:', selectedPDL, 'yesterday:', yesterdayStr)
-
-    // Log all cache keys to see what's actually stored
-    const allQueries = queryClient.getQueryCache().getAll()
-    logger.log('[Cache Detection] Total queries in cache:', allQueries.length)
-
-    const relevantQueries = allQueries.filter(q =>
-      q.queryKey.includes(selectedPDL) &&
-      (q.queryKey[0] === 'consumptionDetail' || q.queryKey[0] === 'consumption')
-    )
-    logger.log('[Cache Detection] Relevant queries for this PDL:', relevantQueries.map(q => ({
-      key: q.queryKey,
-      hasData: !!q.state.data
-    })))
-
-    // Check if we have detailed consumption data for yesterday (day-by-day cache)
-    const detailedCacheKey = ['consumptionDetail', selectedPDL, yesterdayStr, yesterdayStr]
-    const detailedQuery = queryClient.getQueryData(detailedCacheKey) as any
-
-    logger.log('[Cache Detection] Detailed cache key:', detailedCacheKey)
-    logger.log('[Cache Detection] Detailed query result:', detailedQuery ? 'Found' : 'Not found')
-
-    if (detailedQuery?.data?.meter_reading?.interval_reading) {
-      logger.log('[Cache Detection] Detailed cache has', detailedQuery.data.meter_reading.interval_reading.length, 'readings')
-      if (detailedQuery.data.meter_reading.interval_reading.length > 0) {
-        logger.log('[Cache Detection] ✓ Cache found via detailed query!')
+    if (detailQuery?.state.data) {
+      const data = detailQuery.state.data as any
+      const readings = data?.data?.meter_reading?.interval_reading
+      if (readings && readings.length > 0) {
+        logger.log('[Cache] ✓ Found consumptionDetail:', readings.length, 'points')
         return true
       }
     }
 
-    // Also check daily consumption data
-    const consumptionQuery = queryClient.getQueryCache().find({
-      queryKey: ['consumption', selectedPDL],
-      exact: false,
+    // Also check daily consumption data (unified cache key)
+    const dailyQuery = queryClient.getQueryCache().find({
+      queryKey: ['consumptionDaily', selectedPDL],
     })
 
-    logger.log('[Cache Detection] Daily consumption query:', consumptionQuery ? 'Found' : 'Not found')
-
-    if (!consumptionQuery?.state.data) {
-      logger.log('[Cache Detection] ✗ No cache found')
-      return false
+    if (dailyQuery?.state.data) {
+      const data = dailyQuery.state.data as any
+      const readings = data?.data?.meter_reading?.interval_reading
+      if (readings && readings.length > 0) {
+        logger.log('[Cache] ✓ Found consumptionDaily:', readings.length, 'days')
+        return true
+      }
     }
 
-    const data = consumptionQuery.state.data as any
-    const readings = data?.data?.meter_reading?.interval_reading
+    return false
+  }, [selectedPDL, queryClient, cacheCheckTrigger])
 
-    logger.log('[Cache Detection] Daily consumption readings:', readings ? readings.length : 0)
+  // Poll for cache updates every 500ms for 5 seconds after component mount
+  // This catches data fetched by the header button
+  useEffect(() => {
+    let pollCount = 0
+    const maxPolls = 10 // 5 seconds total
 
-    if (!readings || readings.length === 0) {
-      logger.log('[Cache Detection] ✗ No readings in cache')
-      return false
-    }
+    const interval = setInterval(() => {
+      pollCount++
+      setCacheCheckTrigger(prev => prev + 1)
 
-    // Check if any reading matches yesterday's date
-    const hasYesterday = readings.some((reading: any) => {
-      const readingDate = reading.date?.split('T')[0]
-      return readingDate === yesterdayStr
-    })
+      if (pollCount >= maxPolls || hasDataInCache) {
+        clearInterval(interval)
+      }
+    }, 500)
 
-    logger.log('[Cache Detection]', hasYesterday ? '✓' : '✗', 'Yesterday data in daily consumption cache:', hasYesterday)
-    return hasYesterday
-  }, [selectedPDL, queryClient])
+    return () => clearInterval(interval)
+  }, [selectedPDL]) // Re-run when PDL changes
 
   // Auto-set selectedPDL when there's only one active PDL
   useEffect(() => {
@@ -354,45 +319,37 @@ export default function Consumption() {
     }
   }, [hcHpCalculationTrigger, selectedPDLDetails])
 
-  // Auto-fetch data on first load only for demo accounts or if cache has data
+  // Auto-load dateRange from cache when page loads (ALWAYS if cache exists)
+  // This runs when cache is detected OR when new data arrives
   useEffect(() => {
-    logger.log('[Auto-load] Effect triggered - hasAttemptedAutoLoad:', hasAttemptedAutoLoad, 'selectedPDL:', selectedPDL, 'hasCache:', hasYesterdayDataInCache, 'isDemo:', isDemo)
+    // Only set dateRange if it's null and we have cache
+    if (!dateRange && selectedPDL && hasDataInCache) {
+      logger.log('[Auto-load] No dateRange set but cache detected - setting dateRange from cache')
 
-    if (!hasAttemptedAutoLoad && selectedPDL) {
-      setHasAttemptedAutoLoad(true)
-      logger.log('[Auto-load] First load detected')
+      // Calculate date range (same as in fetchConsumptionData)
+      const todayUTC = new Date()
+      const yesterdayUTC = new Date(Date.UTC(
+        todayUTC.getUTCFullYear(),
+        todayUTC.getUTCMonth(),
+        todayUTC.getUTCDate() - 1,
+        0, 0, 0, 0
+      ))
+      const yesterday = yesterdayUTC
+      const startDate_obj = new Date(Date.UTC(
+        yesterdayUTC.getUTCFullYear(),
+        yesterdayUTC.getUTCMonth(),
+        yesterdayUTC.getUTCDate() - 1094,
+        0, 0, 0, 0
+      ))
+      const startDate = startDate_obj.toISOString().split('T')[0]
+      const endDate = yesterday.toISOString().split('T')[0]
 
-      // For demo accounts, ALWAYS fetch data to ensure detailed data is loaded for HC/HP calculations
-      if (isDemo) {
-        logger.log('[Auto-load] Demo account - fetching data')
-        fetchConsumptionData()
-      } else if (hasYesterdayDataInCache) {
-        logger.log('[Auto-load] Cache detected - displaying cached data without fetching')
+      logger.log('[Auto-load] Setting date range:', startDate, 'to', endDate)
 
-        // If data is already in cache, just set states to show cached data
-        // Don't auto-fetch for regular users - they must click the button manually
+      setDateRange({ start: startDate, end: endDate })
 
-        // Calculate date range (same as in fetchConsumptionData)
-        const todayUTC = new Date()
-        const yesterdayUTC = new Date(Date.UTC(
-          todayUTC.getUTCFullYear(),
-          todayUTC.getUTCMonth(),
-          todayUTC.getUTCDate() - 1,
-          0, 0, 0, 0
-        ))
-        const yesterday = yesterdayUTC
-        const startDate_obj = new Date(Date.UTC(
-          yesterdayUTC.getUTCFullYear(),
-          yesterdayUTC.getUTCMonth(),
-          yesterdayUTC.getUTCDate() - 1094,
-          0, 0, 0, 0
-        ))
-        const startDate = startDate_obj.toISOString().split('T')[0]
-        const endDate = yesterday.toISOString().split('T')[0]
-
-        logger.log('[Auto-load] Setting date range:', startDate, 'to', endDate)
-
-        setDateRange({ start: startDate, end: endDate })
+      // Set loading states to complete so sections expand
+      setTimeout(() => {
         setDailyLoadingComplete(true)
         setPowerLoadingComplete(true)
         setAllLoadingComplete(true)
@@ -404,23 +361,43 @@ export default function Consumption() {
         setHcHpCalculationTrigger(prev => prev + 1)
 
         logger.log('[Auto-load] All states set - graphs should be visible')
-      } else {
+      }, 100) // Small delay to let React Query hydrate
+    }
+  }, [selectedPDL, hasDataInCache, dateRange, queryClient])
+
+  // Auto-fetch data on first load only for demo accounts
+  useEffect(() => {
+    logger.log('[Auto-load] Effect triggered - hasAttemptedAutoLoad:', hasAttemptedAutoLoad, 'selectedPDL:', selectedPDL, 'hasCache:', hasDataInCache, 'isDemo:', isDemo)
+
+    if (!hasAttemptedAutoLoad && selectedPDL) {
+      setHasAttemptedAutoLoad(true)
+      logger.log('[Auto-load] First load detected')
+
+      // For demo accounts, ALWAYS fetch data to ensure detailed data is loaded for HC/HP calculations
+      if (isDemo) {
+        logger.log('[Auto-load] Demo account - fetching data')
+        fetchConsumptionData()
+      } else if (!hasDataInCache) {
         logger.log('[Auto-load] No cache - user must click button manually')
       }
-      // For regular accounts without cache: do nothing, user must click the button manually
+      // For regular accounts with cache: dateRange is set by the effect above
     }
-  }, [selectedPDL, hasYesterdayDataInCache, hasAttemptedAutoLoad, fetchConsumptionData, isDemo])
+  }, [selectedPDL, hasDataInCache, hasAttemptedAutoLoad, fetchConsumptionData, isDemo])
 
   // Mark daily consumption loading as complete (whether success or error)
   useEffect(() => {
+    logger.log('[Loading Check] Daily:', { dateRange: !!dateRange, isLoading: isLoadingConsumption, hasData: !!consumptionData })
     if (dateRange && !isLoadingConsumption && consumptionData) {
+      logger.log('[Loading] ✓ Daily consumption complete')
       setDailyLoadingComplete(true)
     }
   }, [dateRange, isLoadingConsumption, consumptionData])
 
   // Mark power loading as complete
   useEffect(() => {
+    logger.log('[Loading Check] Power:', { dateRange: !!dateRange, isLoading: isLoadingPower, hasData: !!maxPowerData })
     if (dateRange && !isLoadingPower && maxPowerData) {
+      logger.log('[Loading] ✓ Power complete')
       setPowerLoadingComplete(true)
     }
   }, [dateRange, isLoadingPower, maxPowerData])
@@ -452,7 +429,9 @@ export default function Consumption() {
 
   // Auto-expand all sections when loading is complete
   useEffect(() => {
+    logger.log('[Loading] allLoadingComplete changed:', allLoadingComplete)
     if (allLoadingComplete) {
+      logger.log('[Loading] ✓ All loading complete - expanding sections')
       setIsStatsSectionExpanded(true)
       setIsChartsExpanded(true)
       setIsDetailSectionExpanded(true)
@@ -517,57 +496,22 @@ export default function Consumption() {
     await clearCache()
   }
 
-  // Get consumption response from React Query
-  const consumptionResponse = queryClient.getQueryData(['consumption', selectedPDL, dateRange?.start, dateRange?.end])
-  const maxPowerResponse = queryClient.getQueryData(['maxPower', selectedPDL, dateRange?.start, dateRange?.end])
-
   // For now, return the simplified version with working components
   // The rest of the components will be added incrementally
   return (
     <div className="pt-6 w-full">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-          <TrendingUp className="text-primary-600 dark:text-primary-400" size={32} />
-          Consommation
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Visualisez et analysez votre consommation électrique
-        </p>
-      </div>
-
-      {/* PDL Selector Component with Loading Progress inside */}
-      <PDLSelector
-        pdls={pdls}
-        activePdls={activePdls}
-        selectedPDL={selectedPDL}
-        selectedPDLDetails={selectedPDLDetails}
-        onPDLSelect={setSelectedPDL}
-        onFetchData={fetchConsumptionData}
-        isLoading={isLoading}
-        isLoadingDetailed={isLoadingDetailed}
-        dataLimitWarning={dataLimitWarning}
-      >
-        {/* Loading Progress Component as child */}
-        <LoadingProgress
-          isLoadingDaily={isLoadingDaily}
-          isLoadingDetailed={isLoadingDetailed}
-          dailyLoadingComplete={dailyLoadingComplete}
-          powerLoadingComplete={powerLoadingComplete}
-          loadingProgress={loadingProgress}
-          hcHpCalculationComplete={hcHpCalculationComplete}
-          hcHpCalculationTrigger={hcHpCalculationTrigger}
-          allLoadingComplete={allLoadingComplete}
-          dateRange={dateRange}
-          isLoadingConsumption={isLoadingConsumption}
-          isLoadingPower={isLoadingPower}
-          consumptionResponse={consumptionResponse}
-          maxPowerResponse={maxPowerResponse}
-          hasYesterdayDataInCache={hasYesterdayDataInCache}
-        />
-      </PDLSelector>
+      {/* Warning if PDL has limited data */}
+      {dataLimitWarning && (
+        <div className="mb-6 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center gap-2">
+          <span className="text-blue-600 dark:text-blue-400 text-lg flex-shrink-0">ℹ️</span>
+          <p className="text-sm text-blue-800 dark:text-blue-200">
+            {dataLimitWarning}
+          </p>
+        </div>
+      )}
 
       {/* Statistics Section - Collapsible */}
-      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+      <div className="mt-2 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
         <div
           className={`flex items-center justify-between p-6 ${
             allLoadingComplete ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
@@ -803,7 +747,7 @@ export default function Consumption() {
 
 
       {/* Info Block Component */}
-      <InfoBlock dataLimitWarning={dataLimitWarning} />
+      <InfoBlock />
 
       {/* Confirm Modal Component */}
       <ConfirmModal

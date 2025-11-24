@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Calculator, AlertCircle, Loader2, ChevronDown, ChevronUp, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
@@ -9,9 +9,10 @@ import { tempoApi, type TempoDay } from '@/api/tempo'
 import type { PDL } from '@/types/api'
 import jsPDF from 'jspdf'
 import { logger } from '@/utils/logger'
-import { SimulatorLoadingProgress } from './Simulator/SimulatorLoadingProgress'
 import { ModernButton } from './Simulator/components/ModernButton'
 import { useIsDemo } from '@/hooks/useIsDemo'
+import { usePdlStore } from '@/stores/pdlStore'
+import { useDataFetchStore } from '@/stores/dataFetchStore'
 // import { useAuth } from '@/hooks/useAuth' // Unused for now
 // import toast from 'react-hot-toast' // Unused for now
 
@@ -150,8 +151,8 @@ export default function Simulator() {
     },
   })
 
-  // Selected PDL
-  const [selectedPdl, setSelectedPdl] = useState<string>('')
+  // Selected PDL from global store
+  const { selectedPdl, setSelectedPdl } = usePdlStore()
 
   // Simulation state
   const [isSimulating, setIsSimulating] = useState(false)
@@ -161,6 +162,9 @@ export default function Simulator() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [hasAutoLaunched, setHasAutoLaunched] = useState(false)
   // const [isClearingCache, setIsClearingCache] = useState(false) // Unused for now
+
+  // Register fetch function in store for PageHeader button
+  const { setFetchDataFunction, setIsLoading } = useDataFetchStore()
 
   // Filters and sorting state
   const [filterType, setFilterType] = useState<string>('all')
@@ -215,7 +219,7 @@ export default function Simulator() {
     setHasAutoLaunched(false)
   }, [selectedPdl])
 
-  const handleSimulation = async () => {
+  const handleSimulation = useCallback(async () => {
     if (!selectedPdl) {
       setSimulationError('Veuillez sélectionner un PDL')
       return
@@ -240,163 +244,56 @@ export default function Simulator() {
       // Année glissante : de aujourd'hui - 365 jours jusqu'à hier
       const yearStart = new Date(today)
       yearStart.setDate(yearStart.getDate() - 365)
-      const endDate = yesterday
+      const startDate = yearStart.toISOString().split('T')[0]
+      const endDate = yesterday.toISOString().split('T')[0]
 
-      // Générer les périodes de 7 jours avec chevauchement d'1 jour pour éviter les trous
-      const periods: { start: string; end: string }[] = []
-      let currentStart = new Date(yearStart)
+      setFetchProgress({ current: 0, total: 1, phase: 'Chargement des données depuis le cache (année glissante)...' })
 
-      while (currentStart < endDate) {
-        const currentEnd = new Date(currentStart)
-        currentEnd.setDate(currentEnd.getDate() + 6) // 7 jours (jour de départ inclus)
+      logger.log(`Loading consumption data from cache: ${startDate} to ${endDate}`)
 
-        // Si la date de fin dépasse la date limite, on ajuste
-        if (currentEnd > endDate) {
-          periods.push({
-            start: currentStart.toISOString().split('T')[0],
-            end: endDate.toISOString().split('T')[0],
-          })
-          break
-        } else {
-          periods.push({
-            start: currentStart.toISOString().split('T')[0],
-            end: currentEnd.toISOString().split('T')[0],
-          })
-          // Avancer de seulement 6 jours au lieu de 7 pour chevaucher d'1 jour
-          currentStart.setDate(currentStart.getDate() + 6)
+      // Collect data from cache day by day (same as Consumption page)
+      const allPoints: any[] = []
+      const currentDate = new Date(yearStart)
+      const endDateObj = new Date(yesterday)
+
+      while (currentDate <= endDateObj) {
+        const dateStr = currentDate.toISOString().split('T')[0]
+
+        // Try to get this day's data from cache
+        const dayData = queryClient.getQueryData(['consumptionDetail', selectedPdl, dateStr, dateStr]) as any
+
+        if (dayData?.data?.meter_reading?.interval_reading) {
+          allPoints.push(...dayData.data.meter_reading.interval_reading)
+        }
+
+        // Move to next day
+        currentDate.setDate(currentDate.getDate() + 1)
+      }
+
+      logger.log(`Cache response: ${allPoints.length} points for ${startDate} to ${endDate}`)
+
+      if (allPoints.length === 0) {
+        throw new Error(`Aucune donnée en cache pour la période ${startDate} - ${endDate}. Veuillez d'abord récupérer les données depuis la page Consommation.`)
+      }
+
+      // Create response structure compatible with the rest of the code
+      const response = {
+        success: true,
+        data: {
+          meter_reading: {
+            interval_reading: allPoints
+          }
         }
       }
 
-      setFetchProgress({ current: 0, total: periods.length, phase: 'Récupération des données de consommation...' })
+      const allData = [response.data]
 
-      logger.log(`Fetching ${periods.length} periods of consumption data`)
-
-      // Récupérer les données pour chaque période
-      const allData: any[] = []
-
-      for (let i = 0; i < periods.length; i++) {
-        const period = periods[i]
-        setFetchProgress({
-          current: i + 1,
-          total: periods.length,
-          phase: `${period.start} → ${period.end} (${i + 1}/${periods.length})`
-        })
-
-        logger.log(`Fetching period ${i + 1}/${periods.length}: ${period.start} to ${period.end}`)
-
-        // Try to build response from day-by-day cache (shared with Consumption page)
-        // Consumption page stores data with keys: ['consumptionDetail', pdl, date, date]
-        const startDate = new Date(period.start + 'T00:00:00Z')
-        const endDate = new Date(period.end + 'T00:00:00Z')
-        const cachedDayData: any[] = []
-        let hasMissingDays = false
-
-        const currentDate = new Date(startDate)
-        while (currentDate <= endDate) {
-          const dateStr = currentDate.toISOString().split('T')[0]
-          const dayCacheKey = ['consumptionDetail', selectedPdl, dateStr, dateStr]
-          const dayData = queryClient.getQueryData(dayCacheKey) as any
-
-          if (dayData?.data?.meter_reading?.interval_reading) {
-            cachedDayData.push(...dayData.data.meter_reading.interval_reading)
-          } else {
-            hasMissingDays = true
-          }
-          currentDate.setUTCDate(currentDate.getUTCDate() + 1)
-        }
-
-        let response: any
-
-        if (!hasMissingDays && cachedDayData.length > 0) {
-          // All days are in cache, build response from cached data
-          logger.log(`✅ [Cache HIT] Using cached data for ${period.start} → ${period.end}`)
-          response = {
-            success: true,
-            data: {
-              meter_reading: {
-                interval_reading: cachedDayData
-              }
-            }
-          }
-        } else {
-          // Some or all days are missing, fetch from API
-          logger.log(`❌ [Cache MISS] Fetching from API for ${period.start} → ${period.end}`)
-          const cacheKey = ['consumptionDetail', selectedPdl, period.start, period.end]
-          response = await queryClient.fetchQuery({
-            queryKey: cacheKey,
-            queryFn: () => enedisApi.getConsumptionDetail(selectedPdl, {
-              start: period.start,
-              end: period.end,
-              use_cache: true,
-            }),
-            staleTime: 7 * 24 * 60 * 60 * 1000,
-          })
-
-          // Also cache day by day for future use (same format as Consumption page)
-          if (response?.data?.meter_reading?.interval_reading) {
-            const dataByDate: Record<string, any[]> = {}
-            response.data.meter_reading.interval_reading.forEach((point: any) => {
-              let date = point.date.split(' ')[0].split('T')[0]
-              const time = point.date.split(' ')[1] || point.date.split('T')[1] || '00:00:00'
-              if (time.startsWith('00:00')) {
-                const dateObj = new Date(date + 'T00:00:00Z')
-                dateObj.setUTCDate(dateObj.getUTCDate() - 1)
-                date = dateObj.toISOString().split('T')[0]
-              }
-              if (!dataByDate[date]) dataByDate[date] = []
-              dataByDate[date].push(point)
-            })
-
-            Object.entries(dataByDate).forEach(([date, points]) => {
-              queryClient.setQueryData(
-                ['consumptionDetail', selectedPdl, date, date],
-                {
-                  success: true,
-                  data: { meter_reading: { interval_reading: points } }
-                }
-              )
-            })
-          }
-        }
-
-        if (!response.success || !response.data) {
-          // Check error type
-          const errorCode = response.error?.code
-          const errorMessage = response.error?.message || ''
-
-          logger.log('[Simulator] API Error detected:', { errorCode, errorMessage, response })
-
-          // Check for Enedis error ADAM-ERR0123 (period before meter activation)
-          if (errorMessage.includes('ADAM-ERR0123') || errorMessage.includes('anterior to the meter')) {
-            logger.log(`⚠️ Stopping simulation at ${period.start} - meter not activated yet. Processing data already collected.`)
-            break // Stop fetching but process what we have
-          }
-
-          // Check for rate limit error
-          if (errorCode === 'RATE_LIMIT_EXCEEDED') {
-            throw new Error(`Quota d'appels API dépassé. Vous avez atteint la limite quotidienne d'appels à l'API Enedis. Veuillez réessayer demain ou contactez l'administrateur pour augmenter votre quota.`)
-          }
-
-          throw new Error(`Impossible de récupérer les données pour la période ${period.start} - ${period.end}. ${errorMessage}`)
-        }
-
-        // Log the number of points in this period
-        const data = response.data as any
-        const pointsCount = data?.meter_reading?.interval_reading?.length || 0
-        logger.log(`Period ${i + 1}/${periods.length} (${period.start} to ${period.end}): ${pointsCount} points`)
-
-        allData.push(response.data)
-      }
-
-      setFetchProgress({ current: periods.length, total: periods.length, phase: 'Calcul des simulations en cours...' })
+      setFetchProgress({ current: 1, total: 1, phase: 'Calcul des simulations en cours...' })
 
       // Fetch TEMPO colors for the period
       let tempoColors: TempoDay[] = []
       try {
-        const tempoResponse = await tempoApi.getDays(
-          yearStart.toISOString().split('T')[0],
-          endDate.toISOString().split('T')[0]
-        )
+        const tempoResponse = await tempoApi.getDays(startDate, endDate)
         logger.log('[TEMPO API] Response:', tempoResponse)
         if (tempoResponse.success && Array.isArray(tempoResponse.data)) {
           tempoColors = tempoResponse.data
@@ -443,7 +340,18 @@ export default function Simulator() {
     } finally {
       setIsSimulating(false)
     }
-  }
+  }, [selectedPdl, pdlsData, offersData, providersData, queryClient])
+
+  // Register fetch function in store for PageHeader button
+  useEffect(() => {
+    setFetchDataFunction(handleSimulation)
+    return () => setFetchDataFunction(null)
+  }, [handleSimulation, setFetchDataFunction])
+
+  // Sync loading state with store
+  useEffect(() => {
+    setIsLoading(isSimulating)
+  }, [isSimulating, setIsLoading])
 
   const calculateSimulationsForAllOffers = (consumptionData: any[], offers: EnergyOffer[], providers: EnergyProvider[], tempoColors: TempoDay[], pdl?: PDL) => {
     // Create a map of date -> TEMPO color for fast lookup
@@ -501,19 +409,34 @@ export default function Simulator() {
     const uniqueDates = new Set(allConsumption.map(item => item.date))
     const hasDuplicates = uniqueDates.size !== allConsumption.length
 
-    logger.log('Total consumption points:', allConsumption.length)
+    logger.log('Total consumption points (before deduplication):', allConsumption.length)
     logger.log('Unique dates:', uniqueDates.size)
     logger.log('Has duplicates?', hasDuplicates)
 
     if (hasDuplicates) {
-      logger.warn(`⚠️ DUPLICATE DETECTED: ${allConsumption.length - uniqueDates.size} duplicate points found!`)
+      logger.warn(`⚠️ DUPLICATE DETECTED: ${allConsumption.length - uniqueDates.size} duplicate points found! Filtering duplicates...`)
     }
 
+    // Filter duplicates: keep only first occurrence of each date
+    const seenDates = new Set<string>()
+    const dedupedConsumption = allConsumption.filter(item => {
+      if (seenDates.has(item.date)) {
+        return false // Skip duplicate
+      }
+      seenDates.add(item.date)
+      return true // Keep first occurrence
+    })
+
+    logger.log('Total consumption points (after deduplication):', dedupedConsumption.length)
+
+    // Use deduplicated data for calculations
+    const allConsumptionFinal = dedupedConsumption
+
     // Calculate total kWh
-    const totalKwh = allConsumption.reduce((sum, item) => sum + (item.value / 1000), 0) // Convert Wh to kWh
+    const totalKwh = allConsumptionFinal.reduce((sum, item) => sum + (item.value / 1000), 0) // Convert Wh to kWh
 
     logger.log('Total kWh for year:', totalKwh)
-    logger.log('First 3 consumption samples:', JSON.stringify(allConsumption.slice(0, 3), null, 2))
+    logger.log('First 3 consumption samples:', JSON.stringify(allConsumptionFinal.slice(0, 3), null, 2))
 
     // Simulate each offer
     const results = offers.map((offer) => {
@@ -535,7 +458,7 @@ export default function Simulator() {
         // BASE calculation with weekend pricing support
         if (offer.base_price_weekend) {
           // Separate weekday and weekend consumption
-          allConsumption.forEach((item) => {
+          allConsumptionFinal.forEach((item) => {
             const kwh = item.value / 1000
             if (isWeekend(item.date)) {
               baseWeekendKwh += kwh
@@ -580,7 +503,7 @@ export default function Simulator() {
         const isEnerocoopSpecialOffer = offer.name.includes('Flexi WATT') &&
           (offer.name.includes('nuit & weekend') || offer.name.includes('2 saisons') || offer.name.includes('Pointe'))
 
-        allConsumption.forEach((item) => {
+        allConsumptionFinal.forEach((item) => {
           const hour = item.hour || 0
           const kwh = item.value / 1000
           const itemIsWinter = isWinterSeason(item.date)
@@ -646,7 +569,7 @@ export default function Simulator() {
         const isHcNuitWeekend = offer.offer_type === 'HC_NUIT_WEEKEND'
         const isHcWeekend = offer.offer_type === 'HC_WEEKEND'
 
-        allConsumption.forEach((item, index) => {
+        allConsumptionFinal.forEach((item, index) => {
           const hour = item.hour || 0
           const kwh = item.value / 1000
           const itemIsWeekend = isWeekend(item.date)
@@ -739,7 +662,7 @@ export default function Simulator() {
         // TEMPO calculation with real colors from RTE
         let colorStats = { BLUE: 0, WHITE: 0, RED: 0, UNKNOWN: 0 }
 
-        allConsumption.forEach((item, index) => {
+        allConsumptionFinal.forEach((item, index) => {
           const hour = item.hour || 0
           const kwh = item.value / 1000
           const color = tempoColorMap.get(item.dateOnly)
@@ -858,17 +781,7 @@ export default function Simulator() {
 
   if (!pdlsData || pdlsData.length === 0) {
     return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-            <Calculator className="text-primary-600 dark:text-primary-400" size={32} />
-            Simulateur tarifaire
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Comparez les offres d'énergie et trouvez la meilleure pour votre consommation
-          </p>
-        </div>
+      <div className="space-y-6 pt-6">
         <div className="card p-8 text-center">
           <p className="text-gray-600 dark:text-gray-400">
             Aucun PDL disponible.{' '}
@@ -1524,17 +1437,6 @@ export default function Simulator() {
 
   return (
     <div className="pt-6 w-full">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-          <Calculator className="text-primary-600 dark:text-primary-400" size={32} />
-          Comparateur des abonnements par fournisseur
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Cet outil vous permet de comparer automatiquement le coût de toutes les offres disponibles
-          en utilisant vos données de consommation réelles récupérées chez Enedis sur les 12 derniers mois.
-        </p>
-      </div>
-
       {/* Error Banner */}
       {simulationError && (
         <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
@@ -1559,90 +1461,25 @@ export default function Simulator() {
         </div>
       )}
 
-      <div className="card">
-        {/* Configuration Header */}
-        <div className="flex items-center gap-2 mb-6">
-          <Calculator className="text-primary-600 dark:text-primary-400" size={20} />
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Configuration</h2>
+      {/* Demo mode info */}
+      {isDemo && (
+        <div className="mb-6 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+          <p className="text-sm text-amber-800 dark:text-amber-200">
+            <strong>Mode Démo :</strong> Le compte démo dispose déjà de 3 ans de données fictives pré-chargées.
+            Le simulateur fonctionne avec ces données.
+          </p>
         </div>
+      )}
 
-        <div className="space-y-6">
-        {/* PDL Selection */}
-        {(() => {
-          const activePdls = Array.isArray(pdlsData) ? pdlsData.filter((pdl) => pdl.is_active !== false) : []
-
-          if (activePdls.length === 0) {
-            return (
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                Aucun PDL actif disponible. Veuillez en ajouter un depuis votre{' '}
-                <a href="/dashboard" className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 underline">
-                  tableau de bord
-                </a>.
-              </div>
-            )
-          }
-
-          if (activePdls.length === 1) {
-            return null // Single PDL is auto-selected, no need to show selector
-          }
-
-          return (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Point de Livraison (PDL)
-              </label>
-              <select
-                value={selectedPdl}
-                onChange={(e) => setSelectedPdl(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-colors"
-              >
-                {activePdls.map((pdl) => (
-                  <option key={pdl.usage_point_id} value={pdl.usage_point_id}>
-                    {pdl.name || pdl.usage_point_id}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )
-        })()}
-
-        {/* Submit Button */}
-        <ModernButton
-          variant="primary"
-          size="lg"
-          fullWidth
-          onClick={handleSimulation}
-          disabled={isSimulating || !selectedPdl}
-          loading={isSimulating}
-          icon={isSimulating ? undefined : Calculator}
-          iconPosition="left"
-        >
-          {isSimulating
-            ? (isDemo ? 'Simulation en cours...' : 'Récupération en cours...')
-            : 'Lancer la simulation'
-          }
-        </ModernButton>
-
-        {/* Demo mode info */}
-        {isDemo && (
-          <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-            <p className="text-sm text-amber-800 dark:text-amber-200">
-              <strong>Mode Démo :</strong> Le compte démo dispose déjà de 3 ans de données fictives pré-chargées.
-              Le simulateur fonctionne avec ces données.
-            </p>
-          </div>
-        )}
+      {/* Error message */}
+      {simulationError && (
+        <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-2">
+          <AlertCircle className="text-red-600 dark:text-red-400 flex-shrink-0" size={20} />
+          <p className="text-sm text-red-800 dark:text-red-200">
+            {simulationError}
+          </p>
         </div>
-
-        {/* Progress Section */}
-        <SimulatorLoadingProgress
-          isSimulating={isSimulating}
-          fetchProgress={fetchProgress}
-          simulationResult={simulationResult}
-          simulationError={simulationError}
-          hasCacheData={hasCacheData}
-        />
-      </div>
+      )}
 
         {/* Simulation Results */}
         <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">

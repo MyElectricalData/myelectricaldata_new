@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import {
   RefreshCw, Users, CheckCircle, XCircle, Copy, Trash2, Shield, Bug, Database,
   ArrowUpDown, ArrowUp, ArrowDown, Filter, Search, UserPlus, Key, Power,
-  TrendingUp, UserCheck, Mail
+  TrendingUp, UserCheck, Mail, Ban
 } from 'lucide-react'
 import type { Role, AdminUserStats } from '@/types/api'
 
@@ -117,6 +117,16 @@ export default function AdminUsers() {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
     },
     onError: () => showNotification('error', 'Erreur lors du vidage du cache')
+  })
+
+  const clearBlacklistMutation = useMutation({
+    mutationFn: (userId: string) => adminApi.clearUserBlacklist(userId),
+    onSuccess: (response) => {
+      const data = response.data as any
+      showNotification('success', `Blacklist vidée : ${data.deleted_keys} clés (${data.pdl_count} PDL)`)
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+    },
+    onError: () => showNotification('error', 'Erreur lors du vidage de la blacklist')
   })
 
   const updateRoleMutation = useMutation({
@@ -761,9 +771,17 @@ export default function AdminUsers() {
                           onClick={() => clearCacheMutation.mutate(user.id)}
                           disabled={clearCacheMutation.isPending}
                           className="p-1.5 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded transition-colors"
-                          title="Vider le cache de consommation"
+                          title="Vider le cache global (consommation + production)"
                         >
                           <Database size={14} className="text-purple-600 dark:text-purple-400" />
+                        </button>
+                        <button
+                          onClick={() => clearBlacklistMutation.mutate(user.id)}
+                          disabled={clearBlacklistMutation.isPending}
+                          className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors group"
+                          title="Supprimer toutes les dates blacklistées"
+                        >
+                          <Ban size={14} className="text-red-600 dark:text-red-400" />
                         </button>
                         <button
                           onClick={() => setResetPasswordConfirm({ userId: user.id, email: user.email })}

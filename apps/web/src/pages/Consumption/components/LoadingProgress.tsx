@@ -9,7 +9,7 @@ interface ExtendedLoadingProgressProps extends LoadingProgressProps {
   isLoadingPower: boolean
   consumptionResponse: any
   maxPowerResponse: any
-  hasYesterdayDataInCache: boolean
+  hasDataInCache: boolean
 }
 
 export function LoadingProgress({
@@ -24,7 +24,7 @@ export function LoadingProgress({
   isLoadingPower,
   consumptionResponse,
   maxPowerResponse,
-  hasYesterdayDataInCache
+  hasDataInCache
 }: ExtendedLoadingProgressProps) {
   const [isProgressExpanded, setIsProgressExpanded] = useState(false)
   const [wasManuallyExpanded, setWasManuallyExpanded] = useState(false)
@@ -41,7 +41,7 @@ export function LoadingProgress({
   }, [allLoadingComplete, isProgressExpanded, wasManuallyExpanded])
 
   // Show if we have a dateRange OR if anything is loading/complete OR if cache exists
-  const hasAnyActivity = dateRange || isLoadingConsumption || isLoadingPower || isLoadingDetailed || allLoadingComplete || hasYesterdayDataInCache
+  const hasAnyActivity = dateRange || isLoadingConsumption || isLoadingPower || isLoadingDetailed || allLoadingComplete || hasDataInCache
 
   if (!hasAnyActivity) {
     return null

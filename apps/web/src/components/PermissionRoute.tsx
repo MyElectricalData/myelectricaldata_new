@@ -12,10 +12,11 @@ interface PermissionRouteProps {
  * Redirects to /forbidden if user lacks permission
  */
 export default function PermissionRoute({ children, resource }: PermissionRouteProps) {
-  const { isAuthenticated, isLoading } = useAuth()
+  const { user, isAuthenticated, isLoading } = useAuth()
   const { hasPermission } = usePermissions()
 
-  if (isLoading) {
+  // Wait for both authentication and user data to load
+  if (isLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-lg">Chargement...</div>

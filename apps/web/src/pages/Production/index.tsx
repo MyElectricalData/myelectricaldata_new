@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Sun, BarChart3 } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
+import { BarChart3 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { usePdlStore } from '@/stores/pdlStore'
 import type { PDL } from '@/types/api'
 import { useIsDemo } from '@/hooks/useIsDemo'
+import { logger } from '@/utils/logger'
 
 // Import custom hooks
 import { useProductionData } from './hooks/useProductionData'
@@ -11,21 +12,17 @@ import { useProductionFetch } from './hooks/useProductionFetch'
 import { useProductionCalcs } from './hooks/useProductionCalcs'
 
 // Import components
-import { PDLSelector } from './components/PDLSelector'
-import { LoadingProgress } from './components/LoadingProgress'
 import { YearlyProductionCards } from './components/YearlyProductionCards'
 import { YearlyProduction } from './components/YearlyProduction'
 import { AnnualProductionCurve } from './components/AnnualProductionCurve'
 import { DetailedProductionCurve } from './components/DetailedProductionCurve'
 
 export default function Production() {
-  const { user } = useAuth()
-  const queryClient = useQueryClient()
   const isDemo = useIsDemo()
+  const { selectedPdl: selectedPDL, setSelectedPdl: setSelectedPDL } = usePdlStore()
 
   // States
-  const [selectedPDL, setSelectedPDL] = useState<string>('')
-  const [isClearingCache, setIsClearingCache] = useState(false)
+  const [, setIsClearingCache] = useState(false)
   const [isChartsExpanded, setIsChartsExpanded] = useState(false)
   const [dateRange, setDateRange] = useState<{start: string, end: string} | null>(null)
   const [hasAttemptedAutoLoad, setHasAttemptedAutoLoad] = useState(false)
@@ -84,21 +81,18 @@ export default function Production() {
     return { start: startDate, end: endDate }
   }, [dateRange])
 
-  // Get selected PDL details
-  const selectedPDLDetails = useMemo(() => {
-    return queryClient.getQueryData<PDL[]>(['pdls'])?.find(p => p.usage_point_id === selectedPDL)
-  }, [selectedPDL, queryClient])
-
   // Use custom hooks
   const {
     pdls,
     activePdls,
+    selectedPDLDetails,
     productionData,
     detailData,
     isLoading,
     isLoadingProduction,
-    isLoadingDetail
-  } = useProductionData(selectedPDL, dateRange, detailDateRange, selectedPDLDetails)
+    isLoadingDetail,
+    queryClient
+  } = useProductionData(selectedPDL, dateRange, detailDateRange)
 
   const {
     chartData,
@@ -108,7 +102,7 @@ export default function Production() {
     detailData,
   })
 
-  const { fetchProductionData, clearCache } = useProductionFetch({
+  const { fetchProductionData } = useProductionFetch({
     selectedPDL,
     selectedPDLDetails,
     setDateRange,
@@ -122,29 +116,42 @@ export default function Production() {
     setIsClearingCache,
   })
 
-  // Check if yesterday's data is in cache
-  const hasYesterdayDataInCache = useMemo(() => {
-    if (!selectedPDL) return false
+  // NOTE: Fetch function registration is now handled by the unified hook in PageHeader
+  // We don't register fetchProductionData here to avoid conflicts and infinite loops
+  // The PageHeader component uses useUnifiedDataFetch which fetches all data types
 
-    const todayUTC = new Date()
-    const yesterdayUTC = new Date(Date.UTC(
-      todayUTC.getUTCFullYear(),
-      todayUTC.getUTCMonth(),
-      todayUTC.getUTCDate() - 1,
-      0, 0, 0, 0
-    ))
+  // Check if ANY production data is in cache (to determine if we should auto-load)
+  const hasDataInCache = useMemo(() => {
+    if (!selectedPDL) {
+      logger.log('[Cache Detection] No PDL selected')
+      return false
+    }
 
-    const yesterdayStr = yesterdayUTC.getUTCFullYear() + '-' +
-                        String(yesterdayUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                        String(yesterdayUTC.getUTCDate()).padStart(2, '0')
+    logger.log('[Cache Detection] Checking production cache for PDL:', selectedPDL)
 
-    const detailedCacheKey = ['productionDetail', selectedPDL, yesterdayStr, yesterdayStr]
-    const detailedQuery = queryClient.getQueryData(detailedCacheKey) as any
+    // Get all queries in cache
+    const allQueries = queryClient.getQueryCache().getAll()
 
-    if (detailedQuery?.data?.meter_reading?.interval_reading?.length > 0) {
+    // Find ALL productionDetail queries for this PDL with data
+    const detailedQueries = allQueries.filter(q => {
+      if (q.queryKey[0] !== 'productionDetail') return false
+      if (q.queryKey[1] !== selectedPDL) return false
+
+      const data = q.state.data as any
+      const hasReadings = data?.data?.meter_reading?.interval_reading?.length > 0
+      return hasReadings
+    })
+
+    logger.log('[Cache Detection] Found', detailedQueries.length, 'detailed production cache entries with data')
+
+    if (detailedQueries.length > 0) {
+      // Log first and last dates in cache
+      const dates = detailedQueries.map(q => q.queryKey[2] as string).sort()
+      logger.log('[Cache Detection] ✓ Production cache found! Date range:', dates[0], 'to', dates[dates.length - 1])
       return true
     }
 
+    logger.log('[Cache Detection] ✗ No production cache found')
     return false
   }, [selectedPDL, queryClient])
 
@@ -182,83 +189,76 @@ export default function Production() {
     }
   }, [dailyLoadingComplete, isLoadingDetailed])
 
-  // Auto-fetch data on first load only for demo accounts or if cache has data
+  // Auto-load dateRange from cache when page loads (ALWAYS if cache exists)
   useEffect(() => {
+    // Only set dateRange if it's null and we have cache
+    if (!dateRange && selectedPDL && hasDataInCache) {
+      logger.log('[Auto-load] No dateRange set but cache detected - setting dateRange from cache')
+
+      // Calculate date range (same as in fetchProductionData)
+      const todayUTC = new Date()
+      const yesterdayUTC = new Date(Date.UTC(
+        todayUTC.getUTCFullYear(),
+        todayUTC.getUTCMonth(),
+        todayUTC.getUTCDate() - 1,
+        0, 0, 0, 0
+      ))
+      const yesterday = yesterdayUTC
+      const startDate_obj = new Date(Date.UTC(
+        yesterdayUTC.getUTCFullYear(),
+        yesterdayUTC.getUTCMonth(),
+        yesterdayUTC.getUTCDate() - 1094,
+        0, 0, 0, 0
+      ))
+      const startDate = startDate_obj.toISOString().split('T')[0]
+      const endDate = yesterday.toISOString().split('T')[0]
+
+      logger.log('[Auto-load] Setting date range:', startDate, 'to', endDate)
+
+      setDateRange({ start: startDate, end: endDate })
+      setDailyLoadingComplete(true)
+      setAllLoadingComplete(true)
+      setIsChartsExpanded(true)
+      setIsStatsSectionExpanded(true)
+      setIsDetailSectionExpanded(true)
+
+      logger.log('[Auto-load] All states set - graphs should be visible')
+    }
+  }, [selectedPDL, hasDataInCache, dateRange])
+
+  // Auto-fetch data on first load only for demo accounts
+  useEffect(() => {
+    logger.log('[Auto-load] Effect triggered - hasAttemptedAutoLoad:', hasAttemptedAutoLoad, 'selectedPDL:', selectedPDL, 'hasCache:', hasDataInCache, 'isDemo:', isDemo)
+
     if (!hasAttemptedAutoLoad && selectedPDL) {
       setHasAttemptedAutoLoad(true)
+      logger.log('[Auto-load] First load detected')
 
+      // For demo accounts, ALWAYS fetch data to ensure detailed data is loaded
       if (isDemo) {
+        logger.log('[Auto-load] Demo account - fetching data')
         fetchProductionData()
-      } else if (hasYesterdayDataInCache) {
-        const todayUTC = new Date()
-        const yesterdayUTC = new Date(Date.UTC(
-          todayUTC.getUTCFullYear(),
-          todayUTC.getUTCMonth(),
-          todayUTC.getUTCDate() - 1,
-          0, 0, 0, 0
-        ))
-        const yesterday = yesterdayUTC
-        const startDate_obj = new Date(Date.UTC(
-          yesterdayUTC.getUTCFullYear(),
-          yesterdayUTC.getUTCMonth(),
-          yesterdayUTC.getUTCDate() - 1094,
-          0, 0, 0, 0
-        ))
-        const startDate = startDate_obj.toISOString().split('T')[0]
-        const endDate = yesterday.toISOString().split('T')[0]
-
-        setDateRange({ start: startDate, end: endDate })
-        setDailyLoadingComplete(true)
-        setAllLoadingComplete(true)
-        setIsChartsExpanded(true)
-        setIsStatsSectionExpanded(true)
-        setIsDetailSectionExpanded(true)
+      } else if (!hasDataInCache) {
+        logger.log('[Auto-load] No cache - user must click button manually')
       }
+      // For regular accounts with cache: dateRange is set by the effect above
     }
-  }, [selectedPDL, hasYesterdayDataInCache, hasAttemptedAutoLoad, fetchProductionData, isDemo])
+  }, [selectedPDL, hasDataInCache, hasAttemptedAutoLoad, fetchProductionData, isDemo])
 
-  // Get production response from React Query
+  // Get production response from React Query (needed for status badges)
   const productionResponse = queryClient.getQueryData(['production', selectedPDL, dateRange?.start, dateRange?.end])
 
   return (
     <div className="pt-6 w-full">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-          <Sun className="text-yellow-600 dark:text-yellow-400" size={32} />
-          Production
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Visualisez et analysez votre production d'énergie solaire
-        </p>
-      </div>
-
-      {/* PDL Selector Component with Loading Progress inside */}
-      <PDLSelector
-        pdls={pdls}
-        activePdls={activePdls}
-        selectedPDL={selectedPDL}
-        selectedPDLDetails={selectedPDLDetails}
-        onPDLSelect={setSelectedPDL}
-        onFetchData={fetchProductionData}
-        onClearCache={clearCache}
-        isClearingCache={isClearingCache}
-        isLoading={isLoading}
-        isLoadingDetailed={isLoadingDetailed}
-        hasDataInCache={hasYesterdayDataInCache}
-        dataLimitWarning={dataLimitWarning}
-        user={user}
-      >
-        <LoadingProgress
-          isLoadingDetailed={isLoadingDetailed}
-          dailyLoadingComplete={dailyLoadingComplete}
-          loadingProgress={loadingProgress}
-          allLoadingComplete={allLoadingComplete}
-          dateRange={dateRange}
-          isLoadingProduction={isLoadingProduction}
-          productionResponse={productionResponse}
-          hasYesterdayDataInCache={hasYesterdayDataInCache}
-        />
-      </PDLSelector>
+      {/* Warning if PDL has limited data */}
+      {dataLimitWarning && (
+        <div className="mb-6 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center gap-2">
+          <span className="text-blue-600 dark:text-blue-400 text-lg flex-shrink-0">ℹ️</span>
+          <p className="text-sm text-blue-800 dark:text-blue-200">
+            {dataLimitWarning}
+          </p>
+        </div>
+      )}
 
       {/* Statistics Section */}
       <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">

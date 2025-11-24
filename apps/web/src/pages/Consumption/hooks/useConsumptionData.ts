@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
 import { pdlApi } from '@/api/pdl'
 import { enedisApi } from '@/api/enedis'
 import type { PDL } from '@/types/api'
 import type { DateRange } from '../types/consumption.types'
 
-export function useConsumptionData(selectedPDL: string, dateRange: DateRange | null, detailDateRange: DateRange | null, selectedPDLDetails: PDL | undefined) {
+export function useConsumptionData(selectedPDL: string, dateRange: DateRange | null, detailDateRange: DateRange | null) {
   const queryClient = useQueryClient()
 
   // Fetch PDLs
@@ -24,10 +25,14 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
   // Filter only active PDLs (if is_active is undefined, consider it as active)
   const activePdls = pdls.filter(p => p.is_active !== false)
 
+  // Get selected PDL details
+  const selectedPDLDetails = pdls.find(p => p.usage_point_id === selectedPDL)
+
   // Fetch consumption data with React Query
-  // Split into multiple yearly calls to respect API limits (max 1 year per call)
+  // Use a single cache key per PDL (no date in key to avoid cache fragmentation)
   const { data: consumptionResponse, isLoading: isLoadingConsumption } = useQuery({
-    queryKey: ['consumption', selectedPDL, dateRange?.start, dateRange?.end],
+    queryKey: ['consumptionDaily', selectedPDL],
+    enabled: !!selectedPDL && !!dateRange,
     queryFn: async () => {
       if (!selectedPDL || !dateRange) return null
 
@@ -113,15 +118,16 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
         }
       }
     },
-    enabled: !!selectedPDL && !!dateRange,
     staleTime: 1000 * 60 * 60, // 1 hour - data is considered fresh
     gcTime: 1000 * 60 * 60 * 24, // 24 hours - keep in cache
+    refetchOnMount: true, // Always refetch on component mount if data is stale
   })
 
   // Fetch max power data with React Query
-  // Split into multiple yearly calls to respect API limits (max 1 year per call)
+  // Use a single cache key per PDL (no date in key to avoid cache fragmentation)
   const { data: maxPowerResponse, isLoading: isLoadingPower } = useQuery({
-    queryKey: ['maxPower', selectedPDL, dateRange?.start, dateRange?.end],
+    queryKey: ['maxPower', selectedPDL],
+    enabled: !!selectedPDL && !!dateRange,
     queryFn: async () => {
       if (!selectedPDL || !dateRange) return null
 
@@ -207,79 +213,68 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
         }
       }
     },
-    enabled: !!selectedPDL && !!dateRange,
     staleTime: 1000 * 60 * 60, // 1 hour
     gcTime: 1000 * 60 * 60 * 24, // 24 hours
+    refetchOnMount: true, // Always refetch on component mount if data is stale
   })
 
   // Fetch detailed consumption data (load curve - 30min intervals)
-  // Only fetch if PDL is active and has consumption enabled
-  const shouldFetchDetail = !!selectedPDL &&
-                           !!detailDateRange &&
-                           selectedPDLDetails?.is_active &&
-                           selectedPDLDetails?.has_consumption
+  // HYBRID APPROACH: useQuery creates the cache entry for persistence,
+  // but we read data via subscription to avoid race conditions
 
-  const { data: detailResponse, isLoading: isLoadingDetail } = useQuery({
-    queryKey: ['consumptionDetail', selectedPDL, detailDateRange?.start, detailDateRange?.end],
+  // 1. Create query entry (needed for React Query Persist)
+  useQuery({
+    queryKey: ['consumptionDetail', selectedPDL],
     queryFn: async () => {
-      if (!selectedPDL || !detailDateRange) return null
-
-      try {
-        // Get all days in the range from cache (day by day)
-        const startDate = new Date(detailDateRange.start + 'T00:00:00Z')
-        const endDate = new Date(detailDateRange.end + 'T00:00:00Z')
-        const allPoints: any[] = []
-        const daysChecked: string[] = []
-        const daysFound: string[] = []
-
-        // Iterate through each day in the range
-        const currentDate = new Date(startDate)
-        while (currentDate <= endDate) {
-          const dateStr = currentDate.getUTCFullYear() + '-' +
-                         String(currentDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                         String(currentDate.getUTCDate()).padStart(2, '0')
-
-          daysChecked.push(dateStr)
-
-          // Try to get this day's data from cache
-          const dayData = queryClient.getQueryData(['consumptionDetail', selectedPDL, dateStr, dateStr]) as any
-
-          if (dayData?.data?.meter_reading?.interval_reading) {
-            daysFound.push(dateStr)
-            allPoints.push(...dayData.data.meter_reading.interval_reading)
-          }
-
-          // Move to next day
-          currentDate.setUTCDate(currentDate.getUTCDate() + 1)
-        }
-
-        // Return combined data in the same format as API response
-        return allPoints.length > 0 ? {
-          success: true,
-          data: {
-            meter_reading: {
-              interval_reading: allPoints
-            }
-          }
-        } : null
-      } catch (error) {
-        console.error('Error in detailResponse queryFn:', error)
-        return null
-      }
+      // This should never run - data comes from setQueryData
+      // But we need a valid queryFn for React Query
+      return null
     },
-    enabled: shouldFetchDetail,
-    staleTime: 1000 * 60 * 60, // 1 hour
-    gcTime: 1000 * 60 * 60 * 24, // 24 hours
+    enabled: false, // Never fetch
+    staleTime: Infinity,
+    gcTime: 1000 * 60 * 60 * 24 * 7, // 7 days
   })
+
+  // 2. Read data via direct cache access + subscription (avoids race conditions)
+  const [detailResponse, setDetailResponse] = useState<any>(null)
+  const [isLoadingDetail] = useState(false)
+
+  useEffect(() => {
+    if (!selectedPDL) {
+      setDetailResponse(null)
+      return
+    }
+
+    // Read current data from cache (includes persisted data)
+    const initialData = queryClient.getQueryData(['consumptionDetail', selectedPDL])
+    if (initialData) {
+      setDetailResponse(initialData)
+    }
+
+    // Subscribe to future changes (when setQueryData is called)
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (
+        event?.type === 'updated' &&
+        event?.query?.queryKey?.[0] === 'consumptionDetail' &&
+        event?.query?.queryKey?.[1] === selectedPDL
+      ) {
+        const updatedData = queryClient.getQueryData(['consumptionDetail', selectedPDL])
+        setDetailResponse(updatedData)
+      }
+    })
+
+    return () => unsubscribe()
+  }, [selectedPDL, queryClient])
 
   const consumptionData = consumptionResponse?.success ? consumptionResponse.data : null
   const maxPowerData = maxPowerResponse?.success ? maxPowerResponse.data : null
-  const detailData = detailResponse?.success ? detailResponse.data : null
+  const detailData = (detailResponse as any)?.success ? (detailResponse as any).data : null
   const isLoading = isLoadingConsumption || isLoadingPower || isLoadingDetail
 
   return {
     pdls,
     activePdls,
+    selectedPDLDetails,
     consumptionData,
     maxPowerData,
     detailData,

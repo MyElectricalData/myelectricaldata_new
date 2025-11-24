@@ -28,6 +28,7 @@ import Consumption from './pages/Consumption'
 import Production from './pages/Production'
 import FAQ from './pages/FAQ'
 import ApiDocs from './pages/ApiDocs'
+import Diagnostic from './pages/Diagnostic'
 import ApiAuth from './pages/ApiAuth'
 import NotFound from './pages/NotFound'
 import Forbidden from './pages/Forbidden'
@@ -115,6 +116,16 @@ function App() {
           <ProtectedRoute>
             <Layout>
               <Simulator />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/diagnostic"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <Diagnostic />
             </Layout>
           </ProtectedRoute>
         }

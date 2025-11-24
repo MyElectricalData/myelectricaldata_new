@@ -1,6 +1,8 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useCallback } from 'react'
+import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { enedisApi } from '@/api/enedis'
 import { adminApi } from '@/api/admin'
+import { pdlApi } from '@/api/pdl'
 import { logger } from '@/utils/logger'
 import toast from 'react-hot-toast'
 import type { PDL } from '@/types/api'
@@ -43,11 +45,22 @@ export function useConsumptionFetch({
 }: UseConsumptionFetchParams) {
   const queryClient = useQueryClient()
 
-  const fetchConsumptionData = async () => {
+  // Get the list of PDLs to find production PDL details
+  const { data: pdlsResponse } = useQuery({
+    queryKey: ['pdls'],
+    queryFn: pdlApi.list,
+  })
+  const allPDLs: PDL[] = Array.isArray(pdlsResponse) ? pdlsResponse : []
+
+  const fetchConsumptionData = useCallback(async () => {
     if (!selectedPDL) {
       toast.error('Veuillez sélectionner un PDL')
       return
     }
+
+    // Invalidate existing queries to force refetch
+    queryClient.invalidateQueries({ queryKey: ['consumption', selectedPDL] })
+    queryClient.invalidateQueries({ queryKey: ['maxPower', selectedPDL] })
 
     // Collapse all sections before fetching new data
     setIsChartsExpanded(false)
@@ -108,266 +121,135 @@ export function useConsumptionFetch({
     // Setting dateRange will trigger React Query to fetch data
     setDateRange({ start: startDate, end: endDate })
 
-    // Pre-fetch detailed data for 2 years (730 days, fetched weekly and cached daily)
-    // Limitation: Only data from J-1 and up to 2 years back (same as "Courbe de charge détaillée")
+    // Pre-fetch detailed data for 2 years (730 days) using the new batch endpoint
+    // The backend handles all the chunking and caching logic
     if (selectedPDLDetails?.is_active && selectedPDLDetails?.has_consumption) {
       setIsLoadingDetailed(true)
 
-      // Calculate 2 years back from yesterday in UTC (730 days max)
-      let twoYearsAgo = new Date(Date.UTC(
-        yesterday.getUTCFullYear() - 2,
-        yesterday.getUTCMonth(),
-        yesterday.getUTCDate(),
+      // Calculate 2 years back from TODAY (not yesterday) - 729 days
+      // Start: today - 2 years, End: yesterday (J-1)
+      const todayUTC = new Date()
+      const today = new Date(Date.UTC(
+        todayUTC.getUTCFullYear(),
+        todayUTC.getUTCMonth(),
+        todayUTC.getUTCDate(),
         0, 0, 0, 0
       ))
 
-      // For now, don't apply date limits - let the retry logic handle it
-      logger.log(`Detailed data: Requesting full 2 years (retry logic will adjust if needed)`)
+      const twoYearsAgo = new Date(Date.UTC(
+        today.getUTCFullYear() - 2,
+        today.getUTCMonth(),
+        today.getUTCDate(),
+        0, 0, 0, 0
+      ))
 
-      // Calculate number of weeks in 2 years (approximately 104 weeks)
-      const totalWeeks = Math.ceil(730 / 7)
+      const startDate = twoYearsAgo.getUTCFullYear() + '-' +
+                       String(twoYearsAgo.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                       String(twoYearsAgo.getUTCDate()).padStart(2, '0')
 
-      // Check which days are already in cache
-      const allDates = []
-      const currentDate = new Date(twoYearsAgo)
-      while (currentDate <= yesterday) {
-        const dateStr = currentDate.getUTCFullYear() + '-' +
-                       String(currentDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                       String(currentDate.getUTCDate()).padStart(2, '0')
-        allDates.push(dateStr)
-        currentDate.setUTCDate(currentDate.getUTCDate() + 1)
-      }
+      const endDate = yesterday.getUTCFullYear() + '-' +
+                     String(yesterday.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                     String(yesterday.getUTCDate()).padStart(2, '0')
 
-      // Check cache for each day
-      const missingDates: string[] = []
-      for (const dateStr of allDates) {
-        const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPDL, dateStr, dateStr]) as any
-        const hasCompleteData = cachedData?.data?.meter_reading?.interval_reading?.length >= 40 // At least 40 points for a complete day
-        if (!hasCompleteData) {
-          missingDates.push(dateStr)
-        }
-      }
-
-      logger.log(`Cache check: ${allDates.length - missingDates.length}/${allDates.length} days cached, ${missingDates.length} missing`)
-
-      if (missingDates.length === 0) {
-        logger.log('All data already in cache!')
-        const totalDays = allDates.length
-        const years = Math.floor(totalDays / 365)
-        const remainingDays = totalDays % 365
-        const yearsText = years > 0 ? `${years} an${years > 1 ? 's' : ''}` : ''
-        const daysText = remainingDays > 0 ? `${remainingDays} jour${remainingDays > 1 ? 's' : ''}` : ''
-        const periodText = [yearsText, daysText].filter(Boolean).join(' et ')
-
-        const message = `Historique complet déjà en cache (${periodText} de données)`
-        toast.success(message, {
-          duration: 3000,
-        })
-        setIsLoadingDetailed(false)
-        // Invalidate to refresh the display
-        queryClient.invalidateQueries({ queryKey: ['consumptionDetail'] })
-        return
-      }
-
-      // Group missing dates into weeks to fetch
-      const weeksToFetch = []
-
-      // Convert missing dates to week ranges
-      for (let weekOffset = 0; weekOffset < totalWeeks; weekOffset++) {
-        // Calculate offset in days
-        const offsetDays = weekOffset * 7
-
-        // End date: yesterday minus offset weeks (never today or future) in UTC
-        let weekEndDate = new Date(Date.UTC(
-          yesterday.getUTCFullYear(),
-          yesterday.getUTCMonth(),
-          yesterday.getUTCDate() - offsetDays,
-          0, 0, 0, 0
-        ))
-
-        // Cap the end date to yesterday if it goes into the future (safety check)
-        if (weekEndDate > yesterday) {
-          weekEndDate = new Date(yesterday)
-        }
-
-        // Start date: 6 days before end date (7 days total) in UTC
-        const weekStartDate = new Date(Date.UTC(
-          weekEndDate.getUTCFullYear(),
-          weekEndDate.getUTCMonth(),
-          weekEndDate.getUTCDate() - 6,
-          0, 0, 0, 0
-        ))
-
-        // Only fetch if:
-        // 1. Week end date is not in the future (max = yesterday)
-        // 2. Week start date is within the 2-year range (>= 2 years ago from yesterday)
-        // 3. At least one day in this week is missing from cache
-        if (weekEndDate <= yesterday && weekStartDate >= twoYearsAgo) {
-          const weekStart = weekStartDate.getUTCFullYear() + '-' +
-                           String(weekStartDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                           String(weekStartDate.getUTCDate()).padStart(2, '0')
-          const weekEnd = weekEndDate.getUTCFullYear() + '-' +
-                         String(weekEndDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                         String(weekEndDate.getUTCDate()).padStart(2, '0')
-
-          // Check if any day in this week is missing
-          const weekDates = []
-          const tempDate = new Date(weekStartDate)
-          while (tempDate <= weekEndDate) {
-            const tempDateStr = tempDate.getUTCFullYear() + '-' +
-                               String(tempDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                               String(tempDate.getUTCDate()).padStart(2, '0')
-            weekDates.push(tempDateStr)
-            tempDate.setUTCDate(tempDate.getUTCDate() + 1)
-          }
-
-          // Only add this week if at least one day is missing
-          if (weekDates.some(d => missingDates.includes(d))) {
-            weeksToFetch.push({ weekStart, weekEnd })
-          }
-        }
-      }
-
-      logger.log(`Need to fetch ${weeksToFetch.length} weeks (out of ${totalWeeks} total)`)
-
-      // Fetch weeks sequentially to show progress
-      setLoadingProgress({ current: 0, total: weeksToFetch.length, currentRange: 'Démarrage...' })
+      logger.log(`Detailed data: Requesting 2 years via batch endpoint (${startDate} to ${endDate}) - 729 days`)
 
       try {
-        for (let i = 0; i < weeksToFetch.length; i++) {
-          const { weekStart, weekEnd } = weeksToFetch[i]
+        // Single batch call to get all detailed data for 2 years
+        setLoadingProgress({ current: 0, total: 1, currentRange: `${startDate} → ${endDate}` })
 
-          setLoadingProgress({
-            current: i + 1,
-            total: weeksToFetch.length,
-            currentRange: `${weekStart} → ${weekEnd}`
+        const batchData = await enedisApi.getConsumptionDetailBatch(selectedPDL, {
+          start: startDate,
+          end: endDate,
+          use_cache: true,
+        })
+
+        logger.log(`Batch response:`, {
+          success: batchData?.success,
+          hasError: !!batchData?.error,
+          errorCode: batchData?.error?.code,
+          dataPoints: (batchData as any)?.data?.meter_reading?.interval_reading?.length || 0
+        })
+
+        if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
+          const readings = (batchData as any).data.meter_reading.interval_reading
+
+          // Group data points by date for caching
+          const dataByDate: Record<string, Map<string, any>> = {}
+
+          readings.forEach((point: any) => {
+            // Extract YYYY-MM-DD from date
+            let date = point.date.split(' ')[0].split('T')[0]
+
+            // Handle Enedis convention for 00:00 timestamps
+            const time = point.date.split(' ')[1] || point.date.split('T')[1] || '00:00:00'
+            if (time.startsWith('00:00')) {
+              const dateObj = new Date(date + 'T00:00:00Z')
+              dateObj.setUTCDate(dateObj.getUTCDate() - 1)
+              date = dateObj.getUTCFullYear() + '-' +
+                     String(dateObj.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                     String(dateObj.getUTCDate()).padStart(2, '0')
+            }
+
+            if (!dataByDate[date]) {
+              dataByDate[date] = new Map()
+            }
+            // Use full timestamp as key to automatically deduplicate
+            dataByDate[date].set(point.date, point)
           })
 
-          // Fetch the weekly data from API with retry mechanism for ADAM-ERR0123
-          let weeklyData = null
-          let currentStartDate = new Date(weekStart + 'T00:00:00Z')
-          const endDateObj = new Date(weekEnd + 'T00:00:00Z')
-          let retryCount = 0
-          const maxRetries = 7 // Max 7 days to try forward from start
+          // Cache each day separately with deduplicated points
+          Object.entries(dataByDate).forEach(([date, pointsMap]) => {
+            // Convert Map values to array (automatically deduplicated)
+            const uniquePoints = Array.from(pointsMap.values())
 
-          while (currentStartDate <= endDateObj && retryCount < maxRetries) {
-            const currentStartStr = currentStartDate.getUTCFullYear() + '-' +
-                                   String(currentStartDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                                   String(currentStartDate.getUTCDate()).padStart(2, '0')
-
-            // IMPORTANT: Add 1 day to get the 23:30 reading of the last day
-            // (Enedis returns 23:30 reading with next day's 00:00 timestamp)
-            const fetchEndDate = new Date(endDateObj)
-            fetchEndDate.setUTCDate(fetchEndDate.getUTCDate() + 1)
-            const fetchEndStr = fetchEndDate.getUTCFullYear() + '-' +
-                               String(fetchEndDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                               String(fetchEndDate.getUTCDate()).padStart(2, '0')
-
-            try {
-              weeklyData = await enedisApi.getConsumptionDetail(selectedPDL, {
-                start: currentStartStr,
-                end: fetchEndStr,
-                use_cache: true,
-              })
-
-              logger.log(`Response for ${currentStartStr} → ${fetchEndStr}:`, {
-                success: weeklyData?.success,
-                hasError: !!weeklyData?.error,
-                errorCode: weeklyData?.error?.code,
-                hasData: !!weeklyData?.data
-              })
-
-              // Check for ADAM-ERR0123 error
-              if (weeklyData?.success === false && weeklyData?.error?.code === 'ADAM-ERR0123') {
-                logger.log(`Enedis: Data not available for ${currentStartStr} → ${fetchEndStr}, trying later start date...`)
-
-                // Try one day later (advance start date)
-                currentStartDate.setUTCDate(currentStartDate.getUTCDate() + 1)
-                retryCount++
-
-                // If we've tried all days in the week without success, stop completely
-                if (retryCount >= maxRetries || currentStartDate > endDateObj) {
-                  logger.log(`No data available for this week after ${retryCount} retries - this is expected if before activation date`)
-
-                  // No error toast - this is normal behavior when requesting data before activation
-                  // Just log it and continue to the next week or stop gracefully
-
-                  // Invalidate queries to show what we have so far
-                  queryClient.invalidateQueries({ queryKey: ['consumptionDetail'] })
-
-                  // Stop fetching older data (we've reached the limit)
-                  setLoadingProgress({ current: i, total: weeksToFetch.length, currentRange: 'Arrêté - Date limite atteinte' })
-                  setIsLoadingDetailed(false)
-                  setLoadingProgress({ current: 0, total: 0, currentRange: '' })
-                  return
-                }
-
-                continue // Try again with earlier date
-              }
-
-              // Success! Break out of retry loop
-              break
-
-            } catch (error) {
-              console.error(`Error fetching ${weekStart} → ${fetchEndStr}:`, error)
-              throw error // Re-throw to be caught by outer catch
-            }
-          }
-
-          // Split the weekly data and cache it day by day
-          const weeklyDataTyped = weeklyData as any
-          if (weeklyDataTyped?.data?.meter_reading?.interval_reading) {
-            // Group data points by date
-            const dataByDate: Record<string, any[]> = {}
-
-            weeklyDataTyped.data.meter_reading.interval_reading.forEach((point: any) => {
-              // Extract YYYY-MM-DD from date (format: "2025-10-14 00:00:00" or "2025-10-14T00:00:00")
-              let date = point.date.split(' ')[0].split('T')[0]
-
-              // IMPORTANT: Enedis convention - timestamps at 00:00 represent the 23:30 reading
-              // of the PREVIOUS day. We need to adjust the date accordingly.
-              const time = point.date.split(' ')[1] || point.date.split('T')[1] || '00:00:00'
-              if (time.startsWith('00:00')) {
-                // Shift date back by 1 day for 00:00 timestamps
-                const dateObj = new Date(date + 'T00:00:00Z')
-                dateObj.setUTCDate(dateObj.getUTCDate() - 1)
-                date = dateObj.getUTCFullYear() + '-' +
-                       String(dateObj.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                       String(dateObj.getUTCDate()).padStart(2, '0')
-              }
-
-              if (!dataByDate[date]) {
-                dataByDate[date] = []
-              }
-              dataByDate[date].push(point)
-            })
-
-            // Cache each day separately
-            Object.entries(dataByDate).forEach(([date, points]) => {
-              queryClient.setQueryData(
-                ['consumptionDetail', selectedPDL, date, date],
-                {
-                  success: true,
-                  data: {
-                    meter_reading: {
-                      interval_reading: points
-                    }
+            queryClient.setQueryData(
+              ['consumptionDetail', selectedPDL, date, date],
+              {
+                success: true,
+                data: {
+                  meter_reading: {
+                    interval_reading: uniquePoints
                   }
                 }
-              )
-            })
+              }
+            )
+          })
+
+          const dayCount = Object.keys(dataByDate).length
+          const years = Math.floor(dayCount / 365)
+          const remainingDays = dayCount % 365
+          const yearsText = years > 0 ? `${years} an${years > 1 ? 's' : ''}` : ''
+          const daysText = remainingDays > 0 ? `${remainingDays} jour${remainingDays > 1 ? 's' : ''}` : ''
+          const periodText = [yearsText, daysText].filter(Boolean).join(' et ')
+
+          toast.success(`Historique chargé avec succès (${periodText} de données, ${readings.length} points)`, {
+            duration: 4000,
+          })
+
+          // Show cache persistence indicator
+          const persistToast = toast.loading('💾 Mise en cache des données...', { duration: 2000 })
+          setTimeout(() => {
+            toast.dismiss(persistToast)
+            setLoadingProgress({ current: 1, total: 1, currentRange: 'Terminé !' })
+
+            // Expand all sections to show the data
+            setIsChartsExpanded(true)
+            setIsDetailSectionExpanded(true)
+            setIsStatsSectionExpanded(true)
+            setIsPowerSectionExpanded(true)
+            setDailyLoadingComplete(true)
+            setPowerLoadingComplete(true)
+            setAllLoadingComplete(true)
+          }, 1500)
+        } else if (batchData?.error) {
+          // Handle partial data or errors
+          const errorMsg = batchData.error.message || 'Erreur lors du chargement des données détaillées'
+
+          if (batchData.error.code === 'PARTIAL_DATA') {
+            toast.success(errorMsg, { duration: 4000, icon: '⚠️' })
+          } else {
+            toast.error(errorMsg, { duration: 6000 })
           }
-
-          // Add a small delay to ensure loading screen is visible even for cached data
-          await new Promise(resolve => setTimeout(resolve, 50))
-        }
-
-        setLoadingProgress({ current: weeksToFetch.length, total: weeksToFetch.length, currentRange: 'Terminé !' })
-        // Add a small delay before showing success message to let user see 100% progress
-        await new Promise(resolve => setTimeout(resolve, 300))
-
-        if (weeksToFetch.length > 0) {
-          toast.success(`${weeksToFetch.length} semaine${weeksToFetch.length > 1 ? 's' : ''} de nouvelles données chargées avec succès !`)
         }
 
         // Invalidate the detail query to force it to re-fetch from cache
@@ -376,36 +258,193 @@ export function useConsumptionFetch({
         // Trigger HC/HP calculation now that all data is loaded
         setHcHpCalculationTrigger(prev => prev + 1)
       } catch (error: any) {
-        console.error('Error pre-fetching detailed data:', error)
+        console.error('Error fetching detailed data via batch:', error)
 
-        // Check if it's an ADAM-ERR0123 error from the API
-        if (error?.response?.data?.error?.code === 'ADAM-ERR0123' ||
-            error?.error?.code === 'ADAM-ERR0123') {
-          const errorMessage = error?.response?.data?.error?.message ||
-                              error?.error?.message ||
-                              "La période demandée est antérieure à la date d'activation du compteur"
-          toast.error(errorMessage, { duration: 6000, icon: '⚠️' })
-        } else {
-          // Generic error message
-          const errorMsg = error?.response?.data?.error?.message ||
-                          error?.message ||
-                          'Erreur lors du pré-chargement des données détaillées'
-          toast.error(errorMsg)
-        }
+        const errorMsg = error?.response?.data?.error?.message ||
+                        error?.message ||
+                        'Erreur lors du chargement des données détaillées'
+        toast.error(errorMsg)
       } finally {
         setIsLoadingDetailed(false)
-        setLoadingProgress({ current: 0, total: 0, currentRange: '' })
+        // Don't reset loadingProgress here - keep the final state (1/1 for success)
       }
     }
-  }
 
-  const clearCache = async () => {
+    // If this consumption PDL is linked to a production PDL, fetch production data too
+    if (selectedPDLDetails?.linked_production_pdl_id) {
+      const productionPDL = allPDLs.find(p => p.id === selectedPDLDetails.linked_production_pdl_id)
+
+      if (!productionPDL) {
+        logger.log(`Production PDL not found in list: ${selectedPDLDetails.linked_production_pdl_id}`)
+        return
+      }
+
+      const productionPdlUsagePointId = productionPDL.usage_point_id
+      logger.log(`Linked production PDL detected: ${productionPdlUsagePointId}, fetching production data...`)
+
+      try {
+        // Invalidate production queries to force refetch
+        queryClient.invalidateQueries({ queryKey: ['production', productionPdlUsagePointId] })
+
+        // Fetch production daily data (3 years)
+        const todayUTC = new Date()
+        const yesterdayUTC = new Date(Date.UTC(
+          todayUTC.getUTCFullYear(),
+          todayUTC.getUTCMonth(),
+          todayUTC.getUTCDate() - 1,
+          0, 0, 0, 0
+        ))
+
+        const threeYearsAgo = new Date(Date.UTC(
+          yesterdayUTC.getUTCFullYear(),
+          yesterdayUTC.getUTCMonth(),
+          yesterdayUTC.getUTCDate() - 1095,
+          0, 0, 0, 0
+        ))
+
+        const startDate3y = threeYearsAgo.getUTCFullYear() + '-' +
+                           String(threeYearsAgo.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                           String(threeYearsAgo.getUTCDate()).padStart(2, '0')
+        const endDate = yesterdayUTC.getUTCFullYear() + '-' +
+                       String(yesterdayUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                       String(yesterdayUTC.getUTCDate()).padStart(2, '0')
+
+        logger.log(`Fetching production daily data: ${startDate3y} → ${endDate}`)
+
+        // Note: We don't await these - they will be fetched and cached in background
+        // The production page will use the cached data when the user navigates to it
+        enedisApi.getProductionDaily(productionPdlUsagePointId, {
+          start: startDate3y,
+          end: endDate,
+          use_cache: true,
+        }).then(dailyData => {
+          if (dailyData?.success) {
+            queryClient.setQueryData(
+              ['production', productionPdlUsagePointId, startDate3y, endDate],
+              dailyData
+            )
+            logger.log('Production daily data cached successfully')
+          }
+        }).catch(err => {
+          logger.log('Error fetching production daily data:', err)
+        })
+
+        // Fetch production detailed data (2 years) via batch endpoint
+        const today = new Date(Date.UTC(
+          todayUTC.getUTCFullYear(),
+          todayUTC.getUTCMonth(),
+          todayUTC.getUTCDate(),
+          0, 0, 0, 0
+        ))
+
+        const twoYearsAgo = new Date(Date.UTC(
+          today.getUTCFullYear() - 2,
+          today.getUTCMonth(),
+          today.getUTCDate(),
+          0, 0, 0, 0
+        ))
+
+        const startDate2y = twoYearsAgo.getUTCFullYear() + '-' +
+                           String(twoYearsAgo.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                           String(twoYearsAgo.getUTCDate()).padStart(2, '0')
+
+        logger.log(`Fetching production detail batch: ${startDate2y} → ${endDate}`)
+
+        enedisApi.getProductionDetailBatch(productionPdlUsagePointId, {
+          start: startDate2y,
+          end: endDate,
+          use_cache: true,
+        }).then(batchData => {
+          if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
+            const readings = (batchData as any).data.meter_reading.interval_reading
+
+            // Group data points by date for caching
+            const dataByDate: Record<string, Map<string, any>> = {}
+
+            readings.forEach((point: any) => {
+              let date = point.date.split(' ')[0].split('T')[0]
+
+              // Handle Enedis convention for 00:00 timestamps
+              const time = point.date.split(' ')[1] || point.date.split('T')[1] || '00:00:00'
+              if (time.startsWith('00:00')) {
+                const dateObj = new Date(date + 'T00:00:00Z')
+                dateObj.setUTCDate(dateObj.getUTCDate() - 1)
+                date = dateObj.getUTCFullYear() + '-' +
+                       String(dateObj.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                       String(dateObj.getUTCDate()).padStart(2, '0')
+              }
+
+              if (!dataByDate[date]) {
+                dataByDate[date] = new Map()
+              }
+              // Use full timestamp as key to automatically deduplicate
+              dataByDate[date].set(point.date, point)
+            })
+
+            // Cache each day separately with deduplicated points
+            Object.entries(dataByDate).forEach(([date, pointsMap]) => {
+              // Convert Map values to array (automatically deduplicated)
+              const uniquePoints = Array.from(pointsMap.values())
+
+              queryClient.setQueryData(
+                ['productionDetail', productionPdlUsagePointId, date, date],
+                {
+                  success: true,
+                  data: {
+                    meter_reading: {
+                      interval_reading: uniquePoints
+                    }
+                  }
+                }
+              )
+            })
+
+            const dayCount = Object.keys(dataByDate).length
+            logger.log(`Production detail data cached successfully: ${dayCount} days, ${readings.length} points`)
+
+            // Invalidate the detail query to make it available
+            queryClient.invalidateQueries({ queryKey: ['productionDetail'] })
+          }
+        }).catch(err => {
+          logger.log('Error fetching production detail batch:', err)
+        })
+
+        logger.log('Production data fetch initiated in background')
+      } catch (error: any) {
+        logger.log('Error initiating production data fetch:', error)
+        // Don't show error to user - this is a background operation
+      }
+    }
+  }, [
+    selectedPDL,
+    selectedPDLDetails,
+    allPDLs,
+    setDateRange,
+    setIsChartsExpanded,
+    setIsDetailSectionExpanded,
+    setIsStatsSectionExpanded,
+    setIsPowerSectionExpanded,
+    setHcHpCalculationComplete,
+    setDailyLoadingComplete,
+    setPowerLoadingComplete,
+    setAllLoadingComplete,
+    setIsLoadingDetailed,
+    setLoadingProgress,
+    setHcHpCalculationTrigger,
+    queryClient
+  ])
+
+  const clearCache = useCallback(async () => {
     setIsClearingCache(true)
     try {
-      // Clear browser cache
+      // Clear server-side cache for all consumption data FIRST
+      await adminApi.clearAllConsumptionCache()
+
+      // Clear React Query cache
       queryClient.clear()
-      localStorage.clear()
-      sessionStorage.clear()
+
+      // Clear React Query persister to prevent cache restoration on reload
+      localStorage.removeItem('myelectricaldata-query-cache')
 
       // Clear IndexedDB if it exists
       if ('indexedDB' in window) {
@@ -416,9 +455,6 @@ export function useConsumptionFetch({
           }
         }
       }
-
-      // Clear server-side cache for all consumption data
-      await adminApi.clearAllConsumptionCache()
 
       toast.success('Cache vidé avec succès')
 
@@ -431,7 +467,7 @@ export function useConsumptionFetch({
     } finally {
       setIsClearingCache(false)
     }
-  }
+  }, [setIsClearingCache, queryClient])
 
   return {
     fetchConsumptionData,
