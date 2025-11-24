@@ -3,7 +3,6 @@ from typing import List
 import httpx
 from io import BytesIO
 from pdfminer.high_level import extract_text
-import re
 from datetime import datetime, UTC
 
 from .base import BasePriceScraper, OfferData

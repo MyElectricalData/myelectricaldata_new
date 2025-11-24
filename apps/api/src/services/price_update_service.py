@@ -136,7 +136,7 @@ class PriceUpdateService:
                 and_(
                     EnergyOffer.provider_id == provider_id,
                     EnergyOffer.is_active == True,  # noqa: E712
-                    EnergyOffer.valid_to == None,  # noqa: E711
+                    EnergyOffer.valid_to.is_(None),
                 )
             )
         )
@@ -239,15 +239,13 @@ class PriceUpdateService:
             if not provider:
                 # Provider doesn't exist yet
                 logger.info(f"Provider {provider_name} does not exist yet")
-                provider_id = None
                 current_offers = []
             else:
-                provider_id = provider.id
                 # Get current active offers
                 current_result = await self.db.execute(
                     select(EnergyOffer).where(
                         and_(
-                            EnergyOffer.provider_id == provider_id,
+                            EnergyOffer.provider_id == provider.id,
                             EnergyOffer.is_active == True,  # noqa: E712
                         )
                     )
