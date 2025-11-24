@@ -31,6 +31,7 @@ async def list_providers(db: AsyncSession = Depends(get_db)) -> APIResponse:
                 "name": p.name,
                 "logo_url": p.logo_url,
                 "website": p.website,
+                "scraper_urls": p.scraper_urls,
             }
             for p in providers
         ],
@@ -100,6 +101,7 @@ async def list_offers(
                 "price_updated_at": o.price_updated_at.isoformat() if o.price_updated_at else None,
                 "valid_from": o.valid_from.isoformat() if o.valid_from else None,
                 "valid_to": o.valid_to.isoformat() if o.valid_to else None,
+                "is_active": o.is_active,
                 "created_at": o.created_at.isoformat() if o.created_at else None,
             }
             for o in offers
@@ -508,6 +510,8 @@ async def update_provider(
             provider.website = update_data["website"]
         if "logo_url" in update_data:
             provider.logo_url = update_data["logo_url"]
+        if "scraper_urls" in update_data:
+            provider.scraper_urls = update_data["scraper_urls"]
 
         provider.updated_at = datetime.now(UTC)
         await db.commit()
@@ -520,6 +524,7 @@ async def update_provider(
                 "name": provider.name,
                 "website": provider.website,
                 "logo_url": provider.logo_url,
+                "scraper_urls": provider.scraper_urls,
             }
         )
 
