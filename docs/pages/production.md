@@ -28,9 +28,13 @@ Page équivalente à `/consumption` mais pour la **production d'énergie solaire
 ## Fonctionnalités principales
 
 ### 1. Configuration
-- Sélecteur PDL (filtrés sur `has_production = true`)
+- Sélecteur PDL intelligent :
+  - **PDLs de consommation avec production liée** : Affiche les PDLs de consommation qui ont un `linked_production_pdl_id`
+  - **PDLs de production standalone** : Affiche les PDLs de production non liés à un PDL de consommation
+  - **Masquage automatique** : Les PDLs de production liés à un PDL de consommation sont masqués du sélecteur
 - Bouton "Récupérer 3 ans d'historique de production"
 - LoadingProgress (2 tâches : Quotidien + Détaillé)
+- **Bannière informative** : Affichée quand un PDL de consommation avec production liée est sélectionné
 
 ### 2. Statistiques de production
 - Cartes par année (kWh produits)
@@ -44,6 +48,9 @@ Page équivalente à `/consumption` mais pour la **production d'énergie solaire
 - Graphique 30min par jour
 - Navigation par semaine
 - Total journalier en kWh
+- **Carousel responsive** : Ajuste automatiquement le nombre de jours affichés selon la largeur d'écran (3-14 jours)
+- **Comparaisons temporelles** : Semaine -1 et Année -1 avec indicateurs visuels
+- **Calendrier interactif** : Sélection rapide d'une date spécifique
 
 ## Technologies
 
@@ -67,7 +74,78 @@ Page équivalente à `/consumption` mais pour la **production d'énergie solaire
 ✅ Page principale fonctionnelle
 ✅ Route et navigation configurées (icône Sun ☀️)
 ✅ Design moderne avec ModernButton
-⚠️ Graphiques détaillés à implémenter
+✅ **Gestion des PDLs liés** : Affichage et masquage intelligents
+✅ **Carousel responsive** : Hook useResponsiveDayCount implémenté
+✅ **Bannière informative** : Pour les PDLs de consommation avec production liée
+✅ Graphiques détaillés implémentés
+
+## Gestion des PDLs de production liés
+
+### Principe
+
+Lorsqu'un PDL de production (ex: "Ioul Production") est lié à un PDL de consommation (ex: "Maison") via le champ `linked_production_pdl_id`, la page Production affiche le PDL de consommation dans le sélecteur et masque le PDL de production.
+
+### Comportement
+
+#### Sélecteur de PDL
+- **Affichés** :
+  - PDLs de consommation avec `linked_production_pdl_id` renseigné
+  - PDLs de production standalone (non liés)
+- **Masqués** :
+  - PDLs de production liés à un PDL de consommation
+
+#### Exemple concret
+
+```typescript
+// Configuration
+PDL "Maison" (consommation) {
+  usage_point_id: "00987654321098",
+  has_consumption: true,
+  has_production: false,
+  linked_production_pdl_id: "uuid-ioul-production"
+}
+
+PDL "Ioul Production" (production) {
+  id: "uuid-ioul-production",
+  usage_point_id: "00123456789012",
+  has_production: true,
+  has_consumption: false
+}
+
+// Résultat dans le sélecteur
+✅ "Maison" → Visible dans le sélecteur
+❌ "Ioul Production" → Masqué du sélecteur
+
+// Données affichées quand "Maison" est sélectionné
+→ Récupère les données de production de "00123456789012" (Ioul Production)
+→ Bannière : "Vous consultez les données de production du PDL Ioul Production lié au PDL de consommation Maison"
+```
+
+### Conversion ID → usage_point_id
+
+**Important** : Le champ `linked_production_pdl_id` contient l'**ID UUID** (base de données interne), pas le `usage_point_id`. La page effectue automatiquement la conversion :
+
+```typescript
+// Conversion UUID → usage_point_id pour les API Enedis
+const linkedPdl = pdls.find(p => p.id === pdlDetails.linked_production_pdl_id)
+const actualProductionPDL = linkedPdl.usage_point_id // "00123456789012"
+
+// Utilisation dans les requêtes API
+GET /api/enedis/production/daily/{actualProductionPDL}
+```
+
+### Bannière informative
+
+Quand un PDL de consommation avec production liée est sélectionné, une bannière verte s'affiche :
+
+- **Icône** : ⚡ Éclair (symbolise l'énergie)
+- **Titre** : "Production liée affichée"
+- **Message** : "Vous consultez les données de production du PDL [Nom Production] lié au PDL de consommation [Nom Consommation]"
+- **Info** : Indication qu'une vue combinée est disponible sur `/consumption`
+
+### Message d'avertissement
+
+Le message "Ce PDL n'a pas l'option production activée" est **automatiquement masqué** si le PDL a un `linked_production_pdl_id` renseigné, même si `has_production = false`.
 
 ## Design moderne
 

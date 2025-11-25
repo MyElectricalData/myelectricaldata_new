@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Calendar, Download, BarChart3, Loader2, CalendarDays, CalendarRange } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useQueryClient } from '@tanstack/react-query'
 import { logger } from '@/utils/logger'
 import { ModernButton } from './ModernButton'
+import { useResponsiveDayCount } from '../hooks/useResponsiveDayCount'
 
 interface DetailedProductionCurveProps {
   detailByDayData: any[]
@@ -34,6 +35,14 @@ export function DetailedProductionCurve({
   const [weekComparisonAvailable, setWeekComparisonAvailable] = useState(false)
   const [yearComparisonAvailable, setYearComparisonAvailable] = useState(false)
   const [hasAutoSelected, setHasAutoSelected] = useState(false)
+  const [carouselStartIndex, setCarouselStartIndex] = useState(0)
+  const [pendingDateSelection, setPendingDateSelection] = useState<string | null>(null)
+
+  // Ref for the carousel container to measure width
+  const carouselContainerRef = useRef<HTMLDivElement>(null)
+
+  // Calculate optimal number of visible days based on container width
+  const visibleDayCount = useResponsiveDayCount(carouselContainerRef, 120, 14)
 
   // Reset auto-selection flag when PDL changes
   useEffect(() => {
@@ -103,6 +112,38 @@ export function DetailedProductionCurve({
       }
     }
   }, [detailByDayData, selectedDetailDay])
+
+  // Auto-scroll carousel when selected day changes
+  useEffect(() => {
+    if (detailByDayData.length === 0) return
+
+    // Ensure selected day is within visible carousel window
+    const carouselEndIndex = carouselStartIndex + visibleDayCount - 1
+
+    if (selectedDetailDay < carouselStartIndex) {
+      // Selected day is before visible window - scroll left
+      setCarouselStartIndex(selectedDetailDay)
+    } else if (selectedDetailDay > carouselEndIndex) {
+      // Selected day is after visible window - scroll right
+      const newStartIndex = Math.max(0, selectedDetailDay - visibleDayCount + 1)
+      setCarouselStartIndex(Math.min(
+        detailByDayData.length - visibleDayCount,
+        newStartIndex
+      ))
+    }
+  }, [selectedDetailDay, detailByDayData.length, carouselStartIndex, visibleDayCount])
+
+  // Handle pending date selection after data loads
+  useEffect(() => {
+    if (pendingDateSelection && detailByDayData.length > 0) {
+      const targetIndex = detailByDayData.findIndex(d => d.date === pendingDateSelection)
+      if (targetIndex !== -1) {
+        setSelectedDetailDay(targetIndex)
+        setPendingDateSelection(null)
+        logger.info('Selected pending date', { date: pendingDateSelection, index: targetIndex })
+      }
+    }
+  }, [pendingDateSelection, detailByDayData])
 
   // Check for comparison data availability when selected date changes
   useEffect(() => {
@@ -389,13 +430,31 @@ export function DetailedProductionCurve({
               disabled={!day.isValidDay || !day.hasData}
               onClick={() => {
                 if (day.date && day.hasData) {
+                  // Format clicked date as YYYY-MM-DD for matching
+                  const clickedDateStr = day.date.getFullYear() + '-' +
+                                        String(day.date.getMonth() + 1).padStart(2, '0') + '-' +
+                                        String(day.date.getDate()).padStart(2, '0')
+
+                  // Calculate which week this date belongs to (for loading correct week's data)
                   const daysDiff = Math.floor((yesterday.getTime() - day.date.getTime()) / (1000 * 60 * 60 * 24))
                   const newWeekOffset = Math.floor(daysDiff / 7)
-                  const newDayIndex = daysDiff % 7
-                  onWeekOffsetChange(newWeekOffset)
-                  setSelectedDetailDay(newDayIndex)
-                  setShowDatePicker(false)
-                  toast.success(`Date sélectionnée : ${day.date.toLocaleDateString('fr-FR')}`)
+
+                  // Find the exact index of this date in the current detailByDayData
+                  const currentDataIndex = detailByDayData.findIndex(d => d.date === clickedDateStr)
+
+                  if (currentDataIndex !== -1) {
+                    // Date is already in current week's data, just select it
+                    setSelectedDetailDay(currentDataIndex)
+                    setShowDatePicker(false)
+                    toast.success(`Date sélectionnée : ${day.date.toLocaleDateString('fr-FR')}`)
+                  } else {
+                    // Date is in a different week, load that week
+                    // Store the clicked date to select it once data loads
+                    setPendingDateSelection(clickedDateStr)
+                    onWeekOffsetChange(newWeekOffset)
+                    setShowDatePicker(false)
+                    toast.success(`Chargement de ${day.date.toLocaleDateString('fr-FR')}...`)
+                  }
                 }
               }}
               title={day.isValidDay && day.isInRange && !day.hasData ? 'Aucune donnée disponible pour ce jour' : ''}
@@ -505,18 +564,23 @@ export function DetailedProductionCurve({
       </div>
 
       {/* Day selector tabs with navigation and export button - hidden on smaller screens */}
-      <div className="hidden lg:flex lg:flex-row lg:items-center lg:justify-between gap-2 mb-4">
+      <div ref={carouselContainerRef} className="hidden lg:flex lg:flex-row lg:items-center lg:justify-between gap-2 mb-4">
         {/* Left side: navigation and tabs */}
-        <div className="flex items-center gap-2 flex-1 overflow-x-auto">
+        <div className="flex items-center gap-2 flex-1 overflow-hidden py-3 px-2">
           {/* Left button */}
           <button
             onClick={() => {
+              // Navigate to previous day or previous week
               if (selectedDetailDay === 0 && detailWeekOffset > 0) {
                 onWeekOffsetChange(Math.max(0, detailWeekOffset - 1))
                 setSelectedDetailDay(999)
                 toast.success('Chargement de la semaine suivante...')
               } else if (selectedDetailDay > 0) {
                 setSelectedDetailDay(prev => prev - 1)
+                // Auto-scroll carousel if needed
+                if (selectedDetailDay === carouselStartIndex) {
+                  setCarouselStartIndex(Math.max(0, carouselStartIndex - 1))
+                }
               }
             }}
             disabled={(selectedDetailDay === 0 && detailWeekOffset === 0) || isLoadingDetail}
@@ -532,45 +596,60 @@ export function DetailedProductionCurve({
             )}
           </button>
 
-          {/* Tabs container */}
+          {/* Tabs container - only show visibleDayCount days at a time */}
           <div className="flex-1 flex gap-2 overflow-hidden">
-            {detailByDayData.map((dayData, idx) => {
-              const date = new Date(dayData.date)
-              const dayLabel = date.toLocaleDateString('fr-FR', {
-                weekday: 'short',
-                day: '2-digit',
-                month: 'short'
-              })
+            {detailByDayData
+              .slice(carouselStartIndex, carouselStartIndex + visibleDayCount)
+              .map((dayData, displayIdx) => {
+                const idx = carouselStartIndex + displayIdx
+                const date = new Date(dayData.date)
+                const dayLabel = date.toLocaleDateString('fr-FR', {
+                  weekday: 'short',
+                  day: '2-digit',
+                  month: 'short'
+                })
 
-              return (
-                <button
-                  key={dayData.date}
-                  onClick={() => setSelectedDetailDay(idx)}
-                  className={`flex-1 px-4 py-3 font-medium transition-colors rounded-lg ${
-                    selectedDetailDay === idx
-                      ? 'text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/30'
-                  }`}
-                >
-                  <div className="flex flex-col items-center gap-1">
-                    <span className="text-sm whitespace-nowrap">{dayLabel}</span>
-                    <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
-                      {dayData.totalEnergyKwh.toFixed(2)} kWh
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
+                return (
+                  <button
+                    key={dayData.date}
+                    onClick={() => setSelectedDetailDay(idx)}
+                    className={`flex-1 min-w-0 px-4 py-3 font-medium transition-colors rounded-lg ${
+                      selectedDetailDay === idx
+                        ? 'text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/30'
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="text-sm whitespace-nowrap">{dayLabel}</span>
+                      <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                        {dayData.totalEnergyKwh.toFixed(2)} kWh
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
           </div>
 
           {/* Right button */}
           <button
             onClick={() => {
+              // Navigate to next day or previous week
               if (selectedDetailDay === detailByDayData.length - 1) {
                 onWeekOffsetChange(detailWeekOffset + 1)
                 setSelectedDetailDay(0)
+                setCarouselStartIndex(0) // Reset carousel to start for new week
+                toast.success('Chargement de la semaine précédente...')
               } else {
                 setSelectedDetailDay(prev => prev + 1)
+                // Auto-scroll carousel if needed
+                const nextDayIndex = selectedDetailDay + 1
+                const carouselEndIndex = carouselStartIndex + visibleDayCount - 1
+                if (nextDayIndex > carouselEndIndex) {
+                  setCarouselStartIndex(Math.min(
+                    detailByDayData.length - visibleDayCount,
+                    carouselStartIndex + 1
+                  ))
+                }
               }
             }}
             disabled={isLoadingDetail}
