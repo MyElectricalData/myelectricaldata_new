@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Calendar, Download, BarChart3, Loader2, CalendarDays, CalendarRange } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useQueryClient } from '@tanstack/react-query'
 import { logger } from '@/utils/logger'
 import { ModernButton } from './ModernButton'
+import { useResponsiveDayCount } from '../hooks/useResponsiveDayCount'
 
 interface DetailedLoadCurveProps {
   detailByDayData: any[]
@@ -31,9 +32,15 @@ export function DetailedLoadCurve({
   const [showDetailYearComparison, setShowDetailYearComparison] = useState(false)
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [viewMonth, setViewMonth] = useState(new Date())
-  const [weekComparisonAvailable, setWeekComparisonAvailable] = useState(false)
-  const [yearComparisonAvailable, setYearComparisonAvailable] = useState(false)
   const [hasAutoSelected, setHasAutoSelected] = useState(false)
+  const [carouselStartIndex, setCarouselStartIndex] = useState(0)
+  const [pendingDateSelection, setPendingDateSelection] = useState<string | null>(null)
+
+  // Ref for the carousel container to measure width
+  const carouselContainerRef = useRef<HTMLDivElement>(null)
+
+  // Calculate optimal number of visible days based on container width
+  const visibleDayCount = useResponsiveDayCount(carouselContainerRef, 120, 14)
 
   // Reset auto-selection flag when PDL changes
   useEffect(() => {
@@ -76,70 +83,38 @@ export function DetailedLoadCurve({
     }
   }, [detailByDayData, selectedDetailDay])
 
-  // Check for comparison data availability when selected date changes
+  // Auto-scroll carousel when selected day changes
   useEffect(() => {
-    if (!selectedPDL || !detailByDayData[selectedDetailDay]) {
-      setWeekComparisonAvailable(false)
-      setYearComparisonAvailable(false)
-      // Reset comparison toggles when no data available
-      setShowDetailWeekComparison(false)
-      setShowDetailYearComparison(false)
-      return
+    if (detailByDayData.length === 0) return
+
+    // Ensure selected day is within visible carousel window
+    const carouselEndIndex = carouselStartIndex + visibleDayCount - 1
+
+    if (selectedDetailDay < carouselStartIndex) {
+      // Selected day is before visible window - scroll left
+      setCarouselStartIndex(selectedDetailDay)
+    } else if (selectedDetailDay > carouselEndIndex) {
+      // Selected day is after visible window - scroll right
+      const newStartIndex = Math.max(0, selectedDetailDay - visibleDayCount + 1)
+      setCarouselStartIndex(Math.min(
+        detailByDayData.length - visibleDayCount,
+        newStartIndex
+      ))
     }
+  }, [selectedDetailDay, detailByDayData.length, carouselStartIndex, visibleDayCount])
 
-    // Calculate current date in UTC
-    const todayUTC = new Date()
-    const yesterdayUTC = new Date(Date.UTC(
-      todayUTC.getUTCFullYear(),
-      todayUTC.getUTCMonth(),
-      todayUTC.getUTCDate() - 1,
-      0, 0, 0, 0
-    ))
-    const currentDateUTC = new Date(Date.UTC(
-      yesterdayUTC.getUTCFullYear(),
-      yesterdayUTC.getUTCMonth(),
-      yesterdayUTC.getUTCDate() - (detailWeekOffset * 7) - selectedDetailDay,
-      0, 0, 0, 0
-    ))
-
-    // Check week-1 availability
-    const weekAgoDateUTC = new Date(Date.UTC(
-      currentDateUTC.getUTCFullYear(),
-      currentDateUTC.getUTCMonth(),
-      currentDateUTC.getUTCDate() - 7,
-      0, 0, 0, 0
-    ))
-    const weekAgoDateStr = weekAgoDateUTC.getUTCFullYear() + '-' +
-                          String(weekAgoDateUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                          String(weekAgoDateUTC.getUTCDate()).padStart(2, '0')
-
-    const weekAgoData = queryClient.getQueryData(['consumptionDetail', selectedPDL, weekAgoDateStr, weekAgoDateStr]) as any
-    const weekAvailable = !!weekAgoData?.data?.meter_reading?.interval_reading
-    setWeekComparisonAvailable(weekAvailable)
-    // Reset comparison toggle if data becomes unavailable
-    if (!weekAvailable && showDetailWeekComparison) {
-      setShowDetailWeekComparison(false)
+  // Handle pending date selection after data loads
+  useEffect(() => {
+    if (pendingDateSelection && detailByDayData.length > 0) {
+      const targetIndex = detailByDayData.findIndex(d => d.date === pendingDateSelection)
+      if (targetIndex !== -1) {
+        setSelectedDetailDay(targetIndex)
+        setPendingDateSelection(null)
+        logger.info('Selected pending date', { date: pendingDateSelection, index: targetIndex })
+      }
     }
+  }, [pendingDateSelection, detailByDayData])
 
-    // Check year-1 availability
-    const yearAgoDateUTC = new Date(Date.UTC(
-      currentDateUTC.getUTCFullYear() - 1,
-      currentDateUTC.getUTCMonth(),
-      currentDateUTC.getUTCDate(),
-      0, 0, 0, 0
-    ))
-    const yearAgoDateStr = yearAgoDateUTC.getUTCFullYear() + '-' +
-                          String(yearAgoDateUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                          String(yearAgoDateUTC.getUTCDate()).padStart(2, '0')
-
-    const yearAgoData = queryClient.getQueryData(['consumptionDetail', selectedPDL, yearAgoDateStr, yearAgoDateStr]) as any
-    const yearAvailable = !!yearAgoData?.data?.meter_reading?.interval_reading
-    setYearComparisonAvailable(yearAvailable)
-    // Reset comparison toggle if data becomes unavailable
-    if (!yearAvailable && showDetailYearComparison) {
-      setShowDetailYearComparison(false)
-    }
-  }, [selectedDetailDay, detailWeekOffset, selectedPDL, detailByDayData, queryClient, showDetailWeekComparison, showDetailYearComparison])
 
   const handleExport = () => {
     if (!detailByDayData[selectedDetailDay]) return
@@ -195,20 +170,38 @@ export function DetailedLoadCurve({
                             String(weekAgoDateUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
                             String(weekAgoDateUTC.getUTCDate()).padStart(2, '0')
 
-      logger.log('🔍 Looking for week-1 data:', {
-        currentDate: currentDateUTC.toISOString().split('T')[0],
-        weekAgoDate: weekAgoDateStr,
-        selectedPDL
+      // Search through all cached queries to find data for this date
+      const queryCache = queryClient.getQueryCache()
+      const allDetailQueries = queryCache.findAll({
+        queryKey: ['consumptionDetail', selectedPDL],
+        exact: false,
       })
 
-      // Try to get data for the specific day from cache
-      const weekAgoData = queryClient.getQueryData(['consumptionDetail', selectedPDL, weekAgoDateStr, weekAgoDateStr]) as any
+      // Find readings for the target date from the batch
+      let weekAgoReadings: any = null
+      let weekAgoMeterData: any = null
 
-      if (weekAgoData?.data?.meter_reading?.interval_reading) {
-        logger.log('✅ Found week-1 data in cache!')
-        const readings = weekAgoData.data.meter_reading.interval_reading
-        const unit = weekAgoData.data.meter_reading.reading_type?.unit || 'W'
-        const intervalLength = weekAgoData.data.meter_reading.reading_type?.interval_length || 'PT30M'
+      for (const query of allDetailQueries) {
+        const responseData = query.state.data as any
+        if (!responseData?.data?.meter_reading?.interval_reading) continue
+
+        const allReadings = responseData.data.meter_reading.interval_reading
+        // Filter readings for the specific date (YYYY-MM-DD format)
+        const filteredReadings = allReadings.filter((reading: any) =>
+          reading.date && reading.date.startsWith(weekAgoDateStr)
+        )
+
+        if (filteredReadings.length > 0) {
+          weekAgoReadings = filteredReadings
+          weekAgoMeterData = responseData.data.meter_reading
+          break
+        }
+      }
+
+      if (weekAgoReadings && weekAgoMeterData) {
+        const readings = weekAgoReadings
+        const unit = weekAgoMeterData.reading_type?.unit || 'W'
+        const intervalLength = weekAgoMeterData.reading_type?.interval_length || 'PT30M'
 
         const parseInterval = (interval: string): number => {
           // Handle both P30M and PT30M formats
@@ -230,9 +223,6 @@ export function DetailedLoadCurve({
             powerWeekAgo: power
           }
         })
-        logger.log('✅ Week-1 data added successfully')
-      } else {
-        logger.log('⚠️ No week-1 data found in cache for date:', weekAgoDateStr)
       }
     }
 
@@ -250,20 +240,38 @@ export function DetailedLoadCurve({
                             String(yearAgoDateUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
                             String(yearAgoDateUTC.getUTCDate()).padStart(2, '0')
 
-      logger.log('🔍 Looking for year-1 data:', {
-        currentDate: currentDateUTC.toISOString().split('T')[0],
-        yearAgoDate: yearAgoDateStr,
-        selectedPDL
+      // Search through all cached queries to find data for this date
+      const queryCache2 = queryClient.getQueryCache()
+      const allDetailQueries2 = queryCache2.findAll({
+        queryKey: ['consumptionDetail', selectedPDL],
+        exact: false,
       })
 
-      // Try to get data for the specific day from cache
-      const yearAgoData = queryClient.getQueryData(['consumptionDetail', selectedPDL, yearAgoDateStr, yearAgoDateStr]) as any
+      // Find readings for the target date from the batch
+      let yearAgoReadings: any = null
+      let yearAgoMeterData: any = null
 
-      if (yearAgoData?.data?.meter_reading?.interval_reading) {
-        logger.log('✅ Found year-1 data in cache!')
-        const readings = yearAgoData.data.meter_reading.interval_reading
-        const unit = yearAgoData.data.meter_reading.reading_type?.unit || 'W'
-        const intervalLength = yearAgoData.data.meter_reading.reading_type?.interval_length || 'PT30M'
+      for (const query of allDetailQueries2) {
+        const responseData = query.state.data as any
+        if (!responseData?.data?.meter_reading?.interval_reading) continue
+
+        const allReadings = responseData.data.meter_reading.interval_reading
+        // Filter readings for the specific date (YYYY-MM-DD format)
+        const filteredReadings = allReadings.filter((reading: any) =>
+          reading.date && reading.date.startsWith(yearAgoDateStr)
+        )
+
+        if (filteredReadings.length > 0) {
+          yearAgoReadings = filteredReadings
+          yearAgoMeterData = responseData.data.meter_reading
+          break
+        }
+      }
+
+      if (yearAgoReadings && yearAgoMeterData) {
+        const readings = yearAgoReadings
+        const unit = yearAgoMeterData.reading_type?.unit || 'W'
+        const intervalLength = yearAgoMeterData.reading_type?.interval_length || 'PT30M'
 
         const parseInterval = (interval: string): number => {
           // Handle both P30M and PT30M formats
@@ -285,9 +293,6 @@ export function DetailedLoadCurve({
             powerYearAgo: power
           }
         })
-        logger.log('✅ Year-1 data added successfully')
-      } else {
-        logger.log('⚠️ No year-1 data found in cache for date:', yearAgoDateStr)
       }
     }
 
@@ -308,7 +313,10 @@ export function DetailedLoadCurve({
     const currentYear = viewMonth.getFullYear()
 
     const firstDayOfMonth = new Date(currentYear, currentMonth, 1)
-    const startingDayOfWeek = firstDayOfMonth.getDay()
+    // getDay() returns 0 for Sunday, 1 for Monday, etc.
+    // We need to adjust for French calendar starting on Monday (L)
+    // Sunday (0) should be at position 6, Monday (1) at position 0
+    const startingDayOfWeek = (firstDayOfMonth.getDay() + 6) % 7
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate()
 
     const calendarDays = []
@@ -438,11 +446,11 @@ export function DetailedLoadCurve({
                     toast.success(`Date sélectionnée : ${day.date.toLocaleDateString('fr-FR')}`)
                   } else {
                     // Date is in a different week, load that week
+                    // Store the clicked date to select it once data loads
+                    setPendingDateSelection(clickedDateStr)
                     onWeekOffsetChange(newWeekOffset)
-                    // Reset to first day of the new week (index 0 = most recent in range)
-                    setSelectedDetailDay(0)
                     setShowDatePicker(false)
-                    toast.success(`Chargement des données...`)
+                    toast.success(`Chargement de ${day.date.toLocaleDateString('fr-FR')}...`)
                   }
                 }
               }}
@@ -553,18 +561,23 @@ export function DetailedLoadCurve({
       </div>
 
       {/* Day selector tabs with navigation and export button - hidden on smaller screens */}
-      <div className="hidden lg:flex lg:flex-row lg:items-center lg:justify-between gap-2 mb-4">
+      <div ref={carouselContainerRef} className="hidden lg:flex lg:flex-row lg:items-center lg:justify-between gap-2 mb-4">
         {/* Left side: navigation and tabs */}
-        <div className="flex items-center gap-2 flex-1 overflow-x-auto overflow-y-hidden py-3 px-2 no-scrollbar">
+        <div className="flex items-center gap-2 flex-1 overflow-hidden py-3 px-2">
           {/* Left button */}
           <button
             onClick={() => {
+              // Navigate to previous day or previous week
               if (selectedDetailDay === 0 && detailWeekOffset > 0) {
                 onWeekOffsetChange(Math.max(0, detailWeekOffset - 1))
                 setSelectedDetailDay(999)
                 toast.success('Chargement de la semaine suivante...')
               } else if (selectedDetailDay > 0) {
                 setSelectedDetailDay(prev => prev - 1)
+                // Auto-scroll carousel if needed
+                if (selectedDetailDay === carouselStartIndex) {
+                  setCarouselStartIndex(Math.max(0, carouselStartIndex - 1))
+                }
               }
             }}
             disabled={(selectedDetailDay === 0 && detailWeekOffset === 0) || isLoadingDetail}
@@ -580,45 +593,60 @@ export function DetailedLoadCurve({
             )}
           </button>
 
-          {/* Tabs container */}
+          {/* Tabs container - only show visibleDayCount days at a time */}
           <div className="flex-1 flex gap-2 overflow-hidden">
-            {detailByDayData.map((dayData, idx) => {
-              const date = new Date(dayData.date)
-              const dayLabel = date.toLocaleDateString('fr-FR', {
-                weekday: 'short',
-                day: '2-digit',
-                month: 'short'
-              })
+            {detailByDayData
+              .slice(carouselStartIndex, carouselStartIndex + visibleDayCount)
+              .map((dayData, displayIdx) => {
+                const idx = carouselStartIndex + displayIdx
+                const date = new Date(dayData.date)
+                const dayLabel = date.toLocaleDateString('fr-FR', {
+                  weekday: 'short',
+                  day: '2-digit',
+                  month: 'short'
+                })
 
-              return (
-                <button
-                  key={dayData.date}
-                  onClick={() => setSelectedDetailDay(idx)}
-                  className={`flex-1 px-4 py-3 font-medium transition-colors rounded-lg ${
-                    selectedDetailDay === idx
-                      ? 'text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/30'
-                  }`}
-                >
-                  <div className="flex flex-col items-center gap-1">
-                    <span className="text-sm whitespace-nowrap">{dayLabel}</span>
-                    <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
-                      {dayData.totalEnergyKwh.toFixed(2)} kWh
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
+                return (
+                  <button
+                    key={dayData.date}
+                    onClick={() => setSelectedDetailDay(idx)}
+                    className={`flex-1 min-w-0 px-4 py-3 font-medium transition-colors rounded-lg ${
+                      selectedDetailDay === idx
+                        ? 'text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/30'
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="text-sm whitespace-nowrap">{dayLabel}</span>
+                      <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                        {dayData.totalEnergyKwh.toFixed(2)} kWh
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
           </div>
 
           {/* Right button */}
           <button
             onClick={() => {
+              // Navigate to next day or previous week
               if (selectedDetailDay === detailByDayData.length - 1) {
                 onWeekOffsetChange(detailWeekOffset + 1)
                 setSelectedDetailDay(0)
+                setCarouselStartIndex(0) // Reset carousel to start for new week
+                toast.success('Chargement de la semaine précédente...')
               } else {
                 setSelectedDetailDay(prev => prev + 1)
+                // Auto-scroll carousel if needed
+                const nextDayIndex = selectedDetailDay + 1
+                const carouselEndIndex = carouselStartIndex + visibleDayCount - 1
+                if (nextDayIndex > carouselEndIndex) {
+                  setCarouselStartIndex(Math.min(
+                    detailByDayData.length - visibleDayCount,
+                    carouselStartIndex + 1
+                  ))
+                }
               }
             }}
             disabled={isLoadingDetail}
@@ -638,17 +666,10 @@ export function DetailedLoadCurve({
         {/* Right side: Comparison and Export buttons */}
         <div className="flex items-center gap-2 justify-end flex-wrap">
           <button
-            onClick={() => {
-              if (yearComparisonAvailable) {
-                setShowDetailYearComparison(!showDetailYearComparison)
-              }
-            }}
-            disabled={!yearComparisonAvailable}
+            onClick={() => setShowDetailYearComparison(!showDetailYearComparison)}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 shadow-sm ${
-              showDetailYearComparison && yearComparisonAvailable
+              showDetailYearComparison
                 ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md'
-                : !yearComparisonAvailable
-                ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-gray-600 cursor-not-allowed opacity-50'
                 : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
             }`}
           >
@@ -656,17 +677,10 @@ export function DetailedLoadCurve({
             <span>Année -1</span>
           </button>
           <button
-            onClick={() => {
-              if (weekComparisonAvailable) {
-                setShowDetailWeekComparison(!showDetailWeekComparison)
-              }
-            }}
-            disabled={!weekComparisonAvailable}
+            onClick={() => setShowDetailWeekComparison(!showDetailWeekComparison)}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 shadow-sm ${
-              showDetailWeekComparison && weekComparisonAvailable
+              showDetailWeekComparison
                 ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md'
-                : !weekComparisonAvailable
-                ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-gray-600 cursor-not-allowed opacity-50'
                 : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
             }`}
           >
@@ -688,17 +702,10 @@ export function DetailedLoadCurve({
       {/* Smaller screens: Comparison and Export buttons - centered */}
       <div className="lg:hidden flex items-center gap-2 justify-center flex-wrap mb-4">
         <button
-          onClick={() => {
-            if (yearComparisonAvailable) {
-              setShowDetailYearComparison(!showDetailYearComparison)
-            }
-          }}
-          disabled={!yearComparisonAvailable}
+          onClick={() => setShowDetailYearComparison(!showDetailYearComparison)}
           className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 shadow-sm ${
-            showDetailYearComparison && yearComparisonAvailable
+            showDetailYearComparison
               ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md'
-              : !yearComparisonAvailable
-              ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-gray-600 cursor-not-allowed opacity-50'
               : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
           }`}
         >
@@ -706,17 +713,10 @@ export function DetailedLoadCurve({
           <span>Année -1</span>
         </button>
         <button
-          onClick={() => {
-            if (weekComparisonAvailable) {
-              setShowDetailWeekComparison(!showDetailWeekComparison)
-            }
-          }}
-          disabled={!weekComparisonAvailable}
+          onClick={() => setShowDetailWeekComparison(!showDetailWeekComparison)}
           className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 shadow-sm ${
-            showDetailWeekComparison && weekComparisonAvailable
+            showDetailWeekComparison
               ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md'
-              : !weekComparisonAvailable
-              ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-gray-600 cursor-not-allowed opacity-50'
               : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
           }`}
         >

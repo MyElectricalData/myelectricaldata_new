@@ -117,12 +117,18 @@ Page permettant aux utilisateurs de **visualiser et analyser leur consommation �
 
 - ✅ Afficher la courbe des données par intervalle transmis par Enedis
 - ✅ Proposer une navigation par semaine et par jour (onglets de 7 jours) avec des contrôles gauche/droite pour parcourir les semaines
+  - Boutons de jour adaptatifs : affichage sur 2 lignes (date complète + puissance)
+  - Responsive : nombre de jours visible calculé dynamiquement selon la largeur d'écran
 - ✅ **Calendrier** respectant le CSS du site et empêchant la navigation en dehors des plages présentes en cache
+  - Alignement des jours corrigé pour calendrier français (lundi en première colonne)
+  - Sélection de date intelligente : navigation vers la bonne semaine puis sélection automatique du jour
 - ✅ **Trois raccourcis** au même niveau que le calendrier pour naviguer rapidement :
   - Aujourd'hui
   - Semaine dernière
   - Il y a un an
 - ✅ Comparer avec l'année et la semaine précédentes lorsqu'elles sont disponibles
+  - Chargement automatique depuis le cache React Query (batch data)
+  - Extraction intelligente des données de comparaison par filtrage de date
 - ✅ Export JSON disponible
 
 #### 4.2 Consommation HC/HP par mois ✅
