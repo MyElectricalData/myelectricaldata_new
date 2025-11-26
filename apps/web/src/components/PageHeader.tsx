@@ -82,6 +82,33 @@ export default function PageHeader() {
   const Icon = config.icon
   const activePdls = pdls.filter((p: PDL) => p.is_active)
 
+  // Filter PDLs based on page
+  const displayedPdls = location.pathname === '/production'
+    ? (() => {
+        // Show: consumption PDLs with linked production + standalone production PDLs
+        const consumptionWithProduction = pdls.filter((pdl: PDL) =>
+          pdl.has_consumption &&
+          pdl.is_active &&
+          pdl.linked_production_pdl_id
+        )
+
+        const linkedProductionIds = new Set(
+          pdls
+            .filter((pdl: PDL) => pdl.has_consumption && pdl.linked_production_pdl_id)
+            .map((pdl: PDL) => pdl.linked_production_pdl_id)
+        )
+
+        const standaloneProduction = activePdls.filter((pdl: PDL) =>
+          pdl.has_production &&
+          !linkedProductionIds.has(pdl.usage_point_id)
+        )
+
+        return [...consumptionWithProduction, ...standaloneProduction]
+      })()
+    : location.pathname === '/consumption'
+    ? activePdls.filter((pdl: PDL) => pdl.has_consumption)
+    : activePdls
+
   return (
     <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
       <div className="container mx-auto px-3 sm:px-4 lg:px-6 max-w-[1920px]">
@@ -103,9 +130,11 @@ export default function PageHeader() {
 
           {/* Sélecteur de PDL et bouton de récupération (uniquement sur certaines pages) */}
           {showPdlSelector && (
-            activePdls.length === 0 ? (
+            displayedPdls.length === 0 ? (
               <div className="text-sm text-gray-600 dark:text-gray-400 italic">
-                Aucun point de livraison actif trouvé
+                {location.pathname === '/production'
+                  ? 'Aucun PDL de production non lié trouvé'
+                  : 'Aucun point de livraison actif trouvé'}
               </div>
             ) : (
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full lg:w-auto">
@@ -124,7 +153,7 @@ export default function PageHeader() {
                     className="px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors text-sm w-full sm:w-auto"
                   >
                     <option value="">Sélectionner un PDL</option>
-                    {activePdls.map((pdl: PDL) => (
+                    {displayedPdls.map((pdl: PDL) => (
                       <option key={pdl.usage_point_id} value={pdl.usage_point_id}>
                         {pdl.name || pdl.usage_point_id}
                       </option>

@@ -5,6 +5,8 @@ import { usePdlStore } from '@/stores/pdlStore'
 import type { PDL } from '@/types/api'
 import { useIsDemo } from '@/hooks/useIsDemo'
 import { logger } from '@/utils/logger'
+import { useQuery } from '@tanstack/react-query'
+import { pdlApi } from '@/api/pdl'
 
 // Import custom hooks
 import { useProductionData } from './hooks/useProductionData'
@@ -81,18 +83,97 @@ export default function Production() {
     return { start: startDate, end: endDate }
   }, [dateRange])
 
-  // Use custom hooks
+  // STEP 1: First fetch PDL list to determine actualProductionPDL
+  const { data: pdlsData } = useQuery({
+    queryKey: ['pdls'],
+    queryFn: async () => {
+      const response = await pdlApi.list()
+      if (response.success && Array.isArray(response.data)) {
+        return response.data as PDL[]
+      }
+      return []
+    },
+  })
+  const pdls: PDL[] = Array.isArray(pdlsData) ? pdlsData : []
+  const activePdls = pdls.filter(p => p.is_active !== false && p.has_production === true)
+  const selectedPDLDetails = pdls.find(p => p.usage_point_id === selectedPDL)
+
+  // STEP 2: Calculate actualProductionPDL BEFORE calling useProductionData
+  // Get the actual production PDL usage_point_id to use for fetching data
+  // IMPORTANT: linked_production_pdl_id contains the UUID (id), not usage_point_id
+  // We need to convert it to usage_point_id for API calls
+  const actualProductionPDL = useMemo(() => {
+    if (!selectedPDL) return null
+
+    const pdlDetails = pdls.find(p => p.usage_point_id === selectedPDL)
+    if (!pdlDetails) return selectedPDL
+
+    // If it's a consumption PDL with linked production
+    if (pdlDetails.has_consumption && pdlDetails.linked_production_pdl_id) {
+      // linked_production_pdl_id is the UUID (id), need to find the usage_point_id
+      const linkedPdl = pdls.find(p => p.id === pdlDetails.linked_production_pdl_id)
+      if (linkedPdl) {
+        logger.log('[Production] Using linked production PDL:', linkedPdl.usage_point_id, 'for consumption PDL:', selectedPDL)
+        return linkedPdl.usage_point_id
+      }
+    }
+
+    // Otherwise, use the selected PDL as-is (it's already a production PDL)
+    return selectedPDL
+  }, [selectedPDL, pdls])
+
+  // Check if we're viewing a consumption PDL with linked production
+  const isConsumptionPDLWithProduction = useMemo(() => {
+    if (!selectedPDL || !pdls.length) return false
+
+    const pdlDetails = pdls.find(p => p.usage_point_id === selectedPDL)
+    return !!(pdlDetails?.has_consumption && pdlDetails?.linked_production_pdl_id)
+  }, [selectedPDL, pdls])
+
+  // Get the linked production PDL details for display
+  const linkedProductionPDLDetails = useMemo(() => {
+    if (!isConsumptionPDLWithProduction || !selectedPDLDetails?.linked_production_pdl_id) return null
+
+    // Find the production PDL by its UUID (id)
+    return pdls.find(p => p.id === selectedPDLDetails.linked_production_pdl_id)
+  }, [isConsumptionPDLWithProduction, selectedPDLDetails, pdls])
+
+  // STEP 3: Now use hooks with actualProductionPDL for fetching data
   const {
-    pdls,
-    activePdls,
-    selectedPDLDetails,
     productionData,
     detailData,
     isLoading,
     isLoadingProduction,
     isLoadingDetail,
     queryClient
-  } = useProductionData(selectedPDL, dateRange, detailDateRange)
+  } = useProductionData(actualProductionPDL || '', dateRange, detailDateRange)
+
+  // On the Production page, show consumption PDLs that have linked production
+  // and standalone production PDLs (not linked to any consumption)
+  const availableProductionPdls = useMemo(() => {
+    if (!pdls.length) return []
+
+    // 1. Get consumption PDLs that have a linked production PDL
+    const consumptionWithProduction = pdls.filter(pdl =>
+      pdl.has_consumption &&
+      pdl.is_active &&
+      pdl.linked_production_pdl_id
+    )
+
+    // 2. Get production PDLs that are NOT linked to any consumption PDL
+    const linkedProductionIds = new Set(
+      pdls
+        .filter(pdl => pdl.has_consumption && pdl.linked_production_pdl_id)
+        .map(pdl => pdl.linked_production_pdl_id)
+    )
+    const standaloneProductionPdls = activePdls.filter(pdl =>
+      pdl.has_production &&
+      !linkedProductionIds.has(pdl.usage_point_id)
+    )
+
+    // Combine both: consumption PDLs with production + standalone production PDLs
+    return [...consumptionWithProduction, ...standaloneProductionPdls]
+  }, [activePdls, pdls])
 
   const {
     chartData,
@@ -103,7 +184,7 @@ export default function Production() {
   })
 
   const { fetchProductionData } = useProductionFetch({
-    selectedPDL,
+    selectedPDL: actualProductionPDL || '',
     selectedPDLDetails,
     setDateRange,
     setIsChartsExpanded,
@@ -122,12 +203,13 @@ export default function Production() {
 
   // Check if ANY production data is in cache (to determine if we should auto-load)
   const hasDataInCache = useMemo(() => {
-    if (!selectedPDL) {
+    const pdlToCheck = actualProductionPDL || selectedPDL
+    if (!pdlToCheck) {
       logger.log('[Cache Detection] No PDL selected')
       return false
     }
 
-    logger.log('[Cache Detection] Checking production cache for PDL:', selectedPDL)
+    logger.log('[Cache Detection] Checking production cache for PDL:', pdlToCheck)
 
     // Get all queries in cache
     const allQueries = queryClient.getQueryCache().getAll()
@@ -135,7 +217,7 @@ export default function Production() {
     // Find ALL productionDetail queries for this PDL with data
     const detailedQueries = allQueries.filter(q => {
       if (q.queryKey[0] !== 'productionDetail') return false
-      if (q.queryKey[1] !== selectedPDL) return false
+      if (q.queryKey[1] !== pdlToCheck) return false
 
       const data = q.state.data as any
       const hasReadings = data?.data?.meter_reading?.interval_reading?.length > 0
@@ -153,19 +235,22 @@ export default function Production() {
 
     logger.log('[Cache Detection] ✗ No production cache found')
     return false
-  }, [selectedPDL, queryClient])
+  }, [actualProductionPDL, selectedPDL, queryClient])
 
-  // Auto-set selectedPDL when there's only one active PDL
+  // Auto-set selectedPDL when there's only one available (non-linked) PDL
   useEffect(() => {
-    if (activePdls.length > 0 && !selectedPDL) {
-      setSelectedPDL(activePdls[0].usage_point_id)
+    if (availableProductionPdls.length > 0 && !selectedPDL) {
+      setSelectedPDL(availableProductionPdls[0].usage_point_id)
     }
-  }, [activePdls, selectedPDL])
+  }, [availableProductionPdls, selectedPDL, setSelectedPDL])
 
   // Check data limits
   useEffect(() => {
     if (selectedPDLDetails) {
-      if (!selectedPDLDetails.has_production) {
+      // Don't show warning if PDL has linked production
+      const hasLinkedProduction = selectedPDLDetails.has_consumption && selectedPDLDetails.linked_production_pdl_id
+
+      if (!selectedPDLDetails.has_production && !hasLinkedProduction) {
         setDataLimitWarning("Ce PDL n'a pas l'option production activée.")
       } else {
         setDataLimitWarning(null)
@@ -246,7 +331,7 @@ export default function Production() {
   }, [selectedPDL, hasDataInCache, hasAttemptedAutoLoad, fetchProductionData, isDemo])
 
   // Get production response from React Query (needed for status badges)
-  const productionResponse = queryClient.getQueryData(['production', selectedPDL, dateRange?.start, dateRange?.end])
+  const productionResponse = queryClient.getQueryData(['production', actualProductionPDL || selectedPDL, dateRange?.start, dateRange?.end])
 
   return (
     <div className="pt-6 w-full">
@@ -257,6 +342,33 @@ export default function Production() {
           <p className="text-sm text-blue-800 dark:text-blue-200">
             {dataLimitWarning}
           </p>
+        </div>
+      )}
+
+      {/* Info banner when viewing consumption PDL with linked production */}
+      {isConsumptionPDLWithProduction && linkedProductionPDLDetails && (
+        <div className="mb-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-2 border-green-300 dark:border-green-700 rounded-xl shadow-sm">
+          <div className="flex items-start gap-3">
+            <svg className="w-6 h-6 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 mb-1">
+                Production liée affichée
+              </h3>
+              <p className="text-sm text-green-800 dark:text-green-200">
+                Vous consultez les données de production du PDL{' '}
+                <span className="font-mono font-semibold">
+                  {linkedProductionPDLDetails.name || linkedProductionPDLDetails.usage_point_id}
+                </span>{' '}
+                lié au PDL de consommation{' '}
+                <span className="font-mono font-semibold">
+                  {selectedPDLDetails?.name || selectedPDL}
+                </span>.{' '}
+                Une vue combinée consommation/production est également disponible sur la page Consommation.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
