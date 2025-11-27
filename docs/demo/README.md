@@ -1,3 +1,9 @@
+---
+sidebar_position: 1
+title: Compte Démo
+description: Guide d'implémentation du compte de démonstration
+---
+
 # MyElectricalData Demo Account Implementation - Complete Guide
 
 Welcome! This guide helps you implement a `/demo` command to create a demo account with realistic mock data for testing the MyElectricalData application.

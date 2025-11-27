@@ -1127,7 +1127,7 @@ export default function AdminOffers() {
                                   )}
                                 </div>
                               )}
-                              {offer.offer_type === 'HC_HP' && (
+                              {(offer.offer_type === 'HC_HP' || offer.offer_type === 'WEEKEND' || offer.offer_type === 'HC_NUIT_WEEKEND' || offer.offer_type === 'HC_WEEKEND') && (
                                 <div className="space-y-0.5">
                                   {offer.hc_price && <div className="text-blue-600">HC: {formatPrice(offer.hc_price, 5)}</div>}
                                   {offer.hp_price && <div className="text-orange-600">HP: {formatPrice(offer.hp_price, 5)}</div>}
@@ -1392,7 +1392,7 @@ export default function AdminOffers() {
                   </div>
                 )}
 
-                {editingOffer.offer_type === 'HC_HP' && (
+                {(editingOffer.offer_type === 'HC_HP' || editingOffer.offer_type === 'WEEKEND' || editingOffer.offer_type === 'HC_NUIT_WEEKEND' || editingOffer.offer_type === 'HC_WEEKEND') && (
                   <div className="space-y-4">
                     <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
                       <h3 className="font-semibold mb-3 text-gray-700 dark:text-gray-300">Tarifs Semaine</h3>

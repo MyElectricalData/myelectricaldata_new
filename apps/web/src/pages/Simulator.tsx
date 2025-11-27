@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Calculator, AlertCircle, Loader2, ChevronDown, ChevronUp, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info } from 'lucide-react'
+import { Calculator, AlertCircle, Loader2, ChevronDown, ChevronUp, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info, ArrowRight } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { LoadingOverlay } from '@/components/LoadingOverlay'
+import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
+import { AnimatedSection } from '@/components/AnimatedSection'
 import { pdlApi } from '@/api/pdl'
 import { enedisApi } from '@/api/enedis'
 // import { adminApi } from '@/api/admin' // Unused - cache clearing is in sidebar
@@ -108,6 +111,20 @@ function isOffpeakHour(hour: number, offpeakConfig?: Record<string, string> | st
   return hour >= 22 || hour < 6
 }
 
+// Helper function to safely format prices (handles both strings and numbers)
+function formatPrice(value: string | number | undefined | null, decimals: number = 5): string {
+  if (value === undefined || value === null) return '0'.padEnd(decimals + 2, '0')
+  const numValue = typeof value === 'string' ? parseFloat(value) : value
+  return isNaN(numValue) ? '0'.padEnd(decimals + 2, '0') : numValue.toFixed(decimals)
+}
+
+// Helper function to safely multiply and format (handles string prices)
+function calcPrice(quantity: number | undefined, price: string | number | undefined): string {
+  const qty = quantity || 0
+  const priceNum = typeof price === 'string' ? parseFloat(price) : (price || 0)
+  return (qty * priceNum).toFixed(2)
+}
+
 export default function Simulator() {
   // const { user } = useAuth() // Unused for now
   const queryClient = useQueryClient()
@@ -161,6 +178,10 @@ export default function Simulator() {
   const [simulationError, setSimulationError] = useState<string | null>(null)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [hasAutoLaunched, setHasAutoLaunched] = useState(false)
+  const [isInitialLoadingFromCache, setIsInitialLoadingFromCache] = useState(false)
+  const [isLoadingExiting, setIsLoadingExiting] = useState(false)
+  const [isInfoSectionExpanded, setIsInfoSectionExpanded] = useState(true)
+  const [isInitializing, setIsInitializing] = useState(true)
   // const [isClearingCache, setIsClearingCache] = useState(false) // Unused for now
 
   // Register fetch function in store for PageHeader button
@@ -172,33 +193,6 @@ export default function Simulator() {
   const [showOnlyRecent, setShowOnlyRecent] = useState(false)
   const [sortBy, setSortBy] = useState<'total' | 'subscription' | 'energy'>('total')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
-
-  // Check if cache exists for selected PDL
-  const hasCacheData = useMemo(() => {
-    if (!selectedPdl) return false
-
-    // Sample a few dates to check if cache exists
-    const today = new Date()
-    const yesterday = new Date(today)
-    yesterday.setDate(yesterday.getDate() - 1)
-
-    // Check if we have any cached data for the last 7 days
-    let cachedCount = 0
-    for (let i = 0; i < 7; i++) {
-      const sampleDate = new Date(yesterday)
-      sampleDate.setDate(yesterday.getDate() - i * 7)
-      const dateStr = sampleDate.toISOString().split('T')[0]
-
-      const cacheKey = ['consumptionDetail', selectedPdl, dateStr, dateStr]
-      const cachedData = queryClient.getQueryData(cacheKey)
-
-      if (cachedData) {
-        cachedCount++
-      }
-    }
-
-    return cachedCount >= 3 // If at least 3 out of 7 sample days are cached
-  }, [selectedPdl, queryClient])
 
   // Set first active PDL as selected by default
   useEffect(() => {
@@ -217,7 +211,26 @@ export default function Simulator() {
     setSimulationResult(null)
     setSimulationError(null)
     setHasAutoLaunched(false)
+    setIsInitialLoadingFromCache(false)
+    setIsLoadingExiting(false)
+    setIsInfoSectionExpanded(true)
+    setIsInitializing(true)
   }, [selectedPdl])
+
+  // End initialization after cache has time to hydrate
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitializing(false)
+    }, 100) // Short delay for cache hydration
+    return () => clearTimeout(timer)
+  }, [selectedPdl])
+
+  // Auto-collapse info section when simulation results are available
+  useEffect(() => {
+    if (simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0) {
+      setIsInfoSectionExpanded(false)
+    }
+  }, [simulationResult])
 
   const handleSimulation = useCallback(async () => {
     if (!selectedPdl) {
@@ -226,6 +239,12 @@ export default function Simulator() {
     }
 
     setIsSimulating(true)
+    // Trigger exit animation before clearing loading overlay
+    setIsLoadingExiting(true)
+    setTimeout(() => {
+      setIsInitialLoadingFromCache(false)
+      setIsLoadingExiting(false)
+    }, 300)
     setSimulationResult(null)
     setFetchProgress({current: 0, total: 0, phase: ''})
     setSimulationError(null)
@@ -251,23 +270,20 @@ export default function Simulator() {
 
       logger.log(`Loading consumption data from cache: ${startDate} to ${endDate}`)
 
-      // Collect data from cache day by day (same as Consumption page)
-      const allPoints: any[] = []
-      const currentDate = new Date(yearStart)
-      const endDateObj = new Date(yesterday)
+      // Get all data from the single cache key (new format)
+      const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPdl]) as any
+      let allPoints: any[] = []
 
-      while (currentDate <= endDateObj) {
-        const dateStr = currentDate.toISOString().split('T')[0]
+      if (cachedData?.data?.meter_reading?.interval_reading) {
+        const readings = cachedData.data.meter_reading.interval_reading
 
-        // Try to get this day's data from cache
-        const dayData = queryClient.getQueryData(['consumptionDetail', selectedPdl, dateStr, dateStr]) as any
+        // Filter readings to the desired date range (rolling year)
+        allPoints = readings.filter((point: any) => {
+          const pointDate = point.date.split(' ')[0].split('T')[0]
+          return pointDate >= startDate && pointDate <= endDate
+        })
 
-        if (dayData?.data?.meter_reading?.interval_reading) {
-          allPoints.push(...dayData.data.meter_reading.interval_reading)
-        }
-
-        // Move to next day
-        currentDate.setDate(currentDate.getDate() + 1)
+        logger.log(`[Simulator] Filtered ${allPoints.length} points from ${readings.length} total (${startDate} to ${endDate})`)
       }
 
       logger.log(`Cache response: ${allPoints.length} points for ${startDate} to ${endDate}`)
@@ -556,7 +572,7 @@ export default function Simulator() {
           peakDay: hasPeakDayPricing ? { kwh: peakDayKwh.toFixed(2), cost: peakDayCost.toFixed(2) } : null,
           totalEnergyCost: energyCost.toFixed(2)
         })
-      } else if ((offer.offer_type === 'HC_HP' || offer.offer_type === 'HC_NUIT_WEEKEND' || offer.offer_type === 'HC_WEEKEND') && offer.hc_price && offer.hp_price) {
+      } else if ((offer.offer_type === 'HC_HP' || offer.offer_type === 'WEEKEND' || offer.offer_type === 'HC_NUIT_WEEKEND' || offer.offer_type === 'HC_WEEKEND') && offer.hc_price && offer.hp_price) {
         // HC/HP calculation using PDL offpeak hours configuration
         logger.log(`[SIMULATOR] ${offer.offer_type} calculation for ${offer.name}`)
 
@@ -566,7 +582,8 @@ export default function Simulator() {
         const hasWeekendPricing = !!(offer.hc_price_weekend || offer.hp_price_weekend)
 
         // Check if this is a special HC type
-        const isHcNuitWeekend = offer.offer_type === 'HC_NUIT_WEEKEND'
+        // Note: 'WEEKEND' (Enercoop) has same behavior as 'HC_NUIT_WEEKEND': 23h-6h weekday + all weekend
+        const isHcNuitWeekend = offer.offer_type === 'HC_NUIT_WEEKEND' || offer.offer_type === 'WEEKEND'
         const isHcWeekend = offer.offer_type === 'HC_WEEKEND'
 
         allConsumptionFinal.forEach((item, index) => {
@@ -724,7 +741,7 @@ export default function Simulator() {
       let breakdown: any = {}
       if (offer.offer_type === 'SEASONAL') {
         breakdown = { hcWinterKwh, hpWinterKwh, hcSummerKwh, hpSummerKwh, peakDayKwh }
-      } else if (offer.offer_type === 'HC_HP' || offer.offer_type === 'HC_NUIT_WEEKEND' || offer.offer_type === 'HC_WEEKEND') {
+      } else if (offer.offer_type === 'HC_HP' || offer.offer_type === 'WEEKEND' || offer.offer_type === 'HC_NUIT_WEEKEND' || offer.offer_type === 'HC_WEEKEND') {
         breakdown = { hcKwh, hpKwh, hcWeekendKwh, hpWeekendKwh }
       } else if (offer.offer_type === 'TEMPO') {
         breakdown = { blueHcKwh, blueHpKwh, whiteHcKwh, whiteHpKwh, redHcKwh, redHpKwh }
@@ -802,6 +819,7 @@ export default function Simulator() {
         return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
       case 'HC_HP':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+      case 'WEEKEND':
       case 'HC_NUIT_WEEKEND':
         return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300'
       case 'HC_WEEKEND':
@@ -825,6 +843,7 @@ export default function Simulator() {
         return 'Base Week-end'
       case 'HC_HP':
         return 'HC/HP'
+      case 'WEEKEND':
       case 'HC_NUIT_WEEKEND':
         return 'HC Nuit & Week-end'
       case 'HC_WEEKEND':
@@ -865,55 +884,35 @@ export default function Simulator() {
       return
     }
 
-    // Check if we have cached data for this PDL
-    // The cache uses daily keys: ['consumptionDetail', pdl, date, date]
-    const today = new Date()
-    const yesterday = new Date(today)
-    yesterday.setDate(yesterday.getDate() - 1)
+    // Check if we have cached data for this PDL (uses new single cache key format)
+    const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPdl]) as any
 
-    // Sample 20 random days spread across the year to check cache
-    const sampleDays: string[] = []
-    const yearStart = new Date(today)
-    yearStart.setDate(yearStart.getDate() - 365)
-
-    for (let i = 0; i < 20; i++) {
-      const daysFromStart = Math.floor((365 / 20) * i)
-      const sampleDate = new Date(yearStart)
-      sampleDate.setDate(sampleDate.getDate() + daysFromStart)
-
-      if (sampleDate <= yesterday) {
-        sampleDays.push(sampleDate.toISOString().split('T')[0])
-      }
+    if (!cachedData?.data?.meter_reading?.interval_reading?.length) {
+      logger.log('[Auto-launch] ❌ No cached data found for PDL:', selectedPdl)
+      return
     }
 
-    // Check how many sample days have cached data
-    let cachedCount = 0
-    for (const dateStr of sampleDays) {
-      // Cache key format: ['consumptionDetail', pdl, date, date] (same date for start and end)
-      const cacheKey = ['consumptionDetail', selectedPdl, dateStr, dateStr]
-      const cachedData = queryClient.getQueryData(cacheKey) as any
+    const readings = cachedData.data.meter_reading.interval_reading
+    const totalPoints = readings.length
 
-      // Check if we have complete data (at least 40 data points for a full day)
-      const hasCompleteData = cachedData?.data?.meter_reading?.interval_reading?.length >= 40
-      if (hasCompleteData) {
-        cachedCount++
-      }
-    }
+    // Check if we have enough data (at least 30 days worth = ~1440 points at 30min intervals)
+    const minRequiredPoints = 30 * 48 // 30 days * 48 half-hours
+    const hasEnoughData = totalPoints >= minRequiredPoints
 
-    const cachePercentage = Math.round((cachedCount / sampleDays.length) * 100)
-    logger.log(`[Auto-launch] Found ${cachedCount}/${sampleDays.length} cached days (${cachePercentage}%)`)
+    logger.log(`[Auto-launch] Cache check: ${totalPoints} points (need ${minRequiredPoints} minimum)`)
 
-    // If we have at least 70% cached (14/20 days), auto-launch simulation
-    if (cachedCount >= 14) {
-      logger.log(`✅ Auto-launching simulation with ${cachedCount}/${sampleDays.length} cached days`)
+    if (hasEnoughData) {
+      logger.log(`✅ Auto-launching simulation with ${totalPoints} cached points`)
       setHasAutoLaunched(true)
+      // Show loading overlay while preparing simulation
+      setIsInitialLoadingFromCache(true)
 
       // Use setTimeout to avoid calling during render
       setTimeout(() => {
         handleSimulation()
       }, 100)
     } else {
-      logger.log(`❌ Not enough cached data (${cachePercentage}%), skipping auto-launch`)
+      logger.log(`❌ Not enough cached data (${totalPoints} points), skipping auto-launch`)
     }
   }, [selectedPdl, isSimulating, simulationResult, hasAutoLaunched, isDemo, pdlsData, offersData, providersData, queryClient, handleSimulation])
 
@@ -1268,7 +1267,7 @@ export default function Simulator() {
           pdf.text(`Prix Base: ${result.offer?.base_price?.toFixed(5)} € / kWh`, margin + 3, detailY)
           detailY += 5
         }
-      } else if (result.offerType === 'HC_HP' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') {
+      } else if (result.offerType === 'HC_HP' || result.offerType === 'WEEKEND' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') {
         pdf.text(`Prix Heures Creuses: ${result.offer?.hc_price?.toFixed(5)} € / kWh`, margin + 3, detailY)
         detailY += 5
         pdf.text(`Prix Heures Pleines: ${result.offer?.hp_price?.toFixed(5)} € / kWh`, margin + 3, detailY)
@@ -1352,7 +1351,7 @@ export default function Simulator() {
             pdf.text(`Total: ${result.totalKwh?.toFixed(0)} kWh × ${result.offer.base_price?.toFixed(5)} € = ${result.energyCost.toFixed(2)} €`, margin + 3, detailY)
             detailY += 5
           }
-        } else if (result.offerType === 'HC_HP' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') {
+        } else if (result.offerType === 'HC_HP' || result.offerType === 'WEEKEND' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') {
           if (result.breakdown.hcWeekendKwh > 0) {
             pdf.setFont('helvetica', 'bold')
             pdf.text('Semaine:', margin + 3, detailY)
@@ -1435,6 +1434,23 @@ export default function Simulator() {
     pdf.save(fileName)
   }
 
+  // Block rendering during initialization to prevent flash of content
+  if (isInitializing) {
+    return <div className="pt-6 w-full" />
+  }
+
+  // Show loading overlay when loading cached data (integrated in JSX to avoid hook ordering issues)
+  // Display blurred placeholder content behind the loading spinner
+  if (isInitialLoadingFromCache) {
+    return (
+      <div className="pt-6 w-full">
+        <LoadingOverlay dataType="simulation" isExiting={isLoadingExiting}>
+          <LoadingPlaceholder type="simulation" />
+        </LoadingOverlay>
+      </div>
+    )
+  }
+
   return (
     <div className="pt-6 w-full">
       {/* Error Banner */}
@@ -1481,11 +1497,37 @@ export default function Simulator() {
         </div>
       )}
 
-        {/* Simulation Results */}
+      {/* Empty State - No simulation yet */}
+      {!(simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0) && !isSimulating && (
+        <div className="mt-2 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+          <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+            <div className="w-20 h-20 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mb-6">
+              <Calculator className="w-10 h-10 text-purple-600 dark:text-purple-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Aucune simulation en cours
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 max-w-md mb-6">
+              Pour comparer les offres d'électricité basées sur votre consommation réelle,
+              lancez une simulation en cliquant sur le bouton
+              <span className="font-semibold text-purple-600 dark:text-purple-400"> Récupérer </span>
+              en haut à droite de la page.
+            </p>
+            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+              <span>Sélectionnez un PDL</span>
+              <ArrowRight className="w-4 h-4" />
+              <span>Cliquez sur "Récupérer"</span>
+              <ArrowRight className="w-4 h-4" />
+              <span>Comparez les offres</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Simulation Results */}
+      <AnimatedSection isVisible={simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0} delay={0}>
         <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
-          <div className={`flex items-center justify-between p-6 ${
-            !(simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0) ? 'opacity-60' : ''
-          }`}>
+          <div className="flex items-center justify-between p-6">
             <div className="flex items-center gap-2">
               <Calculator className="text-primary-600 dark:text-primary-400" size={20} />
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -1757,17 +1799,17 @@ export default function Simulator() {
                                         <>
                                           <div className="flex justify-between">
                                             <span>Semaine :</span>
-                                            <span className="font-medium text-xs">{result.breakdown.baseWeekdayKwh?.toFixed(0)} kWh × {result.offer.base_price?.toFixed(5)} € = {(result.breakdown.baseWeekdayKwh * result.offer.base_price).toFixed(2)} €</span>
+                                            <span className="font-medium text-xs">{result.breakdown.baseWeekdayKwh?.toFixed(0)} kWh × {formatPrice(result.offer.base_price, 5)} € = {calcPrice(result.breakdown.baseWeekdayKwh, result.offer.base_price)} €</span>
                                           </div>
                                           <div className="flex justify-between">
                                             <span>Week-end :</span>
-                                            <span className="font-medium text-xs">{result.breakdown.baseWeekendKwh?.toFixed(0)} kWh × {result.offer.base_price_weekend?.toFixed(5)} € = {(result.breakdown.baseWeekendKwh * result.offer.base_price_weekend).toFixed(2)} €</span>
+                                            <span className="font-medium text-xs">{result.breakdown.baseWeekendKwh?.toFixed(0)} kWh × {formatPrice(result.offer.base_price_weekend, 5)} € = {calcPrice(result.breakdown.baseWeekendKwh, result.offer.base_price_weekend)} €</span>
                                           </div>
                                         </>
                                       ) : (
                                         <div className="flex justify-between">
                                           <span>Consommation :</span>
-                                          <span className="font-medium">{result.totalKwh?.toFixed(0)} kWh × {result.offer.base_price?.toFixed(5)} € = {result.energyCost.toFixed(2)} €</span>
+                                          <span className="font-medium">{result.totalKwh?.toFixed(0)} kWh × {formatPrice(result.offer.base_price, 5)} € = {result.energyCost.toFixed(2)} €</span>
                                         </div>
                                       )}
                                       <div className="flex justify-between border-t border-gray-300 dark:border-gray-600 pt-1 mt-1 font-semibold">
@@ -1777,10 +1819,10 @@ export default function Simulator() {
                                     </div>
                                   </div>
                                 )}
-                                {result.breakdown && (result.offerType === 'HC_HP' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') && result.offer && (
+                                {result.breakdown && (result.offerType === 'HC_HP' || result.offerType === 'WEEKEND' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') && result.offer && (
                                   <div className="space-y-2">
                                     <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">
-                                      Détail de consommation ({result.offerType === 'HC_NUIT_WEEKEND' ? 'HC Nuit & Week-end' : result.offerType === 'HC_WEEKEND' ? 'HC Week-end' : 'HC/HP'})
+                                      Détail de consommation ({(result.offerType === 'WEEKEND' || result.offerType === 'HC_NUIT_WEEKEND') ? 'HC Nuit & Week-end' : result.offerType === 'HC_WEEKEND' ? 'HC Week-end' : 'HC/HP'})
                                     </h4>
                                     <div className="text-sm text-gray-600 dark:text-gray-400">
                                       {result.breakdown.hcWeekendKwh > 0 ? (
@@ -1788,21 +1830,21 @@ export default function Simulator() {
                                           <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Semaine</div>
                                           <div className="flex justify-between ml-2">
                                             <span>HC :</span>
-                                            <span className="font-medium text-xs">{result.breakdown.hcKwh?.toFixed(0)} kWh × {result.offer.hc_price?.toFixed(5)} € = {(result.breakdown.hcKwh * result.offer.hc_price).toFixed(2)} €</span>
+                                            <span className="font-medium text-xs">{result.breakdown.hcKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hc_price, 5)} € = {calcPrice(result.breakdown.hcKwh, result.offer.hc_price)} €</span>
                                           </div>
                                           <div className="flex justify-between ml-2">
                                             <span>HP :</span>
-                                            <span className="font-medium text-xs">{result.breakdown.hpKwh?.toFixed(0)} kWh × {result.offer.hp_price?.toFixed(5)} € = {(result.breakdown.hpKwh * result.offer.hp_price).toFixed(2)} €</span>
+                                            <span className="font-medium text-xs">{result.breakdown.hpKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hp_price, 5)} € = {calcPrice(result.breakdown.hpKwh, result.offer.hp_price)} €</span>
                                           </div>
                                           <div className="font-semibold text-gray-700 dark:text-gray-300 mt-2 mb-1">Week-end (tout HC)</div>
                                           <div className="flex justify-between ml-2">
                                             <span>Consommation :</span>
-                                            <span className="font-medium text-xs">{result.breakdown.hcWeekendKwh?.toFixed(0)} kWh × {(result.offer.hc_price_weekend || result.offer.hc_price)?.toFixed(5)} € = {(result.breakdown.hcWeekendKwh * (result.offer.hc_price_weekend || result.offer.hc_price)).toFixed(2)} €</span>
+                                            <span className="font-medium text-xs">{result.breakdown.hcWeekendKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hc_price_weekend || result.offer.hc_price, 5)} € = {calcPrice(result.breakdown.hcWeekendKwh, result.offer.hc_price_weekend || result.offer.hc_price)} €</span>
                                           </div>
                                           {result.breakdown.hpWeekendKwh > 0 && (
                                             <div className="flex justify-between ml-2">
                                               <span>HP :</span>
-                                              <span className="font-medium text-xs">{result.breakdown.hpWeekendKwh?.toFixed(0)} kWh × {(result.offer.hp_price_weekend || result.offer.hp_price)?.toFixed(5)} € = {(result.breakdown.hpWeekendKwh * (result.offer.hp_price_weekend || result.offer.hp_price)).toFixed(2)} €</span>
+                                              <span className="font-medium text-xs">{result.breakdown.hpWeekendKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hp_price_weekend || result.offer.hp_price, 5)} € = {calcPrice(result.breakdown.hpWeekendKwh, result.offer.hp_price_weekend || result.offer.hp_price)} €</span>
                                             </div>
                                           )}
                                         </>
@@ -1810,11 +1852,11 @@ export default function Simulator() {
                                         <>
                                           <div className="flex justify-between">
                                             <span>Heures Creuses :</span>
-                                            <span className="font-medium text-xs">{result.breakdown.hcKwh?.toFixed(0)} kWh × {result.offer.hc_price?.toFixed(5)} € = {(result.breakdown.hcKwh * result.offer.hc_price).toFixed(2)} €</span>
+                                            <span className="font-medium text-xs">{result.breakdown.hcKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hc_price, 5)} € = {calcPrice(result.breakdown.hcKwh, result.offer.hc_price)} €</span>
                                           </div>
                                           <div className="flex justify-between">
                                             <span>Heures Pleines :</span>
-                                            <span className="font-medium text-xs">{result.breakdown.hpKwh?.toFixed(0)} kWh × {result.offer.hp_price?.toFixed(5)} € = {(result.breakdown.hpKwh * result.offer.hp_price).toFixed(2)} €</span>
+                                            <span className="font-medium text-xs">{result.breakdown.hpKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hp_price, 5)} € = {calcPrice(result.breakdown.hpKwh, result.offer.hp_price)} €</span>
                                           </div>
                                         </>
                                       )}
@@ -1832,27 +1874,27 @@ export default function Simulator() {
                                       <div className="font-semibold text-blue-700 dark:text-blue-300">❄️ Hiver (nov-mars)</div>
                                       <div className="flex justify-between ml-2">
                                         <span>HC :</span>
-                                        <span className="font-medium text-xs">{result.breakdown.hcWinterKwh?.toFixed(0)} kWh × {result.offer.hc_price_winter?.toFixed(5)} € = {(result.breakdown.hcWinterKwh * result.offer.hc_price_winter).toFixed(2)} €</span>
+                                        <span className="font-medium text-xs">{result.breakdown.hcWinterKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hc_price_winter, 5)} € = {calcPrice(result.breakdown.hcWinterKwh, result.offer.hc_price_winter)} €</span>
                                       </div>
                                       <div className="flex justify-between ml-2">
                                         <span>HP :</span>
-                                        <span className="font-medium text-xs">{result.breakdown.hpWinterKwh?.toFixed(0)} kWh × {result.offer.hp_price_winter?.toFixed(5)} € = {(result.breakdown.hpWinterKwh * result.offer.hp_price_winter).toFixed(2)} €</span>
+                                        <span className="font-medium text-xs">{result.breakdown.hpWinterKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hp_price_winter, 5)} € = {calcPrice(result.breakdown.hpWinterKwh, result.offer.hp_price_winter)} €</span>
                                       </div>
                                       <div className="font-semibold text-amber-700 dark:text-amber-300 mt-2">☀️ Été (avr-oct)</div>
                                       <div className="flex justify-between ml-2">
                                         <span>HC :</span>
-                                        <span className="font-medium text-xs">{result.breakdown.hcSummerKwh?.toFixed(0)} kWh × {result.offer.hc_price_summer?.toFixed(5)} € = {(result.breakdown.hcSummerKwh * result.offer.hc_price_summer).toFixed(2)} €</span>
+                                        <span className="font-medium text-xs">{result.breakdown.hcSummerKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hc_price_summer, 5)} € = {calcPrice(result.breakdown.hcSummerKwh, result.offer.hc_price_summer)} €</span>
                                       </div>
                                       <div className="flex justify-between ml-2">
                                         <span>HP :</span>
-                                        <span className="font-medium text-xs">{result.breakdown.hpSummerKwh?.toFixed(0)} kWh × {result.offer.hp_price_summer?.toFixed(5)} € = {(result.breakdown.hpSummerKwh * result.offer.hp_price_summer).toFixed(2)} €</span>
+                                        <span className="font-medium text-xs">{result.breakdown.hpSummerKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hp_price_summer, 5)} € = {calcPrice(result.breakdown.hpSummerKwh, result.offer.hp_price_summer)} €</span>
                                       </div>
                                       {result.breakdown.peakDayKwh > 0 && (
                                         <>
                                           <div className="font-semibold text-red-700 dark:text-red-300 mt-2">⚡ Jours de pointe</div>
                                           <div className="flex justify-between ml-2">
                                             <span>Consommation :</span>
-                                            <span className="font-medium text-xs">{result.breakdown.peakDayKwh?.toFixed(0)} kWh × {result.offer.peak_day_price?.toFixed(5)} € = {(result.breakdown.peakDayKwh * result.offer.peak_day_price).toFixed(2)} €</span>
+                                            <span className="font-medium text-xs">{result.breakdown.peakDayKwh?.toFixed(0)} kWh × {formatPrice(result.offer.peak_day_price, 5)} € = {calcPrice(result.breakdown.peakDayKwh, result.offer.peak_day_price)} €</span>
                                           </div>
                                           <div className="bg-orange-50 dark:bg-orange-900/20 border-l-2 border-orange-400 p-2 mt-2 text-xs text-orange-700 dark:text-orange-300">
                                             <div className="flex items-start gap-2">
@@ -1882,33 +1924,33 @@ export default function Simulator() {
                                         <div className="font-semibold">Jours Bleus</div>
                                         <div className="flex justify-between ml-2">
                                           <span>HC :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.blueHcKwh?.toFixed(0)} kWh × {result.offer.tempo_blue_hc?.toFixed(5)} € = {(result.breakdown.blueHcKwh * result.offer.tempo_blue_hc).toFixed(2)} €</span>
+                                          <span className="font-medium text-xs">{result.breakdown.blueHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer.tempo_blue_hc, 5)} € = {calcPrice(result.breakdown.blueHcKwh, result.offer.tempo_blue_hc)} €</span>
                                         </div>
                                         <div className="flex justify-between ml-2">
                                           <span>HP :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.blueHpKwh?.toFixed(0)} kWh × {result.offer.tempo_blue_hp?.toFixed(5)} € = {(result.breakdown.blueHpKwh * result.offer.tempo_blue_hp).toFixed(2)} €</span>
+                                          <span className="font-medium text-xs">{result.breakdown.blueHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer.tempo_blue_hp, 5)} € = {calcPrice(result.breakdown.blueHpKwh, result.offer.tempo_blue_hp)} €</span>
                                         </div>
                                       </div>
                                       <div className="text-gray-600 dark:text-gray-400">
                                         <div className="font-semibold">Jours Blancs</div>
                                         <div className="flex justify-between ml-2">
                                           <span>HC :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.whiteHcKwh?.toFixed(0)} kWh × {result.offer.tempo_white_hc?.toFixed(5)} € = {(result.breakdown.whiteHcKwh * result.offer.tempo_white_hc).toFixed(2)} €</span>
+                                          <span className="font-medium text-xs">{result.breakdown.whiteHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer.tempo_white_hc, 5)} € = {calcPrice(result.breakdown.whiteHcKwh, result.offer.tempo_white_hc)} €</span>
                                         </div>
                                         <div className="flex justify-between ml-2">
                                           <span>HP :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.whiteHpKwh?.toFixed(0)} kWh × {result.offer.tempo_white_hp?.toFixed(5)} € = {(result.breakdown.whiteHpKwh * result.offer.tempo_white_hp).toFixed(2)} €</span>
+                                          <span className="font-medium text-xs">{result.breakdown.whiteHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer.tempo_white_hp, 5)} € = {calcPrice(result.breakdown.whiteHpKwh, result.offer.tempo_white_hp)} €</span>
                                         </div>
                                       </div>
                                       <div className="text-red-600 dark:text-red-400">
                                         <div className="font-semibold">Jours Rouges</div>
                                         <div className="flex justify-between ml-2">
                                           <span>HC :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.redHcKwh?.toFixed(0)} kWh × {result.offer.tempo_red_hc?.toFixed(5)} € = {(result.breakdown.redHcKwh * result.offer.tempo_red_hc).toFixed(2)} €</span>
+                                          <span className="font-medium text-xs">{result.breakdown.redHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer.tempo_red_hc, 5)} € = {calcPrice(result.breakdown.redHcKwh, result.offer.tempo_red_hc)} €</span>
                                         </div>
                                         <div className="flex justify-between ml-2">
                                           <span>HP :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.redHpKwh?.toFixed(0)} kWh × {result.offer.tempo_red_hp?.toFixed(5)} € = {(result.breakdown.redHpKwh * result.offer.tempo_red_hp).toFixed(2)} €</span>
+                                          <span className="font-medium text-xs">{result.breakdown.redHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer.tempo_red_hp, 5)} € = {calcPrice(result.breakdown.redHpKwh, result.offer.tempo_red_hp)} €</span>
                                         </div>
                                       </div>
                                       <div className="flex justify-between border-t border-gray-300 dark:border-gray-600 pt-1 mt-2 font-semibold text-gray-700 dark:text-gray-300">
@@ -1926,23 +1968,23 @@ export default function Simulator() {
                                     <div className="text-sm text-gray-600 dark:text-gray-400">
                                       <div className="flex justify-between">
                                         <span>Abonnement :</span>
-                                        <span className="font-medium">{result.offer.subscription_price?.toFixed(2)} €/mois</span>
+                                        <span className="font-medium">{formatPrice(result.offer.subscription_price, 2)} €/mois</span>
                                       </div>
                                       {result.offer.base_price && (
                                       <div className="flex justify-between">
                                         <span>Prix Base :</span>
-                                        <span className="font-medium">{result.offer.base_price?.toFixed(5)} €/kWh</span>
+                                        <span className="font-medium">{formatPrice(result.offer.base_price, 5)} €/kWh</span>
                                       </div>
                                     )}
                                     {result.offer.hc_price && result.offer.hp_price && result.offerType === 'HC_HP' && (
                                       <>
                                         <div className="flex justify-between">
                                           <span>Prix HC :</span>
-                                          <span className="font-medium">{result.offer.hc_price?.toFixed(5)} €/kWh</span>
+                                          <span className="font-medium">{formatPrice(result.offer.hc_price, 5)} €/kWh</span>
                                         </div>
                                         <div className="flex justify-between">
                                           <span>Prix HP :</span>
-                                          <span className="font-medium">{result.offer.hp_price?.toFixed(5)} €/kWh</span>
+                                          <span className="font-medium">{formatPrice(result.offer.hp_price, 5)} €/kWh</span>
                                         </div>
                                       </>
                                     )}
@@ -1951,27 +1993,27 @@ export default function Simulator() {
                                         <div className="font-semibold text-blue-700 dark:text-blue-300 mt-2">❄️ Hiver</div>
                                         <div className="flex justify-between ml-2">
                                           <span>HC :</span>
-                                          <span className="font-medium">{result.offer.hc_price_winter?.toFixed(5)} €/kWh</span>
+                                          <span className="font-medium">{formatPrice(result.offer.hc_price_winter, 5)} €/kWh</span>
                                         </div>
                                         <div className="flex justify-between ml-2">
                                           <span>HP :</span>
-                                          <span className="font-medium">{result.offer.hp_price_winter?.toFixed(5)} €/kWh</span>
+                                          <span className="font-medium">{formatPrice(result.offer.hp_price_winter, 5)} €/kWh</span>
                                         </div>
                                         <div className="font-semibold text-amber-700 dark:text-amber-300 mt-2">☀️ Été</div>
                                         <div className="flex justify-between ml-2">
                                           <span>HC :</span>
-                                          <span className="font-medium">{result.offer.hc_price_summer?.toFixed(5)} €/kWh</span>
+                                          <span className="font-medium">{formatPrice(result.offer.hc_price_summer, 5)} €/kWh</span>
                                         </div>
                                         <div className="flex justify-between ml-2">
                                           <span>HP :</span>
-                                          <span className="font-medium">{result.offer.hp_price_summer?.toFixed(5)} €/kWh</span>
+                                          <span className="font-medium">{formatPrice(result.offer.hp_price_summer, 5)} €/kWh</span>
                                         </div>
                                         {result.offer.peak_day_price && (
                                           <>
                                             <div className="font-semibold text-red-700 dark:text-red-300 mt-2">⚡ Jours de pointe</div>
                                             <div className="flex justify-between ml-2">
                                               <span>Prix :</span>
-                                              <span className="font-medium">{result.offer.peak_day_price?.toFixed(5)} €/kWh</span>
+                                              <span className="font-medium">{formatPrice(result.offer.peak_day_price, 5)} €/kWh</span>
                                             </div>
                                           </>
                                         )}
@@ -2026,66 +2068,96 @@ export default function Simulator() {
             </>
           )}
         </div>
+      </AnimatedSection>
 
-      {/* Information Block - Always visible at bottom */}
-      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          ℹ️ Informations importantes
-        </h3>
-
-        <div className="space-y-4">
-          {/* Cache Information */}
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-            <p className="text-sm text-yellow-800 dark:text-yellow-200">
-              <strong>⚠️ Cache automatique :</strong> L'utilisation du simulateur active automatiquement le cache. Vos données de consommation seront stockées temporairement sur la passerelle pour améliorer les performances et éviter de solliciter excessivement l'API Enedis. Les données en cache expirent automatiquement après 24 heures.
-            </p>
+      {/* Information Block - Collapsible */}
+      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+        {/* Collapsible Header */}
+        <div
+          className="flex items-center justify-between p-6 cursor-pointer"
+          onClick={() => setIsInfoSectionExpanded(!isInfoSectionExpanded)}
+        >
+          <div className="flex items-center gap-2">
+            <Info className="text-primary-600 dark:text-primary-400" size={20} />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Informations importantes
+            </h3>
           </div>
-
-          {/* Simulation Information */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <p className="text-sm text-blue-800 dark:text-blue-200">
-              <strong>🔍 Comparaison automatique :</strong> La simulation comparera automatiquement <strong>toutes les offres disponibles</strong> dans la base de données
-              {(() => {
-                const selectedPdlData = Array.isArray(pdlsData) ? pdlsData.find((p) => p.usage_point_id === selectedPdl) : undefined
-                const subscribedPower = selectedPdlData?.subscribed_power
-                return subscribedPower ? (
-                  <> correspondant à votre puissance souscrite de <strong>{subscribedPower} kVA</strong></>
-                ) : null
-              })()}.
-            </p>
-          </div>
-
-          {/* Data Source Information */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
-              <p>
-                <strong>📊 Source des données :</strong>
-              </p>
-              <ul className="list-disc list-inside space-y-1 ml-2">
-                <li>Les données sont récupérées depuis l'API <strong>Enedis Data Connect</strong></li>
-                <li>Endpoint utilisé : <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">consumption/daily</code> (relevés quotidiens)</li>
-                <li>Les données sont mises en cache pour optimiser les performances</li>
-                <li>Récupération automatique de <strong>1095 jours d'historique</strong> (limite maximale Enedis)</li>
-                <li>Les données Enedis ne sont disponibles qu'en <strong>J-1</strong> (hier)</li>
-              </ul>
-            </div>
-          </div>
-
-          {/* Tariff Information */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
-              <p>
-                <strong>💰 À propos des tarifs :</strong>
-              </p>
-              <ul className="list-disc list-inside space-y-1 ml-2">
-                <li>Les tarifs sont issus de la base de données MyElectricalData</li>
-                <li>Les calculs HC/HP sont basés sur vos plages horaires configurées dans votre PDL</li>
-                <li>Pour les offres Enercoop spécifiques (Flexi Watt), les plages HC/HP sont détectées automatiquement</li>
-                <li>Les économies affichées sont calculées sur la base de votre consommation réelle sur 12 mois</li>
-              </ul>
-            </div>
+          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+            {isInfoSectionExpanded ? (
+              <span className="text-sm">Réduire</span>
+            ) : (
+              <span className="text-sm">Développer</span>
+            )}
+            <svg
+              className={`w-5 h-5 transition-transform duration-200 ${
+                isInfoSectionExpanded ? 'rotate-180' : ''
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
           </div>
         </div>
+
+        {/* Collapsible Content */}
+        {isInfoSectionExpanded && (
+          <div className="px-6 pb-6 space-y-4">
+            {/* Cache Information */}
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                <strong>⚠️ Cache automatique :</strong> L'utilisation du simulateur active automatiquement le cache. Vos données de consommation seront stockées temporairement sur la passerelle pour améliorer les performances et éviter de solliciter excessivement l'API Enedis. Les données en cache expirent automatiquement après 24 heures.
+              </p>
+            </div>
+
+            {/* Simulation Information */}
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                <strong>🔍 Comparaison automatique :</strong> La simulation comparera automatiquement <strong>toutes les offres disponibles</strong> dans la base de données
+                {(() => {
+                  const selectedPdlData = Array.isArray(pdlsData) ? pdlsData.find((p) => p.usage_point_id === selectedPdl) : undefined
+                  const subscribedPower = selectedPdlData?.subscribed_power
+                  return subscribedPower ? (
+                    <> correspondant à votre puissance souscrite de <strong>{subscribedPower} kVA</strong></>
+                  ) : null
+                })()}.
+              </p>
+            </div>
+
+            {/* Data Source Information */}
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
+                <p>
+                  <strong>📊 Source des données :</strong>
+                </p>
+                <ul className="list-disc list-inside space-y-1 ml-2">
+                  <li>Les données sont récupérées depuis l'API <strong>Enedis Data Connect</strong></li>
+                  <li>Endpoint utilisé : <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">consumption/daily</code> (relevés quotidiens)</li>
+                  <li>Les données sont mises en cache pour optimiser les performances</li>
+                  <li>Récupération automatique de <strong>1095 jours d'historique</strong> (limite maximale Enedis)</li>
+                  <li>Les données Enedis ne sont disponibles qu'en <strong>J-1</strong> (hier)</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Tariff Information */}
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
+                <p>
+                  <strong>💰 À propos des tarifs :</strong>
+                </p>
+                <ul className="list-disc list-inside space-y-1 ml-2">
+                  <li>Les tarifs sont issus de la base de données MyElectricalData</li>
+                  <li>Les calculs HC/HP sont basés sur vos plages horaires configurées dans votre PDL</li>
+                  <li>Pour les offres Enercoop spécifiques (Flexi Watt), les plages HC/HP sont détectées automatiquement</li>
+                  <li>Les économies affichées sont calculées sur la base de votre consommation réelle sur 12 mois</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

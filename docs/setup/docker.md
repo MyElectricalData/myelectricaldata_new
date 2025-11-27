@@ -1,3 +1,9 @@
+---
+sidebar_position: 1
+title: Installation Docker
+description: Configuration Docker complète avec reverse proxy Caddy
+---
+
 # 🐳 Docker Setup - MyElectricalData
 
 Configuration Docker complète avec reverse proxy Caddy pour MyElectricalData.

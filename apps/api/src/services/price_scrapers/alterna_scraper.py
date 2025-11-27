@@ -16,59 +16,59 @@ class AlternaScraper(BasePriceScraper):
     FRANCAISE_PDF_URL = "https://cdn.prod.website-files.com/615af985c108852be8901cfa/688b7b0241867184285ec473_ac29f3c6efb209797cc696cf1d421f69_DOC%20Grille%20Tarifaire%20elec%20100%20fran%C3%A7aise%20fixe%201%20an%20010825.pdf"
     VE_PDF_URL = "https://cdn.prod.website-files.com/615af985c108852be8901cfa/688b3cfc505fecedaf50d6f5_a21bf56bba165b3760c175fe83b9c903_DOC%20Grille%20Tarifaire%20elec%20100%25%20VE%20010825.pdf"
 
-    # Fallback: Manual pricing data (updated 02/10/2025)
-    # Source: Alterna PDFs
-    # Note: Alterna uses regulated tariff subscription prices
+    # Fallback: Manual pricing data TTC (updated 02/10/2025)
+    # Source: Alterna PDFs - Tarifs TTC
+    # Note: Ces prix incluent toutes les taxes (CTA, accise, TVA 20%)
     FALLBACK_PRICES = {
         "LOCALE_BASE": {
-            # Électricité verte 100% locale - Option Base
+            # Électricité verte 100% locale - Option Base - TTC
             # Date: 02/10/2025
-            3: {"subscription": 8.51, "kwh": 0.1247},
-            6: {"subscription": 11.07, "kwh": 0.1247},
-            9: {"subscription": 13.79, "kwh": 0.1247},
-            12: {"subscription": 16.51, "kwh": 0.1247},
-            15: {"subscription": 19.07, "kwh": 0.1247},
-            18: {"subscription": 21.60, "kwh": 0.1247},
-            24: {"subscription": 27.18, "kwh": 0.1247},
-            30: {"subscription": 32.45, "kwh": 0.1247},
-            36: {"subscription": 37.88, "kwh": 0.1247},
+            3: {"subscription": 11.73, "kwh": 0.1857},
+            6: {"subscription": 15.47, "kwh": 0.1857},
+            9: {"subscription": 19.39, "kwh": 0.1857},
+            12: {"subscription": 23.32, "kwh": 0.1857},
+            15: {"subscription": 27.06, "kwh": 0.1857},
+            18: {"subscription": 30.76, "kwh": 0.1857},
+            24: {"subscription": 38.79, "kwh": 0.1857},
+            30: {"subscription": 46.44, "kwh": 0.1857},
+            36: {"subscription": 54.29, "kwh": 0.1857},
         },
         "LOCALE_HC_HP": {
-            # Électricité verte 100% locale - Heures Creuses
+            # Électricité verte 100% locale - Heures Creuses - TTC
             # Date: 02/10/2025
-            6: {"subscription": 11.30, "hp": 0.1348, "hc": 0.0999},
-            9: {"subscription": 14.14, "hp": 0.1348, "hc": 0.0999},
-            12: {"subscription": 16.87, "hp": 0.1348, "hc": 0.0999},
-            15: {"subscription": 19.43, "hp": 0.1348, "hc": 0.0999},
-            18: {"subscription": 22.08, "hp": 0.1348, "hc": 0.0999},
-            24: {"subscription": 27.75, "hp": 0.1348, "hc": 0.0999},
-            30: {"subscription": 32.93, "hp": 0.1348, "hc": 0.0999},
-            36: {"subscription": 38.15, "hp": 0.1348, "hc": 0.0999},
+            6: {"subscription": 15.74, "hp": 0.1977, "hc": 0.1559},
+            9: {"subscription": 20.21, "hp": 0.1977, "hc": 0.1559},
+            12: {"subscription": 24.28, "hp": 0.1977, "hc": 0.1559},
+            15: {"subscription": 28.15, "hp": 0.1977, "hc": 0.1559},
+            18: {"subscription": 32.13, "hp": 0.1977, "hc": 0.1559},
+            24: {"subscription": 40.53, "hp": 0.1977, "hc": 0.1559},
+            30: {"subscription": 48.34, "hp": 0.1977, "hc": 0.1559},
+            36: {"subscription": 56.20, "hp": 0.1977, "hc": 0.1559},
         },
         "FRANCAISE_BASE": {
-            # Électricité verte 100% française - Option Base
+            # Électricité verte 100% française - Option Base - TTC
             # Date: 02/10/2025
-            3: {"subscription": 8.51, "kwh": 0.1221},
-            6: {"subscription": 11.07, "kwh": 0.1221},
-            9: {"subscription": 13.79, "kwh": 0.1221},
-            12: {"subscription": 16.51, "kwh": 0.1221},
-            15: {"subscription": 19.07, "kwh": 0.1221},
-            18: {"subscription": 21.60, "kwh": 0.1221},
-            24: {"subscription": 27.18, "kwh": 0.1221},
-            30: {"subscription": 32.45, "kwh": 0.1221},
-            36: {"subscription": 37.88, "kwh": 0.1221},
+            3: {"subscription": 11.73, "kwh": 0.1825},
+            6: {"subscription": 15.47, "kwh": 0.1825},
+            9: {"subscription": 19.39, "kwh": 0.1825},
+            12: {"subscription": 23.32, "kwh": 0.1825},
+            15: {"subscription": 27.06, "kwh": 0.1825},
+            18: {"subscription": 30.76, "kwh": 0.1825},
+            24: {"subscription": 38.79, "kwh": 0.1825},
+            30: {"subscription": 46.44, "kwh": 0.1825},
+            36: {"subscription": 54.29, "kwh": 0.1825},
         },
         "FRANCAISE_HC_HP": {
-            # Électricité verte 100% française - Heures Creuses
+            # Électricité verte 100% française - Heures Creuses - TTC
             # Date: 02/10/2025
-            6: {"subscription": 11.30, "hp": 0.1319, "hc": 0.0975},
-            9: {"subscription": 14.14, "hp": 0.1319, "hc": 0.0975},
-            12: {"subscription": 16.87, "hp": 0.1319, "hc": 0.0975},
-            15: {"subscription": 19.43, "hp": 0.1319, "hc": 0.0975},
-            18: {"subscription": 22.08, "hp": 0.1319, "hc": 0.0975},
-            24: {"subscription": 27.75, "hp": 0.1319, "hc": 0.0975},
-            30: {"subscription": 32.93, "hp": 0.1319, "hc": 0.0975},
-            36: {"subscription": 38.15, "hp": 0.1319, "hc": 0.0975},
+            6: {"subscription": 15.74, "hp": 0.1943, "hc": 0.1533},
+            9: {"subscription": 20.21, "hp": 0.1943, "hc": 0.1533},
+            12: {"subscription": 24.28, "hp": 0.1943, "hc": 0.1533},
+            15: {"subscription": 28.15, "hp": 0.1943, "hc": 0.1533},
+            18: {"subscription": 32.13, "hp": 0.1943, "hc": 0.1533},
+            24: {"subscription": 40.53, "hp": 0.1943, "hc": 0.1533},
+            30: {"subscription": 48.34, "hp": 0.1943, "hc": 0.1533},
+            36: {"subscription": 56.20, "hp": 0.1943, "hc": 0.1533},
         },
     }
 

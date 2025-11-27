@@ -301,6 +301,124 @@ Messages à afficher :
 - **Quota dépassé** : "Quota d'appels API dépassé. Réessayez demain ou contactez l'administrateur."
 - **Résultats** : "📊 Consommation totale sur la période : XX,XXX kWh (du JJ/MM/AAAA au JJ/MM/AAAA)"
 
+## Gestion des types de prix (String vs Number)
+
+### Problème
+
+Les prix stockés en base de données sont des **chaînes de caractères** (`"0.23096"`), pas des nombres. Appeler `.toFixed()` directement sur ces valeurs provoque une erreur :
+
+```
+TypeError: (result.offer.hc_price_weekend || result.offer.hc_price)?.toFixed is not a function
+```
+
+### Solution : Helpers de formatage
+
+Deux fonctions utilitaires ont été créées pour gérer ce cas de manière sécurisée :
+
+#### `formatPrice()` - Formatage d'un prix unitaire
+
+```typescript
+/**
+ * Formate un prix en gérant les types string et number
+ * @param value - Prix (string ou number)
+ * @param decimals - Nombre de décimales (défaut: 5 pour les prix unitaires)
+ */
+function formatPrice(
+  value: string | number | undefined | null,
+  decimals: number = 5
+): string {
+  if (value === undefined || value === null)
+    return "0".padEnd(decimals + 2, "0");
+  const numValue = typeof value === "string" ? parseFloat(value) : value;
+  return isNaN(numValue) ? "0".padEnd(decimals + 2, "0") : numValue.toFixed(decimals);
+}
+
+// Utilisation
+formatPrice(offer.base_price)        // "0.23096"
+formatPrice(offer.hc_price, 4)       // "0.1850"
+formatPrice(undefined)               // "0.00000"
+```
+
+#### `calcPrice()` - Calcul quantité × prix
+
+```typescript
+/**
+ * Calcule et formate un coût (quantité × prix unitaire)
+ * @param quantity - Quantité en kWh
+ * @param price - Prix unitaire (string ou number)
+ */
+function calcPrice(
+  quantity: number | undefined,
+  price: string | number | undefined
+): string {
+  const qty = quantity || 0;
+  const priceNum = typeof price === "string" ? parseFloat(price) : (price || 0);
+  return (qty * priceNum).toFixed(2);
+}
+
+// Utilisation
+calcPrice(result.base_kwh, offer.base_price)     // "2814.00"
+calcPrice(result.hc_kwh, offer.hc_price)         // "1082.56"
+```
+
+### Cas d'utilisation dans le JSX
+
+#### Affichage d'un prix unitaire
+
+```tsx
+// ❌ INCORRECT - Erreur si c'est une string
+<span>{offer.base_price.toFixed(5)}</span>
+
+// ✅ CORRECT
+<span>{formatPrice(offer.base_price)}</span>
+```
+
+#### Affichage d'un prix avec fallback
+
+```tsx
+// ❌ INCORRECT - Erreur si c'est une string
+<span>
+  {(offer.hc_price_weekend || offer.hc_price)?.toFixed(5)}
+</span>
+
+// ✅ CORRECT
+<span>
+  {formatPrice(offer.hc_price_weekend || offer.hc_price)}
+</span>
+```
+
+#### Calcul d'un coût total
+
+```tsx
+// ❌ INCORRECT
+<span>
+  {(result.hc_kwh * offer.hc_price).toFixed(2)} €
+</span>
+
+// ✅ CORRECT
+<span>
+  {calcPrice(result.hc_kwh, offer.hc_price)} €
+</span>
+```
+
+### Champs concernés
+
+Tous les champs de prix dans `EnergyOffer` sont stockés comme strings :
+
+| Champ | Type DB | Exemple |
+|-------|---------|---------|
+| `base_price` | string | `"0.23096"` |
+| `hc_price` | string | `"0.18500"` |
+| `hp_price` | string | `"0.24600"` |
+| `hc_price_weekend` | string \| null | `"0.17200"` |
+| `tempo_blue_hc` | string | `"0.12890"` |
+| `tempo_blue_hp` | string | `"0.15480"` |
+| `tempo_white_hc` | string | `"0.14200"` |
+| `tempo_white_hp` | string | `"0.17100"` |
+| `tempo_red_hc` | string | `"0.18000"` |
+| `tempo_red_hp` | string | `"0.55000"` |
+| `subscription_yearly` | string | `"150.00"` |
+
 ## Évolutions futures
 
 1. **Export des résultats** : PDF ou CSV avec détail des calculs

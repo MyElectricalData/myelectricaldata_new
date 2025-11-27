@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
-import { BarChart3 } from 'lucide-react'
-import { useAuth } from '@/hooks/useAuth'
+import { BarChart3, Database, ArrowRight, Info } from 'lucide-react'
 import { usePdlStore } from '@/stores/pdlStore'
 import type { PDL } from '@/types/api'
-import { useIsDemo } from '@/hooks/useIsDemo'
 import { logger } from '@/utils/logger'
 import { useQuery } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
+import { LoadingOverlay } from '@/components/LoadingOverlay'
+import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
+import { AnimatedSection } from '@/components/AnimatedSection'
 
 // Import custom hooks
 import { useProductionData } from './hooks/useProductionData'
@@ -17,26 +18,53 @@ import { useProductionCalcs } from './hooks/useProductionCalcs'
 import { YearlyProductionCards } from './components/YearlyProductionCards'
 import { YearlyProduction } from './components/YearlyProduction'
 import { AnnualProductionCurve } from './components/AnnualProductionCurve'
-import { DetailedProductionCurve } from './components/DetailedProductionCurve'
+import { DetailedCurve } from '@/components/DetailedCurve'
 
 export default function Production() {
-  const isDemo = useIsDemo()
   const { selectedPdl: selectedPDL, setSelectedPdl: setSelectedPDL } = usePdlStore()
 
   // States
   const [, setIsClearingCache] = useState(false)
   const [isChartsExpanded, setIsChartsExpanded] = useState(false)
   const [dateRange, setDateRange] = useState<{start: string, end: string} | null>(null)
-  const [hasAttemptedAutoLoad, setHasAttemptedAutoLoad] = useState(false)
   const [isStatsSectionExpanded, setIsStatsSectionExpanded] = useState(true)
   const [isDetailSectionExpanded, setIsDetailSectionExpanded] = useState(true)
-  const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0, currentRange: '' })
+  const [, setLoadingProgress] = useState({ current: 0, total: 0, currentRange: '' })
   const [isLoadingDetailed, setIsLoadingDetailed] = useState(false)
   const [dailyLoadingComplete, setDailyLoadingComplete] = useState(false)
   const [allLoadingComplete, setAllLoadingComplete] = useState(false)
   const [dataLimitWarning, setDataLimitWarning] = useState<string | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [detailWeekOffset, setDetailWeekOffset] = useState(0)
+  const [isInitialLoadingFromCache, setIsInitialLoadingFromCache] = useState(false)
+  const [isLoadingExiting, setIsLoadingExiting] = useState(false)
+  const [isInfoSectionExpanded, setIsInfoSectionExpanded] = useState(true)
+  const [isInitializing, setIsInitializing] = useState(true)
+
+  // Reset all display states when PDL changes
+  useEffect(() => {
+    logger.log('[Production] PDL changed, resetting display states')
+    setIsChartsExpanded(false)
+    setIsStatsSectionExpanded(false)
+    setIsDetailSectionExpanded(false)
+    setDailyLoadingComplete(false)
+    setAllLoadingComplete(false)
+    setDateRange(null)
+    setDetailWeekOffset(0)
+    setLoadingProgress({ current: 0, total: 0, currentRange: '' })
+    setIsInitialLoadingFromCache(false)
+    setIsLoadingExiting(false)
+    setIsInfoSectionExpanded(true)
+    setIsInitializing(true)
+  }, [selectedPDL])
+
+  // End initialization after cache has time to hydrate
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitializing(false)
+    }, 100) // Short delay for cache hydration
+    return () => clearTimeout(timer)
+  }, [selectedPDL])
 
   // Detect dark mode
   useEffect(() => {
@@ -53,32 +81,31 @@ export default function Production() {
   }, [])
 
   // Calculate detail date range
+  // Use LOCAL time for user's perspective (France timezone)
   const detailDateRange = useMemo(() => {
     if (!dateRange) return null
 
-    const todayUTC = new Date()
-    const yesterdayUTC = new Date(Date.UTC(
-      todayUTC.getUTCFullYear(),
-      todayUTC.getUTCMonth(),
-      todayUTC.getUTCDate() - 1,
-      0, 0, 0, 0
-    ))
+    const now = new Date()
+    const yesterday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 1,
+      12, 0, 0, 0  // Use noon to avoid DST edge cases
+    )
 
-    const yesterday = yesterdayUTC
-    const endDate_obj = yesterday
-    const startDate_obj = new Date(Date.UTC(
-      endDate_obj.getUTCFullYear(),
-      endDate_obj.getUTCMonth(),
-      endDate_obj.getUTCDate() - 6,
-      0, 0, 0, 0
-    ))
+    const startDate_obj = new Date(
+      yesterday.getFullYear(),
+      yesterday.getMonth(),
+      yesterday.getDate() - 6,
+      12, 0, 0, 0
+    )
 
-    const startDate = startDate_obj.getUTCFullYear() + '-' +
-                      String(startDate_obj.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                      String(startDate_obj.getUTCDate()).padStart(2, '0')
-    const endDate = endDate_obj.getUTCFullYear() + '-' +
-                    String(endDate_obj.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                    String(endDate_obj.getUTCDate()).padStart(2, '0')
+    const startDate = startDate_obj.getFullYear() + '-' +
+                      String(startDate_obj.getMonth() + 1).padStart(2, '0') + '-' +
+                      String(startDate_obj.getDate()).padStart(2, '0')
+    const endDate = yesterday.getFullYear() + '-' +
+                    String(yesterday.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(yesterday.getDate()).padStart(2, '0')
 
     return { start: startDate, end: endDate }
   }, [dateRange])
@@ -142,7 +169,6 @@ export default function Production() {
   const {
     productionData,
     detailData,
-    isLoading,
     isLoadingProduction,
     isLoadingDetail,
     queryClient
@@ -183,7 +209,9 @@ export default function Production() {
     detailData,
   })
 
-  const { fetchProductionData } = useProductionFetch({
+  // NOTE: useProductionFetch is called but we don't use fetchProductionData directly
+  // Data fetching is handled by useUnifiedDataFetch in PageHeader
+  useProductionFetch({
     selectedPDL: actualProductionPDL || '',
     selectedPDLDetails,
     setDateRange,
@@ -197,11 +225,8 @@ export default function Production() {
     setIsClearingCache,
   })
 
-  // NOTE: Fetch function registration is now handled by the unified hook in PageHeader
-  // We don't register fetchProductionData here to avoid conflicts and infinite loops
-  // The PageHeader component uses useUnifiedDataFetch which fetches all data types
-
-  // Check if ANY production data is in cache (to determine if we should auto-load)
+  // Check if ANY production data is in cache
+  // Now uses single cache key format: ['productionDetail', pdl]
   const hasDataInCache = useMemo(() => {
     const pdlToCheck = actualProductionPDL || selectedPDL
     if (!pdlToCheck) {
@@ -211,25 +236,11 @@ export default function Production() {
 
     logger.log('[Cache Detection] Checking production cache for PDL:', pdlToCheck)
 
-    // Get all queries in cache
-    const allQueries = queryClient.getQueryCache().getAll()
-
-    // Find ALL productionDetail queries for this PDL with data
-    const detailedQueries = allQueries.filter(q => {
-      if (q.queryKey[0] !== 'productionDetail') return false
-      if (q.queryKey[1] !== pdlToCheck) return false
-
-      const data = q.state.data as any
-      const hasReadings = data?.data?.meter_reading?.interval_reading?.length > 0
-      return hasReadings
-    })
-
-    logger.log('[Cache Detection] Found', detailedQueries.length, 'detailed production cache entries with data')
-
-    if (detailedQueries.length > 0) {
-      // Log first and last dates in cache
-      const dates = detailedQueries.map(q => q.queryKey[2] as string).sort()
-      logger.log('[Cache Detection] ✓ Production cache found! Date range:', dates[0], 'to', dates[dates.length - 1])
+    // Check the single cache entry for this PDL
+    const cachedData = queryClient.getQueryData(['productionDetail', pdlToCheck]) as any
+    if (cachedData?.data?.meter_reading?.interval_reading?.length > 0) {
+      const readings = cachedData.data.meter_reading.interval_reading
+      logger.log('[Cache Detection] ✓ Production cache found!', readings.length, 'points')
       return true
     }
 
@@ -271,6 +282,7 @@ export default function Production() {
       setIsChartsExpanded(true)
       setIsStatsSectionExpanded(true)
       setIsDetailSectionExpanded(true)
+      setIsInfoSectionExpanded(false) // Collapse info section when data is loaded
     }
   }, [dailyLoadingComplete, isLoadingDetailed])
 
@@ -280,58 +292,75 @@ export default function Production() {
     if (!dateRange && selectedPDL && hasDataInCache) {
       logger.log('[Auto-load] No dateRange set but cache detected - setting dateRange from cache')
 
+      // Show loading overlay while hydrating cache data
+      setIsInitialLoadingFromCache(true)
+
       // Calculate date range (same as in fetchProductionData)
-      const todayUTC = new Date()
-      const yesterdayUTC = new Date(Date.UTC(
-        todayUTC.getUTCFullYear(),
-        todayUTC.getUTCMonth(),
-        todayUTC.getUTCDate() - 1,
-        0, 0, 0, 0
-      ))
-      const yesterday = yesterdayUTC
-      const startDate_obj = new Date(Date.UTC(
-        yesterdayUTC.getUTCFullYear(),
-        yesterdayUTC.getUTCMonth(),
-        yesterdayUTC.getUTCDate() - 1094,
-        0, 0, 0, 0
-      ))
-      const startDate = startDate_obj.toISOString().split('T')[0]
-      const endDate = yesterday.toISOString().split('T')[0]
+      // Use LOCAL time for user's perspective
+      const now = new Date()
+      const yesterday = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() - 1,
+        12, 0, 0, 0  // Use noon to avoid DST edge cases
+      )
+      const startDate_obj = new Date(
+        yesterday.getFullYear(),
+        yesterday.getMonth(),
+        yesterday.getDate() - 1094,
+        12, 0, 0, 0
+      )
+      const startDate = startDate_obj.getFullYear() + '-' +
+                        String(startDate_obj.getMonth() + 1).padStart(2, '0') + '-' +
+                        String(startDate_obj.getDate()).padStart(2, '0')
+      const endDate = yesterday.getFullYear() + '-' +
+                      String(yesterday.getMonth() + 1).padStart(2, '0') + '-' +
+                      String(yesterday.getDate()).padStart(2, '0')
 
       logger.log('[Auto-load] Setting date range:', startDate, 'to', endDate)
 
       setDateRange({ start: startDate, end: endDate })
-      setDailyLoadingComplete(true)
-      setAllLoadingComplete(true)
-      setIsChartsExpanded(true)
-      setIsStatsSectionExpanded(true)
-      setIsDetailSectionExpanded(true)
 
-      logger.log('[Auto-load] All states set - graphs should be visible')
+      // Set loading states to complete so sections expand
+      setTimeout(() => {
+        setDailyLoadingComplete(true)
+        setAllLoadingComplete(true)
+        setIsChartsExpanded(true)
+        setIsStatsSectionExpanded(true)
+        setIsDetailSectionExpanded(true)
+        // Trigger exit animation
+        setIsLoadingExiting(true)
+        // Hide loading overlay after exit animation completes (300ms)
+        setTimeout(() => {
+          setIsInitialLoadingFromCache(false)
+          setIsLoadingExiting(false)
+        }, 300)
+
+        logger.log('[Auto-load] All states set - graphs should be visible')
+      }, 500) // Small delay to let React Query hydrate and show loading state
     }
   }, [selectedPDL, hasDataInCache, dateRange])
 
-  // Auto-fetch data on first load only for demo accounts
-  useEffect(() => {
-    logger.log('[Auto-load] Effect triggered - hasAttemptedAutoLoad:', hasAttemptedAutoLoad, 'selectedPDL:', selectedPDL, 'hasCache:', hasDataInCache, 'isDemo:', isDemo)
+  // NOTE: Auto-fetch disabled - user must click "Récupérer" button manually
+  // The effect above (Auto-load dateRange from cache) still works to display cached data
+  // without making any API calls
 
-    if (!hasAttemptedAutoLoad && selectedPDL) {
-      setHasAttemptedAutoLoad(true)
-      logger.log('[Auto-load] First load detected')
+  // Block rendering during initialization to prevent flash of content
+  if (isInitializing) {
+    return <div className="pt-6 w-full" />
+  }
 
-      // For demo accounts, ALWAYS fetch data to ensure detailed data is loaded
-      if (isDemo) {
-        logger.log('[Auto-load] Demo account - fetching data')
-        fetchProductionData()
-      } else if (!hasDataInCache) {
-        logger.log('[Auto-load] No cache - user must click button manually')
-      }
-      // For regular accounts with cache: dateRange is set by the effect above
-    }
-  }, [selectedPDL, hasDataInCache, hasAttemptedAutoLoad, fetchProductionData, isDemo])
-
-  // Get production response from React Query (needed for status badges)
-  const productionResponse = queryClient.getQueryData(['production', actualProductionPDL || selectedPDL, dateRange?.start, dateRange?.end])
+  // Show loading overlay when loading cached data
+  // Display blurred placeholder content behind the loading spinner
+  if (isInitialLoadingFromCache) {
+    return (
+      <div className="pt-6 w-full">
+        <LoadingOverlay dataType="production" isExiting={isLoadingExiting}>
+          <LoadingPlaceholder type="production" />
+        </LoadingOverlay>
+      </div>
+    )
+  }
 
   return (
     <div className="pt-6 w-full">
@@ -372,143 +401,232 @@ export default function Production() {
         </div>
       )}
 
-      {/* Statistics Section */}
-      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
-        <div
-          className={`flex items-center justify-between p-6 ${
-            allLoadingComplete ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
-          }`}
-          onClick={() => {
-            if (allLoadingComplete) {
-              setIsStatsSectionExpanded(!isStatsSectionExpanded)
-            }
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Statistiques de production
-            </h2>
-          </div>
-          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            {isStatsSectionExpanded ? (
-              <span className="text-sm">Réduire</span>
-            ) : (
-              <span className="text-sm">Développer</span>
-            )}
-            <svg
-              className={`w-5 h-5 transition-transform duration-200 ${
-                isStatsSectionExpanded ? 'rotate-180' : ''
-              }`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+      {/* Empty State - No data loaded */}
+      {!hasDataInCache && !allLoadingComplete && (
+        <div className="mt-2 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+          <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+            <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mb-6">
+              <Database className="w-10 h-10 text-green-600 dark:text-green-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Aucune donnée de production
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 max-w-md mb-6">
+              Pour afficher vos statistiques et graphiques de production,
+              lancez la récupération des données en cliquant sur le bouton
+              <span className="font-semibold text-green-600 dark:text-green-400"> Récupérer </span>
+              en haut à droite de la page.
+            </p>
+            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+              <span>Sélectionnez un PDL</span>
+              <ArrowRight className="w-4 h-4" />
+              <span>Cliquez sur "Récupérer"</span>
+              <ArrowRight className="w-4 h-4" />
+              <span>Visualisez vos données</span>
+            </div>
           </div>
         </div>
+      )}
 
-        {isStatsSectionExpanded && allLoadingComplete && (
-          <div className="px-6 pb-6 space-y-6">
-            <YearlyProductionCards chartData={chartData} productionData={productionData} />
+      {/* Statistics Section */}
+      <AnimatedSection isVisible={hasDataInCache || allLoadingComplete} delay={0}>
+        <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+          <div
+            className={`flex items-center justify-between p-6 ${
+              allLoadingComplete ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+            }`}
+            onClick={() => {
+              if (allLoadingComplete) {
+                setIsStatsSectionExpanded(!isStatsSectionExpanded)
+              }
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Statistiques de production
+              </h2>
+            </div>
+            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+              {isStatsSectionExpanded ? (
+                <span className="text-sm">Réduire</span>
+              ) : (
+                <span className="text-sm">Développer</span>
+              )}
+              <svg
+                className={`w-5 h-5 transition-transform duration-200 ${
+                  isStatsSectionExpanded ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
           </div>
-        )}
-      </div>
+
+          {isStatsSectionExpanded && allLoadingComplete && (
+            <div className="px-6 pb-6 space-y-6">
+              <YearlyProductionCards chartData={chartData} productionData={productionData} />
+            </div>
+          )}
+        </div>
+      </AnimatedSection>
 
       {/* Charts Section */}
-      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
-        <div
-          className={`flex items-center justify-between p-6 ${
-            allLoadingComplete ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
-          }`}
-          onClick={() => {
-            if (allLoadingComplete) {
-              setIsChartsExpanded(!isChartsExpanded)
-            }
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Graphiques de production
-            </h2>
+      <AnimatedSection isVisible={hasDataInCache || allLoadingComplete} delay={100}>
+        <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+          <div
+            className={`flex items-center justify-between p-6 ${
+              allLoadingComplete ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+            }`}
+            onClick={() => {
+              if (allLoadingComplete) {
+                setIsChartsExpanded(!isChartsExpanded)
+              }
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Graphiques de production
+              </h2>
+            </div>
+            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+              {isChartsExpanded ? (
+                <span className="text-sm">Réduire</span>
+              ) : (
+                <span className="text-sm">Développer</span>
+              )}
+              <svg
+                className={`w-5 h-5 transition-transform duration-200 ${
+                  isChartsExpanded ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
           </div>
-          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            {isChartsExpanded ? (
-              <span className="text-sm">Réduire</span>
-            ) : (
-              <span className="text-sm">Développer</span>
-            )}
-            <svg
-              className={`w-5 h-5 transition-transform duration-200 ${
-                isChartsExpanded ? 'rotate-180' : ''
-              }`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
-        </div>
 
-        {isChartsExpanded && allLoadingComplete && (
-          <div className="px-6 pb-6 space-y-8">
-            <YearlyProduction chartData={chartData} productionData={productionData} isDarkMode={isDarkMode} />
-            <AnnualProductionCurve chartData={chartData} isDarkMode={isDarkMode} />
-          </div>
-        )}
-      </div>
+          {isChartsExpanded && allLoadingComplete && (
+            <div className="px-6 pb-6 space-y-8">
+              <YearlyProduction chartData={chartData} productionData={productionData} isDarkMode={isDarkMode} />
+              <AnnualProductionCurve chartData={chartData} isDarkMode={isDarkMode} />
+            </div>
+          )}
+        </div>
+      </AnimatedSection>
 
       {/* Detailed Production Curve Section */}
-      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
-        <div
-          className={`flex items-center justify-between p-6 ${
-            allLoadingComplete ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
-          }`}
-          onClick={() => {
-            if (allLoadingComplete) {
-              setIsDetailSectionExpanded(!isDetailSectionExpanded)
-            }
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Courbe de production détaillée
-            </h2>
-          </div>
-          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            {isDetailSectionExpanded ? (
-              <span className="text-sm">Réduire</span>
-            ) : (
-              <span className="text-sm">Développer</span>
-            )}
-            <svg
-              className={`w-5 h-5 transition-transform duration-200 ${
-                isDetailSectionExpanded ? 'rotate-180' : ''
-              }`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      <AnimatedSection isVisible={hasDataInCache || allLoadingComplete} delay={200}>
+        <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+          <div
+            className={`flex items-center justify-between p-6 ${
+              allLoadingComplete ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+            }`}
+            onClick={() => {
+              if (allLoadingComplete) {
+                setIsDetailSectionExpanded(!isDetailSectionExpanded)
+              }
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Courbe de production détaillée
+              </h2>
+            </div>
+            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+              {isDetailSectionExpanded ? (
+                <span className="text-sm">Réduire</span>
+              ) : (
+                <span className="text-sm">Développer</span>
+              )}
+              <svg
+                className={`w-5 h-5 transition-transform duration-200 ${
+                  isDetailSectionExpanded ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </div>
         </div>
 
         {isDetailSectionExpanded && allLoadingComplete && (
           <div className="px-6 pb-6">
-            <DetailedProductionCurve
+            <DetailedCurve
+              cacheKeyPrefix="productionDetail"
+              curveName="Production"
               detailByDayData={detailByDayData}
-              selectedPDL={selectedPDL}
+              selectedPDL={actualProductionPDL}
               isDarkMode={isDarkMode}
               isLoadingDetail={isLoadingDetail}
               detailDateRange={detailDateRange}
               onWeekOffsetChange={setDetailWeekOffset}
               detailWeekOffset={detailWeekOffset}
             />
+          </div>
+        )}
+        </div>
+      </AnimatedSection>
+
+      {/* Info Block - Always visible, collapsible */}
+      <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+        <div
+          className="flex items-center justify-between p-6 cursor-pointer"
+          onClick={() => setIsInfoSectionExpanded(!isInfoSectionExpanded)}
+        >
+          <div className="flex items-center gap-2">
+            <Info className="text-primary-600 dark:text-primary-400" size={20} />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Informations importantes
+            </h3>
+          </div>
+          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+            {isInfoSectionExpanded ? (
+              <span className="text-sm">Réduire</span>
+            ) : (
+              <span className="text-sm">Développer</span>
+            )}
+            <svg
+              className={`w-5 h-5 transition-transform duration-200 ${
+                isInfoSectionExpanded ? 'rotate-180' : ''
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+
+        {isInfoSectionExpanded && (
+          <div className="px-6 pb-6 space-y-4">
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                <strong>💾 Cache automatique :</strong> L'utilisation de la page de production active automatiquement le cache. Vos données de production seront stockées temporairement pour améliorer les performances. Les données en cache expirent automatiquement après <strong>24 heures</strong>.
+              </p>
+            </div>
+
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
+                <p><strong>📊 Source des données :</strong></p>
+                <ul className="list-disc list-inside space-y-1 ml-2">
+                  <li>Les données sont récupérées depuis l'API <strong>Enedis Data Connect</strong></li>
+                  <li>Données quotidiennes : <strong>1095 jours</strong> d'historique (3 ans)</li>
+                  <li>Données détaillées (30 min) : <strong>730 jours</strong> d'historique (2 ans)</li>
+                  <li>Les données Enedis ne sont disponibles qu'en <strong>J-1</strong> (hier)</li>
+                </ul>
+              </div>
+            </div>
           </div>
         )}
       </div>

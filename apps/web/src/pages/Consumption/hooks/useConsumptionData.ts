@@ -1,11 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 import { pdlApi } from '@/api/pdl'
-import { enedisApi } from '@/api/enedis'
-import type { PDL } from '@/types/api'
+import { enedisApi, type EnedisData } from '@/api/enedis'
+import type { PDL, APIResponse } from '@/types/api'
 import type { DateRange } from '../types/consumption.types'
 
-export function useConsumptionData(selectedPDL: string, dateRange: DateRange | null, detailDateRange: DateRange | null) {
+// Full response type for Enedis API
+type EnedisApiResponse = APIResponse<EnedisData>
+
+export function useConsumptionData(selectedPDL: string, dateRange: DateRange | null, _detailDateRange: DateRange | null) {
   const queryClient = useQueryClient()
 
   // Fetch PDLs
@@ -30,10 +33,10 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
 
   // Fetch consumption data with React Query
   // Use a single cache key per PDL (no date in key to avoid cache fragmentation)
-  const { data: consumptionResponse, isLoading: isLoadingConsumption } = useQuery({
+  const { data: consumptionResponse, isLoading: isLoadingConsumption } = useQuery<EnedisApiResponse | null>({
     queryKey: ['consumptionDaily', selectedPDL],
     enabled: !!selectedPDL && !!dateRange,
-    queryFn: async () => {
+    queryFn: async (): Promise<EnedisApiResponse | null> => {
       if (!selectedPDL || !dateRange) return null
 
       // Calculate the total date range in days
@@ -88,7 +91,7 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
         })
       )
 
-      const chunkResults = await Promise.all(chunkPromises)
+      const chunkResults = await Promise.all(chunkPromises) as EnedisApiResponse[]
 
       // Merge all chunks into a single response
       // Take the first successful response as the base
@@ -99,7 +102,7 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
       }
 
       // Combine all interval_reading arrays
-      const allReadings: any[] = []
+      const allReadings: Array<{ date: string; value: string | number }> = []
       for (const result of chunkResults) {
         if (result?.success && result?.data?.meter_reading?.interval_reading) {
           allReadings.push(...result.data.meter_reading.interval_reading)
@@ -112,7 +115,7 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
         data: {
           ...firstSuccess.data,
           meter_reading: {
-            ...firstSuccess.data.meter_reading,
+            ...firstSuccess.data?.meter_reading,
             interval_reading: allReadings
           }
         }
@@ -125,10 +128,10 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
 
   // Fetch max power data with React Query
   // Use a single cache key per PDL (no date in key to avoid cache fragmentation)
-  const { data: maxPowerResponse, isLoading: isLoadingPower } = useQuery({
+  const { data: maxPowerResponse, isLoading: isLoadingPower } = useQuery<EnedisApiResponse | null>({
     queryKey: ['maxPower', selectedPDL],
     enabled: !!selectedPDL && !!dateRange,
-    queryFn: async () => {
+    queryFn: async (): Promise<EnedisApiResponse | null> => {
       if (!selectedPDL || !dateRange) return null
 
       // Calculate the total date range in days
@@ -183,7 +186,7 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
         })
       )
 
-      const chunkResults = await Promise.all(chunkPromises)
+      const chunkResults = await Promise.all(chunkPromises) as EnedisApiResponse[]
 
       // Merge all chunks into a single response
       // Take the first successful response as the base
@@ -194,7 +197,7 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
       }
 
       // Combine all interval_reading arrays
-      const allReadings: any[] = []
+      const allReadings: Array<{ date: string; value: string | number }> = []
       for (const result of chunkResults) {
         if (result?.success && result?.data?.meter_reading?.interval_reading) {
           allReadings.push(...result.data.meter_reading.interval_reading)
@@ -207,7 +210,7 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
         data: {
           ...firstSuccess.data,
           meter_reading: {
-            ...firstSuccess.data.meter_reading,
+            ...firstSuccess.data?.meter_reading,
             interval_reading: allReadings
           }
         }
@@ -271,9 +274,11 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
     return () => unsubscribe()
   }, [selectedPDL, queryClient])
 
-  const consumptionData = consumptionResponse?.success ? consumptionResponse.data : null
-  const maxPowerData = maxPowerResponse?.success ? maxPowerResponse.data : null
-  const detailData = (detailResponse as any)?.success ? (detailResponse as any).data : null
+  const consumptionData = consumptionResponse?.success ? consumptionResponse.data ?? null : null
+  const maxPowerData = maxPowerResponse?.success ? maxPowerResponse.data ?? null : null
+  const detailData = (detailResponse as EnedisApiResponse | null)?.success
+    ? (detailResponse as EnedisApiResponse).data ?? null
+    : null
   const isLoading = isLoadingConsumption || isLoadingPower || isLoadingDetail
 
   return {

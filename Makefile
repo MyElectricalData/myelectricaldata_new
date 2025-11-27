@@ -41,6 +41,11 @@ help:
 	@echo "  make db-backup    - Backup database"
 	@echo "  make migrate      - Apply database migrations"
 	@echo ""
+	@echo "$(YELLOW)Documentation:$(NC)"
+	@echo "  make docs         - Start documentation server via Docker (http://localhost:8002)"
+	@echo "  make docs-build   - Build documentation"
+	@echo "  make docs-dev     - Start documentation dev server with hot reload (http://localhost:8002)"
+	@echo ""
 	@echo "$(YELLOW)Maintenance:$(NC)"
 	@echo "  make logs         - Show all logs"
 	@echo "  make ps           - Show running containers"
@@ -67,8 +72,18 @@ up-fg:
 down:
 	@echo "$(YELLOW)Stopping all services...$(NC)"
 	@make stop-watch
+	@make stop-docs
 	$(COMPOSE) down
 	@echo "$(GREEN)All services stopped$(NC)"
+
+## Stop documentation server
+stop-docs:
+	@if [ -f $(LOG_DIR)/docs.pid ]; then \
+		echo "$(YELLOW)Stopping docs server (PID: $$(cat $(LOG_DIR)/docs.pid))...$(NC)"; \
+		kill `cat $(LOG_DIR)/docs.pid` 2>/dev/null || true; \
+		rm -f $(LOG_DIR)/docs.pid; \
+		echo "$(GREEN)Docs server stopped$(NC)"; \
+	fi
 
 ## Restart all services
 restart:
@@ -185,4 +200,28 @@ install-fswatch:
 		exit 1; \
 	fi
 
-.PHONY: help dev up up-fg down restart watch stop-watch backend-logs backend-restart db-shell db-backup migrate logs ps clean rebuild check-deps install-fswatch
+## Documentation: Start docs server via Docker
+docs:
+	@echo "$(GREEN)Starting documentation server...$(NC)"
+	$(COMPOSE) --profile docs up -d docs
+	@echo "$(GREEN)Documentation available at http://localhost:8002$(NC)"
+
+## Documentation: Build docs locally
+docs-build:
+	@echo "$(GREEN)Building documentation...$(NC)"
+	@cd apps/docs && npm run build
+	@echo "$(GREEN)Documentation built in apps/docs/build/$(NC)"
+
+## Documentation: Start dev server with hot reload
+docs-dev:
+	@echo "$(GREEN)Starting documentation dev server...$(NC)"
+	@cd apps/docs && npm start -- --port 8002
+	@echo "$(GREEN)Documentation dev server running at http://localhost:8002$(NC)"
+
+## Documentation: Stop docs server
+docs-down:
+	@echo "$(YELLOW)Stopping documentation server...$(NC)"
+	$(COMPOSE) --profile docs down docs
+	@echo "$(GREEN)Documentation server stopped$(NC)"
+
+.PHONY: help dev up up-fg down restart watch stop-watch stop-docs backend-logs backend-restart db-shell db-backup migrate logs ps clean rebuild check-deps install-fswatch docs docs-build docs-dev docs-down

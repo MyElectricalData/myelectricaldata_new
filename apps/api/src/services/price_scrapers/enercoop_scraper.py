@@ -15,49 +15,50 @@ class EnercoopPriceScraper(BasePriceScraper):
     # Enercoop pricing PDF URL
     TARIFF_PDF_URL = "https://www.faq.enercoop.fr/hc/fr/article_attachments/29227207696786"
 
-    # Fallback: Manual pricing data (updated 2025-08-01)
+    # Fallback: Manual pricing data TTC (updated 2025-08-01)
     # Source: https://www.faq.enercoop.fr/hc/fr/article_attachments/29227207696786
+    # Note: Tous les prix sont TTC (incluant TVA 20%, CTA, CSPE)
     FALLBACK_PRICES = {
-        "BASE": {  # Basic Watt - Base
-            3: {"subscription": 11.87, "kwh": 0.25388},
-            6: {"subscription": 14.83, "kwh": 0.25388},
-            9: {"subscription": 18.38, "kwh": 0.25388},
-            12: {"subscription": 21.81, "kwh": 0.25388},
-            15: {"subscription": 24.98, "kwh": 0.25388},
-            18: {"subscription": 28.16, "kwh": 0.25388},
-            24: {"subscription": 34.75, "kwh": 0.25388},
-            30: {"subscription": 41.04, "kwh": 0.25388},
-            36: {"subscription": 47.59, "kwh": 0.25388},
+        "BASE": {  # Basic Watt - Base - TTC
+            3: {"subscription": 10.59, "kwh": 0.25388},
+            6: {"subscription": 16.36, "kwh": 0.25388},
+            9: {"subscription": 22.90, "kwh": 0.25388},
+            12: {"subscription": 28.38, "kwh": 0.25388},
+            15: {"subscription": 34.48, "kwh": 0.25388},
+            18: {"subscription": 40.54, "kwh": 0.25388},
+            24: {"subscription": 52.43, "kwh": 0.25388},
+            30: {"subscription": 64.48, "kwh": 0.25388},
+            36: {"subscription": 76.53, "kwh": 0.25388},
         },
-        "HC_HP": {  # Flexi Watt - Heures Creuses
-            6: {"subscription": 19.52, "hp": 0.26736, "hc": 0.22043},
-            9: {"subscription": 26.10, "hp": 0.26736, "hc": 0.22043},
-            12: {"subscription": 32.00, "hp": 0.26736, "hc": 0.22043},
-            15: {"subscription": 37.90, "hp": 0.26736, "hc": 0.22043},
-            18: {"subscription": 43.61, "hp": 0.26736, "hc": 0.22043},
-            24: {"subscription": 55.29, "hp": 0.26736, "hc": 0.22043},
-            30: {"subscription": 66.94, "hp": 0.26736, "hc": 0.22043},
-            36: {"subscription": 78.60, "hp": 0.26736, "hc": 0.22043},
+        "HC_HP": {  # Flexi Watt - Heures Creuses - TTC
+            6: {"subscription": 19.52, "hp": 0.27436, "hc": 0.19008},
+            9: {"subscription": 26.10, "hp": 0.27436, "hc": 0.19008},
+            12: {"subscription": 32.00, "hp": 0.27436, "hc": 0.19008},
+            15: {"subscription": 37.90, "hp": 0.27436, "hc": 0.19008},
+            18: {"subscription": 43.80, "hp": 0.27436, "hc": 0.19008},
+            24: {"subscription": 55.60, "hp": 0.27436, "hc": 0.19008},
+            30: {"subscription": 67.37, "hp": 0.27436, "hc": 0.19008},
+            36: {"subscription": 79.20, "hp": 0.27436, "hc": 0.19008},
         },
-        "WEEKEND": {  # Flexi Watt - Nuit & Week-end
-            6: {"subscription": 19.10, "hp": 0.32256, "hc": 0.17816},
-            9: {"subscription": 25.57, "hp": 0.32256, "hc": 0.17816},
-            12: {"subscription": 31.37, "hp": 0.32256, "hc": 0.17816},
-            15: {"subscription": 37.15, "hp": 0.32256, "hc": 0.17816},
-            18: {"subscription": 42.73, "hp": 0.32256, "hc": 0.17816},
-            24: {"subscription": 54.22, "hp": 0.32256, "hc": 0.17816},
-            30: {"subscription": 65.64, "hp": 0.32256, "hc": 0.17816},
-            36: {"subscription": 77.05, "hp": 0.32256, "hc": 0.17816},
+        "WEEKEND": {  # Flexi Watt - Nuit & Week-end - TTC
+            6: {"subscription": 16.48, "hp": 0.29320, "hc": 0.16537},
+            9: {"subscription": 21.97, "hp": 0.29320, "hc": 0.16537},
+            12: {"subscription": 27.35, "hp": 0.29320, "hc": 0.16537},
+            15: {"subscription": 33.23, "hp": 0.29320, "hc": 0.16537},
+            18: {"subscription": 39.08, "hp": 0.29320, "hc": 0.16537},
+            24: {"subscription": 50.84, "hp": 0.29320, "hc": 0.16537},
+            30: {"subscription": 62.57, "hp": 0.29320, "hc": 0.16537},
+            36: {"subscription": 74.30, "hp": 0.29320, "hc": 0.16537},
         },
-        "SEASONAL": {  # Flexi Watt - 2 saisons
-            6: {"subscription": 17.32, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
-            9: {"subscription": 23.13, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
-            12: {"subscription": 28.36, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
-            15: {"subscription": 33.56, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
-            18: {"subscription": 38.56, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
-            24: {"subscription": 48.82, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
-            30: {"subscription": 59.03, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
-            36: {"subscription": 69.29, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
+        "SEASONAL": {  # Flexi Watt - 2 saisons - TTC
+            6: {"subscription": 17.40, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
+            9: {"subscription": 23.19, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
+            12: {"subscription": 28.87, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
+            15: {"subscription": 35.08, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
+            18: {"subscription": 41.26, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
+            24: {"subscription": 53.68, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
+            30: {"subscription": 66.05, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
+            36: {"subscription": 78.44, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
         },
     }
 

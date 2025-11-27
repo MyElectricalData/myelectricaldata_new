@@ -1,3 +1,9 @@
+---
+sidebar_position: 1
+title: Troubleshooting
+description: Guides de résolution de problèmes
+---
+
 # Documentation de Dépannage
 
 Index des guides de résolution de problèmes pour MyElectricalData.

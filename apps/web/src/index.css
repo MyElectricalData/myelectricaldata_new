@@ -11,61 +11,81 @@
     color-scheme: dark;
   }
 
+  /* Scrollbar toujours visible avec design intégré */
+  html {
+    overflow-y: scroll;
+  }
+
   body {
     @apply bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100;
     @apply transition-colors duration-200;
   }
 
-  /* Custom Scrollbar Styles */
+  /* ===== SCROLLBAR DESIGN ===== */
+
+  /* Firefox */
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgb(203 213 225) transparent;
+    scrollbar-color: #0ea5e9 #1e293b;
   }
 
   .dark * {
-    scrollbar-color: rgb(71 85 105) transparent;
+    scrollbar-color: #38bdf8 #0f172a;
   }
 
   /* Webkit Browsers (Chrome, Safari, Edge) */
   *::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
   }
 
+  /* Track - fond sombre de la scrollbar */
   *::-webkit-scrollbar-track {
-    background: transparent;
+    background: #1e293b;
+    border-radius: 5px;
   }
 
+  .dark *::-webkit-scrollbar-track {
+    background: #0f172a;
+  }
+
+  /* Thumb - partie mobile */
   *::-webkit-scrollbar-thumb {
-    background: rgb(203 213 225);
-    border-radius: 6px;
-    border: 3px solid transparent;
-    background-clip: padding-box;
+    background: linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%);
+    border-radius: 5px;
+    border: 2px solid #1e293b;
+    transition: background 0.2s ease;
   }
 
   *::-webkit-scrollbar-thumb:hover {
-    background: rgb(148 163 184);
-    border: 3px solid transparent;
-    background-clip: padding-box;
+    background: linear-gradient(180deg, #38bdf8 0%, #0ea5e9 100%);
+  }
+
+  *::-webkit-scrollbar-thumb:active {
+    background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
   }
 
   /* Dark Mode Scrollbar */
   .dark *::-webkit-scrollbar-thumb {
-    background: rgb(71 85 105);
-    border-radius: 6px;
-    border: 3px solid transparent;
-    background-clip: padding-box;
+    background: linear-gradient(180deg, #38bdf8 0%, #0ea5e9 100%);
+    border: 2px solid #0f172a;
   }
 
   .dark *::-webkit-scrollbar-thumb:hover {
-    background: rgb(100 116 139);
-    border: 3px solid transparent;
-    background-clip: padding-box;
+    background: linear-gradient(180deg, #7dd3fc 0%, #38bdf8 100%);
+  }
+
+  .dark *::-webkit-scrollbar-thumb:active {
+    background: linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%);
   }
 
   /* Corner where scrollbars meet */
   *::-webkit-scrollbar-corner {
-    background: transparent;
+    background: #1e293b;
+  }
+
+  .dark *::-webkit-scrollbar-corner {
+    background: #0f172a;
   }
 
   /* Hide scrollbar completely for specific elements */

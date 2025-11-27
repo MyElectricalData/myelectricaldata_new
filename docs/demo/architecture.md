@@ -566,7 +566,7 @@ async def create_demo():
 
 ### Frontend URL
 
-- **Settings**: FRONTEND_URL (default: <http://localhost:3000>)
+- **Settings**: FRONTEND_URL (default: `http://localhost:3000`)
 - **Used for**: Email verification links, OAuth callbacks
 
 ### Email Verification Link Format

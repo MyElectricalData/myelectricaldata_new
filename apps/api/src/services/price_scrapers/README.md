@@ -222,19 +222,28 @@ Each scraper validates:
 - **Valid power levels**: Only 3, 6, 9, 12, 15, 18, 24, 30, 36 kVA
 - **Type consistency**:
   - BASE: requires `base_price`
-  - HC_HP: requires `hp_price` and `hc_price`
+  - HC_HP, WEEKEND, HC_NUIT_WEEKEND: requires `hp_price` and `hc_price`
   - TEMPO: requires 6 prices (blue/white/red × hp/hc)
-  - WEEKEND: requires `hp_price_weekend`, `hc_price_weekend`
+  - BASE_WEEKEND: requires `base_price` and `base_price_weekend`
+  - HC_WEEKEND: requires `hp_price`, `hc_price`, and optionally `hp_price_weekend`, `hc_price_weekend`
+  - SEASONAL: requires winter/summer × hp/hc prices
 - **Reasonable ranges**: Prices within expected market ranges
 
 ## Offer Types
 
 - **BASE**: Single flat rate (€/kWh)
-- **HC_HP**: Off-peak / Peak hours (2 rates)
+- **HC_HP**: Off-peak / Peak hours (2 rates) - standard PDL offpeak hours
 - **TEMPO**: 3 colors × 2 periods = 6 rates (EDF only)
 - **EJP**: Normal / Peak days (2 rates, legacy)
-- **WEEKEND**: Week/Weekend × HC/HP = 4 rates
+- **BASE_WEEKEND**: Base weekday + reduced base weekend (2 rates)
+- **HC_WEEKEND**: HC/HP weekday (PDL hours) + all weekend as HC (3 rates)
+- **HC_NUIT_WEEKEND**: HC 23h-6h weekday + all weekend as HC (same as WEEKEND)
+- **WEEKEND**: Enercoop type - same behavior as HC_NUIT_WEEKEND (23h-6h weekday + weekend)
 - **SEASONAL**: Winter/Summer × HC/HP = 4 rates
+
+**Note**: The `WEEKEND` type (used by Enercoop for "Flexi Watt - Nuit & Week-end") is functionally equivalent to `HC_NUIT_WEEKEND`. Both use:
+- Weekdays: HP from 6h to 23h, HC from 23h to 6h
+- Weekend: all hours are HC (off-peak)
 
 ## Logging
 

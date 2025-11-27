@@ -612,8 +612,348 @@ const progress = (completedCount / tasks.length) * 100
 - [03 - Sections](./03-sections.md) - Pour les sections always visible
 - [11 - États](./11-states.md) - Pour les états conditionnels
 
+### Anti-Flash Pattern (isInitializing)
+
+Depuis novembre 2025, les pages de données (Consumption, Production, Simulator) utilisent un pattern pour éviter le "flash" de contenu non chargé qui apparaissait brièvement avant l'écran de chargement.
+
+#### Problème résolu
+
+Le cache React Query (IndexedDB) nécessite ~50-100ms pour s'hydrater après le montage du composant. Pendant ce délai, `hasDataInCache` retournait `false` même s'il y avait des données, causant un flash du contenu vide.
+
+#### Solution : État isInitializing
+
+```tsx
+// 1. Déclaration de l'état (initialisé à true)
+const [isInitializing, setIsInitializing] = useState(true)
+
+// 2. Reset au changement de PDL
+useEffect(() => {
+  // ... autres resets ...
+  setIsInitializing(true)
+}, [selectedPDL])
+
+// 3. Effet pour terminer l'initialisation
+useEffect(() => {
+  const timer = setTimeout(() => {
+    setIsInitializing(false)
+  }, 100) // Délai court pour l'hydratation du cache
+  return () => clearTimeout(timer)
+}, [selectedPDL])
+
+// 4. Retour anticipé bloquant le rendu
+if (isInitializing) {
+  return <div className="pt-6 w-full" />
+}
+
+// 5. Ensuite, le check normal du cache
+if (isInitialLoadingFromCache) {
+  return (
+    <div className="pt-6 w-full">
+      <LoadingOverlay dataType="consumption" isExiting={isLoadingExiting} />
+    </div>
+  )
+}
+```
+
+#### Séquence de chargement
+
+1. `isInitializing = true` → Page vide (pas de flash)
+2. Cache IndexedDB s'hydrate (~50-100ms)
+3. `isInitializing = false` → Vérification du cache
+4. Si cache trouvé → `LoadingOverlay` avec données en cours de chargement
+5. Si pas de cache → État vide avec message "Cliquez sur Récupérer"
+
+#### Pages utilisant ce pattern
+
+- `/consumption` - `Consumption/index.tsx`
+- `/production` - `Production/index.tsx`
+- `/simulator` - `Simulator.tsx`
+
+### AnimatedSection : Transitions fluides
+
+Le composant `AnimatedSection` permet d'animer l'apparition des sections avec un effet fade-in + slide-up et des délais échelonnés.
+
+#### Composant
+
+```tsx
+// /apps/web/src/components/AnimatedSection.tsx
+interface AnimatedSectionProps {
+  children: ReactNode
+  delay?: number      // Délai en ms avant l'animation
+  isVisible: boolean  // Condition d'affichage
+  className?: string
+}
+
+export function AnimatedSection({
+  children,
+  delay = 0,
+  isVisible,
+  className = ''
+}: AnimatedSectionProps) {
+  if (!isVisible) return null
+
+  return (
+    <div
+      className={`animate-section-enter ${className}`}
+      style={{
+        animationDelay: `${delay}ms`,
+        animationFillMode: 'both'
+      }}
+    >
+      {children}
+      <style>{`
+        @keyframes sectionEnter {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-section-enter {
+          animation: sectionEnter 0.5s ease-out;
+        }
+      `}</style>
+    </div>
+  )
+}
+```
+
+#### Utilisation avec délais échelonnés
+
+```tsx
+{/* Section 1 - apparaît immédiatement */}
+<AnimatedSection isVisible={hasDataInCache || allLoadingComplete} delay={0}>
+  <StatisticsSection />
+</AnimatedSection>
+
+{/* Section 2 - apparaît après 100ms */}
+<AnimatedSection isVisible={hasDataInCache || allLoadingComplete} delay={100}>
+  <ChartsSection />
+</AnimatedSection>
+
+{/* Section 3 - apparaît après 200ms */}
+<AnimatedSection isVisible={hasDataInCache || allLoadingComplete} delay={200}>
+  <DetailedSection />
+</AnimatedSection>
+
+{/* Section 4 - apparaît après 300ms */}
+<AnimatedSection isVisible={hasDataInCache || allLoadingComplete} delay={300}>
+  <MaxPowerSection />
+</AnimatedSection>
+```
+
+#### Bénéfices UX
+
+1. **Transition fluide** : Les sections apparaissent progressivement au lieu d'un affichage brutal
+2. **Effet cascade** : Les délais créent un effet visuel agréable
+3. **Perception de performance** : L'animation masque le temps de calcul des graphiques
+4. **Code propre** : Un seul composant wrapper au lieu de styles répétés
+
+### LoadingPlaceholder : Contenu flouté en arrière-plan
+
+Depuis novembre 2025, l'écran de chargement affiche un **placeholder flouté** en arrière-plan pour donner un aperçu de la structure de la page.
+
+#### Principe
+
+Au lieu d'un écran de chargement vide, l'utilisateur voit :
+1. Une **version floutée** de la page avec des données fictives
+2. Le **spinner de chargement** centré par-dessus
+3. Une **transition fluide** vers les vraies données
+
+#### Composants
+
+**`LoadingOverlay`** - Overlay avec support du contenu flouté :
+
+```tsx
+interface LoadingOverlayProps {
+  message?: string
+  subMessage?: string
+  dataType?: 'consumption' | 'production' | 'simulation'
+  isExiting?: boolean
+  children?: ReactNode  // Contenu à afficher flouté
+  blurIntensity?: number  // Intensité du flou (défaut: 8px)
+}
+
+// Utilisation avec placeholder
+<LoadingOverlay dataType="consumption" isExiting={isLoadingExiting}>
+  <LoadingPlaceholder type="consumption" />
+</LoadingOverlay>
+```
+
+**`LoadingPlaceholder`** - Données fictives par type de page :
+
+```tsx
+interface LoadingPlaceholderProps {
+  type: 'consumption' | 'production' | 'simulation'
+}
+
+// Affiche des stats cards, graphiques et sections fictives
+<LoadingPlaceholder type="consumption" />
+```
+
+#### Structure du placeholder
+
+```tsx
+// Consumption placeholder
+<div className="space-y-6">
+  {/* Header fictif */}
+  <div className="flex items-center gap-3">
+    <TrendingUp size={32} />
+    <h1>Consommation électrique</h1>
+  </div>
+
+  {/* Stats cards fictives */}
+  <div className="grid grid-cols-4 gap-4">
+    <StatCardPlaceholder label="Consommation totale" value="12,847" unit="kWh" />
+    {/* ... */}
+  </div>
+
+  {/* Graphique fictif */}
+  <div className="card">
+    <ChartPlaceholder height={300} />
+  </div>
+</div>
+```
+
+#### Styles du flou
+
+```tsx
+// Contenu flouté en arrière-plan
+<div
+  className="pointer-events-none select-none"
+  style={{
+    filter: `blur(${blurIntensity}px)`,  // 8px par défaut
+    opacity: 0.6
+  }}
+  aria-hidden="true"
+>
+  {children}
+</div>
+
+// Overlay semi-transparent avec spinner
+<div className="absolute inset-0 flex items-center justify-center bg-white/30 dark:bg-gray-900/30 backdrop-blur-sm">
+  <LoadingCard message={message} subMessage={subMessage} />
+</div>
+```
+
+#### Bénéfices UX
+
+1. **Aperçu de la structure** : L'utilisateur sait à quoi s'attendre
+2. **Temps perçu réduit** : Le chargement semble plus rapide
+3. **Transition douce** : Pas de changement brusque de layout
+4. **Engagement** : L'écran de chargement est plus intéressant visuellement
+
+### PageTransition : Transitions fluides entre pages
+
+Le composant `PageTransition` ajoute des animations lors de la navigation entre pages.
+
+#### Animation
+
+| Phase | Durée | Effet |
+|-------|-------|-------|
+| Sortie | 150ms | Fade out + slide up + scale down |
+| Scroll | - | Scroll automatique vers le haut |
+| Entrée | 300ms | Fade in + slide down + scale up |
+
+#### Code du composant
+
+```tsx
+export function PageTransition({ children }: { children: React.ReactNode }) {
+  const location = useLocation()
+  const [displayChildren, setDisplayChildren] = useState(children)
+  const [transitionState, setTransitionState] = useState<'enter' | 'exit' | 'idle'>('idle')
+
+  useEffect(() => {
+    if (location.pathname !== previousPathRef.current) {
+      // Animation de sortie
+      setTransitionState('exit')
+
+      setTimeout(() => {
+        // Scroll vers le haut
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+
+        // Mise à jour du contenu + animation d'entrée
+        setDisplayChildren(children)
+        setTransitionState('enter')
+
+        setTimeout(() => setTransitionState('idle'), 300)
+      }, 150)
+    }
+  }, [location.pathname, children])
+
+  const getTransitionClasses = () => {
+    switch (transitionState) {
+      case 'exit': return 'opacity-0 translate-y-2 scale-[0.99]'
+      case 'enter': return 'opacity-100 translate-y-0 scale-100'
+      default: return 'opacity-100 translate-y-0 scale-100'
+    }
+  }
+
+  return (
+    <div className={`transition-all duration-200 ease-out ${getTransitionClasses()}`}>
+      {displayChildren}
+    </div>
+  )
+}
+```
+
+#### Intégration dans Layout
+
+```tsx
+// Layout.tsx
+<main>
+  <PageTransition>
+    {children}
+  </PageTransition>
+</main>
+```
+
+### Scrollbar personnalisée
+
+La barre de défilement est stylisée pour s'intégrer au design du site.
+
+#### Design
+
+| Élément | Mode clair | Mode sombre |
+|---------|------------|-------------|
+| Track (fond) | `#1e293b` (slate-800) | `#0f172a` (slate-950) |
+| Thumb (curseur) | Dégradé `#0ea5e9` → `#0284c7` | Dégradé `#38bdf8` → `#0ea5e9` |
+| Hover | Plus lumineux | Plus lumineux |
+| Active | Plus foncé | Plus foncé |
+
+#### CSS
+
+```css
+/* Toujours visible pour éviter le décalage */
+html {
+  overflow-y: scroll;
+}
+
+/* Track sombre */
+*::-webkit-scrollbar-track {
+  background: #1e293b;
+  border-radius: 5px;
+}
+
+/* Thumb avec dégradé primary */
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%);
+  border-radius: 5px;
+  border: 2px solid #1e293b;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #38bdf8 0%, #0ea5e9 100%);
+}
+```
+
+#### Bénéfices
+
+1. **Pas de décalage** : L'espace de la scrollbar est toujours réservé
+2. **Design cohérent** : Les couleurs primary du site sont utilisées
+3. **Contraste élevé** : Fond sombre + curseur lumineux = bonne visibilité
+4. **Transitions fluides** : Animations au hover et au clic
+
 ## Voir aussi
 
 - [10 - Icônes](./10-icons.md) - Pour l'icône Loader2
 - [11 - États](./11-states.md) - Pour l'état disabled
 - [07 - Boutons](./07-buttons.md) - Pour les boutons loading
+- [03 - Sections](./03-sections.md) - Pour les sections collapsibles

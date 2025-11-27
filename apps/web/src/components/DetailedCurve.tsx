@@ -4,20 +4,94 @@ import { Calendar, Download, BarChart3, Loader2, CalendarDays, CalendarRange } f
 import toast from 'react-hot-toast'
 import { useQueryClient } from '@tanstack/react-query'
 import { logger } from '@/utils/logger'
-import { ModernButton } from './ModernButton'
-import { useResponsiveDayCount } from '../hooks/useResponsiveDayCount'
+import { useResponsiveDayCount } from '@/hooks/useResponsiveDayCount'
 
-interface DetailedProductionCurveProps {
-  detailByDayData: any[]
+/**
+ * Composant de bouton moderne réutilisable
+ */
+interface ModernButtonProps {
+  variant?: 'primary' | 'secondary' | 'gradient'
+  size?: 'sm' | 'md' | 'lg'
+  icon?: React.ComponentType<{ size?: string | number; className?: string }>
+  iconPosition?: 'left' | 'right'
+  onClick?: () => void
+  disabled?: boolean
+  className?: string
+  children: React.ReactNode
+}
+
+function ModernButton({
+  variant = 'primary',
+  size = 'md',
+  icon: Icon,
+  iconPosition = 'left',
+  onClick,
+  disabled = false,
+  className = '',
+  children
+}: ModernButtonProps) {
+  const baseClasses = 'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 shadow-sm'
+
+  const variantClasses = {
+    primary: 'bg-primary-600 hover:bg-primary-700 text-white',
+    secondary: 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600',
+    gradient: 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white'
+  }
+
+  const sizeClasses = {
+    sm: 'px-3 py-2 text-sm gap-1.5',
+    md: 'px-4 py-2.5 text-sm gap-2',
+    lg: 'px-5 py-3 text-base gap-2'
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
+    >
+      {Icon && iconPosition === 'left' && <Icon size={size === 'sm' ? 16 : 18} />}
+      {children}
+      {Icon && iconPosition === 'right' && <Icon size={size === 'sm' ? 16 : 18} />}
+    </button>
+  )
+}
+
+/**
+ * Props pour le composant DetailedCurve
+ */
+export interface DetailedCurveProps {
+  /** Préfixe de la clé de cache React Query (ex: 'consumptionDetail' ou 'productionDetail') */
+  cacheKeyPrefix: 'consumptionDetail' | 'productionDetail'
+  /** Nom affiché dans la légende du graphique (ex: 'Consommation' ou 'Production') */
+  curveName: string
+  /** Données journalières à afficher */
+  detailByDayData: Array<{
+    date: string
+    data: Array<{ time: string; power: number; energyKwh: number }>
+    totalEnergyKwh: number
+  }>
+  /** PDL actuellement sélectionné */
   selectedPDL: string | null
+  /** Mode sombre actif */
   isDarkMode: boolean
+  /** Indicateur de chargement */
   isLoadingDetail: boolean
+  /** Plage de dates pour les données détaillées */
   detailDateRange: { start: string; end: string } | null
+  /** Callback pour changer l'offset de semaine */
   onWeekOffsetChange: (offset: number) => void
+  /** Offset de semaine actuel (0 = semaine courante, 1 = semaine dernière, etc.) */
   detailWeekOffset: number
 }
 
-export function DetailedProductionCurve({
+/**
+ * Composant partagé pour afficher une courbe de charge détaillée
+ * Utilisé par les pages Consumption et Production
+ */
+export function DetailedCurve({
+  cacheKeyPrefix,
+  curveName,
   detailByDayData,
   selectedPDL,
   isDarkMode,
@@ -25,18 +99,15 @@ export function DetailedProductionCurve({
   detailDateRange,
   onWeekOffsetChange,
   detailWeekOffset
-}: DetailedProductionCurveProps) {
+}: DetailedCurveProps) {
   const queryClient = useQueryClient()
   const [selectedDetailDay, setSelectedDetailDay] = useState(0)
   const [showDetailWeekComparison, setShowDetailWeekComparison] = useState(false)
   const [showDetailYearComparison, setShowDetailYearComparison] = useState(false)
-  const [showDatePicker, setShowDatePicker] = useState(false)
-  const [viewMonth, setViewMonth] = useState(() => {
-    const now = new Date()
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0))
-  })
   const [weekComparisonAvailable, setWeekComparisonAvailable] = useState(false)
   const [yearComparisonAvailable, setYearComparisonAvailable] = useState(false)
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [viewMonth, setViewMonth] = useState(new Date())
   const [hasAutoSelected, setHasAutoSelected] = useState(false)
   const [carouselStartIndex, setCarouselStartIndex] = useState(0)
   const [pendingDateSelection, setPendingDateSelection] = useState<string | null>(null)
@@ -44,75 +115,36 @@ export function DetailedProductionCurve({
   // Ref for the carousel container to measure width
   const carouselContainerRef = useRef<HTMLDivElement>(null)
 
-  // Calculate optimal number of visible days based on container width
-  const visibleDayCount = useResponsiveDayCount(carouselContainerRef, 120, 14)
+  // Calculate optimal number of visible days based on container width (max 7 days)
+  const visibleDayCount = useResponsiveDayCount(carouselContainerRef, 120, 7)
 
   // Reset auto-selection flag when PDL changes
   useEffect(() => {
     setHasAutoSelected(false)
   }, [selectedPDL])
 
-  // Auto-select most recent day with data ONLY on initial load (only once per PDL)
-  // This prevents resetting the user's selection when data refreshes
+  // Auto-select most recent day with data ONLY on initial load
+  // Note: detailDateRange can be null when data comes from cache - we only need detailByDayData
   useEffect(() => {
-    // Skip if already auto-selected OR if user has manually navigated away from default (day 0, week 0)
     const hasUserNavigated = detailWeekOffset !== 0 || selectedDetailDay !== 0
-    if (!selectedPDL || !detailDateRange || hasAutoSelected || hasUserNavigated) return
+    if (!selectedPDL || hasAutoSelected || hasUserNavigated) return
 
-    // Calculate yesterday (J-1) using UTC
-    const todayUTC = new Date()
-    const yesterdayUTC = new Date(Date.UTC(
-      todayUTC.getUTCFullYear(),
-      todayUTC.getUTCMonth(),
-      todayUTC.getUTCDate() - 1,
-      0, 0, 0, 0
-    ))
-
-    // Search backwards for up to 30 days to find the most recent day with data
-    let foundDate: Date | null = null
-    for (let daysBack = 0; daysBack < 30; daysBack++) {
-      const checkDate = new Date(Date.UTC(
-        yesterdayUTC.getUTCFullYear(),
-        yesterdayUTC.getUTCMonth(),
-        yesterdayUTC.getUTCDate() - daysBack,
-        0, 0, 0, 0
-      ))
-
-      // Format date as YYYY-MM-DD
-      const dateStr = checkDate.getUTCFullYear() + '-' +
-                     String(checkDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                     String(checkDate.getUTCDate()).padStart(2, '0')
-
-      // Check if this day has data in cache
-      const cachedData = queryClient.getQueryData(['productionDetail', selectedPDL, dateStr, dateStr]) as any
-      const hasData = !!cachedData?.data?.meter_reading?.interval_reading &&
-                      cachedData.data.meter_reading.interval_reading.length > 0
-
-      if (hasData) {
-        foundDate = checkDate
-        break
-      }
+    if (detailByDayData.length === 0) {
+      // No data yet - wait for data to load
+      return
     }
 
-    // If we found a date with data, select it
-    if (foundDate) {
-      const daysDiff = Math.floor((yesterdayUTC.getTime() - foundDate.getTime()) / (1000 * 60 * 60 * 24))
-      const newWeekOffset = Math.floor(daysDiff / 7)
-      const newDayIndex = daysDiff % 7
+    // detailByDayData is sorted newest first, so index 0 = most recent day with data
+    setSelectedDetailDay(0)
+    setHasAutoSelected(true)
 
-      onWeekOffsetChange(newWeekOffset)
-      setSelectedDetailDay(newDayIndex)
-      setHasAutoSelected(true)
-      logger.info('Auto-selected most recent day with data', {
-        date: foundDate.toISOString().split('T')[0],
-        weekOffset: newWeekOffset,
-        dayIndex: newDayIndex
-      })
-    } else {
-      // No data found, still mark as auto-selected to prevent re-running
-      setHasAutoSelected(true)
-    }
-  }, [selectedPDL, detailDateRange, queryClient, hasAutoSelected])
+    logger.info(`Auto-selected most recent day with data for ${curveName}`, {
+      date: detailByDayData[0].date,
+      totalDays: detailByDayData.length,
+      weekOffset: detailWeekOffset,
+      dayIndex: 0
+    })
+  }, [selectedPDL, detailByDayData, hasAutoSelected, detailWeekOffset, selectedDetailDay, curveName])
 
   // Auto-adjust selected day when data changes
   useEffect(() => {
@@ -127,14 +159,11 @@ export function DetailedProductionCurve({
   useEffect(() => {
     if (detailByDayData.length === 0) return
 
-    // Ensure selected day is within visible carousel window
     const carouselEndIndex = carouselStartIndex + visibleDayCount - 1
 
     if (selectedDetailDay < carouselStartIndex) {
-      // Selected day is before visible window - scroll left
       setCarouselStartIndex(selectedDetailDay)
     } else if (selectedDetailDay > carouselEndIndex) {
-      // Selected day is after visible window - scroll right
       const newStartIndex = Math.max(0, selectedDetailDay - visibleDayCount + 1)
       setCarouselStartIndex(Math.min(
         detailByDayData.length - visibleDayCount,
@@ -155,70 +184,90 @@ export function DetailedProductionCurve({
     }
   }, [pendingDateSelection, detailByDayData])
 
-  // Check for comparison data availability when selected date changes
+  // Check availability of comparison data when selected day changes
   useEffect(() => {
     if (!selectedPDL || !detailByDayData[selectedDetailDay]) {
       setWeekComparisonAvailable(false)
       setYearComparisonAvailable(false)
-      // Reset comparison toggles when no data available
-      setShowDetailWeekComparison(false)
-      setShowDetailYearComparison(false)
       return
     }
 
-    // Calculate current date using UTC
-    const todayUTC = new Date()
-    const yesterdayUTC = new Date(Date.UTC(
-      todayUTC.getUTCFullYear(),
-      todayUTC.getUTCMonth(),
-      todayUTC.getUTCDate() - 1,
-      0, 0, 0, 0
-    ))
-    const currentDate = new Date(Date.UTC(
-      yesterdayUTC.getUTCFullYear(),
-      yesterdayUTC.getUTCMonth(),
-      yesterdayUTC.getUTCDate() - (detailWeekOffset * 7) - selectedDetailDay,
-      0, 0, 0, 0
-    ))
+    // Calculate current selected date
+    const currentDateStr = detailByDayData[selectedDetailDay].date
+    const [year, month, day] = currentDateStr.split('-').map(Number)
+    const currentDateUTC = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0))
 
     // Check week-1 availability
-    const weekAgoDate = new Date(Date.UTC(
-      currentDate.getUTCFullYear(),
-      currentDate.getUTCMonth(),
-      currentDate.getUTCDate() - 7,
+    const weekAgoDateUTC = new Date(Date.UTC(
+      currentDateUTC.getUTCFullYear(),
+      currentDateUTC.getUTCMonth(),
+      currentDateUTC.getUTCDate() - 7,
       0, 0, 0, 0
     ))
-    const weekAgoDateStr = weekAgoDate.getUTCFullYear() + '-' +
-                          String(weekAgoDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                          String(weekAgoDate.getUTCDate()).padStart(2, '0')
+    const weekAgoDateStr = weekAgoDateUTC.getUTCFullYear() + '-' +
+                          String(weekAgoDateUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                          String(weekAgoDateUTC.getUTCDate()).padStart(2, '0')
 
-    const weekAgoData = queryClient.getQueryData(['productionDetail', selectedPDL, weekAgoDateStr, weekAgoDateStr]) as any
-    const weekAvailable = !!weekAgoData?.data?.meter_reading?.interval_reading
+    // Search in cache for week-1 data
+    const queryCache = queryClient.getQueryCache()
+    const allDetailQueries = queryCache.findAll({
+      queryKey: [cacheKeyPrefix, selectedPDL],
+      exact: false,
+    })
+
+    let weekAvailable = false
+    let yearAvailable = false
+
+    for (const query of allDetailQueries) {
+      const responseData = query.state.data as any
+      if (!responseData?.data?.meter_reading?.interval_reading) continue
+
+      const readings = responseData.data.meter_reading.interval_reading
+
+      // Check for week-1
+      if (!weekAvailable) {
+        const hasWeekData = readings.some((reading: any) => {
+          if (!reading.date) return false
+          const readingDate = reading.date.split(' ')[0].split('T')[0]
+          return readingDate === weekAgoDateStr
+        })
+        if (hasWeekData) weekAvailable = true
+      }
+
+      // Check for year-1
+      const yearAgoDateUTC = new Date(Date.UTC(
+        currentDateUTC.getUTCFullYear() - 1,
+        currentDateUTC.getUTCMonth(),
+        currentDateUTC.getUTCDate(),
+        0, 0, 0, 0
+      ))
+      const yearAgoDateStr = yearAgoDateUTC.getUTCFullYear() + '-' +
+                            String(yearAgoDateUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                            String(yearAgoDateUTC.getUTCDate()).padStart(2, '0')
+
+      if (!yearAvailable) {
+        const hasYearData = readings.some((reading: any) => {
+          if (!reading.date) return false
+          const readingDate = reading.date.split(' ')[0].split('T')[0]
+          return readingDate === yearAgoDateStr
+        })
+        if (hasYearData) yearAvailable = true
+      }
+
+      if (weekAvailable && yearAvailable) break
+    }
+
     setWeekComparisonAvailable(weekAvailable)
-    // Reset comparison toggle if data becomes unavailable
+    setYearComparisonAvailable(yearAvailable)
+
+    // Disable comparison if data not available
     if (!weekAvailable && showDetailWeekComparison) {
       setShowDetailWeekComparison(false)
     }
-
-    // Check year-1 availability
-    const yearAgoDate = new Date(Date.UTC(
-      currentDate.getUTCFullYear() - 1,
-      currentDate.getUTCMonth(),
-      currentDate.getUTCDate(),
-      0, 0, 0, 0
-    ))
-    const yearAgoDateStr = yearAgoDate.getUTCFullYear() + '-' +
-                          String(yearAgoDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                          String(yearAgoDate.getUTCDate()).padStart(2, '0')
-
-    const yearAgoData = queryClient.getQueryData(['productionDetail', selectedPDL, yearAgoDateStr, yearAgoDateStr]) as any
-    const yearAvailable = !!yearAgoData?.data?.meter_reading?.interval_reading
-    setYearComparisonAvailable(yearAvailable)
-    // Reset comparison toggle if data becomes unavailable
     if (!yearAvailable && showDetailYearComparison) {
       setShowDetailYearComparison(false)
     }
-  }, [selectedDetailDay, detailWeekOffset, selectedPDL, detailByDayData, queryClient, showDetailWeekComparison, showDetailYearComparison])
+  }, [selectedDetailDay, detailByDayData, selectedPDL, cacheKeyPrefix, queryClient, showDetailWeekComparison, showDetailYearComparison])
 
   const handleExport = () => {
     if (!detailByDayData[selectedDetailDay]) return
@@ -245,7 +294,7 @@ export function DetailedProductionCurve({
 
     let mergedData: MergedDataPoint[] = currentData.map((d: { time: string; power: number; energyKwh: number }) => ({ ...d }))
 
-    // Calculate current date using UTC
+    // Calculate current date in UTC
     const todayUTC = new Date()
     const yesterdayUTC = new Date(Date.UTC(
       todayUTC.getUTCFullYear(),
@@ -253,7 +302,7 @@ export function DetailedProductionCurve({
       todayUTC.getUTCDate() - 1,
       0, 0, 0, 0
     ))
-    const currentDate = new Date(Date.UTC(
+    const currentDateUTC = new Date(Date.UTC(
       yesterdayUTC.getUTCFullYear(),
       yesterdayUTC.getUTCMonth(),
       yesterdayUTC.getUTCDate() - (detailWeekOffset * 7) - selectedDetailDay,
@@ -262,35 +311,49 @@ export function DetailedProductionCurve({
 
     // Add week -1 comparison
     if (showDetailWeekComparison && selectedPDL) {
-      const weekAgoDate = new Date(Date.UTC(
-        currentDate.getUTCFullYear(),
-        currentDate.getUTCMonth(),
-        currentDate.getUTCDate() - 7,
+      const weekAgoDateUTC = new Date(Date.UTC(
+        currentDateUTC.getUTCFullYear(),
+        currentDateUTC.getUTCMonth(),
+        currentDateUTC.getUTCDate() - 7,
         0, 0, 0, 0
       ))
 
-      // Format date for cache key
-      const weekAgoDateStr = weekAgoDate.getUTCFullYear() + '-' +
-                            String(weekAgoDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                            String(weekAgoDate.getUTCDate()).padStart(2, '0')
+      const weekAgoDateStr = weekAgoDateUTC.getUTCFullYear() + '-' +
+                            String(weekAgoDateUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                            String(weekAgoDateUTC.getUTCDate()).padStart(2, '0')
 
-      logger.log('🔍 Looking for week-1 data:', {
-        currentDate: currentDate.toISOString().split('T')[0],
-        weekAgoDate: weekAgoDateStr,
-        selectedPDL
+      // Search through all cached queries to find data for this date
+      const queryCache = queryClient.getQueryCache()
+      const allDetailQueries = queryCache.findAll({
+        queryKey: [cacheKeyPrefix, selectedPDL],
+        exact: false,
       })
 
-      // Try to get data for the specific day from cache
-      const weekAgoData = queryClient.getQueryData(['productionDetail', selectedPDL, weekAgoDateStr, weekAgoDateStr]) as any
+      let weekAgoReadings: any = null
+      let weekAgoMeterData: any = null
 
-      if (weekAgoData?.data?.meter_reading?.interval_reading) {
-        logger.log('✅ Found week-1 data in cache!')
-        const readings = weekAgoData.data.meter_reading.interval_reading
-        const unit = weekAgoData.data.meter_reading.reading_type?.unit || 'W'
-        const intervalLength = weekAgoData.data.meter_reading.reading_type?.interval_length || 'PT30M'
+      for (const query of allDetailQueries) {
+        const responseData = query.state.data as any
+        if (!responseData?.data?.meter_reading?.interval_reading) continue
+
+        const allReadings = responseData.data.meter_reading.interval_reading
+        const filteredReadings = allReadings.filter((reading: any) =>
+          reading.date && reading.date.startsWith(weekAgoDateStr)
+        )
+
+        if (filteredReadings.length > 0) {
+          weekAgoReadings = filteredReadings
+          weekAgoMeterData = responseData.data.meter_reading
+          break
+        }
+      }
+
+      if (weekAgoReadings && weekAgoMeterData) {
+        const readings = weekAgoReadings
+        const unit = weekAgoMeterData.reading_type?.unit || 'W'
+        const intervalLength = weekAgoMeterData.reading_type?.interval_length || 'PT30M'
 
         const parseInterval = (interval: string): number => {
-          // Handle both P30M and PT30M formats
           const match = interval.match(/^P(?:T)?(\d+)([DHM])$/)
           if (!match) return 0.5
           const value = parseInt(match[1], 10)
@@ -309,43 +372,53 @@ export function DetailedProductionCurve({
             powerWeekAgo: power
           }
         })
-        logger.log('✅ Week-1 data added successfully')
-      } else {
-        logger.log('⚠️ No week-1 data found in cache for date:', weekAgoDateStr)
       }
     }
 
     // Add year -1 comparison
     if (showDetailYearComparison && selectedPDL) {
-      const yearAgoDate = new Date(Date.UTC(
-        currentDate.getUTCFullYear() - 1,
-        currentDate.getUTCMonth(),
-        currentDate.getUTCDate(),
+      const yearAgoDateUTC = new Date(Date.UTC(
+        currentDateUTC.getUTCFullYear() - 1,
+        currentDateUTC.getUTCMonth(),
+        currentDateUTC.getUTCDate(),
         0, 0, 0, 0
       ))
 
-      // Format date for cache key
-      const yearAgoDateStr = yearAgoDate.getUTCFullYear() + '-' +
-                            String(yearAgoDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                            String(yearAgoDate.getUTCDate()).padStart(2, '0')
+      const yearAgoDateStr = yearAgoDateUTC.getUTCFullYear() + '-' +
+                            String(yearAgoDateUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                            String(yearAgoDateUTC.getUTCDate()).padStart(2, '0')
 
-      logger.log('🔍 Looking for year-1 data:', {
-        currentDate: currentDate.toISOString().split('T')[0],
-        yearAgoDate: yearAgoDateStr,
-        selectedPDL
+      const queryCache2 = queryClient.getQueryCache()
+      const allDetailQueries2 = queryCache2.findAll({
+        queryKey: [cacheKeyPrefix, selectedPDL],
+        exact: false,
       })
 
-      // Try to get data for the specific day from cache
-      const yearAgoData = queryClient.getQueryData(['productionDetail', selectedPDL, yearAgoDateStr, yearAgoDateStr]) as any
+      let yearAgoReadings: any = null
+      let yearAgoMeterData: any = null
 
-      if (yearAgoData?.data?.meter_reading?.interval_reading) {
-        logger.log('✅ Found year-1 data in cache!')
-        const readings = yearAgoData.data.meter_reading.interval_reading
-        const unit = yearAgoData.data.meter_reading.reading_type?.unit || 'W'
-        const intervalLength = yearAgoData.data.meter_reading.reading_type?.interval_length || 'PT30M'
+      for (const query of allDetailQueries2) {
+        const responseData = query.state.data as any
+        if (!responseData?.data?.meter_reading?.interval_reading) continue
+
+        const allReadings = responseData.data.meter_reading.interval_reading
+        const filteredReadings = allReadings.filter((reading: any) =>
+          reading.date && reading.date.startsWith(yearAgoDateStr)
+        )
+
+        if (filteredReadings.length > 0) {
+          yearAgoReadings = filteredReadings
+          yearAgoMeterData = responseData.data.meter_reading
+          break
+        }
+      }
+
+      if (yearAgoReadings && yearAgoMeterData) {
+        const readings = yearAgoReadings
+        const unit = yearAgoMeterData.reading_type?.unit || 'W'
+        const intervalLength = yearAgoMeterData.reading_type?.interval_length || 'PT30M'
 
         const parseInterval = (interval: string): number => {
-          // Handle both P30M and PT30M formats
           const match = interval.match(/^P(?:T)?(\d+)([DHM])$/)
           if (!match) return 0.5
           const value = parseInt(match[1], 10)
@@ -364,9 +437,6 @@ export function DetailedProductionCurve({
             powerYearAgo: power
           }
         })
-        logger.log('✅ Year-1 data added successfully')
-      } else {
-        logger.log('⚠️ No year-1 data found in cache for date:', yearAgoDateStr)
       }
     }
 
@@ -374,7 +444,6 @@ export function DetailedProductionCurve({
   }
 
   const renderCalendar = () => {
-    // Use UTC to avoid timezone issues
     const todayUTC = new Date()
     const yesterdayUTC = new Date(Date.UTC(
       todayUTC.getUTCFullYear(),
@@ -383,12 +452,13 @@ export function DetailedProductionCurve({
       0, 0, 0, 0
     ))
 
-    const currentMonth = viewMonth.getUTCMonth()
-    const currentYear = viewMonth.getUTCFullYear()
+    const currentMonth = viewMonth.getMonth()
+    const currentYear = viewMonth.getFullYear()
 
-    const firstDayOfMonth = new Date(Date.UTC(currentYear, currentMonth, 1, 0, 0, 0, 0))
-    const startingDayOfWeek = firstDayOfMonth.getUTCDay()
-    const daysInMonth = new Date(Date.UTC(currentYear, currentMonth + 1, 0, 0, 0, 0, 0)).getUTCDate()
+    const firstDayOfMonth = new Date(currentYear, currentMonth, 1)
+    // Adjust for French calendar starting on Monday (L)
+    const startingDayOfWeek = (firstDayOfMonth.getDay() + 6) % 7
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate()
 
     const calendarDays = []
     const totalCells = Math.ceil((startingDayOfWeek + daysInMonth) / 7) * 7
@@ -398,34 +468,54 @@ export function DetailedProductionCurve({
       const isValidDay = dayNumber > 0 && dayNumber <= daysInMonth
       const dayDate = isValidDay ? new Date(Date.UTC(currentYear, currentMonth, dayNumber, 0, 0, 0, 0)) : null
 
-      const twoYearsAgo = new Date(Date.UTC(
+      const twoYearsAgoUTC = new Date(Date.UTC(
         yesterdayUTC.getUTCFullYear() - 2,
         yesterdayUTC.getUTCMonth(),
         yesterdayUTC.getUTCDate(),
         0, 0, 0, 0
       ))
-      const isInRange = dayDate && dayDate <= yesterdayUTC && dayDate >= twoYearsAgo
+      const isInRange = dayDate && dayDate <= yesterdayUTC && dayDate >= twoYearsAgoUTC
 
       // Check if data exists for this day
       let hasData = false
       if (isInRange && dayDate && selectedPDL) {
-        const dateStr = dayDate.getUTCFullYear() + '-' +
-                       String(dayDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                       String(dayDate.getUTCDate()).padStart(2, '0')
-        const cachedData = queryClient.getQueryData(['productionDetail', selectedPDL, dateStr, dateStr]) as any
-        hasData = !!cachedData?.data?.meter_reading?.interval_reading && cachedData.data.meter_reading.interval_reading.length > 0
+        const dateStr = dayDate.getFullYear() + '-' +
+                       String(dayDate.getMonth() + 1).padStart(2, '0') + '-' +
+                       String(dayDate.getDate()).padStart(2, '0')
+
+        // Search through all cached queries for this date
+        const queryCache = queryClient.getQueryCache()
+        const allDetailQueries = queryCache.findAll({
+          queryKey: [cacheKeyPrefix, selectedPDL],
+          exact: false,
+        })
+
+        for (const query of allDetailQueries) {
+          const responseData = query.state.data as any
+          if (!responseData?.data?.meter_reading?.interval_reading) continue
+
+          const readings = responseData.data.meter_reading.interval_reading
+          hasData = readings.some((reading: any) => {
+            if (!reading.date) return false
+            const readingDate = reading.date.split(' ')[0].split('T')[0]
+            return readingDate === dateStr
+          })
+
+          if (hasData) break
+        }
       }
 
-      const currentSelectedDate = new Date(Date.UTC(
+      // Calculate currently selected date in UTC
+      const currentSelectedDateUTC = new Date(Date.UTC(
         yesterdayUTC.getUTCFullYear(),
         yesterdayUTC.getUTCMonth(),
         yesterdayUTC.getUTCDate() - (detailWeekOffset * 7) - selectedDetailDay,
         0, 0, 0, 0
       ))
       const isSelected = dayDate &&
-        dayDate.getUTCDate() === currentSelectedDate.getUTCDate() &&
-        dayDate.getUTCMonth() === currentSelectedDate.getUTCMonth() &&
-        dayDate.getUTCFullYear() === currentSelectedDate.getUTCFullYear()
+        dayDate.getUTCDate() === currentSelectedDateUTC.getUTCDate() &&
+        dayDate.getUTCMonth() === currentSelectedDateUTC.getUTCMonth() &&
+        dayDate.getUTCFullYear() === currentSelectedDateUTC.getUTCFullYear()
 
       calendarDays.push({
         dayNumber,
@@ -450,7 +540,7 @@ export function DetailedProductionCurve({
 
         <div className="flex items-center justify-between mb-4">
           <button
-            onClick={() => setViewMonth(new Date(Date.UTC(currentYear, currentMonth - 1, 1, 0, 0, 0, 0)))}
+            onClick={() => setViewMonth(new Date(currentYear, currentMonth - 1, 1))}
             className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -458,10 +548,10 @@ export function DetailedProductionCurve({
             </svg>
           </button>
           <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-            {viewMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' })}
+            {viewMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
           </h3>
           <button
-            onClick={() => setViewMonth(new Date(Date.UTC(currentYear, currentMonth + 1, 1, 0, 0, 0, 0)))}
+            onClick={() => setViewMonth(new Date(currentYear, currentMonth + 1, 1))}
             className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -485,30 +575,24 @@ export function DetailedProductionCurve({
               disabled={!day.isValidDay || !day.hasData}
               onClick={() => {
                 if (day.date && day.hasData) {
-                  // Format clicked date as YYYY-MM-DD for matching (using UTC)
                   const clickedDateStr = day.date.getUTCFullYear() + '-' +
                                         String(day.date.getUTCMonth() + 1).padStart(2, '0') + '-' +
                                         String(day.date.getUTCDate()).padStart(2, '0')
 
-                  // Calculate which week this date belongs to (for loading correct week's data)
                   const daysDiff = Math.floor((yesterdayUTC.getTime() - day.date.getTime()) / (1000 * 60 * 60 * 24))
                   const newWeekOffset = Math.floor(daysDiff / 7)
 
-                  // Find the exact index of this date in the current detailByDayData
                   const currentDataIndex = detailByDayData.findIndex(d => d.date === clickedDateStr)
 
                   if (currentDataIndex !== -1) {
-                    // Date is already in current week's data, just select it
                     setSelectedDetailDay(currentDataIndex)
                     setShowDatePicker(false)
-                    toast.success(`Date sélectionnée : ${day.date.toLocaleDateString('fr-FR', { timeZone: 'UTC' })}`)
+                    toast.success(`Date sélectionnée : ${day.date.toLocaleDateString('fr-FR')}`)
                   } else {
-                    // Date is in a different week, load that week
-                    // Store the clicked date to select it once data loads
                     setPendingDateSelection(clickedDateStr)
                     onWeekOffsetChange(newWeekOffset)
                     setShowDatePicker(false)
-                    toast.success(`Chargement de ${day.date.toLocaleDateString('fr-FR', { timeZone: 'UTC' })}...`)
+                    toast.success(`Chargement de ${day.date.toLocaleDateString('fr-FR')}...`)
                   }
                 }
               }}
@@ -541,33 +625,21 @@ export function DetailedProductionCurve({
             </label>
           </div>
 
-          {/* Date display button - enlarged */}
+          {/* Date display button */}
           <div className="relative flex-1">
             <button
               onClick={() => setShowDatePicker(!showDatePicker)}
               className="w-full px-4 py-3 rounded-xl border-2 border-primary-300 dark:border-primary-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 cursor-pointer hover:border-primary-400 dark:hover:border-primary-600 text-center"
             >
               {(() => {
-                if (!detailDateRange) return 'Sélectionner...'
-                const todayUTC = new Date()
-                const yesterdayUTC = new Date(Date.UTC(
-                  todayUTC.getUTCFullYear(),
-                  todayUTC.getUTCMonth(),
-                  todayUTC.getUTCDate() - 1,
-                  0, 0, 0, 0
-                ))
-                const selectedDate = new Date(Date.UTC(
-                  yesterdayUTC.getUTCFullYear(),
-                  yesterdayUTC.getUTCMonth(),
-                  yesterdayUTC.getUTCDate() - (detailWeekOffset * 7) - selectedDetailDay,
-                  0, 0, 0, 0
-                ))
+                // Only check if data exists - detailDateRange can be null if data comes from cache
+                if (!detailByDayData[selectedDetailDay]) return 'Sélectionner...'
+                const selectedDate = new Date(detailByDayData[selectedDetailDay].date + 'T00:00:00')
                 return selectedDate.toLocaleDateString('fr-FR', {
                   weekday: 'long',
                   day: 'numeric',
                   month: 'long',
-                  year: 'numeric',
-                  timeZone: 'UTC'
+                  year: 'numeric'
                 })
               })()}
             </button>
@@ -575,7 +647,6 @@ export function DetailedProductionCurve({
             {/* Custom date picker dropdown */}
             {showDatePicker && (
               <>
-                {/* Overlay to close on outside click */}
                 <div
                   className="fixed inset-0 z-40"
                   onClick={() => setShowDatePicker(false)}
@@ -587,39 +658,75 @@ export function DetailedProductionCurve({
             )}
           </div>
 
-          {/* Quick access buttons - responsive grid on mobile */}
+          {/* Quick access buttons */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 lg:flex lg:items-center lg:gap-3 lg:flex-shrink-0">
             <ModernButton
               variant="secondary"
-              size="sm"
+              size="md"
               onClick={() => {
-                onWeekOffsetChange(0)
+                // "Hier" = le jour le plus récent (index 0 car trié du plus récent au plus ancien)
                 setSelectedDetailDay(0)
                 toast.success("Retour à la veille")
               }}
+              className="w-full sm:w-auto"
             >
               Hier
             </ModernButton>
             <ModernButton
               variant="secondary"
-              size="sm"
+              size="md"
               onClick={() => {
-                onWeekOffsetChange(1)
-                setSelectedDetailDay(0)
-                toast.success("Semaine dernière sélectionnée")
+                // Calculer la date d'il y a 7 jours (utilise heure locale pour la perspective utilisateur)
+                const now = new Date()
+                const targetDate = new Date(
+                  now.getFullYear(),
+                  now.getMonth(),
+                  now.getDate() - 8, // -1 pour hier, -7 pour semaine dernière = -8
+                  12, 0, 0, 0  // Utiliser midi pour éviter les problèmes DST
+                )
+                const targetDateStr = targetDate.getFullYear() + '-' +
+                  String(targetDate.getMonth() + 1).padStart(2, '0') + '-' +
+                  String(targetDate.getDate()).padStart(2, '0')
+
+                // Chercher cette date dans les données
+                const targetIndex = detailByDayData.findIndex(d => d.date === targetDateStr)
+                if (targetIndex !== -1) {
+                  setSelectedDetailDay(targetIndex)
+                  toast.success("Semaine dernière sélectionnée")
+                } else {
+                  toast.error("Données non disponibles pour cette date")
+                }
               }}
+              className="w-full sm:w-auto"
             >
               Semaine dernière
             </ModernButton>
             <ModernButton
               variant="secondary"
-              size="sm"
+              size="md"
               onClick={() => {
-                const weeksInYear = 52
-                onWeekOffsetChange(weeksInYear)
-                setSelectedDetailDay(0)
-                toast.success("Il y a un an sélectionné")
+                // Calculer la date d'il y a 1 an (utilise heure locale pour la perspective utilisateur)
+                const now = new Date()
+                const targetDate = new Date(
+                  now.getFullYear() - 1,
+                  now.getMonth(),
+                  now.getDate() - 1, // -1 pour partir d'hier
+                  12, 0, 0, 0  // Utiliser midi pour éviter les problèmes DST
+                )
+                const targetDateStr = targetDate.getFullYear() + '-' +
+                  String(targetDate.getMonth() + 1).padStart(2, '0') + '-' +
+                  String(targetDate.getDate()).padStart(2, '0')
+
+                // Chercher cette date dans les données
+                const targetIndex = detailByDayData.findIndex(d => d.date === targetDateStr)
+                if (targetIndex !== -1) {
+                  setSelectedDetailDay(targetIndex)
+                  toast.success("Il y a un an sélectionné")
+                } else {
+                  toast.error("Données non disponibles pour cette date")
+                }
               }}
+              className="w-full sm:w-auto"
             >
               Il y a un an
             </ModernButton>
@@ -627,21 +734,19 @@ export function DetailedProductionCurve({
         </div>
       </div>
 
-      {/* Day selector tabs with navigation and export button - hidden on smaller screens */}
+      {/* Day selector tabs with carousel navigation */}
       <div ref={carouselContainerRef} className="hidden lg:flex lg:flex-row lg:items-center lg:justify-between gap-2 mb-4">
         {/* Left side: navigation and tabs */}
         <div className="flex items-center gap-2 flex-1 overflow-hidden py-3 px-2">
           {/* Left button */}
           <button
             onClick={() => {
-              // Navigate to previous day or previous week
               if (selectedDetailDay === 0 && detailWeekOffset > 0) {
                 onWeekOffsetChange(Math.max(0, detailWeekOffset - 1))
                 setSelectedDetailDay(999)
                 toast.success('Chargement de la semaine suivante...')
               } else if (selectedDetailDay > 0) {
                 setSelectedDetailDay(prev => prev - 1)
-                // Auto-scroll carousel if needed
                 if (selectedDetailDay === carouselStartIndex) {
                   setCarouselStartIndex(Math.max(0, carouselStartIndex - 1))
                 }
@@ -660,18 +765,17 @@ export function DetailedProductionCurve({
             )}
           </button>
 
-          {/* Tabs container - only show visibleDayCount days at a time */}
+          {/* Tabs container - carousel with visible days */}
           <div className="flex-1 flex gap-2 overflow-hidden">
             {detailByDayData
               .slice(carouselStartIndex, carouselStartIndex + visibleDayCount)
               .map((dayData, displayIdx) => {
                 const idx = carouselStartIndex + displayIdx
-                const date = new Date(dayData.date + 'T00:00:00Z') // Parse as UTC
+                const date = new Date(dayData.date)
                 const dayLabel = date.toLocaleDateString('fr-FR', {
                   weekday: 'short',
                   day: '2-digit',
-                  month: 'short',
-                  timeZone: 'UTC'
+                  month: 'short'
                 })
 
                 return (
@@ -698,15 +802,13 @@ export function DetailedProductionCurve({
           {/* Right button */}
           <button
             onClick={() => {
-              // Navigate to next day or previous week
               if (selectedDetailDay === detailByDayData.length - 1) {
                 onWeekOffsetChange(detailWeekOffset + 1)
                 setSelectedDetailDay(0)
-                setCarouselStartIndex(0) // Reset carousel to start for new week
+                setCarouselStartIndex(0)
                 toast.success('Chargement de la semaine précédente...')
               } else {
                 setSelectedDetailDay(prev => prev + 1)
-                // Auto-scroll carousel if needed
                 const nextDayIndex = selectedDetailDay + 1
                 const carouselEndIndex = carouselStartIndex + visibleDayCount - 1
                 if (nextDayIndex > carouselEndIndex) {
@@ -734,17 +836,14 @@ export function DetailedProductionCurve({
         {/* Right side: Comparison and Export buttons */}
         <div className="flex items-center gap-2 justify-end flex-wrap">
           <button
-            onClick={() => {
-              if (yearComparisonAvailable) {
-                setShowDetailYearComparison(!showDetailYearComparison)
-              }
-            }}
+            onClick={() => yearComparisonAvailable && setShowDetailYearComparison(!showDetailYearComparison)}
             disabled={!yearComparisonAvailable}
+            title={!yearComparisonAvailable ? 'Données non disponibles pour cette période' : ''}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 shadow-sm ${
-              showDetailYearComparison && yearComparisonAvailable
+              !yearComparisonAvailable
+                ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-50'
+                : showDetailYearComparison
                 ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md'
-                : !yearComparisonAvailable
-                ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-gray-600 cursor-not-allowed opacity-50'
                 : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
             }`}
           >
@@ -752,17 +851,14 @@ export function DetailedProductionCurve({
             <span>Année -1</span>
           </button>
           <button
-            onClick={() => {
-              if (weekComparisonAvailable) {
-                setShowDetailWeekComparison(!showDetailWeekComparison)
-              }
-            }}
+            onClick={() => weekComparisonAvailable && setShowDetailWeekComparison(!showDetailWeekComparison)}
             disabled={!weekComparisonAvailable}
+            title={!weekComparisonAvailable ? 'Données non disponibles pour cette période' : ''}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 shadow-sm ${
-              showDetailWeekComparison && weekComparisonAvailable
+              !weekComparisonAvailable
+                ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-50'
+                : showDetailWeekComparison
                 ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md'
-                : !weekComparisonAvailable
-                ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-gray-600 cursor-not-allowed opacity-50'
                 : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
             }`}
           >
@@ -784,17 +880,14 @@ export function DetailedProductionCurve({
       {/* Smaller screens: Comparison and Export buttons - centered */}
       <div className="lg:hidden flex items-center gap-2 justify-center flex-wrap mb-4">
         <button
-          onClick={() => {
-            if (yearComparisonAvailable) {
-              setShowDetailYearComparison(!showDetailYearComparison)
-            }
-          }}
+          onClick={() => yearComparisonAvailable && setShowDetailYearComparison(!showDetailYearComparison)}
           disabled={!yearComparisonAvailable}
+          title={!yearComparisonAvailable ? 'Données non disponibles pour cette période' : ''}
           className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 shadow-sm ${
-            showDetailYearComparison && yearComparisonAvailable
+            !yearComparisonAvailable
+              ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-50'
+              : showDetailYearComparison
               ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md'
-              : !yearComparisonAvailable
-              ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-gray-600 cursor-not-allowed opacity-50'
               : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
           }`}
         >
@@ -802,17 +895,14 @@ export function DetailedProductionCurve({
           <span>Année -1</span>
         </button>
         <button
-          onClick={() => {
-            if (weekComparisonAvailable) {
-              setShowDetailWeekComparison(!showDetailWeekComparison)
-            }
-          }}
+          onClick={() => weekComparisonAvailable && setShowDetailWeekComparison(!showDetailWeekComparison)}
           disabled={!weekComparisonAvailable}
+          title={!weekComparisonAvailable ? 'Données non disponibles pour cette période' : ''}
           className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 shadow-sm ${
-            showDetailWeekComparison && weekComparisonAvailable
+            !weekComparisonAvailable
+              ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-50'
+              : showDetailWeekComparison
               ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md'
-              : !weekComparisonAvailable
-              ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-gray-600 cursor-not-allowed opacity-50'
               : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
           }`}
         >
@@ -838,7 +928,7 @@ export function DetailedProductionCurve({
               <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
                 {detailByDayData[selectedDetailDay].data.length} points de mesure pour cette journée
               </div>
-              {/* Warning message if viewing yesterday (J-1) and no data yet */}
+              {/* Warning message if viewing yesterday (J-1) and incomplete data */}
               {(() => {
                 const todayUTC = new Date()
                 const yesterdayUTC = new Date(Date.UTC(
@@ -848,20 +938,18 @@ export function DetailedProductionCurve({
                   0, 0, 0, 0
                 ))
 
-                // Get the actual date from the data (parse as UTC)
-                const selectedDataDate = new Date(detailByDayData[selectedDetailDay].date + 'T00:00:00Z')
+                const dateStr = detailByDayData[selectedDetailDay].date
+                const [year, month, day] = dateStr.split('-').map(Number)
+                const selectedDataDateUTC = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0))
 
-                // Check if selected date is J-1 (yesterday)
-                const isYesterday = selectedDataDate.getTime() === yesterdayUTC.getTime()
-
-                // Check if we have data (less than expected 48 points for a full day)
+                const isYesterday = selectedDataDateUTC.getTime() === yesterdayUTC.getTime()
                 const hasIncompleteData = detailByDayData[selectedDetailDay].data.length < 40
 
                 if (isYesterday && hasIncompleteData) {
                   return (
                     <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                       <p className="text-sm text-blue-800 dark:text-blue-200">
-                        <strong>ℹ️ Information :</strong> Les données de la veille (J-1) sont disponibles au plus tard à 11h le lendemain. Si vous ne voyez pas encore les données complètes, elles seront mises à jour automatiquement dans les prochaines heures.
+                        <strong>Information :</strong> Les données de la veille (J-1) sont disponibles au plus tard à 11h le lendemain. Si vous ne voyez pas encore les données complètes, elles seront mises à jour automatiquement dans les prochaines heures.
                       </p>
                     </div>
                   )
@@ -915,7 +1003,7 @@ export function DetailedProductionCurve({
                     strokeWidth={2}
                     dot={{ fill: '#3B82F6', r: 3 }}
                     activeDot={{ r: 6 }}
-                    name="Production (kW)"
+                    name={`${curveName} (kW)`}
                   />
                   {showDetailWeekComparison && (
                     <Line
@@ -952,9 +1040,8 @@ export function DetailedProductionCurve({
                 {detailDateRange && (
                   <>
                     <p className="text-xs text-gray-500 dark:text-gray-500">
-                      Période demandée : du {new Date(detailDateRange.start + 'T00:00:00Z').toLocaleDateString('fr-FR', { timeZone: 'UTC' })} au {new Date(detailDateRange.end + 'T00:00:00Z').toLocaleDateString('fr-FR', { timeZone: 'UTC' })}
+                      Période demandée : du {new Date(detailDateRange.start).toLocaleDateString('fr-FR')} au {new Date(detailDateRange.end).toLocaleDateString('fr-FR')}
                     </p>
-                    {/* Check if we're looking at yesterday (J-1) */}
                     {(() => {
                       if (!detailDateRange) return null
 
@@ -966,18 +1053,19 @@ export function DetailedProductionCurve({
                         0, 0, 0, 0
                       ))
 
-                      // Parse the date range to check if we're viewing yesterday (as UTC)
-                      const startDate = new Date(detailDateRange.start + 'T00:00:00Z')
-                      const endDate = new Date(detailDateRange.end + 'T00:00:00Z')
+                      const startParts = detailDateRange.start.split('-').map(Number)
+                      const startDateUTC = new Date(Date.UTC(startParts[0], startParts[1] - 1, startParts[2], 0, 0, 0, 0))
 
-                      // Check if the range includes yesterday
-                      const isYesterday = (startDate.getTime() <= yesterdayUTC.getTime()) && (yesterdayUTC.getTime() <= endDate.getTime())
+                      const endParts = detailDateRange.end.split('-').map(Number)
+                      const endDateUTC = new Date(Date.UTC(endParts[0], endParts[1] - 1, endParts[2], 0, 0, 0, 0))
+
+                      const isYesterday = (startDateUTC.getTime() <= yesterdayUTC.getTime()) && (yesterdayUTC.getTime() <= endDateUTC.getTime())
 
                       if (isYesterday) {
                         return (
                           <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg max-w-md">
                             <p className="text-sm text-blue-800 dark:text-blue-200">
-                              <strong>ℹ️ Information :</strong> Les données de la veille (J-1) sont disponibles au plus tard à 11h le lendemain. Si vous ne voyez pas encore les données, elles seront mises à jour automatiquement dans les prochaines heures.
+                              <strong>Information :</strong> Les données de la veille (J-1) sont disponibles au plus tard à 11h le lendemain. Si vous ne voyez pas encore les données, elles seront mises à jour automatiquement dans les prochaines heures.
                             </p>
                           </div>
                         )
@@ -1001,7 +1089,7 @@ export function DetailedProductionCurve({
               </p>
               {detailDateRange && (
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Du {new Date(detailDateRange.start + 'T00:00:00Z').toLocaleDateString('fr-FR', { timeZone: 'UTC' })} au {new Date(detailDateRange.end + 'T00:00:00Z').toLocaleDateString('fr-FR', { timeZone: 'UTC' })}
+                  Du {new Date(detailDateRange.start).toLocaleDateString('fr-FR')} au {new Date(detailDateRange.end).toLocaleDateString('fr-FR')}
                 </p>
               )}
             </div>

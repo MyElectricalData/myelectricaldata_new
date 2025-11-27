@@ -36,6 +36,31 @@ else
     echo -e "${YELLOW}⚠️  Warning: $WATCH_SCRIPT not found, skipping hot reload${NC}"
 fi
 
+# Démarrer le serveur de documentation
+DOCS_PID_FILE="$LOG_DIR/docs.pid"
+DOCS_LOG_FILE="$LOG_DIR/docs.log"
+
+if [ -f "$DOCS_PID_FILE" ]; then
+    echo -e "${YELLOW}⚠️  Stopping existing docs server...${NC}"
+    kill $(cat "$DOCS_PID_FILE") 2>/dev/null || true
+    rm -f "$DOCS_PID_FILE"
+fi
+
+if [ -d "apps/docs" ] && [ -f "apps/docs/package.json" ]; then
+    echo -e "${GREEN}📚 Starting documentation server...${NC}"
+    cd apps/docs
+    if [ ! -d "node_modules" ]; then
+        echo -e "${YELLOW}📦 Installing docs dependencies...${NC}"
+        npm install > /dev/null 2>&1
+    fi
+    nohup npm start -- --port 8002 > "../../$DOCS_LOG_FILE" 2>&1 & echo $! > "../../$DOCS_PID_FILE"
+    cd ../..
+    echo -e "${GREEN}✅ Docs server PID: $(cat $DOCS_PID_FILE)${NC}"
+    echo -e "${GREEN}📖 Documentation: http://localhost:8002${NC}"
+else
+    echo -e "${YELLOW}⚠️  Warning: apps/docs not found, skipping documentation${NC}"
+fi
+
 echo -e "${GREEN}🐳 Starting Docker services with colors...${NC}"
 
 # Forcer TTY et les couleurs

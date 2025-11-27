@@ -67,6 +67,36 @@ export interface ConsumptionResponse {
   message?: string
 }
 
+// Meter reading data structure from Enedis API
+export interface MeterReading {
+  usage_point_id?: string
+  start?: string
+  end?: string
+  reading_type?: {
+    aggregate?: string
+    unit?: string
+    interval_length?: string
+    measurement_kind?: string
+  }
+  interval_reading?: Array<{
+    date: string
+    value: string | number
+  }>
+}
+
+// API response with meter reading data
+export interface ConsumptionAPIResponse {
+  meter_reading?: MeterReading
+}
+
+export interface MaxPowerAPIResponse {
+  meter_reading?: MeterReading
+}
+
+export interface DetailAPIResponse {
+  meter_reading?: MeterReading
+}
+
 // Component props types
 export interface PDLSelectorProps {
   pdls: PDL[]

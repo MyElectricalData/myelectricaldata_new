@@ -1,3 +1,9 @@
+---
+sidebar_position: 1
+title: Design System
+description: Guide complet du design system MyElectricalData
+---
+
 # Guide de Design - MyElectricalData
 
 Documentation complète du design system de l'application MyElectricalData.

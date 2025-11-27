@@ -20,7 +20,7 @@ export function useConsumptionCalcs({
   selectedPDL,
   selectedPDLDetails,
   hcHpCalculationTrigger,
-  detailDateRange
+  detailDateRange: _detailDateRange // Not used anymore - show all cached data for fluid navigation
 }: UseConsumptionCalcsProps) {
   const queryClient = useQueryClient()
   const [selectedPowerYear, setSelectedPowerYear] = useState(0)
@@ -312,7 +312,7 @@ export function useConsumptionCalcs({
 
   // Process detailed consumption data by day (load curve)
   const detailByDayData = useMemo(() => {
-    if (!detailData?.meter_reading?.interval_reading || !detailDateRange) {
+    if (!detailData?.meter_reading?.interval_reading) {
       return []
     }
 
@@ -345,7 +345,6 @@ export function useConsumptionCalcs({
 
     const intervalMultiplier = getIntervalMultiplier(intervalLength, unit)
     const intervalDurationHours = parseIntervalToDurationInHours(intervalLength)
-    const intervalDurationMinutes = intervalDurationHours * 60
 
     // Group readings by day
     const dayMap: Record<string, any[]> = {}
@@ -396,13 +395,8 @@ export function useConsumptionCalcs({
       })
     })
 
-    // Filter by detailDateRange
-    const startDateStr = detailDateRange.start
-    const endDateStr = detailDateRange.end
-
-    // Convert to array and sort by date
+    // Convert to array and sort by date (no filter by detailDateRange - show all cached data for fluid navigation)
     const days = Object.entries(dayMap)
-      .filter(([date]) => date >= startDateStr && date <= endDateStr) // ✅ Filter by date range
       .map(([date, data]) => ({
         date,
         data: data.sort((a, b) => a.time.localeCompare(b.time)),
@@ -412,7 +406,7 @@ export function useConsumptionCalcs({
       .sort((a, b) => b.date.localeCompare(a.date)) // Sort newest first
 
     return days
-  }, [detailData, detailDateRange])
+  }, [detailData])
 
   // Calculate HC/HP statistics by year from all cached detailed data
   const hcHpByYear = useMemo(() => {

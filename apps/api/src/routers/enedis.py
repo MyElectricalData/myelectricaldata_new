@@ -928,7 +928,9 @@ async def get_consumption_detail_batch(
 
     log_if_debug(current_user, "info", f"[BATCH] Requested {len(all_dates)} days from {start} to {end}", pdl=usage_point_id)
 
-    # Check cache for each day (ultra-granular cache check)
+    # Check cache for each day using OPTIMIZED per-day cache keys
+    # OLD format (slow): consumption:detail:{pdl}:{date}T{hour}:{minute} = single reading (312 queries/day)
+    # NEW format (fast): consumption:detail:daily:{pdl}:{date} = all readings for day (1 query/day)
     cached_readings = []
     missing_dates = []
     cache_hit_count = 0
@@ -937,57 +939,27 @@ async def get_consumption_detail_batch(
 
     if use_cache:
         for date_str in all_dates:
-            day_readings = []
+            # Try NEW per-day cache format first (fast: 1 query per day)
+            daily_cache_key = f"consumption:detail:daily:{usage_point_id}:{date_str}"
+            daily_cached = await cache_service.get(daily_cache_key, current_user.client_secret)
 
-            # Check all possible timestamps based on interval_length
-            # PT10M: 144 readings/day (every 10 min)
-            # PT15M: 96 readings/day (every 15 min)
-            # PT30M: 48 readings/day (every 30 min)
-            # PT60M: 24 readings/day (every 60 min)
+            if daily_cached and isinstance(daily_cached, dict) and "readings" in daily_cached:
+                day_readings = daily_cached["readings"]
+                expected_count = daily_cached.get("expected_count", 48)
+                min_required = int(expected_count * 0.9)
 
-            # Try all possible intervals: 10, 15, 30, 60 minutes
-            for interval_minutes in [10, 15, 30, 60]:
-                hour = 0
-                minute = 0
-                while hour < 24:
-                    timestamp = f"{date_str}T{hour:02d}:{minute:02d}"
-                    cache_key = f"consumption:detail:{usage_point_id}:{timestamp}"
-                    cached_reading = await cache_service.get(cache_key, current_user.client_secret)
-                    if cached_reading:
-                        day_readings.append(cached_reading)
-
-                    # Increment time by interval
-                    minute += interval_minutes
-                    if minute >= 60:
-                        hour += 1
-                        minute = 0
-
-            # Detect expected count based on interval_length from first reading
-            expected_count = 24  # Default to PT60M
-            if day_readings:
-                first_reading = day_readings[0]
-                interval_length = first_reading.get("interval_length", "PT60M")
-                if interval_length == "PT10M":
-                    expected_count = 144
-                elif interval_length == "PT15M":
-                    expected_count = 96
-                elif interval_length == "PT30M":
-                    expected_count = 48
-                elif interval_length == "PT60M":
-                    expected_count = 24
-
-            # Consider day complete if we have >= 90% of expected readings (allow some missing data)
-            min_required = int(expected_count * 0.9)
-
-            if len(day_readings) >= min_required:
-                cached_readings.extend(day_readings)
-                cache_hit_count += 1
-            elif len(day_readings) > 0:
-                # Partial data - still add to cached but mark day as missing for re-fetch
-                cached_readings.extend(day_readings)
-                cache_partial_count += 1
-                missing_dates.append(date_str)
+                if len(day_readings) >= min_required:
+                    cached_readings.extend(day_readings)
+                    cache_hit_count += 1
+                elif len(day_readings) > 0:
+                    cached_readings.extend(day_readings)
+                    cache_partial_count += 1
+                    missing_dates.append(date_str)
+                else:
+                    cache_miss_count += 1
+                    missing_dates.append(date_str)
             else:
+                # Cache miss with new format
                 cache_miss_count += 1
                 missing_dates.append(date_str)
     else:
@@ -1222,20 +1194,48 @@ async def get_consumption_detail_batch(
                 elif "interval_reading" in chunk_data:
                     readings = chunk_data["interval_reading"]
 
-            # Cache each reading individually by timestamp
+            # Cache readings grouped by day (OPTIMIZED: 1 cache entry per day instead of per timestamp)
             if use_cache and readings:
+                # Group readings by date
+                readings_by_date: dict[str, list] = {}
+                interval_length = "PT30M"  # Default
+
                 for reading in readings:
                     timestamp = reading.get("date", "")
                     if timestamp:
-                        # Normalize timestamp format
-                        timestamp = timestamp.replace(" ", "T")
-                        if len(timestamp) > 16:
-                            timestamp = timestamp[:16]
+                        # Extract date part (YYYY-MM-DD)
+                        date_part = timestamp.replace("T", " ").split(" ")[0]
+                        if date_part not in readings_by_date:
+                            readings_by_date[date_part] = []
+                        readings_by_date[date_part].append(reading)
 
-                        cache_key = f"consumption:detail:{usage_point_id}:{timestamp}"
-                        await cache_service.set(cache_key, reading, current_user.client_secret)
+                        # Detect interval length from first reading
+                        if "interval_length" in reading:
+                            interval_length = reading["interval_length"]
 
-                log_if_debug(current_user, "debug", f"[BATCH CACHE SET] {chunk_start} to {chunk_end} ({len(readings)} readings)", pdl=usage_point_id)
+                # Determine expected count based on interval
+                expected_count = 48  # Default PT30M
+                if interval_length == "PT10M":
+                    expected_count = 144
+                elif interval_length == "PT15M":
+                    expected_count = 96
+                elif interval_length == "PT30M":
+                    expected_count = 48
+                elif interval_length == "PT60M":
+                    expected_count = 24
+
+                # Store each day's readings as a single cache entry
+                for date_str, day_readings in readings_by_date.items():
+                    daily_cache_key = f"consumption:detail:daily:{usage_point_id}:{date_str}"
+                    cache_data = {
+                        "readings": day_readings,
+                        "expected_count": expected_count,
+                        "interval_length": interval_length,
+                        "count": len(day_readings)
+                    }
+                    await cache_service.set(daily_cache_key, cache_data, current_user.client_secret)
+
+                log_if_debug(current_user, "debug", f"[BATCH CACHE SET] {chunk_start} to {chunk_end} ({len(readings)} readings in {len(readings_by_date)} days)", pdl=usage_point_id)
 
             all_readings.extend(readings)
             fetched_count += 1
@@ -1542,7 +1542,9 @@ async def get_production_detail_batch(
 
     log_if_debug(current_user, "info", f"[BATCH PRODUCTION] Requested {len(all_dates)} days from {start} to {end}", pdl=usage_point_id)
 
-    # Check cache for each day (ultra-granular cache check)
+    # Check cache for each day using OPTIMIZED per-day cache keys
+    # OLD format (slow): production:detail:{pdl}:{date}T{hour}:{minute} = single reading (312 queries/day)
+    # NEW format (fast): production:detail:daily:{pdl}:{date} = all readings for day (1 query/day)
     cached_readings = []
     missing_dates = []
     cache_hit_count = 0
@@ -1551,57 +1553,27 @@ async def get_production_detail_batch(
 
     if use_cache:
         for date_str in all_dates:
-            day_readings = []
+            # Try NEW per-day cache format first (fast: 1 query per day)
+            daily_cache_key = f"production:detail:daily:{usage_point_id}:{date_str}"
+            daily_cached = await cache_service.get(daily_cache_key, current_user.client_secret)
 
-            # Check all possible timestamps based on interval_length
-            # PT10M: 144 readings/day (every 10 min)
-            # PT15M: 96 readings/day (every 15 min)
-            # PT30M: 48 readings/day (every 30 min)
-            # PT60M: 24 readings/day (every 60 min)
+            if daily_cached and isinstance(daily_cached, dict) and "readings" in daily_cached:
+                day_readings = daily_cached["readings"]
+                expected_count = daily_cached.get("expected_count", 48)
+                min_required = int(expected_count * 0.9)
 
-            # Try all possible intervals: 10, 15, 30, 60 minutes
-            for interval_minutes in [10, 15, 30, 60]:
-                hour = 0
-                minute = 0
-                while hour < 24:
-                    timestamp = f"{date_str}T{hour:02d}:{minute:02d}"
-                    cache_key = f"production:detail:{usage_point_id}:{timestamp}"
-                    cached_reading = await cache_service.get(cache_key, current_user.client_secret)
-                    if cached_reading:
-                        day_readings.append(cached_reading)
-
-                    # Increment time by interval
-                    minute += interval_minutes
-                    if minute >= 60:
-                        hour += 1
-                        minute = 0
-
-            # Detect expected count based on interval_length from first reading
-            expected_count = 24  # Default to PT60M
-            if day_readings:
-                first_reading = day_readings[0]
-                interval_length = first_reading.get("interval_length", "PT60M")
-                if interval_length == "PT10M":
-                    expected_count = 144
-                elif interval_length == "PT15M":
-                    expected_count = 96
-                elif interval_length == "PT30M":
-                    expected_count = 48
-                elif interval_length == "PT60M":
-                    expected_count = 24
-
-            # Consider day complete if we have >= 90% of expected readings (allow some missing data)
-            min_required = int(expected_count * 0.9)
-
-            if len(day_readings) >= min_required:
-                cached_readings.extend(day_readings)
-                cache_hit_count += 1
-            elif len(day_readings) > 0:
-                # Partial data - still add to cached but mark day as missing for re-fetch
-                cached_readings.extend(day_readings)
-                cache_partial_count += 1
-                missing_dates.append(date_str)
+                if len(day_readings) >= min_required:
+                    cached_readings.extend(day_readings)
+                    cache_hit_count += 1
+                elif len(day_readings) > 0:
+                    cached_readings.extend(day_readings)
+                    cache_partial_count += 1
+                    missing_dates.append(date_str)
+                else:
+                    cache_miss_count += 1
+                    missing_dates.append(date_str)
             else:
+                # Cache miss with new format
                 cache_miss_count += 1
                 missing_dates.append(date_str)
     else:
@@ -1831,20 +1803,48 @@ async def get_production_detail_batch(
                 elif "interval_reading" in chunk_data:
                     readings = chunk_data["interval_reading"]
 
-            # Cache each reading individually by timestamp
+            # Cache readings grouped by day (OPTIMIZED: 1 cache entry per day instead of per timestamp)
             if use_cache and readings:
+                # Group readings by date
+                readings_by_date: dict[str, list] = {}
+                interval_length = "PT30M"  # Default
+
                 for reading in readings:
                     timestamp = reading.get("date", "")
                     if timestamp:
-                        # Normalize timestamp format
-                        timestamp = timestamp.replace(" ", "T")
-                        if len(timestamp) > 16:
-                            timestamp = timestamp[:16]
+                        # Extract date part (YYYY-MM-DD)
+                        date_part = timestamp.replace("T", " ").split(" ")[0]
+                        if date_part not in readings_by_date:
+                            readings_by_date[date_part] = []
+                        readings_by_date[date_part].append(reading)
 
-                        cache_key = f"production:detail:{usage_point_id}:{timestamp}"
-                        await cache_service.set(cache_key, reading, current_user.client_secret)
+                        # Detect interval length from first reading
+                        if "interval_length" in reading:
+                            interval_length = reading["interval_length"]
 
-                log_if_debug(current_user, "debug", f"[BATCH PRODUCTION CACHE SET] {chunk_start} to {chunk_end} ({len(readings)} readings)", pdl=usage_point_id)
+                # Determine expected count based on interval
+                expected_count = 48  # Default PT30M
+                if interval_length == "PT10M":
+                    expected_count = 144
+                elif interval_length == "PT15M":
+                    expected_count = 96
+                elif interval_length == "PT30M":
+                    expected_count = 48
+                elif interval_length == "PT60M":
+                    expected_count = 24
+
+                # Store each day's readings as a single cache entry
+                for date_str, day_readings in readings_by_date.items():
+                    daily_cache_key = f"production:detail:daily:{usage_point_id}:{date_str}"
+                    cache_data = {
+                        "readings": day_readings,
+                        "expected_count": expected_count,
+                        "interval_length": interval_length,
+                        "count": len(day_readings)
+                    }
+                    await cache_service.set(daily_cache_key, cache_data, current_user.client_secret)
+
+                log_if_debug(current_user, "debug", f"[BATCH PRODUCTION CACHE SET] {chunk_start} to {chunk_end} ({len(readings)} readings in {len(readings_by_date)} days)", pdl=usage_point_id)
 
             all_readings.extend(readings)
             fetched_count += 1

@@ -199,6 +199,34 @@ Si la page charge des données :
 - [ ] Composant de progression affiché si cache détecté
 - [ ] Message adapté selon cache (chargement vs mise à jour)
 
+### Écran de chargement avec placeholder
+
+Si la page a un écran de chargement initial :
+
+- [ ] Utiliser `LoadingOverlay` avec `LoadingPlaceholder` en enfant
+- [ ] Le placeholder affiche des données fictives floutées
+- [ ] L'overlay a un fond semi-transparent (`bg-white/30`)
+- [ ] Animation de sortie fluide (`isExiting`)
+
+```tsx
+<LoadingOverlay dataType="consumption" isExiting={isLoadingExiting}>
+  <LoadingPlaceholder type="consumption" />
+</LoadingOverlay>
+```
+
+**Référence:** [13 - Loading](./components/loading.md#loadingplaceholder--contenu-flouté-en-arrière-plan)
+
+### Transitions de page
+
+Toutes les pages bénéficient automatiquement des transitions via `PageTransition` dans Layout :
+
+- [ ] Animation sortie : fade out + slide up (150ms)
+- [ ] Scroll automatique vers le haut
+- [ ] Animation entrée : fade in + slide down (300ms)
+- [ ] Pas de flash de contenu (pattern `isInitializing`)
+
+**Référence:** [13 - Loading](./components/loading.md#pagetransition--transitions-fluides-entre-pages)
+
 ### Filtres
 
 Si la page a des filtres :

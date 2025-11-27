@@ -42,11 +42,17 @@ export default function PageHeader() {
   const pdls: PDL[] = Array.isArray(pdlsResponse) ? pdlsResponse : []
   const selectedPDLDetails = pdls.find(p => p.usage_point_id === selectedPdl)
 
+  // Determine page context for data fetching
+  const pageContext = location.pathname === '/production' ? 'production' as const
+    : location.pathname === '/consumption' ? 'consumption' as const
+    : 'all' as const
+
   // Hook unifié pour récupérer toutes les données
   const { fetchAllData } = useUnifiedDataFetch({
     selectedPDL: selectedPdl,
     selectedPDLDetails,
     allPDLs: pdls,
+    pageContext,
   })
 
   // Enregistrer la fonction de fetch unifiée

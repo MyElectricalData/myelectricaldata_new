@@ -5,7 +5,7 @@ import { enedisApi } from '@/api/enedis'
 import type { PDL } from '@/types/api'
 import type { DateRange } from '../types/production.types'
 
-export function useProductionData(selectedPDL: string, dateRange: DateRange | null, detailDateRange: DateRange | null) {
+export function useProductionData(selectedPDL: string, dateRange: DateRange | null, _detailDateRange: DateRange | null) {
   const queryClient = useQueryClient()
 
   // Fetch PDLs

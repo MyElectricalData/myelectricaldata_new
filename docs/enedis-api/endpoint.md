@@ -1,3 +1,9 @@
+---
+sidebar_position: 1
+title: Endpoints Enedis
+description: Catalogue des endpoints de l'API Enedis
+---
+
 # Endpoints Enedis
 
 ## Vue generale

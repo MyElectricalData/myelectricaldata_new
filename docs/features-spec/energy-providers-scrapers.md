@@ -75,17 +75,31 @@ Exemples:
 **Types d'offres** (33 total):
 1. **BASIC WATT** (BASE) - 9 puissances
    - Prix fixe unique du kWh
-2. **FLEXI WATT HC** (HC/HP) - 8 puissances
-   - Heures Creuses / Heures Pleines
-3. **FLEXI WATT NUIT ET WEEKEND** (WEEKEND) - 8 puissances
-   - Différenciation Semaine/Week-end + HC/HP
-4. **FLEXI WATT 2 SAISON** (SEASONAL) - 8 puissances
+2. **FLEXI WATT - Heures Creuses** (HC_HP) - 8 puissances
+   - Heures Creuses / Heures Pleines selon les horaires PDL Enedis
+3. **FLEXI WATT - Nuit & Week-end** (WEEKEND) - 8 puissances
+   - HC : 23h-6h en semaine + tout le week-end
+   - HP : 6h-23h en semaine uniquement
+   - Idéal pour véhicules électriques et ballons d'eau chaude
+4. **FLEXI WATT - 2 saisons** (SEASONAL) - 8 puissances
    - Été/Hiver + HC/HP
+   - Option "Jour de Pointe" disponible
+
+**Note importante sur le type WEEKEND**:
+Le type `WEEKEND` utilisé par Enercoop est fonctionnellement équivalent à `HC_NUIT_WEEKEND`. Les deux utilisent :
+- Semaine : HP de 6h à 23h, HC de 23h à 6h
+- Week-end : toutes les heures en HC (heures creuses)
+
+Le simulateur traite ces deux types de manière identique pour le calcul des coûts.
+
+**Prix TTC** (applicables au 1er août 2025):
+- Tous les prix incluent TVA 20%, CTA, CSPE
+- Les abonnements sont identiques au tarif réglementé
 
 **Mécanisme**:
 - Téléchargement PDF
 - Parsing (à implémenter)
-- Fallback sur données manuelles complètes
+- Fallback sur données manuelles TTC complètes
 
 ### 3. TotalEnergies (`totalenergies_scraper.py`)
 
@@ -139,20 +153,24 @@ Exemples:
 ### 6. ALPIQ (`alpiq_scraper.py`)
 
 **Source**:
-- Grille tarifaire unique: `https://cdn.prod.website-files.com/615af988a7a2ca3e746e1cca/672ec8bcc3f0a08e9f78e37e_Grille%20Tarifaire%20-%20Particuliers%20-%2028.10.2025.pdf`
+- Grille tarifaire unique: `https://particuliers.alpiq.fr/grille-tarifaire/particuliers/gtr_elec_part.pdf`
 
 **Types d'offres** (34 total):
-1. **Électricité Stable** (-8% sur kWh) - Valable au 28 octobre 2025
+1. **Électricité Stable** (-8% sur kWh HT, fixe jusqu'au 30/11/2026) - Valable au 28 octobre 2025
    - BASE: 9 puissances (3-36 kVA)
    - HC/HP: 8 puissances (6-36 kVA)
-2. **Électricité Référence** (-4% sur kWh) - Valable au 1er août 2025
+2. **Électricité Référence** (-4% sur kWh HT, indexé sur TRV) - Valable au 1er août 2025
    - BASE: 9 puissances (3-36 kVA)
    - HC/HP: 8 puissances (6-36 kVA)
+
+**Prix TTC** (incluant accise 29.98€/MWh, CTA, TVA 20%):
+- Abonnements identiques au tarif réglementé TTC
+- Prix kWh calculés avec la remise sur le HT puis conversion TTC
 
 **Mécanisme**:
 - Téléchargement PDF
 - Parsing (à implémenter)
-- Fallback sur données manuelles avec 2 offres distinctes
+- Fallback sur données manuelles TTC avec 2 offres distinctes
 
 ### 7. Alterna (`alterna_scraper.py`)
 
@@ -162,19 +180,24 @@ Exemples:
 - Électricité verte 100% VE: `https://cdn.prod.website-files.com/615af985c108852be8901cfa/688b3cfc505fecedaf50d6f5_a21bf56bba165b3760c175fe83b9c903_DOC%20Grille%20Tarifaire%20elec%20100%25%20VE%20010825.pdf`
 
 **Types d'offres** (34 total):
-1. **100% locale** - Garanties d'origine locales
+1. **100% locale** - Garanties d'origine locales (producteurs locaux)
    - BASE: 9 puissances (3-36 kVA)
    - HC/HP: 8 puissances (6-36 kVA)
 2. **100% française** - Garanties d'origine françaises
    - BASE: 9 puissances (3-36 kVA)
    - HC/HP: 8 puissances (6-36 kVA)
 
-**Note**: L'offre Véhicule Électrique n'est pas intégrée car elle nécessite un modèle de données étendu (4 niveaux de tarification).
+**Note**: L'offre Véhicule Électrique n'est pas intégrée car elle nécessite un modèle de données étendu (4 niveaux de tarification : heures super creuses).
+
+**Prix TTC** (applicables au 02/10/2025):
+- Tous les prix incluent TVA 20%, CTA, accise sur l'électricité (29.98€/MWh)
+- ⚠️ Attention : les PDFs Alterna contiennent 2 tableaux (HTT et TTC), utiliser les prix TTC
+- Abonnements identiques au tarif réglementé TTC
 
 **Mécanisme**:
 - Téléchargement de 3 PDFs
 - Parsing avec pdfminer (à implémenter)
-- Fallback sur données manuelles (02/10/2025)
+- Fallback sur données manuelles TTC (02/10/2025)
 
 ### 8. Ekwateur (`ekwateur_scraper.py`)
 

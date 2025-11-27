@@ -11,12 +11,15 @@ interface UseUnifiedDataFetchParams {
   selectedPDL: string
   selectedPDLDetails: PDL | undefined
   allPDLs: PDL[]
+  /** Context de la page pour déterminer quelles données récupérer */
+  pageContext: 'consumption' | 'production' | 'all'
 }
 
 export function useUnifiedDataFetch({
   selectedPDL,
   selectedPDLDetails,
   allPDLs,
+  pageContext,
 }: UseUnifiedDataFetchParams) {
   const queryClient = useQueryClient()
   const { updateConsumptionStatus, updateProductionStatus, resetLoadingStatus } = useDataFetchStore()
@@ -31,48 +34,50 @@ export function useUnifiedDataFetch({
     // Reset all statuses
     resetLoadingStatus()
 
-    // Calculate dates
-    const todayUTC = new Date()
-    const yesterdayUTC = new Date(Date.UTC(
-      todayUTC.getUTCFullYear(),
-      todayUTC.getUTCMonth(),
-      todayUTC.getUTCDate() - 1,
-      0, 0, 0, 0
-    ))
+    // Calculate dates using LOCAL time for user's perspective (France timezone)
+    // This ensures that at 0h30 local time, "yesterday" is still the previous calendar day
+    const now = new Date()
+    const yesterday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 1,
+      12, 0, 0, 0  // Use noon to avoid DST edge cases
+    )
 
-    const today = new Date(Date.UTC(
-      todayUTC.getUTCFullYear(),
-      todayUTC.getUTCMonth(),
-      todayUTC.getUTCDate(),
-      0, 0, 0, 0
-    ))
+    const today = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      12, 0, 0, 0
+    )
 
-    const threeYearsAgo = new Date(Date.UTC(
-      yesterdayUTC.getUTCFullYear(),
-      yesterdayUTC.getUTCMonth(),
-      yesterdayUTC.getUTCDate() - 1095,
-      0, 0, 0, 0
-    ))
+    const threeYearsAgo = new Date(
+      yesterday.getFullYear(),
+      yesterday.getMonth(),
+      yesterday.getDate() - 1095,
+      12, 0, 0, 0
+    )
 
-    const twoYearsAgo = new Date(Date.UTC(
-      today.getUTCFullYear() - 2,
-      today.getUTCMonth(),
-      today.getUTCDate(),
-      0, 0, 0, 0
-    ))
+    const twoYearsAgo = new Date(
+      today.getFullYear() - 2,
+      today.getMonth(),
+      today.getDate(),
+      12, 0, 0, 0
+    )
 
     const formatDate = (date: Date) => {
-      return date.getUTCFullYear() + '-' +
-             String(date.getUTCMonth() + 1).padStart(2, '0') + '-' +
-             String(date.getUTCDate()).padStart(2, '0')
+      return date.getFullYear() + '-' +
+             String(date.getMonth() + 1).padStart(2, '0') + '-' +
+             String(date.getDate()).padStart(2, '0')
     }
 
-    const endDate = formatDate(yesterdayUTC)
+    const endDate = formatDate(yesterday)
     const startDate3y = formatDate(threeYearsAgo)
     const startDate2y = formatDate(twoYearsAgo)
 
     logger.log('Starting unified data fetch:', {
       pdl: selectedPDL,
+      pageContext,
       hasConsumption: selectedPDLDetails.has_consumption,
       hasProduction: selectedPDLDetails.has_production,
       linkedProductionPdl: selectedPDLDetails.linked_production_pdl_id,
@@ -81,8 +86,17 @@ export function useUnifiedDataFetch({
     // Prepare all fetch promises to run in parallel
     const fetchPromises: Promise<void>[] = []
 
+    // Determine what data to fetch based on page context
+    const shouldFetchConsumption = (pageContext === 'consumption' || pageContext === 'all') && selectedPDLDetails.has_consumption
+
+    // On consumption page, also fetch production if PDL has production capability (direct or linked)
+    const hasProductionCapability = selectedPDLDetails.has_production || !!selectedPDLDetails.linked_production_pdl_id
+    const shouldFetchProduction = pageContext === 'production' || pageContext === 'all' || (pageContext === 'consumption' && hasProductionCapability)
+
+    logger.log('Data fetch decisions:', { shouldFetchConsumption, shouldFetchProduction, hasProductionCapability })
+
     // === CONSUMPTION DATA ===
-    if (selectedPDLDetails.has_consumption) {
+    if (shouldFetchConsumption) {
       // Invalidate existing consumption queries
       queryClient.invalidateQueries({ queryKey: ['consumptionDaily', selectedPDL] })
       queryClient.invalidateQueries({ queryKey: ['maxPower', selectedPDL] })
@@ -206,18 +220,24 @@ export function useUnifiedDataFetch({
     }
 
     // === PRODUCTION DATA ===
-    // Check if this PDL has production OR is linked to a production PDL
-    let productionPdlUsagePointId: string | null = null
+    // Only fetch production data when on production page or 'all' context
+    // For linked production PDLs, ONLY fetch production data (never consumption)
+    if (shouldFetchProduction) {
+      // Determine which PDL to use for production data
+      let productionPdlUsagePointId: string | null = null
 
-    if (selectedPDLDetails.has_production) {
-      productionPdlUsagePointId = selectedPDL
-    } else if (selectedPDLDetails.linked_production_pdl_id) {
-      // Find the production PDL in the list to get its usage_point_id
-      const productionPDL = allPDLs.find(p => p.id === selectedPDLDetails.linked_production_pdl_id)
-      if (productionPDL) {
-        productionPdlUsagePointId = productionPDL.usage_point_id
+      if (selectedPDLDetails.has_production) {
+        // This PDL has production capability
+        productionPdlUsagePointId = selectedPDL
+      } else if (selectedPDLDetails.linked_production_pdl_id) {
+        // This is a consumption PDL linked to a production PDL
+        // Find the production PDL in the list to get its usage_point_id
+        const productionPDL = allPDLs.find(p => p.id === selectedPDLDetails.linked_production_pdl_id)
+        if (productionPDL) {
+          productionPdlUsagePointId = productionPDL.usage_point_id
+          logger.log(`Using linked production PDL: ${productionPdlUsagePointId} (only production data, not consumption)`)
+        }
       }
-    }
 
     if (productionPdlUsagePointId) {
       logger.log(`Fetching production data for PDL: ${productionPdlUsagePointId}`)
@@ -315,6 +335,7 @@ export function useUnifiedDataFetch({
         })()
       )
     }
+    } // End of shouldFetchProduction block
 
     // Wait for all fetch promises to complete in parallel
     await Promise.all(fetchPromises)
@@ -339,7 +360,7 @@ export function useUnifiedDataFetch({
       })
       logger.log('[UnifiedFetch] Broadcast sent')
     }, 1500)
-  }, [selectedPDL, selectedPDLDetails, allPDLs, queryClient, updateConsumptionStatus, updateProductionStatus, resetLoadingStatus, broadcast])
+  }, [selectedPDL, selectedPDLDetails, allPDLs, pageContext, queryClient, updateConsumptionStatus, updateProductionStatus, resetLoadingStatus, broadcast])
 
   return {
     fetchAllData,

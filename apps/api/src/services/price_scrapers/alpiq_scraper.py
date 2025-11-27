@@ -14,63 +14,59 @@ class AlpiqScraper(BasePriceScraper):
     # AlpIQ pricing PDF URL
     TARIFF_PDF_URL = "https://particuliers.alpiq.fr/grille-tarifaire/particuliers/gtr_elec_part.pdf"
 
-    # Fallback: Manual pricing data (updated 2025-10-28)
+    # Fallback: Manual pricing data TTC (updated 2025-10-28)
     # Source: https://particuliers.alpiq.fr/grille-tarifaire/particuliers/gtr_elec_part.pdf
-    # Note: ALPIQ uses EDF regulated tariff subscription prices (identique au tarif réglementé)
+    # Note: ALPIQ uses EDF regulated tariff subscription prices TTC (identique au tarif réglementé)
     FALLBACK_PRICES = {
         "STABLE_BASE": {
-            # Électricité Stable - Option Base (-8% on kWh, fixed until 30/11/2026)
-            # Abonnement = EDF Tarif Bleu, kWh = 0.132700 - 8% = 0.122084
+            # Électricité Stable - Option Base TTC (-8% on kWh HT, fixed until 30/11/2026)
             # Valable à compter du 28 octobre 2025
-            3: {"subscription": 9.65, "kwh": 0.122084},
-            6: {"subscription": 12.44, "kwh": 0.122084},
-            9: {"subscription": 15.71, "kwh": 0.122084},
-            12: {"subscription": 18.98, "kwh": 0.122084},
-            15: {"subscription": 21.89, "kwh": 0.122084},
-            18: {"subscription": 24.82, "kwh": 0.122084},
-            24: {"subscription": 31.08, "kwh": 0.122084},
-            30: {"subscription": 36.97, "kwh": 0.122084},
-            36: {"subscription": 43.41, "kwh": 0.122084},
+            3: {"subscription": 11.73, "kwh": 0.182477},
+            6: {"subscription": 15.47, "kwh": 0.182477},
+            9: {"subscription": 19.39, "kwh": 0.182477},
+            12: {"subscription": 23.32, "kwh": 0.182477},
+            15: {"subscription": 27.06, "kwh": 0.182477},
+            18: {"subscription": 30.76, "kwh": 0.182477},
+            24: {"subscription": 38.79, "kwh": 0.182477},
+            30: {"subscription": 46.44, "kwh": 0.182477},
+            36: {"subscription": 54.29, "kwh": 0.182477},
         },
         "STABLE_HC_HP": {
-            # Électricité Stable - Heures Creuses (-8% on kWh, fixed until 30/11/2026)
-            # HP: 0.143400 - 8% = 0.131928, HC: 0.115000 - 8% = 0.105800
+            # Électricité Stable - Heures Creuses TTC (-8% on kWh HT, fixed until 30/11/2026)
             # Valable à compter du 28 octobre 2025
-            6: {"subscription": 16.13, "hp": 0.131928, "hc": 0.105800},
-            9: {"subscription": 20.35, "hp": 0.131928, "hc": 0.105800},
-            12: {"subscription": 24.51, "hp": 0.131928, "hc": 0.105800},
-            15: {"subscription": 28.24, "hp": 0.131928, "hc": 0.105800},
-            18: {"subscription": 31.97, "hp": 0.131928, "hc": 0.105800},
-            24: {"subscription": 40.29, "hp": 0.131928, "hc": 0.105800},
-            30: {"subscription": 47.56, "hp": 0.131928, "hc": 0.105800},
-            36: {"subscription": 54.24, "hp": 0.131928, "hc": 0.105800},
+            6: {"subscription": 15.74, "hp": 0.194290, "hc": 0.153331},
+            9: {"subscription": 19.81, "hp": 0.194290, "hc": 0.153331},
+            12: {"subscription": 23.76, "hp": 0.194290, "hc": 0.153331},
+            15: {"subscription": 27.49, "hp": 0.194290, "hc": 0.153331},
+            18: {"subscription": 31.34, "hp": 0.194290, "hc": 0.153331},
+            24: {"subscription": 39.47, "hp": 0.194290, "hc": 0.153331},
+            30: {"subscription": 47.02, "hp": 0.194290, "hc": 0.153331},
+            36: {"subscription": 54.61, "hp": 0.194290, "hc": 0.153331},
         },
         "REFERENCE_BASE": {
-            # Électricité Référence - Option Base (-4% on kWh)
-            # Abonnement = EDF Tarif Bleu, kWh = 0.132700 - 4% = 0.127392
+            # Électricité Référence - Option Base TTC (-4% on kWh HT)
             # Valable à compter du 1er août 2025
-            3: {"subscription": 9.65, "kwh": 0.127392},
-            6: {"subscription": 12.44, "kwh": 0.127392},
-            9: {"subscription": 15.71, "kwh": 0.127392},
-            12: {"subscription": 18.98, "kwh": 0.127392},
-            15: {"subscription": 21.89, "kwh": 0.127392},
-            18: {"subscription": 24.82, "kwh": 0.127392},
-            24: {"subscription": 31.08, "kwh": 0.127392},
-            30: {"subscription": 36.97, "kwh": 0.127392},
-            36: {"subscription": 43.41, "kwh": 0.127392},
+            3: {"subscription": 11.73, "kwh": 0.188846},
+            6: {"subscription": 15.47, "kwh": 0.188846},
+            9: {"subscription": 19.39, "kwh": 0.188846},
+            12: {"subscription": 23.32, "kwh": 0.188846},
+            15: {"subscription": 27.06, "kwh": 0.188846},
+            18: {"subscription": 30.76, "kwh": 0.188846},
+            24: {"subscription": 38.79, "kwh": 0.188846},
+            30: {"subscription": 46.44, "kwh": 0.188846},
+            36: {"subscription": 54.29, "kwh": 0.188846},
         },
         "REFERENCE_HC_HP": {
-            # Électricité Référence - Heures Creuses (-4% on kWh)
-            # HP: 0.143400 - 4% = 0.137664, HC: 0.115000 - 4% = 0.110400
+            # Électricité Référence - Heures Creuses TTC (-4% on kWh HT)
             # Valable à compter du 1er août 2025
-            6: {"subscription": 16.13, "hp": 0.137664, "hc": 0.110400},
-            9: {"subscription": 20.35, "hp": 0.137664, "hc": 0.110400},
-            12: {"subscription": 24.51, "hp": 0.137664, "hc": 0.110400},
-            15: {"subscription": 28.24, "hp": 0.137664, "hc": 0.110400},
-            18: {"subscription": 31.97, "hp": 0.137664, "hc": 0.110400},
-            24: {"subscription": 40.29, "hp": 0.137664, "hc": 0.110400},
-            30: {"subscription": 47.56, "hp": 0.137664, "hc": 0.110400},
-            36: {"subscription": 54.24, "hp": 0.137664, "hc": 0.110400},
+            6: {"subscription": 15.74, "hp": 0.201173, "hc": 0.158434},
+            9: {"subscription": 19.81, "hp": 0.201173, "hc": 0.158434},
+            12: {"subscription": 23.76, "hp": 0.201173, "hc": 0.158434},
+            15: {"subscription": 27.49, "hp": 0.201173, "hc": 0.158434},
+            18: {"subscription": 31.34, "hp": 0.201173, "hc": 0.158434},
+            24: {"subscription": 39.47, "hp": 0.201173, "hc": 0.158434},
+            30: {"subscription": 47.02, "hp": 0.201173, "hc": 0.158434},
+            36: {"subscription": 54.61, "hp": 0.201173, "hc": 0.158434},
         },
     }
 
@@ -149,7 +145,7 @@ class AlpiqScraper(BasePriceScraper):
                 OfferData(
                     name=f"Électricité Stable - Base {power} kVA",
                     offer_type="BASE",
-                    description=f"Offre de marché avec -8% sur le prix du kWh HT (fixe jusqu'au 30/11/2026) - Option Base - {power} kVA",
+                    description=f"Offre de marché avec -8% sur le prix du kWh HT (fixe jusqu'au 30/11/2026) - Option Base - {power} kVA - Prix TTC",
                     subscription_price=prices["subscription"],
                     base_price=prices["kwh"],
                     power_kva=power,
@@ -163,7 +159,7 @@ class AlpiqScraper(BasePriceScraper):
                 OfferData(
                     name=f"Électricité Stable - Heures Creuses {power} kVA",
                     offer_type="HC_HP",
-                    description=f"Offre de marché avec -8% sur le prix du kWh HT (fixe jusqu'au 30/11/2026) - Heures Creuses - {power} kVA",
+                    description=f"Offre de marché avec -8% sur le prix du kWh HT (fixe jusqu'au 30/11/2026) - Heures Creuses - {power} kVA - Prix TTC",
                     subscription_price=prices["subscription"],
                     hp_price=prices["hp"],
                     hc_price=prices["hc"],
@@ -178,7 +174,7 @@ class AlpiqScraper(BasePriceScraper):
                 OfferData(
                     name=f"Électricité Référence - Base {power} kVA",
                     offer_type="BASE",
-                    description=f"Offre de marché avec -4% sur le prix du kWh HT - Option Base - {power} kVA",
+                    description=f"Offre de marché avec -4% sur le prix du kWh HT - Option Base - {power} kVA - Prix TTC",
                     subscription_price=prices["subscription"],
                     base_price=prices["kwh"],
                     power_kva=power,
@@ -192,7 +188,7 @@ class AlpiqScraper(BasePriceScraper):
                 OfferData(
                     name=f"Électricité Référence - Heures Creuses {power} kVA",
                     offer_type="HC_HP",
-                    description=f"Offre de marché avec -4% sur le prix du kWh HT - Heures Creuses - {power} kVA",
+                    description=f"Offre de marché avec -4% sur le prix du kWh HT - Heures Creuses - {power} kVA - Prix TTC",
                     subscription_price=prices["subscription"],
                     hp_price=prices["hp"],
                     hc_price=prices["hc"],

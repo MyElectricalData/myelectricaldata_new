@@ -113,6 +113,22 @@ services:
     depends_on:
       - backend
 
+  # Documentation Docusaurus
+  docs:
+    build:
+      context: ./apps/docs
+      dockerfile: Dockerfile
+    container_name: myelectricaldata-docs
+    restart: unless-stopped
+    volumes:
+      - ./docs:/app/docs:ro
+    ports:
+      - "8002:3000"
+    networks:
+      - myelectricaldata
+    profiles:
+      - docs
+
 volumes:
   caddy_data:
     driver: local

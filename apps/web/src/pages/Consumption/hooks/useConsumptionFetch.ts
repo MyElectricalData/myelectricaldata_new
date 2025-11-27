@@ -74,26 +74,26 @@ export function useConsumptionFetch({
 
     // Calculate dates for consumption and power (3 years max - 1095 days)
     // Use yesterday as end date because Enedis data is only available in J-1
-    // IMPORTANT: Use UTC dates as Enedis API expects RFC 3339 format (UTC)
-    const todayUTC = new Date()
+    // IMPORTANT: Use LOCAL time to determine "today" and "yesterday" (user's perspective)
+    // The API expects YYYY-MM-DD format, so timezone doesn't matter for the date itself
+    const now = new Date()
 
-    // Get yesterday in UTC (end date) - normalized to midnight UTC
-    const yesterdayUTC = new Date(Date.UTC(
-      todayUTC.getUTCFullYear(),
-      todayUTC.getUTCMonth(),
-      todayUTC.getUTCDate() - 1,
-      0, 0, 0, 0
-    ))
-
-    const yesterday = yesterdayUTC
+    // Get yesterday in LOCAL time (end date)
+    // This ensures that at 0h30 local time, "yesterday" is still the previous calendar day
+    const yesterday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 1,
+      12, 0, 0, 0  // Use noon to avoid any DST edge cases
+    )
 
     // Start date: 1095 days before yesterday (Enedis API max limit for daily data - 3 years)
-    let startDate_obj = new Date(Date.UTC(
-      yesterdayUTC.getUTCFullYear(),
-      yesterdayUTC.getUTCMonth(),
-      yesterdayUTC.getUTCDate() - 1095,
-      0, 0, 0, 0
-    ))
+    let startDate_obj = new Date(
+      yesterday.getFullYear(),
+      yesterday.getMonth(),
+      yesterday.getDate() - 1095,
+      12, 0, 0, 0
+    )
 
     // Apply limits: never go before oldest_available_data_date or activation_date
     logger.log('PDL Details:', {
@@ -108,13 +108,13 @@ export function useConsumptionFetch({
     // TODO: Implement proper retry logic with progressive date advancement
     logger.log(`Daily consumption: Requesting full 3 years (API will return error if too old)`)
 
-    // Format dates as YYYY-MM-DD in UTC
-    const startDate = startDate_obj.getUTCFullYear() + '-' +
-                      String(startDate_obj.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                      String(startDate_obj.getUTCDate()).padStart(2, '0')
-    const endDate = yesterday.getUTCFullYear() + '-' +
-                    String(yesterday.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                    String(yesterday.getUTCDate()).padStart(2, '0')
+    // Format dates as YYYY-MM-DD using LOCAL time (user's perspective)
+    const startDate = startDate_obj.getFullYear() + '-' +
+                      String(startDate_obj.getMonth() + 1).padStart(2, '0') + '-' +
+                      String(startDate_obj.getDate()).padStart(2, '0')
+    const endDate = yesterday.getFullYear() + '-' +
+                    String(yesterday.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(yesterday.getDate()).padStart(2, '0')
 
     logger.log(`Final date range for API: ${startDate} → ${endDate}`)
 
@@ -128,28 +128,29 @@ export function useConsumptionFetch({
 
       // Calculate 2 years back from TODAY (not yesterday) - 729 days
       // Start: today - 2 years, End: yesterday (J-1)
-      const todayUTC = new Date()
-      const today = new Date(Date.UTC(
-        todayUTC.getUTCFullYear(),
-        todayUTC.getUTCMonth(),
-        todayUTC.getUTCDate(),
-        0, 0, 0, 0
-      ))
+      // Use LOCAL time for user's perspective
+      const todayLocal = new Date()
+      const today = new Date(
+        todayLocal.getFullYear(),
+        todayLocal.getMonth(),
+        todayLocal.getDate(),
+        12, 0, 0, 0  // Use noon to avoid DST edge cases
+      )
 
-      const twoYearsAgo = new Date(Date.UTC(
-        today.getUTCFullYear() - 2,
-        today.getUTCMonth(),
-        today.getUTCDate(),
-        0, 0, 0, 0
-      ))
+      const twoYearsAgo = new Date(
+        today.getFullYear() - 2,
+        today.getMonth(),
+        today.getDate(),
+        12, 0, 0, 0
+      )
 
-      const startDate = twoYearsAgo.getUTCFullYear() + '-' +
-                       String(twoYearsAgo.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                       String(twoYearsAgo.getUTCDate()).padStart(2, '0')
+      const startDate = twoYearsAgo.getFullYear() + '-' +
+                       String(twoYearsAgo.getMonth() + 1).padStart(2, '0') + '-' +
+                       String(twoYearsAgo.getDate()).padStart(2, '0')
 
-      const endDate = yesterday.getUTCFullYear() + '-' +
-                     String(yesterday.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                     String(yesterday.getUTCDate()).padStart(2, '0')
+      const endDate = yesterday.getFullYear() + '-' +
+                     String(yesterday.getMonth() + 1).padStart(2, '0') + '-' +
+                     String(yesterday.getDate()).padStart(2, '0')
 
       logger.log(`Detailed data: Requesting 2 years via batch endpoint (${startDate} to ${endDate}) - 729 days`)
 
@@ -173,49 +174,27 @@ export function useConsumptionFetch({
         if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
           const readings = (batchData as any).data.meter_reading.interval_reading
 
-          // Group data points by date for caching
-          const dataByDate: Record<string, Map<string, any>> = {}
-
+          // Deduplicate readings using a Map with timestamp as key
+          const uniqueReadingsMap = new Map()
           readings.forEach((point: any) => {
-            // Extract YYYY-MM-DD from date
-            let date = point.date.split(' ')[0].split('T')[0]
-
-            // Handle Enedis convention for 00:00 timestamps
-            const time = point.date.split(' ')[1] || point.date.split('T')[1] || '00:00:00'
-            if (time.startsWith('00:00')) {
-              const dateObj = new Date(date + 'T00:00:00Z')
-              dateObj.setUTCDate(dateObj.getUTCDate() - 1)
-              date = dateObj.getUTCFullYear() + '-' +
-                     String(dateObj.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                     String(dateObj.getUTCDate()).padStart(2, '0')
-            }
-
-            if (!dataByDate[date]) {
-              dataByDate[date] = new Map()
-            }
-            // Use full timestamp as key to automatically deduplicate
-            dataByDate[date].set(point.date, point)
+            uniqueReadingsMap.set(point.date, point)
           })
+          const uniqueReadings = Array.from(uniqueReadingsMap.values())
 
-          // Cache each day separately with deduplicated points
-          Object.entries(dataByDate).forEach(([date, pointsMap]) => {
-            // Convert Map values to array (automatically deduplicated)
-            const uniquePoints = Array.from(pointsMap.values())
-
-            queryClient.setQueryData(
-              ['consumptionDetail', selectedPDL, date, date],
-              {
-                success: true,
-                data: {
-                  meter_reading: {
-                    interval_reading: uniquePoints
-                  }
-                }
+          // Store ALL detail data in a SINGLE cache key (not per day!)
+          // This avoids creating 730+ cache entries that overload IndexedDB
+          queryClient.setQueryData(['consumptionDetail', selectedPDL], {
+            success: true,
+            data: {
+              meter_reading: {
+                interval_reading: uniqueReadings
               }
-            )
+            }
           })
 
-          const dayCount = Object.keys(dataByDate).length
+          // Calculate day count for display
+          const dates = new Set(uniqueReadings.map((p: any) => p.date.split(' ')[0].split('T')[0]))
+          const dayCount = dates.size
           const years = Math.floor(dayCount / 365)
           const remainingDays = dayCount % 365
           const yearsText = years > 0 ? `${years} an${years > 1 ? 's' : ''}` : ''
@@ -287,27 +266,28 @@ export function useConsumptionFetch({
         queryClient.invalidateQueries({ queryKey: ['production', productionPdlUsagePointId] })
 
         // Fetch production daily data (3 years)
-        const todayUTC = new Date()
-        const yesterdayUTC = new Date(Date.UTC(
-          todayUTC.getUTCFullYear(),
-          todayUTC.getUTCMonth(),
-          todayUTC.getUTCDate() - 1,
-          0, 0, 0, 0
-        ))
+        // Use LOCAL time for user's perspective
+        const nowLocal = new Date()
+        const yesterdayLocal = new Date(
+          nowLocal.getFullYear(),
+          nowLocal.getMonth(),
+          nowLocal.getDate() - 1,
+          12, 0, 0, 0  // Use noon to avoid DST edge cases
+        )
 
-        const threeYearsAgo = new Date(Date.UTC(
-          yesterdayUTC.getUTCFullYear(),
-          yesterdayUTC.getUTCMonth(),
-          yesterdayUTC.getUTCDate() - 1095,
-          0, 0, 0, 0
-        ))
+        const threeYearsAgo = new Date(
+          yesterdayLocal.getFullYear(),
+          yesterdayLocal.getMonth(),
+          yesterdayLocal.getDate() - 1095,
+          12, 0, 0, 0
+        )
 
-        const startDate3y = threeYearsAgo.getUTCFullYear() + '-' +
-                           String(threeYearsAgo.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                           String(threeYearsAgo.getUTCDate()).padStart(2, '0')
-        const endDate = yesterdayUTC.getUTCFullYear() + '-' +
-                       String(yesterdayUTC.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                       String(yesterdayUTC.getUTCDate()).padStart(2, '0')
+        const startDate3y = threeYearsAgo.getFullYear() + '-' +
+                           String(threeYearsAgo.getMonth() + 1).padStart(2, '0') + '-' +
+                           String(threeYearsAgo.getDate()).padStart(2, '0')
+        const endDate = yesterdayLocal.getFullYear() + '-' +
+                       String(yesterdayLocal.getMonth() + 1).padStart(2, '0') + '-' +
+                       String(yesterdayLocal.getDate()).padStart(2, '0')
 
         logger.log(`Fetching production daily data: ${startDate3y} → ${endDate}`)
 
@@ -330,23 +310,24 @@ export function useConsumptionFetch({
         })
 
         // Fetch production detailed data (2 years) via batch endpoint
-        const today = new Date(Date.UTC(
-          todayUTC.getUTCFullYear(),
-          todayUTC.getUTCMonth(),
-          todayUTC.getUTCDate(),
-          0, 0, 0, 0
-        ))
+        // Use LOCAL time for user's perspective
+        const todayLocal = new Date(
+          nowLocal.getFullYear(),
+          nowLocal.getMonth(),
+          nowLocal.getDate(),
+          12, 0, 0, 0
+        )
 
-        const twoYearsAgo = new Date(Date.UTC(
-          today.getUTCFullYear() - 2,
-          today.getUTCMonth(),
-          today.getUTCDate(),
-          0, 0, 0, 0
-        ))
+        const twoYearsAgo = new Date(
+          todayLocal.getFullYear() - 2,
+          todayLocal.getMonth(),
+          todayLocal.getDate(),
+          12, 0, 0, 0
+        )
 
-        const startDate2y = twoYearsAgo.getUTCFullYear() + '-' +
-                           String(twoYearsAgo.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                           String(twoYearsAgo.getUTCDate()).padStart(2, '0')
+        const startDate2y = twoYearsAgo.getFullYear() + '-' +
+                           String(twoYearsAgo.getMonth() + 1).padStart(2, '0') + '-' +
+                           String(twoYearsAgo.getDate()).padStart(2, '0')
 
         logger.log(`Fetching production detail batch: ${startDate2y} → ${endDate}`)
 
@@ -358,49 +339,26 @@ export function useConsumptionFetch({
           if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
             const readings = (batchData as any).data.meter_reading.interval_reading
 
-            // Group data points by date for caching
-            const dataByDate: Record<string, Map<string, any>> = {}
-
+            // Deduplicate readings using a Map with timestamp as key
+            const uniqueReadingsMap = new Map()
             readings.forEach((point: any) => {
-              let date = point.date.split(' ')[0].split('T')[0]
-
-              // Handle Enedis convention for 00:00 timestamps
-              const time = point.date.split(' ')[1] || point.date.split('T')[1] || '00:00:00'
-              if (time.startsWith('00:00')) {
-                const dateObj = new Date(date + 'T00:00:00Z')
-                dateObj.setUTCDate(dateObj.getUTCDate() - 1)
-                date = dateObj.getUTCFullYear() + '-' +
-                       String(dateObj.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                       String(dateObj.getUTCDate()).padStart(2, '0')
-              }
-
-              if (!dataByDate[date]) {
-                dataByDate[date] = new Map()
-              }
-              // Use full timestamp as key to automatically deduplicate
-              dataByDate[date].set(point.date, point)
+              uniqueReadingsMap.set(point.date, point)
             })
+            const uniqueReadings = Array.from(uniqueReadingsMap.values())
 
-            // Cache each day separately with deduplicated points
-            Object.entries(dataByDate).forEach(([date, pointsMap]) => {
-              // Convert Map values to array (automatically deduplicated)
-              const uniquePoints = Array.from(pointsMap.values())
-
-              queryClient.setQueryData(
-                ['productionDetail', productionPdlUsagePointId, date, date],
-                {
-                  success: true,
-                  data: {
-                    meter_reading: {
-                      interval_reading: uniquePoints
-                    }
-                  }
+            // Store ALL detail data in a SINGLE cache key (not per day!)
+            // This avoids creating 730+ cache entries that overload IndexedDB
+            queryClient.setQueryData(['productionDetail', productionPdlUsagePointId], {
+              success: true,
+              data: {
+                meter_reading: {
+                  interval_reading: uniqueReadings
                 }
-              )
+              }
             })
 
-            const dayCount = Object.keys(dataByDate).length
-            logger.log(`Production detail data cached successfully: ${dayCount} days, ${readings.length} points`)
+            const dates = new Set(uniqueReadings.map((p: any) => p.date.split(' ')[0].split('T')[0]))
+            logger.log(`Production detail data cached successfully: ${dates.size} days, ${uniqueReadings.length} points`)
 
             // Invalidate the detail query to make it available
             queryClient.invalidateQueries({ queryKey: ['productionDetail'] })

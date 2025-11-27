@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
+import { PieChart, Pie, Cell, Tooltip } from 'recharts'
 import { Download, Info } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ModernButton } from './ModernButton'
@@ -105,36 +105,35 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Pie Chart */}
+              {/* Pie Chart - Fixed size to avoid ResponsiveContainer rendering delay */}
               <div className="flex items-center justify-center">
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }: { name?: string; percent?: number }) =>
-                        `${name?.split(' ')[0] || ''} ${((percent || 0) * 100).toFixed(1)}%`
-                      }
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                        border: '1px solid #ccc',
-                        borderRadius: '8px',
-                      }}
-                      formatter={(value: number) => `${value.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} kWh`}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                <PieChart width={280} height={280}>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }: { name?: string; percent?: number }) =>
+                      `${name?.split(' ')[0] || ''} ${((percent || 0) * 100).toFixed(1)}%`
+                    }
+                    outerRadius={100}
+                    fill="#8884d8"
+                    dataKey="value"
+                    isAnimationActive={false}
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                      border: '1px solid #ccc',
+                      borderRadius: '8px',
+                    }}
+                    formatter={(value: number) => `${value.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} kWh`}
+                  />
+                </PieChart>
               </div>
 
               {/* Statistics */}
