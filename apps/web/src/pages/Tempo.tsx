@@ -33,7 +33,7 @@ export default function Tempo() {
   const groupedBySeason: Record<string, Record<string, TempoDay[]>> = {}
   allDays.forEach((day) => {
     // Parse date as local date (YYYY-MM-DD) to avoid timezone issues
-    const [year, month, dayNum] = day.date.split('-').map(Number)
+    const [year, month] = day.date.split('-').map(Number)
     const monthIndex = month - 1 // Convert to 0-based index (0=Jan, 8=Sept)
 
     // TEMPO season starts Sept 1 (month 8)

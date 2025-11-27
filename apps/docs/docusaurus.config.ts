@@ -2,6 +2,9 @@ import { themes as prismThemes } from "prism-react-renderer";
 import type { Config } from "@docusaurus/types";
 import type * as Preset from "@docusaurus/preset-classic";
 
+// Support GitHub Pages via environment variables
+const isGitHubPages = process.env.DEPLOY_TARGET === 'github-pages';
+
 const config: Config = {
   title: "MyElectricalData",
   tagline: "Accédez à vos données Linky en toute simplicité",
@@ -11,11 +14,16 @@ const config: Config = {
     v4: true,
   },
 
-  url: "https://docs.myelectricaldata.fr",
-  baseUrl: "/",
+  // URL et baseUrl configurables pour GitHub Pages ou domaine personnalisé
+  url: isGitHubPages
+    ? "https://myelectricaldata.github.io"
+    : "https://docs.myelectricaldata.fr",
+  baseUrl: isGitHubPages
+    ? "/myelectricaldata_new/"
+    : "/",
 
   organizationName: "MyElectricalData",
-  projectName: "myelectricaldata",
+  projectName: "myelectricaldata_new",
 
   onBrokenLinks: "warn",
   onBrokenMarkdownLinks: "warn",
@@ -38,7 +46,7 @@ const config: Config = {
           routeBasePath: "/",
           sidebarPath: "./sidebars.ts",
           editUrl:
-            "https://github.com/MyElectricalData/myelectricaldata/tree/main/docs/",
+            "https://github.com/MyElectricalData/myelectricaldata_new/tree/main/docs/",
         },
         blog: false,
         theme: {
@@ -87,7 +95,7 @@ const config: Config = {
           label: "API",
         },
         {
-          href: "https://github.com/MyElectricalData/myelectricaldata",
+          href: "https://github.com/MyElectricalData/myelectricaldata_new",
           label: "GitHub",
           position: "right",
         },
@@ -135,7 +143,7 @@ const config: Config = {
           items: [
             {
               label: "GitHub",
-              href: "https://github.com/MyElectricalData/myelectricaldata",
+              href: "https://github.com/MyElectricalData/myelectricaldata_new",
             },
             {
               label: "API Enedis",

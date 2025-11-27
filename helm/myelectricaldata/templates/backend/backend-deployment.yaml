@@ -1,0 +1,104 @@
+{{- if .Values.backend.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "myelectricaldata.backend.fullname" . }}
+  labels:
+    {{- include "myelectricaldata.backend.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.backend.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "myelectricaldata.backend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/common/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/common/secrets.yaml") . | sha256sum }}
+      {{- with .Values.backend.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "myelectricaldata.backend.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- include "myelectricaldata.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "myelectricaldata.serviceAccountName" . }}
+      {{- with .Values.backend.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backend
+          {{- with .Values.backend.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: TZ
+              value: {{ .Values.backend.env.TZ | quote }}
+            - name: PYTHONUNBUFFERED
+              value: {{ .Values.backend.env.PYTHONUNBUFFERED | quote }}
+            - name: DATABASE_URL
+              value: {{ include "myelectricaldata.databaseUrl" . | quote }}
+            - name: REDIS_URL
+              value: {{ include "myelectricaldata.redisUrl" . | quote }}
+            - name: ENEDIS_ENVIRONMENT
+              value: {{ .Values.secrets.enedis.environment | quote }}
+            # PostgreSQL password from CloudPirates postgres subchart secret
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.postgres.enabled }}
+                  name: {{ .Release.Name }}-postgres
+                  key: postgres-password
+                  {{- else }}
+                  name: {{ include "myelectricaldata.fullname" . }}-external-db
+                  key: password
+                  {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "myelectricaldata.fullname" . }}
+          {{- with .Values.backend.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: data
+          {{- if .Values.backend.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "myelectricaldata.backend.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

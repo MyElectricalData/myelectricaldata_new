@@ -734,7 +734,6 @@ export default function Consumption() {
               <PowerPeaks
                 powerByYearData={powerByYearData}
                 selectedPDLDetails={selectedPDLDetails}
-                maxPowerData={maxPowerData}
                 isDarkMode={isDarkMode}
               />
             </div>

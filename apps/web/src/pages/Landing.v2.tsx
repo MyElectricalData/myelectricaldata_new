@@ -231,7 +231,6 @@ function scrollToNextSection() {
 export default function LandingV2() {
   const { isAuthenticated } = useAuth()
   const { isDark, toggleTheme } = useThemeStore()
-  const [scrollY, setScrollY] = useState(0)
   const [showHeader, setShowHeader] = useState(false)
 
   // Animation du texte hero
@@ -257,11 +256,8 @@ export default function LandingV2() {
     document.documentElement.style.scrollBehavior = 'smooth'
 
     const handleScroll = () => {
-      const currentScrollY = window.scrollY
-      setScrollY(currentScrollY)
-
       // Afficher le header après 100px de scroll
-      setShowHeader(currentScrollY > 100)
+      setShowHeader(window.scrollY > 100)
     }
 
     window.addEventListener('scroll', handleScroll)

@@ -1,0 +1,130 @@
+# Production values for myelectricaldata
+# Usage: helm install myelectricaldata ./helm/myelectricaldata -f ./helm/myelectricaldata/values-production.yaml
+
+# Backend configuration
+backend:
+  replicaCount: 2
+
+  image:
+    repository: ghcr.io/myelectricaldata/myelectricaldata_new/backend
+    tag: "1.0.0"  # Use a specific version in production
+    pullPolicy: IfNotPresent
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""  # Use your cluster's default or specify one
+
+# Frontend configuration
+frontend:
+  replicaCount: 2
+
+  image:
+    repository: ghcr.io/myelectricaldata/myelectricaldata_new/frontend
+    tag: "1.0.0"  # Use a specific version in production
+    pullPolicy: IfNotPresent
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+  hosts:
+    - host: myelectricaldata.example.com  # Change to your domain
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+        - path: /api
+          pathType: Prefix
+          service: backend
+        - path: /docs
+          pathType: Prefix
+          service: backend
+
+  tls:
+    - secretName: myelectricaldata-tls
+      hosts:
+        - myelectricaldata.example.com  # Change to your domain
+
+# Application secrets
+# IMPORTANT: Generate secure values for production!
+secrets:
+  # Generate with: openssl rand -hex 32
+  secretKey: ""  # REQUIRED - set a secure secret key
+
+  enedis:
+    clientId: ""  # REQUIRED - your Enedis client ID
+    clientSecret: ""  # REQUIRED - your Enedis client secret
+    environment: "production"  # Use "production" for real data
+
+  adminEmails: "admin@example.com"  # Comma-separated list of admin emails
+
+# Redis configuration (CloudPirates subchart)
+redis:
+  enabled: true
+
+  persistence:
+    enabled: true
+    size: 2Gi
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# PostgreSQL configuration (CloudPirates subchart)
+postgres:
+  enabled: true
+
+  auth:
+    database: myelectricaldata
+    username: myelectricaldata
+    password: ""  # REQUIRED - set a secure password
+
+  persistence:
+    enabled: true
+    size: 10Gi
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+# Enable autoscaling for production
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Pod Disruption Budget for high availability
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

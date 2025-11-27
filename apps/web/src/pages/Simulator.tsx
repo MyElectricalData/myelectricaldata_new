@@ -5,8 +5,6 @@ import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
 import { AnimatedSection } from '@/components/AnimatedSection'
 import { pdlApi } from '@/api/pdl'
-import { enedisApi } from '@/api/enedis'
-// import { adminApi } from '@/api/admin' // Unused - cache clearing is in sidebar
 import { energyApi, type EnergyProvider, type EnergyOffer } from '@/api/energy'
 import { tempoApi, type TempoDay } from '@/api/tempo'
 import type { PDL } from '@/types/api'
@@ -16,8 +14,6 @@ import { ModernButton } from './Simulator/components/ModernButton'
 import { useIsDemo } from '@/hooks/useIsDemo'
 import { usePdlStore } from '@/stores/pdlStore'
 import { useDataFetchStore } from '@/stores/dataFetchStore'
-// import { useAuth } from '@/hooks/useAuth' // Unused for now
-// import toast from 'react-hot-toast' // Unused for now
 
 // Helper function to check if a date is weekend (Saturday or Sunday)
 function isWeekend(dateString: string): boolean {
@@ -174,7 +170,7 @@ export default function Simulator() {
   // Simulation state
   const [isSimulating, setIsSimulating] = useState(false)
   const [simulationResult, setSimulationResult] = useState<any>(null)
-  const [fetchProgress, setFetchProgress] = useState<{current: number, total: number, phase: string}>({current: 0, total: 0, phase: ''})
+  const [_fetchProgress, setFetchProgress] = useState<{current: number, total: number, phase: string}>({current: 0, total: 0, phase: ''})
   const [simulationError, setSimulationError] = useState<string | null>(null)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [hasAutoLaunched, setHasAutoLaunched] = useState(false)

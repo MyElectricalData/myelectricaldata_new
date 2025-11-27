@@ -8,6 +8,20 @@ LOG_DIR = ./tmp
 LOG_FILE = $(LOG_DIR)/watch-backend.log
 WATCH_PID_FILE = $(LOG_DIR)/watch-backend.pid
 
+# Docker Registry Configuration
+REGISTRY = ghcr.io
+GITHUB_ORG = myelectricaldata
+GITHUB_REPO = myelectricaldata_new
+IMAGE_BACKEND = $(REGISTRY)/$(GITHUB_ORG)/$(GITHUB_REPO)/backend
+IMAGE_FRONTEND = $(REGISTRY)/$(GITHUB_ORG)/$(GITHUB_REPO)/frontend
+IMAGE_DOCS = $(REGISTRY)/$(GITHUB_ORG)/$(GITHUB_REPO)/docs
+
+# Version tagging (use git commit hash for dev, or set VERSION=x.x.x)
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+VERSION ?= dev-$(GIT_COMMIT)
+PLATFORMS ?= linux/amd64,linux/arm64
+
 # Enable TTY for colors
 export COMPOSE_INTERACTIVE_NO_CLI = 1
 
@@ -51,6 +65,21 @@ help:
 	@echo "  make ps           - Show running containers"
 	@echo "  make clean        - Clean temporary files and logs"
 	@echo "  make rebuild      - Rebuild all containers"
+	@echo ""
+	@echo "$(YELLOW)Docker Registry (ghcr.io):$(NC)"
+	@echo "  make docker-login     - Login to GitHub Container Registry"
+	@echo "  make docker-build     - Build all Docker images"
+	@echo "  make docker-push      - Push all images to ghcr.io"
+	@echo "  make docker-release   - Build and push all images (dev)"
+	@echo "  make docker-build-backend  - Build backend image only"
+	@echo "  make docker-build-frontend - Build frontend image only"
+	@echo "  make docker-push-backend   - Push backend image only"
+	@echo "  make docker-push-frontend  - Push frontend image only"
+	@echo ""
+	@echo "$(YELLOW)Docker Registry Variables:$(NC)"
+	@echo "  VERSION=$(VERSION)  (set with: make docker-release VERSION=1.0.0)"
+	@echo "  REGISTRY=$(REGISTRY)"
+	@echo "  GITHUB_ORG=$(GITHUB_ORG)"
 	@echo ""
 
 ## Start development environment with hot reload
@@ -224,4 +253,112 @@ docs-down:
 	$(COMPOSE) --profile docs down docs
 	@echo "$(GREEN)Documentation server stopped$(NC)"
 
-.PHONY: help dev up up-fg down restart watch stop-watch stop-docs backend-logs backend-restart db-shell db-backup migrate logs ps clean rebuild check-deps install-fswatch docs docs-build docs-dev docs-down
+# =============================================================================
+# Docker Registry Commands (ghcr.io)
+# =============================================================================
+
+## Login to GitHub Container Registry
+docker-login:
+	@echo "$(GREEN)Logging in to GitHub Container Registry...$(NC)"
+	@echo "$(YELLOW)Make sure GITHUB_TOKEN is set or use: echo \$$GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin$(NC)"
+	@if [ -n "$$GITHUB_TOKEN" ]; then \
+		echo "$$GITHUB_TOKEN" | docker login $(REGISTRY) -u $(GITHUB_ORG) --password-stdin; \
+		echo "$(GREEN)Logged in to $(REGISTRY)$(NC)"; \
+	else \
+		echo "$(RED)GITHUB_TOKEN not set. Please set it or login manually:$(NC)"; \
+		echo "  export GITHUB_TOKEN=your_token"; \
+		echo "  make docker-login"; \
+		exit 1; \
+	fi
+
+## Build backend Docker image
+docker-build-backend:
+	@echo "$(GREEN)Building backend image: $(IMAGE_BACKEND):$(VERSION)$(NC)"
+	docker build -t $(IMAGE_BACKEND):$(VERSION) \
+		-t $(IMAGE_BACKEND):latest \
+		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
+		--label "org.opencontainers.image.revision=$(GIT_COMMIT)" \
+		--label "org.opencontainers.image.version=$(VERSION)" \
+		./apps/api
+	@echo "$(GREEN)Backend image built: $(IMAGE_BACKEND):$(VERSION)$(NC)"
+
+## Build frontend Docker image
+docker-build-frontend:
+	@echo "$(GREEN)Building frontend image: $(IMAGE_FRONTEND):$(VERSION)$(NC)"
+	docker build -t $(IMAGE_FRONTEND):$(VERSION) \
+		-t $(IMAGE_FRONTEND):latest \
+		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
+		--label "org.opencontainers.image.revision=$(GIT_COMMIT)" \
+		--label "org.opencontainers.image.version=$(VERSION)" \
+		./apps/web
+	@echo "$(GREEN)Frontend image built: $(IMAGE_FRONTEND):$(VERSION)$(NC)"
+
+## Build all Docker images
+docker-build: docker-build-backend docker-build-frontend
+	@echo "$(GREEN)All images built successfully$(NC)"
+
+## Push backend Docker image to registry
+docker-push-backend:
+	@echo "$(GREEN)Pushing backend image: $(IMAGE_BACKEND):$(VERSION)$(NC)"
+	docker push $(IMAGE_BACKEND):$(VERSION)
+	docker push $(IMAGE_BACKEND):latest
+	@echo "$(GREEN)Backend image pushed$(NC)"
+
+## Push frontend Docker image to registry
+docker-push-frontend:
+	@echo "$(GREEN)Pushing frontend image: $(IMAGE_FRONTEND):$(VERSION)$(NC)"
+	docker push $(IMAGE_FRONTEND):$(VERSION)
+	docker push $(IMAGE_FRONTEND):latest
+	@echo "$(GREEN)Frontend image pushed$(NC)"
+
+## Push all Docker images to registry
+docker-push: docker-push-backend docker-push-frontend
+	@echo "$(GREEN)All images pushed successfully$(NC)"
+
+## Build and push all Docker images (dev release)
+docker-release: docker-build docker-push
+	@echo "$(GREEN)==================================================$(NC)"
+	@echo "$(GREEN)Release complete!$(NC)"
+	@echo "$(GREEN)Images published:$(NC)"
+	@echo "  - $(IMAGE_BACKEND):$(VERSION)"
+	@echo "  - $(IMAGE_BACKEND):latest"
+	@echo "  - $(IMAGE_FRONTEND):$(VERSION)"
+	@echo "  - $(IMAGE_FRONTEND):latest"
+	@echo "$(GREEN)==================================================$(NC)"
+
+## Build multi-platform images and push (for production releases)
+docker-release-multiarch: docker-login
+	@echo "$(GREEN)Building and pushing multi-platform images...$(NC)"
+	@echo "$(YELLOW)Platforms: $(PLATFORMS)$(NC)"
+	docker buildx build --platform $(PLATFORMS) \
+		-t $(IMAGE_BACKEND):$(VERSION) \
+		-t $(IMAGE_BACKEND):latest \
+		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
+		--label "org.opencontainers.image.revision=$(GIT_COMMIT)" \
+		--label "org.opencontainers.image.version=$(VERSION)" \
+		--push \
+		./apps/api
+	docker buildx build --platform $(PLATFORMS) \
+		-t $(IMAGE_FRONTEND):$(VERSION) \
+		-t $(IMAGE_FRONTEND):latest \
+		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
+		--label "org.opencontainers.image.revision=$(GIT_COMMIT)" \
+		--label "org.opencontainers.image.version=$(VERSION)" \
+		--push \
+		./apps/web
+	@echo "$(GREEN)Multi-platform release complete!$(NC)"
+
+## Show current Docker image tags
+docker-info:
+	@echo "$(GREEN)Docker Registry Configuration$(NC)"
+	@echo "  Registry:     $(REGISTRY)"
+	@echo "  Organization: $(GITHUB_ORG)"
+	@echo "  Version:      $(VERSION)"
+	@echo "  Git Commit:   $(GIT_COMMIT)"
+	@echo "  Git Branch:   $(GIT_BRANCH)"
+	@echo ""
+	@echo "$(GREEN)Image Names:$(NC)"
+	@echo "  Backend:  $(IMAGE_BACKEND):$(VERSION)"
+	@echo "  Frontend: $(IMAGE_FRONTEND):$(VERSION)"
+
+.PHONY: help dev up up-fg down restart watch stop-watch stop-docs backend-logs backend-restart db-shell db-backup migrate logs ps clean rebuild check-deps install-fswatch docs docs-build docs-dev docs-down docker-login docker-build docker-build-backend docker-build-frontend docker-push docker-push-backend docker-push-frontend docker-release docker-release-multiarch docker-info

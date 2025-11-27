@@ -1446,23 +1446,23 @@ RÈGLES IMPORTANTES :
                         <div className="space-y-1 text-xs">
                           <div className="flex justify-between">
                             <span className="text-gray-600 dark:text-gray-400">Abo. :</span>
-                            <span className="font-medium">{offer.subscription_price.toFixed(2)} €/mois</span>
+                            <span className="font-medium">{Number(offer.subscription_price ?? 0).toFixed(2)} €/mois</span>
                           </div>
                           {offer.offer_type === 'BASE' && offer.base_price && (
                             <div className="flex justify-between">
                               <span className="text-gray-600 dark:text-gray-400">Prix BASE :</span>
-                              <span className="font-medium">{offer.base_price.toFixed(4)} €/kWh</span>
+                              <span className="font-medium">{Number(offer.base_price ?? 0).toFixed(4)} €/kWh</span>
                             </div>
                           )}
                           {offer.offer_type === 'HC_HP' && (
                             <>
                               <div className="flex justify-between">
                                 <span className="text-gray-600 dark:text-gray-400">HC :</span>
-                                <span className="font-medium">{offer.hc_price?.toFixed(4)} €/kWh</span>
+                                <span className="font-medium">{Number(offer.hc_price ?? 0).toFixed(4)} €/kWh</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-gray-600 dark:text-gray-400">HP :</span>
-                                <span className="font-medium">{offer.hp_price?.toFixed(4)} €/kWh</span>
+                                <span className="font-medium">{Number(offer.hp_price ?? 0).toFixed(4)} €/kWh</span>
                               </div>
                             </>
                           )}
@@ -1471,31 +1471,31 @@ RÈGLES IMPORTANTES :
                               <div className="font-semibold text-blue-600 dark:text-blue-400 mt-2">Jours Bleus :</div>
                               <div className="flex justify-between pl-2">
                                 <span className="text-gray-600 dark:text-gray-400">HC :</span>
-                                <span className="font-medium">{offer.tempo_blue_hc?.toFixed(4)} €/kWh</span>
+                                <span className="font-medium">{Number(offer.tempo_blue_hc ?? 0).toFixed(4)} €/kWh</span>
                               </div>
                               <div className="flex justify-between pl-2">
                                 <span className="text-gray-600 dark:text-gray-400">HP :</span>
-                                <span className="font-medium">{offer.tempo_blue_hp?.toFixed(4)} €/kWh</span>
+                                <span className="font-medium">{Number(offer.tempo_blue_hp ?? 0).toFixed(4)} €/kWh</span>
                               </div>
 
                               <div className="font-semibold text-white dark:text-gray-300 mt-2">Jours Blancs :</div>
                               <div className="flex justify-between pl-2">
                                 <span className="text-gray-600 dark:text-gray-400">HC :</span>
-                                <span className="font-medium">{offer.tempo_white_hc?.toFixed(4)} €/kWh</span>
+                                <span className="font-medium">{Number(offer.tempo_white_hc ?? 0).toFixed(4)} €/kWh</span>
                               </div>
                               <div className="flex justify-between pl-2">
                                 <span className="text-gray-600 dark:text-gray-400">HP :</span>
-                                <span className="font-medium">{offer.tempo_white_hp?.toFixed(4)} €/kWh</span>
+                                <span className="font-medium">{Number(offer.tempo_white_hp ?? 0).toFixed(4)} €/kWh</span>
                               </div>
 
                               <div className="font-semibold text-red-600 dark:text-red-400 mt-2">Jours Rouges :</div>
                               <div className="flex justify-between pl-2">
                                 <span className="text-gray-600 dark:text-gray-400">HC :</span>
-                                <span className="font-medium">{offer.tempo_red_hc?.toFixed(4)} €/kWh</span>
+                                <span className="font-medium">{Number(offer.tempo_red_hc ?? 0).toFixed(4)} €/kWh</span>
                               </div>
                               <div className="flex justify-between pl-2">
                                 <span className="text-gray-600 dark:text-gray-400">HP :</span>
-                                <span className="font-medium">{offer.tempo_red_hp?.toFixed(4)} €/kWh</span>
+                                <span className="font-medium">{Number(offer.tempo_red_hp ?? 0).toFixed(4)} €/kWh</span>
                               </div>
                             </div>
                           )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Info, Trash2, RefreshCw, Edit2, Save, X, Zap, Clock, Factory, Plus, Minus, Eye, EyeOff, Calendar, MoreVertical, AlertCircle, ChevronUp, ChevronDown } from 'lucide-react'
+import { Info, Trash2, RefreshCw, Edit2, Save, X, Zap, Clock, Factory, Plus, Minus, Eye, EyeOff, Calendar, MoreVertical } from 'lucide-react'
 import { pdlApi } from '@/api/pdl'
 import { oauthApi } from '@/api/oauth'
 import type { PDL } from '@/types/api'
@@ -290,25 +290,26 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
     },
   })
 
-  const saveContract = () => {
-    const data: { subscribed_power?: number; offpeak_hours?: string[] } = {}
+  // Unused helper function - kept for potential future use
+  // const saveContract = () => {
+  //   const data: { subscribed_power?: number; offpeak_hours?: string[] } = {}
 
-    if (editedPower) {
-      data.subscribed_power = parseInt(editedPower)
-    }
+  //   if (editedPower) {
+  //     data.subscribed_power = parseInt(editedPower)
+  //   }
 
-    // Convert ranges to string format "HH:MM-HH:MM"
-    const validRanges = offpeakRanges
-      .filter(r => r.startHour !== '00' || r.startMin !== '00' || r.endHour !== '00' || r.endMin !== '00')
-      .map(r => `${r.startHour}:${r.startMin}-${r.endHour}:${r.endMin}`)
+  //   // Convert ranges to string format "HH:MM-HH:MM"
+  //   const validRanges = offpeakRanges
+  //     .filter(r => r.startHour !== '00' || r.startMin !== '00' || r.endHour !== '00' || r.endMin !== '00')
+  //     .map(r => `${r.startHour}:${r.startMin}-${r.endHour}:${r.endMin}`)
 
-    if (validRanges.length > 0) {
-      data.offpeak_hours = validRanges
-    }
+  //   if (validRanges.length > 0) {
+  //     data.offpeak_hours = validRanges
+  //   }
 
-    setIsSaving(true)
-    updateContractMutation.mutate(data)
-  }
+  //   setIsSaving(true)
+  //   updateContractMutation.mutate(data)
+  // }
 
   const handlePowerChange = (value: string) => {
     setEditedPower(value)
@@ -386,31 +387,32 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
     }, 500)
   }
 
-  const handleIncrementField = (index: number, field: 'startHour' | 'startMin' | 'endHour' | 'endMin') => {
-    const range = offpeakRanges[index]
-    let newValue = parseInt(range[field])
+  // Unused increment/decrement helpers - kept for potential future use
+  // const handleIncrementField = (index: number, field: 'startHour' | 'startMin' | 'endHour' | 'endMin') => {
+  //   const range = offpeakRanges[index]
+  //   let newValue = parseInt(range[field])
 
-    if (field === 'startHour' || field === 'endHour') {
-      newValue = (newValue + 1) % 24
-    } else {
-      newValue = (newValue + 1) % 60
-    }
+  //   if (field === 'startHour' || field === 'endHour') {
+  //     newValue = (newValue + 1) % 24
+  //   } else {
+  //     newValue = (newValue + 1) % 60
+  //   }
 
-    handleOffpeakFieldChange(index, field, newValue.toString().padStart(2, '0'))
-  }
+  //   handleOffpeakFieldChange(index, field, newValue.toString().padStart(2, '0'))
+  // }
 
-  const handleDecrementField = (index: number, field: 'startHour' | 'startMin' | 'endHour' | 'endMin') => {
-    const range = offpeakRanges[index]
-    let newValue = parseInt(range[field])
+  // const handleDecrementField = (index: number, field: 'startHour' | 'startMin' | 'endHour' | 'endMin') => {
+  //   const range = offpeakRanges[index]
+  //   let newValue = parseInt(range[field])
 
-    if (field === 'startHour' || field === 'endHour') {
-      newValue = (newValue - 1 + 24) % 24
-    } else {
-      newValue = (newValue - 1 + 60) % 60
-    }
+  //   if (field === 'startHour' || field === 'endHour') {
+  //     newValue = (newValue - 1 + 24) % 24
+  //   } else {
+  //     newValue = (newValue - 1 + 60) % 60
+  //   }
 
-    handleOffpeakFieldChange(index, field, newValue.toString().padStart(2, '0'))
-  }
+  //   handleOffpeakFieldChange(index, field, newValue.toString().padStart(2, '0'))
+  // }
 
   const handleSaveName = () => {
     updateNameMutation.mutate(editedName)

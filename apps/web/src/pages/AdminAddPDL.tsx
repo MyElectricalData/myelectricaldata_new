@@ -75,7 +75,7 @@ export default function AdminAddPDL() {
   })
 
   // Extraire le tableau d'utilisateurs de la réponse API
-  const usersData = usersResponse?.users || []
+  const usersData = (usersResponse as { users?: unknown[] })?.users || []
 
   // Filtrage des utilisateurs
   const filteredUsers = Array.isArray(usersData)
@@ -126,9 +126,9 @@ export default function AdminAddPDL() {
       case 'Enter':
         e.preventDefault()
         if (highlightedIndex >= 0 && highlightedIndex < filteredUsers.length) {
-          const user = filteredUsers[highlightedIndex]
-          setSelectedUser(user)
-          setSearchTerm(user.email)
+          const selectedUserData = filteredUsers[highlightedIndex]
+          setSelectedUser(selectedUserData)
+          setSearchTerm((selectedUserData as any).email)
           setShowDropdown(false)
           setHighlightedIndex(-1)
         }
@@ -182,7 +182,7 @@ export default function AdminAddPDL() {
         return pdlApi.create(pdlData)
       }
     },
-    onSuccess: (response) => {
+    onSuccess: () => {
       // Déterminer le message selon le contexte
       const isOwnAccount = !selectedUser || selectedUser.id === user?.id
       const targetUser = isOwnAccount ? 'votre compte' : selectedUser.email

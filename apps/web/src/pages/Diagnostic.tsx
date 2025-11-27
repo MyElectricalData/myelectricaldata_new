@@ -1,4 +1,3 @@
-import React from 'react'
 import { Activity } from 'lucide-react'
 import { DiagnosticDuplicates } from '@/components/DiagnosticDuplicates'
 import { CacheExplorer } from '@/components/CacheExplorer'

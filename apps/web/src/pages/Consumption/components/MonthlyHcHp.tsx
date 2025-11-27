@@ -106,7 +106,7 @@ export function MonthlyHcHp({ monthlyHcHpByYear, selectedPDLDetails, isDarkMode 
     // Create a map of all months
     const monthsMap = new Map<string, any>()
 
-    selectedYearsData.forEach((yearData, yearIndex) => {
+    selectedYearsData.forEach((yearData) => {
       yearData.months.forEach(monthData => {
         const monthKey = monthData.month.split(' ')[0] // Extract month name (e.g., "Jan")
 
@@ -149,15 +149,15 @@ export function MonthlyHcHp({ monthlyHcHpByYear, selectedPDLDetails, isDarkMode 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         {/* Tabs on the left - Allow multiple selection */}
         <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-hidden py-3 px-2 no-scrollbar">
-          {monthlyHcHpByYear.map((yearData, idx) => {
-            const isSelected = selectedYears.has(idx)
+          {monthlyHcHpByYear.map((yearData, _idx) => {
+            const isSelected = selectedYears.has(_idx)
             return (
               <ModernButton
                 key={yearData.year}
                 variant="tab"
                 size="md"
                 isActive={isSelected}
-                onClick={() => toggleYearSelection(idx)}
+                onClick={() => toggleYearSelection(_idx)}
                 className="flex-1 min-w-[80px]"
               >
                 {yearData.year}
@@ -242,7 +242,7 @@ export function MonthlyHcHp({ monthlyHcHpByYear, selectedPDLDetails, isDarkMode 
             />
             <Legend />
             {/* Dynamically create bars for each selected year */}
-            {selectedYearsData.map((yearData, index) => {
+            {selectedYearsData.map((yearData, _yearIndex) => {
               // Define colors for HC and HP for each year with transparency for overlay effect
               const hcColors = [
                 'rgba(59, 130, 246, 0.7)',   // blue
@@ -262,12 +262,12 @@ export function MonthlyHcHp({ monthlyHcHpByYear, selectedPDLDetails, isDarkMode 
                   <Bar
                     dataKey={`hc_${yearData.year}`}
                     name={`HC ${yearData.year}`}
-                    fill={hcColors[index % hcColors.length]}
+                    fill={hcColors[_yearIndex % hcColors.length]}
                   />
                   <Bar
                     dataKey={`hp_${yearData.year}`}
                     name={`HP ${yearData.year}`}
-                    fill={hpColors[index % hpColors.length]}
+                    fill={hpColors[_yearIndex % hpColors.length]}
                   />
                 </React.Fragment>
               )

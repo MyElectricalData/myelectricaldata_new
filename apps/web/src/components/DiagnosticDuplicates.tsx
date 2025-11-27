@@ -200,7 +200,7 @@ export function DiagnosticDuplicates() {
                 Détails par jour ({result.details.length} jours affectés) :
               </h5>
               <div className="max-h-64 overflow-y-auto space-y-1">
-                {result.details.map((detail, idx) => (
+                {result.details.map((detail) => (
                   <div
                     key={`${detail.type}-${detail.date}`}
                     className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm"

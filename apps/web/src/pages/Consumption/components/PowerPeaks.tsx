@@ -17,14 +17,12 @@ interface PowerData {
 interface PowerPeaksProps {
   powerByYearData: PowerData[]
   selectedPDLDetails: any
-  maxPowerData: any
   isDarkMode: boolean
 }
 
 export function PowerPeaks({
   powerByYearData,
   selectedPDLDetails,
-  maxPowerData,
   isDarkMode
 }: PowerPeaksProps) {
   // Track selected years with a Set (allows multiple selections)
