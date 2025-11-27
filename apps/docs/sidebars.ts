@@ -196,7 +196,7 @@ const sidebars: SidebarsConfig = {
     {
       type: "category",
       label: "Architecture",
-      items: ["architecture/summary", "logs/README", "logs/architecture-decisions"],
+      items: ["architecture/summary"],
     },
   ],
 };
