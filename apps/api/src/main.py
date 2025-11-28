@@ -68,6 +68,19 @@ async def lifespan(app: FastAPI):
     await enedis_adapter.close()
 
 
+def get_servers():
+    """Build servers list for OpenAPI based on configuration."""
+    servers = [
+        {"url": "/api", "description": "API via proxy (relative)"},
+    ]
+    # Add production server if FRONTEND_URL is configured
+    if settings.FRONTEND_URL and settings.FRONTEND_URL != "http://localhost:3000":
+        servers.insert(0, {"url": f"{settings.FRONTEND_URL}/api", "description": "Production API"})
+    # Add local dev server
+    servers.append({"url": "http://localhost:8000", "description": "Backend direct (dev)"})
+    return servers
+
+
 app = FastAPI(
     title="MyElectricalData API",
     description="API Gateway for Enedis data access",
@@ -76,10 +89,7 @@ app = FastAPI(
     docs_url="/docs",  # Use default docs
     root_path="/api",
     redoc_url="/redoc",
-    servers=[
-        {"url": "/api", "description": "API via proxy"},
-        {"url": "http://localhost:8000", "description": "Backend direct"},
-    ],
+    servers=get_servers(),
     swagger_ui_init_oauth={
         "clientId": "",
         "usePkceWithAuthorizationCodeGrant": False,
