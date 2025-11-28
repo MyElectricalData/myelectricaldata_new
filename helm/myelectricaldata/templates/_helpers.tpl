@@ -210,12 +210,92 @@ imagePullSecrets:
 {{- end }}
 
 {{/*
-PostgreSQL secret name - CloudPirates postgres chart creates secrets
+PostgreSQL secret name - Supports external secrets or subchart-generated secrets
 */}}
 {{- define "myelectricaldata.postgres.secretName" -}}
 {{- if .Values.postgres.enabled }}
-{{- printf "%s-postgres" .Release.Name }}
+  {{- if .Values.postgres.auth.existingSecret }}
+    {{- .Values.postgres.auth.existingSecret }}
+  {{- else }}
+    {{- printf "%s-postgres" .Release.Name }}
+  {{- end }}
+{{- else if .Values.externalDatabase.existingSecret }}
+  {{- .Values.externalDatabase.existingSecret }}
 {{- else }}
-{{- printf "%s-external-db" (include "myelectricaldata.fullname" .) }}
+  {{- printf "%s-external-db" (include "myelectricaldata.fullname" .) }}
 {{- end }}
 {{- end }}
+
+{{/*
+PostgreSQL secret key - Returns the key name for the password in the secret
+*/}}
+{{- define "myelectricaldata.postgres.secretKey" -}}
+{{- if .Values.postgres.enabled }}
+  {{- if .Values.postgres.auth.existingSecret }}
+    {{- .Values.postgres.auth.existingSecretKey | default "password" }}
+  {{- else }}
+    {{- "postgres-password" }}
+  {{- end }}
+{{- else }}
+  {{- "password" }}
+{{- end }}
+{{- end }}
+
+{{/*
+Application secret name - uses existingSecret if provided, otherwise creates one
+*/}}
+{{- define "myelectricaldata.secretName" -}}
+{{- if .Values.secrets.existingSecret }}
+{{- .Values.secrets.existingSecret }}
+{{- else }}
+{{- include "myelectricaldata.fullname" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Helper to check if any secret uses an external reference
+Returns "true" if at least one secret uses existingSecretRef
+*/}}
+{{- define "myelectricaldata.hasExternalSecrets" -}}
+{{- if or .Values.secrets.secretKey.existingSecretRef.name .Values.secrets.adminEmails.existingSecretRef.name .Values.secrets.enedis.clientId.existingSecretRef.name .Values.secrets.enedis.clientSecret.existingSecretRef.name .Values.secrets.rte.clientId.existingSecretRef.name .Values.secrets.rte.clientSecret.existingSecretRef.name .Values.secrets.mailgun.apiKey.existingSecretRef.name .Values.secrets.mailgun.domain.existingSecretRef.name .Values.secrets.mailgun.fromEmail.existingSecretRef.name .Values.secrets.turnstile.secretKey.existingSecretRef.name -}}
+true
+{{- end }}
+{{- end }}
+
+{{/*
+Helper to check if we can use envFrom (legacy mode - single secret for all)
+Returns "true" if using legacy existingSecret or all secrets are inline
+*/}}
+{{- define "myelectricaldata.useEnvFrom" -}}
+{{- if .Values.secrets.existingSecret -}}
+true
+{{- else if not (include "myelectricaldata.hasExternalSecrets" .) -}}
+true
+{{- end }}
+{{- end }}
+
+{{/*
+Get secret name for a specific secret field
+Usage: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.secretKey "defaultKey" "SECRET_KEY") }}
+*/}}
+{{- define "myelectricaldata.secretRef.name" -}}
+{{- if .secretConfig.existingSecretRef.name -}}
+{{- .secretConfig.existingSecretRef.name -}}
+{{- else if .root.Values.secrets.existingSecret -}}
+{{- .root.Values.secrets.existingSecret -}}
+{{- else -}}
+{{- include "myelectricaldata.fullname" .root -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Get secret key for a specific secret field
+Usage: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.secretKey "defaultKey" "SECRET_KEY") }}
+*/}}
+{{- define "myelectricaldata.secretRef.key" -}}
+{{- if .secretConfig.existingSecretRef.key -}}
+{{- .secretConfig.existingSecretRef.key -}}
+{{- else -}}
+{{- .defaultKey -}}
+{{- end -}}
+{{- end -}}

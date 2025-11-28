@@ -50,22 +50,113 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  {{- if .Values.postgres.enabled }}
-                  name: {{ .Release.Name }}-postgres
-                  key: postgres-password
-                  {{- else }}
-                  name: {{ include "myelectricaldata.fullname" . }}-external-db
-                  key: password
-                  {{- end }}
+                  name: {{ include "myelectricaldata.postgres.secretName" . | trim }}
+                  key: {{ include "myelectricaldata.postgres.secretKey" . | trim }}
             - name: DATABASE_URL
               value: {{ include "myelectricaldata.databaseUrl" . | quote }}
             - name: REDIS_URL
               value: {{ include "myelectricaldata.redisUrl" . | quote }}
             - name: ENEDIS_ENVIRONMENT
               value: {{ .Values.secrets.enedis.environment | quote }}
-          envFrom:
-            - secretRef:
-                name: {{ include "myelectricaldata.fullname" . }}
+            # --- Application Secrets ---
+            # SECRET_KEY
+            {{- if or .Values.secrets.secretKey.value .Values.secrets.secretKey.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.secretKey "defaultKey" "SECRET_KEY") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.secretKey "defaultKey" "SECRET_KEY") }}
+            {{- end }}
+            # ADMIN_EMAILS (from ConfigMap or Secret)
+            {{- if .Values.config.adminEmails }}
+            - name: ADMIN_EMAILS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}
+                  key: ADMIN_EMAILS
+            {{- else if or .Values.secrets.adminEmails.value .Values.secrets.adminEmails.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: ADMIN_EMAILS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.adminEmails "defaultKey" "ADMIN_EMAILS") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.adminEmails "defaultKey" "ADMIN_EMAILS") }}
+            {{- end }}
+            # ENEDIS_CLIENT_ID
+            {{- if or .Values.secrets.enedis.clientId.value .Values.secrets.enedis.clientId.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: ENEDIS_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.enedis.clientId "defaultKey" "ENEDIS_CLIENT_ID") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.enedis.clientId "defaultKey" "ENEDIS_CLIENT_ID") }}
+            {{- end }}
+            # ENEDIS_CLIENT_SECRET
+            {{- if or .Values.secrets.enedis.clientSecret.value .Values.secrets.enedis.clientSecret.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: ENEDIS_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.enedis.clientSecret "defaultKey" "ENEDIS_CLIENT_SECRET") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.enedis.clientSecret "defaultKey" "ENEDIS_CLIENT_SECRET") }}
+            {{- end }}
+            # RTE_CLIENT_ID
+            {{- if or .Values.secrets.rte.clientId.value .Values.secrets.rte.clientId.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: RTE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.rte.clientId "defaultKey" "RTE_CLIENT_ID") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.rte.clientId "defaultKey" "RTE_CLIENT_ID") }}
+            {{- end }}
+            # RTE_CLIENT_SECRET
+            {{- if or .Values.secrets.rte.clientSecret.value .Values.secrets.rte.clientSecret.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: RTE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.rte.clientSecret "defaultKey" "RTE_CLIENT_SECRET") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.rte.clientSecret "defaultKey" "RTE_CLIENT_SECRET") }}
+            {{- end }}
+            # MAILGUN_API_KEY
+            {{- if or .Values.secrets.mailgun.apiKey.value .Values.secrets.mailgun.apiKey.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: MAILGUN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.mailgun.apiKey "defaultKey" "MAILGUN_API_KEY") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.mailgun.apiKey "defaultKey" "MAILGUN_API_KEY") }}
+            {{- end }}
+            # MAILGUN_DOMAIN (from ConfigMap or Secret)
+            {{- if .Values.config.mailgunDomain }}
+            - name: MAILGUN_DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}
+                  key: MAILGUN_DOMAIN
+            {{- else if or .Values.secrets.mailgun.domain.value .Values.secrets.mailgun.domain.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: MAILGUN_DOMAIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.mailgun.domain "defaultKey" "MAILGUN_DOMAIN") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.mailgun.domain "defaultKey" "MAILGUN_DOMAIN") }}
+            {{- end }}
+            # MAILGUN_FROM_EMAIL (from ConfigMap or Secret)
+            {{- if .Values.config.mailgunFromEmail }}
+            - name: MAILGUN_FROM_EMAIL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}
+                  key: MAILGUN_FROM_EMAIL
+            {{- else if or .Values.secrets.mailgun.fromEmail.value .Values.secrets.mailgun.fromEmail.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: MAILGUN_FROM_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.mailgun.fromEmail "defaultKey" "MAILGUN_FROM_EMAIL") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.mailgun.fromEmail "defaultKey" "MAILGUN_FROM_EMAIL") }}
+            {{- end }}
+            # TURNSTILE_SECRET_KEY
+            {{- if or .Values.secrets.turnstile.secretKey.value .Values.secrets.turnstile.secretKey.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: TURNSTILE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.turnstile.secretKey "defaultKey" "TURNSTILE_SECRET_KEY") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.turnstile.secretKey "defaultKey" "TURNSTILE_SECRET_KEY") }}
+            {{- end }}
           {{- with .Values.backend.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}

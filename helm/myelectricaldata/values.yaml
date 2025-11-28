@@ -141,34 +141,95 @@ ingress:
   #   hosts:
   #     - myelectricaldata.local
 
+# Application configuration (non-sensitive values)
+config:
+  adminEmails: ""           # Comma-separated list of admin emails
+  mailgunDomain: ""         # Mailgun domain
+  mailgunFromEmail: ""      # Mailgun from email address
+
 # Application secrets
+# You can configure secrets in 3 ways:
+# 1. Use a single existing Kubernetes Secret by setting existingSecret (legacy)
+# 2. Use per-secret external references with existingSecretRef.name and existingSecretRef.key
+# 3. Provide values directly below (a Secret will be created by Helm)
 secrets:
+  # Use a single existing secret for ALL secrets (legacy mode)
+  # The secret must contain these keys: SECRET_KEY, ADMIN_EMAILS, ENEDIS_CLIENT_ID, etc.
+  existingSecret: ""
+
+  # --- Per-secret configuration ---
+  # Each secret can be configured with:
+  #   - value: The secret value (Helm creates the secret)
+  #   - existingSecretRef.name: Name of an existing Kubernetes Secret
+  #   - existingSecretRef.key: Key within that secret
+  # Priority: existingSecretRef > existingSecret > value
+
   # JWT secret key for authentication
-  secretKey: ""  # Required - generate with: openssl rand -hex 32
+  secretKey:
+    value: ""  # Required - generate with: openssl rand -hex 32
+    existingSecretRef:
+      name: ""  # e.g., "my-app-secrets"
+      key: ""   # e.g., "jwt-secret-key"
 
   # Admin emails (comma-separated)
-  adminEmails: ""
+  adminEmails:
+    value: ""
+    existingSecretRef:
+      name: ""
+      key: ""
 
   # Enedis API credentials
   enedis:
-    clientId: ""
-    clientSecret: ""
     environment: "sandbox"  # sandbox or production
+    clientId:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
+    clientSecret:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
 
   # RTE API credentials (for Tempo calendar)
   rte:
-    clientId: ""
-    clientSecret: ""
+    clientId:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
+    clientSecret:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
 
   # Mailgun email service
   mailgun:
-    apiKey: ""
-    domain: ""
-    fromEmail: "MyElectricalData <noreply@myelectricaldata.fr>"
+    apiKey:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
+    domain:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
+    fromEmail:
+      value: "MyElectricalData <noreply@myelectricaldata.fr>"
+      existingSecretRef:
+        name: ""
+        key: ""
 
   # Cloudflare Turnstile (anti-spam)
   turnstile:
-    secretKey: ""
+    secretKey:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
 
 # Redis configuration (CloudPirates subchart)
 # Repository: oci://registry-1.docker.io/cloudpirates/redis
@@ -221,7 +282,12 @@ postgres:
   auth:
     database: myelectricaldata
     username: myelectricaldata
-    password: ""  # Required - set a secure password
+    # Option 1: Set password directly (Helm creates the secret)
+    password: ""
+    # Option 2: Use an existing secret with a generated password
+    # The secret must contain the key specified in existingSecretKey
+    existingSecret: ""           # e.g., "my-postgres-credentials"
+    existingSecretKey: "password"  # Key containing the password in the secret
 
   # PostgreSQL service
   service:
@@ -250,6 +316,8 @@ externalDatabase:
   database: myelectricaldata
   username: myelectricaldata
   password: ""
+  # Use an existing secret for the password (key: password)
+  existingSecret: ""
 
 # External Redis configuration (if redis.enabled is false)
 externalRedis:

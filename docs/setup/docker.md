@@ -30,54 +30,179 @@ Configuration Docker complète avec reverse proxy Caddy pour MyElectricalData.
 
 ### 1. Configuration
 
-Le projet utilise des fichiers `.env.docker` séparés pour chaque service :
+Le projet utilise des fichiers `.env.docker` séparés pour chaque service.
 
 #### Backend : `apps/api/.env.docker`
 
+##### 🗄️ Base de données
+
+| Variable | Description | Valeurs possibles |
+|----------|-------------|-------------------|
+| `DATABASE_URL` | URI de connexion à la base de données. Le type (SQLite/PostgreSQL) est auto-détecté. | `sqlite+aiosqlite:///./data/myelectricaldata.db` (défaut) ou `postgresql+asyncpg://user:pass@host:5432/db` |
+
 ```bash
-# Database
+# SQLite (simple, fichier local)
 DATABASE_URL=sqlite+aiosqlite:///./data/myelectricaldata.db
 
-# Application
+# PostgreSQL (recommandé en production)
+DATABASE_URL=postgresql+asyncpg://myelectricaldata:motdepasse@postgres:5432/myelectricaldata
+```
+
+##### ⚙️ Application
+
+| Variable | Description | Valeur par défaut |
+|----------|-------------|-------------------|
+| `DEBUG` | Active le mode debug (logs détaillés, reload auto). **Désactiver en production.** | `false` |
+| `DEBUG_SQL` | Affiche toutes les requêtes SQL dans les logs. Utile pour le debugging. | `false` |
+| `SECRET_KEY` | **🔐 Critique** — Clé de signature des tokens JWT. Voir [section dédiée](#-configuration-secret_key). | ❌ Requis |
+
+```bash
 DEBUG=false
 DEBUG_SQL=false
-SECRET_KEY=ton-secret-key-super-securise
+SECRET_KEY=générer-avec-python-secrets  # Voir section SECRET_KEY
+```
 
-# Enedis OAuth
-ENEDIS_CLIENT_ID=ton-client-id
-ENEDIS_CLIENT_SECRET=ton-client-secret
+##### 🔌 API Enedis (Data Connect)
+
+Ces identifiants sont obtenus sur le [portail développeur Enedis](https://datahub-enedis.fr/).
+
+| Variable | Description | Exemple |
+|----------|-------------|---------|
+| `ENEDIS_CLIENT_ID` | Identifiant de votre application Enedis | `abc123def456` |
+| `ENEDIS_CLIENT_SECRET` | Secret de votre application Enedis | `secret789xyz` |
+| `ENEDIS_REDIRECT_URI` | URL de callback OAuth2 (doit correspondre à celle déclarée sur Enedis) | `https://myelectricaldata.fr/consent` |
+| `ENEDIS_ENVIRONMENT` | Environnement API : `sandbox` (données fictives) ou `production` (données réelles) | `production` |
+
+```bash
+ENEDIS_CLIENT_ID=votre-client-id
+ENEDIS_CLIENT_SECRET=votre-client-secret
 ENEDIS_REDIRECT_URI=https://myelectricaldata.fr/consent
 ENEDIS_ENVIRONMENT=production
+```
 
-# URLs
+> 💡 **Sandbox vs Production** : Utilisez `sandbox` pour tester sans données réelles. Les PDL de test sont fournis par Enedis dans leur documentation.
+
+##### ⚡ API RTE (Tempo & Ecowatt)
+
+Ces identifiants sont obtenus sur le [portail API RTE](https://data.rte-france.com/).
+
+| Variable | Description | Format |
+|----------|-------------|--------|
+| `RTE_CLIENT_ID` | Identifiant de votre application RTE | UUID `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+| `RTE_CLIENT_SECRET` | Secret de votre application RTE | UUID long |
+
+```bash
+RTE_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+RTE_CLIENT_SECRET=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+> 💡 **À quoi ça sert ?** Les API RTE fournissent le calendrier Tempo (jours bleu/blanc/rouge) et les alertes Ecowatt (tension sur le réseau électrique).
+
+##### 🌐 URLs
+
+| Variable | Description | Exemple |
+|----------|-------------|---------|
+| `FRONTEND_URL` | URL publique du frontend (utilisée pour les liens dans les emails, CORS, etc.) | `https://myelectricaldata.fr` |
+| `BACKEND_URL` | URL publique de l'API (utilisée pour générer les liens dans les réponses) | `https://myelectricaldata.fr/api` |
+
+```bash
 FRONTEND_URL=https://myelectricaldata.fr
 BACKEND_URL=https://myelectricaldata.fr/api
+```
 
-# Mailgun (optionnel)
-MAILGUN_API_KEY=
-MAILGUN_DOMAIN=
+##### 📧 Emails (Mailgun) — Optionnel
+
+Permet l'envoi d'emails (vérification de compte, notifications).
+
+| Variable | Description | Exemple |
+|----------|-------------|---------|
+| `MAILGUN_API_KEY` | Clé API Mailgun | `key-xxxxxxxxxxxxxx` |
+| `MAILGUN_DOMAIN` | Domaine vérifié sur Mailgun | `mg.myelectricaldata.fr` |
+| `MAILGUN_FROM_EMAIL` | Adresse d'expédition | `MyElectricalData <noreply@myelectricaldata.fr>` |
+| `MAILGUN_API_BASE_URL` | URL de l'API Mailgun (US ou EU) | `https://api.eu.mailgun.net/v3` |
+| `REQUIRE_EMAIL_VERIFICATION` | Exige la vérification email avant activation du compte | `false` |
+
+```bash
+MAILGUN_API_KEY=key-xxxxxxxxxxxxxx
+MAILGUN_DOMAIN=mg.myelectricaldata.fr
+MAILGUN_FROM_EMAIL=MyElectricalData <noreply@myelectricaldata.fr>
+MAILGUN_API_BASE_URL=https://api.eu.mailgun.net/v3  # Pour l'Europe
 REQUIRE_EMAIL_VERIFICATION=false
+```
 
-# Cloudflare Turnstile (optionnel)
-TURNSTILE_SECRET_KEY=
+> 💡 **Sans Mailgun** : Laissez les champs vides et `REQUIRE_EMAIL_VERIFICATION=false`. Les comptes seront activés immédiatement.
+
+##### 🛡️ Protection anti-bot (Turnstile) — Optionnel
+
+Cloudflare Turnstile protège les formulaires d'inscription contre les bots.
+
+| Variable | Description | Où l'obtenir |
+|----------|-------------|--------------|
+| `TURNSTILE_SECRET_KEY` | Clé secrète (côté serveur) | [Dashboard Cloudflare](https://dash.cloudflare.com/?to=/:account/turnstile) |
+| `REQUIRE_CAPTCHA` | Active la vérification Turnstile sur l'inscription | `false` |
+
+```bash
+TURNSTILE_SECRET_KEY=0x4AAAAAAA...
 REQUIRE_CAPTCHA=false
 ```
 
-#### Frontend : `apps/web/.env.docker`
+##### 👑 Administration
+
+| Variable | Description | Format |
+|----------|-------------|--------|
+| `ADMIN_EMAILS` | Liste des emails ayant accès à l'interface admin | Emails séparés par des virgules |
 
 ```bash
-# API Base URL (utilisé au build time)
+ADMIN_EMAILS=admin@example.com,autre.admin@example.com
+```
+
+##### 🚦 Rate Limiting
+
+| Variable | Description | Valeur par défaut |
+|----------|-------------|-------------------|
+| `ENEDIS_RATE_LIMIT` | Limite de requêtes/seconde vers Enedis (protection contre le blocage) | `5` |
+| `USER_DAILY_LIMIT_NO_CACHE` | Quota journalier par utilisateur (requêtes vers Enedis) | `50` |
+| `USER_DAILY_LIMIT_WITH_CACHE` | Quota journalier par utilisateur (requêtes servies depuis le cache) | `1000` |
+
+```bash
+ENEDIS_RATE_LIMIT=5
+USER_DAILY_LIMIT_NO_CACHE=50
+USER_DAILY_LIMIT_WITH_CACHE=1000
+```
+
+##### 🗃️ Cache Redis
+
+| Variable | Description | Valeur par défaut |
+|----------|-------------|-------------------|
+| `REDIS_URL` | URI de connexion Redis | `redis://redis:6379/0` |
+| `CACHE_TTL_SECONDS` | Durée de vie du cache en secondes (86400 = 24h) | `86400` |
+
+```bash
+REDIS_URL=redis://redis:6379/0
+CACHE_TTL_SECONDS=86400
+```
+
+---
+
+#### Frontend : `apps/web/.env.docker`
+
+| Variable | Description | Valeur typique |
+|----------|-------------|----------------|
+| `VITE_API_BASE_URL` | Chemin de base de l'API (relatif ou absolu) | `/api` |
+| `VITE_APP_NAME` | Nom affiché dans l'application | `MyElectricalData` |
+| `VITE_TURNSTILE_SITE_KEY` | Clé publique Turnstile (côté client) | `0x4AAAAAAA...` |
+| `VITE_DEBUG` | Active les logs de debug dans la console navigateur | `false` |
+
+```bash
 VITE_API_BASE_URL=/api
-
-# Application
 VITE_APP_NAME=MyElectricalData
-
-# Cloudflare Turnstile
-VITE_TURNSTILE_SITE_KEY=votre-site-key
-
-# Debug
+VITE_TURNSTILE_SITE_KEY=0x4AAAAAAA...
 VITE_DEBUG=false
 ```
+
+> ⚠️ **Variables VITE_*** : Ces variables sont injectées **au moment du build**, pas au runtime. Toute modification nécessite un rebuild du frontend.
+
+---
 
 **Important** : Les fichiers `.env.docker` sont déjà créés. Modifie-les avec tes propres valeurs avant de démarrer.
 
@@ -154,6 +279,54 @@ sqlite3 /app/data/myelectricaldata.db
 # Backup de la base de données
 docker compose exec backend sh -c "cp /app/data/myelectricaldata.db /app/data/backup-$(date +%Y%m%d-%H%M%S).db"
 ```
+
+## 🔐 Configuration SECRET_KEY
+
+La `SECRET_KEY` est une variable **critique pour la sécurité** de l'application. Elle sert à **signer et vérifier les tokens JWT** (JSON Web Tokens) qui authentifient les utilisateurs.
+
+### Rôle de la SECRET_KEY
+
+| Opération | Description |
+|-----------|-------------|
+| **Signature des tokens** | Lors de la connexion, le serveur crée un JWT signé avec cette clé. Sans elle, impossible de générer des tokens valides. |
+| **Vérification des tokens** | À chaque requête authentifiée, le serveur vérifie que le token n'a pas été modifié en validant sa signature. |
+
+### Fonctionnement technique
+
+```
+┌─────────────┐     SECRET_KEY      ┌─────────────┐
+│   Payload   │ ──────────────────► │  Token JWT  │
+│  (user_id)  │   HMAC-SHA256       │   signé     │
+└─────────────┘                     └─────────────┘
+```
+
+L'algorithme utilisé est **HS256** (HMAC-SHA256), une signature symétrique où la même clé sert à signer et vérifier.
+
+### Génération d'une clé sécurisée
+
+```bash
+# Méthode recommandée (32 caractères aléatoires)
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Exemple de résultat
+# kX9vZmYhR3pLwN8qT5uJ2fA7dC1bE6gH
+```
+
+### ⚠️ Points de sécurité importants
+
+| Risque | Conséquence |
+|--------|-------------|
+| **Clé compromise** | Un attaquant peut générer des tokens valides pour n'importe quel utilisateur |
+| **Clé modifiée** | Tous les utilisateurs sont déconnectés (leurs tokens deviennent invalides) |
+| **Clé partagée entre environnements** | Une compromission en dev expose la production |
+
+### Bonnes pratiques
+
+- ✅ Utiliser une clé d'au moins 32 caractères aléatoires
+- ✅ Générer une clé **unique par environnement** (dev, staging, prod)
+- ✅ Stocker la clé dans un gestionnaire de secrets (Vault, Kubernetes Secrets, etc.)
+- ❌ Ne jamais commiter la clé dans le code source
+- ❌ Ne jamais utiliser une valeur par défaut en production
 
 ## 🔧 Configuration avancée
 

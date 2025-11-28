@@ -31,3 +31,16 @@ data:
   REDIS_HOST: {{ .Values.externalRedis.host | quote }}
   REDIS_PORT: {{ .Values.externalRedis.port | quote }}
   {{- end }}
+
+  # Application configuration (non-sensitive values)
+  {{- if .Values.config }}
+  {{- if .Values.config.adminEmails }}
+  ADMIN_EMAILS: {{ .Values.config.adminEmails | quote }}
+  {{- end }}
+  {{- if .Values.config.mailgunDomain }}
+  MAILGUN_DOMAIN: {{ .Values.config.mailgunDomain | quote }}
+  {{- end }}
+  {{- if .Values.config.mailgunFromEmail }}
+  MAILGUN_FROM_EMAIL: {{ .Values.config.mailgunFromEmail | quote }}
+  {{- end }}
+  {{- end }}
