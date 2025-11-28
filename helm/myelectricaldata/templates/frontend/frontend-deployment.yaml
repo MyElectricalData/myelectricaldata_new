@@ -25,6 +25,13 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        # Wait for backend to be ready
+        {{- if .Values.backend.enabled }}
+        - name: wait-for-backend
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z {{ include "myelectricaldata.backend.fullname" . }} {{ .Values.backend.service.port | default 8000 }}; do echo "Waiting for Backend..."; sleep 2; done; echo "Backend is ready!"']
+        {{- end }}
       containers:
         - name: frontend
           {{- with .Values.frontend.securityContext }}
