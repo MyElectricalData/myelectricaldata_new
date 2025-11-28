@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { Zap, Users, BarChart3, Settings, ArrowRight, X } from 'lucide-react'
+import { createPortal } from 'react-dom'
 
 interface WelcomeModalProps {
   onStartTour: () => void
@@ -7,7 +9,24 @@ interface WelcomeModalProps {
 }
 
 export function WelcomeModal({ onStartTour, onClose, userName }: WelcomeModalProps) {
-  return (
+  // Scroll to top and lock body scroll when modal is open
+  useEffect(() => {
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'instant' })
+
+    // Lock body scroll
+    const originalOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    // Cleanup: restore scroll on unmount
+    return () => {
+      document.body.style.overflow = originalOverflow
+    }
+  }, [])
+
+  // Use portal to render modal at document.body level
+  // This avoids issues with parent transforms breaking fixed positioning
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
       {/* Backdrop */}
       <div
@@ -102,7 +121,8 @@ export function WelcomeModal({ onStartTour, onClose, userName }: WelcomeModalPro
           </p>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

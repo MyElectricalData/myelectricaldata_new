@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { X, ChevronLeft, ChevronRight, Check } from 'lucide-react'
 
 export interface TourStep {
@@ -78,10 +79,9 @@ export function OnboardingTour({ steps, onComplete, onSkip }: OnboardingTourProp
         }
 
         // getBoundingClientRect gives viewport-relative coordinates
-        // Apply manual offset to fix positioning issue
-        const verticalOffset = 16 // Adjust this value to fix alignment
+        // For fixed positioning, use these coordinates directly
         setSpotlightRect({
-          top: targetRect.top - spotlightPadding - verticalOffset,
+          top: targetRect.top - spotlightPadding,
           left: targetRect.left - spotlightPadding,
           width: targetRect.width + spotlightPadding * 2,
           height: targetRect.height + spotlightPadding * 2,
@@ -136,11 +136,10 @@ export function OnboardingTour({ steps, onComplete, onSkip }: OnboardingTourProp
       const tooltipRect = tooltipRef.current.getBoundingClientRect()
       const placement = step.placement || 'bottom'
       const spotlightPadding = 8
-      const verticalOffset = 16 // Same offset as in updatePosition
 
       // Update spotlight immediately
       setSpotlightRect({
-        top: targetRect.top - spotlightPadding - verticalOffset,
+        top: targetRect.top - spotlightPadding,
         left: targetRect.left - spotlightPadding,
         width: targetRect.width + spotlightPadding * 2,
         height: targetRect.height + spotlightPadding * 2,
@@ -216,14 +215,16 @@ export function OnboardingTour({ steps, onComplete, onSkip }: OnboardingTourProp
 
   if (!step) return null
 
-  return (
+  // Use portal to render at document.body level
+  // This avoids issues with parent transforms breaking fixed positioning
+  return createPortal(
     <>
       {/* Backdrop overlay with spotlight using SVG mask */}
       <svg
         className={`fixed inset-0 z-40 transition-opacity duration-300 pointer-events-auto ${isVisible ? 'opacity-100' : 'opacity-0'}`}
         onClick={handleSkip}
         aria-hidden="true"
-        style={{ width: '100vw', height: '100vh' }}
+        style={{ width: '100%', height: '100%', top: 0, left: 0 }}
       >
         <defs>
           <mask id="spotlight-mask">
@@ -373,6 +374,7 @@ export function OnboardingTour({ steps, onComplete, onSkip }: OnboardingTourProp
           z-index: 41 !important;
         }
       `}</style>
-    </>
+    </>,
+    document.body
   )
 }
