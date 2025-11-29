@@ -8,6 +8,11 @@ export interface EnergyProvider {
   scraper_urls?: string[]
   active_offers_count?: number
   last_update?: string
+  has_scraper?: boolean
+  not_in_database?: boolean  // True if provider exists only as scraper, not in DB
+  is_active?: boolean
+  created_at?: string
+  updated_at?: string
 }
 
 export interface EnergyOffer {
@@ -123,6 +128,16 @@ export const energyApi = {
   // Public endpoints
   getProviders: async () => {
     return apiClient.get<EnergyProvider[]>('energy/providers')
+  },
+
+  // Admin endpoint - includes providers with scrapers not yet in DB
+  getProvidersWithScrapers: async () => {
+    return apiClient.get<{ providers: EnergyProvider[], total: number }>('admin/providers', { include_missing_scrapers: true })
+  },
+
+  // Get list of available scrapers
+  getAvailableScrapers: async () => {
+    return apiClient.get<{ scrapers: string[], total: number }>('admin/scrapers')
   },
 
   getOffers: async (providerId?: string) => {

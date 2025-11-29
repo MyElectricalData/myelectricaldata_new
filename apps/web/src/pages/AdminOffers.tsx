@@ -85,13 +85,13 @@ export default function AdminOffers() {
     return new Date(validFrom) < sixMonthsAgo
   }
 
-  // Fetch providers
+  // Fetch providers (includes providers with scrapers not yet in DB)
   const { data: providersData } = useQuery({
-    queryKey: ['energy-providers'],
+    queryKey: ['energy-providers-with-scrapers'],
     queryFn: async () => {
-      const response = await energyApi.getProviders()
-      if (response.success && Array.isArray(response.data)) {
-        return response.data as EnergyProvider[]
+      const response = await energyApi.getProvidersWithScrapers()
+      if (response.success && response.data?.providers) {
+        return response.data.providers as EnergyProvider[]
       }
       return []
     },
@@ -638,13 +638,15 @@ export default function AdminOffers() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.isArray(providersData) &&
             providersData
+              // Filtrer pour n'afficher que les fournisseurs avec un scraper
+              .filter((provider) => provider.has_scraper)
               .sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }))
               .map((provider) => {
                 const allProviderOffers = allOffersByProvider?.[provider.id] || []
                 const activeCount = allProviderOffers.filter(o => o.is_active).length
                 const isLoadingPreview = loadingPreview === provider.id
                 const isRefreshing = refreshingProvider === provider.id
-                const hasProvider = ['EDF', 'Enercoop', 'TotalEnergies', 'Priméo Énergie', 'Engie', 'ALPIQ', 'Alterna', 'Ekwateur'].includes(provider.name)
+                const isNotInDatabase = provider.not_in_database === true
 
                 // Find the most recent tariff date
                 const mostRecentDate = allProviderOffers
@@ -656,25 +658,38 @@ export default function AdminOffers() {
                   <div
                     key={provider.id}
                     className={`bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg p-4 hover:shadow-lg transition-shadow duration-200 ${
-                      !hasProvider ? 'opacity-60 bg-gray-50 dark:bg-gray-900' : ''
+                      isNotInDatabase ? 'border-dashed border-2 border-amber-400 dark:border-amber-600' : ''
                     }`}
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                          {provider.name}
-                        </h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          {activeCount} offre{activeCount > 1 ? 's' : ''} active{activeCount > 1 ? 's' : ''}
-                        </p>
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-gray-900 dark:text-white">
+                            {provider.name}
+                          </h3>
+                          {isNotInDatabase && (
+                            <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full">
+                              Non initialisé
+                            </span>
+                          )}
+                        </div>
+                        {isNotInDatabase ? (
+                          <p className="text-sm text-amber-600 dark:text-amber-400">
+                            Scraper disponible - Cliquez sur Prévisualiser pour initialiser
+                          </p>
+                        ) : (
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            {activeCount} offre{activeCount > 1 ? 's' : ''} active{activeCount > 1 ? 's' : ''}
+                          </p>
+                        )}
                         {mostRecentDate && (
                           <p className="text-xs text-green-600 dark:text-green-400 font-medium mt-1">
                             Tarif du {mostRecentDate.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}
                           </p>
                         )}
-                        {provider.last_update && (
+                        {provider.updated_at && !isNotInDatabase && (
                           <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                            Mise à jour : {new Date(provider.last_update).toLocaleDateString('fr-FR')}
+                            Mise à jour : {new Date(provider.updated_at).toLocaleDateString('fr-FR')}
                           </p>
                         )}
                       </div>
@@ -699,9 +714,9 @@ export default function AdminOffers() {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      {/* Détection si le fournisseur a un scraper - déjà défini plus haut */}
+                      {/* Boutons d'action */}
                       {(() => {
-                        const isDisabled = !hasProvider || isLoadingPreview || isRefreshing
+                        const isDisabled = isLoadingPreview || isRefreshing
 
                         return (
                           <>
@@ -710,10 +725,8 @@ export default function AdminOffers() {
                               <button
                                 onClick={() => handlePreviewRefresh(provider.id, provider.name)}
                                 disabled={isDisabled}
-                                className={`btn btn-primary flex-1 text-sm flex items-center justify-center gap-2 ${
-                                  !hasProvider ? 'opacity-50 cursor-not-allowed' : ''
-                                }`}
-                                title={!hasProvider ? 'Scraper non disponible pour ce fournisseur' : ''}
+                                className="btn btn-primary flex-1 text-sm flex items-center justify-center gap-2"
+                                title="Prévisualiser les changements avant application"
                               >
                                 {isLoadingPreview && loadingPreview === provider.id ? (
                                   <>
@@ -728,8 +741,8 @@ export default function AdminOffers() {
                                 )}
                               </button>
 
-                              {/* Bouton Purger - Uniquement avec permission delete */}
-                              {hasAction('offers', 'delete') && (
+                              {/* Bouton Purger - Uniquement avec permission delete et si le fournisseur existe en base */}
+                              {hasAction('offers', 'delete') && !isNotInDatabase && (
                                 <button
                                   onClick={() => handlePurgeProvider(provider.id, provider.name)}
                                   disabled={isRefreshing}
@@ -741,15 +754,8 @@ export default function AdminOffers() {
                               )}
                             </div>
 
-                            {/* Message si pas de scraper */}
-                            {!hasProvider && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400 italic text-center">
-                                Scraper non disponible
-                              </div>
-                            )}
-
                             {/* Affichage des sources du scraper */}
-                            {hasProvider && provider.scraper_urls && provider.scraper_urls.length > 0 && (() => {
+                            {provider.scraper_urls && provider.scraper_urls.length > 0 && (() => {
                               // Labels pour les URLs en fonction du fournisseur
                               const urlLabels: Record<string, string[]> = {
                                 'EDF': ['Tarif Bleu (réglementé)', 'Zen Week-End (marché)'],

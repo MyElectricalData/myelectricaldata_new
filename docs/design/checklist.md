@@ -15,7 +15,7 @@ Cette checklist garantit que chaque nouvelle page ou modification respecte les s
 
 ### Container Principal
 
-- [ ] Container avec `pt-6 w-full`
+- [ ] Container avec `w-full`
 - [ ] Espacement cohérent entre sections (`mt-6`)
 - [ ] Padding latéral géré par Layout (ne pas ajouter `px-*`)
 
@@ -23,6 +23,10 @@ Cette checklist garantit que chaque nouvelle page ou modification respecte les s
 
 ### Header de Page
 
+**⚠️ Important : Les pages Admin n'ont PAS besoin d'ajouter leur propre header H1.**
+Le header est géré automatiquement par le Layout via la configuration des routes.
+
+Pour les **pages non-Admin** uniquement :
 - [ ] H1 avec `text-3xl font-bold mb-2 flex items-center gap-3`
 - [ ] Icône avec `text-primary-600 dark:text-primary-400` et `size={32}`
 - [ ] Sous-titre avec `text-gray-600 dark:text-gray-400`

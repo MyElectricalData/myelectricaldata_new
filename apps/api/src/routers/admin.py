@@ -1213,13 +1213,46 @@ async def list_offers(
         )
 
 
+@router.get("/scrapers", response_model=APIResponse)
+async def list_available_scrapers(
+    current_user: User = Depends(require_permission('offers'))
+) -> APIResponse:
+    """
+    List all available scrapers (providers with scraping support)
+
+    Returns:
+        APIResponse with list of scraper names
+    """
+    try:
+        scraper_names = list(PriceUpdateService.SCRAPERS.keys())
+
+        return APIResponse(
+            success=True,
+            data={
+                "scrapers": scraper_names,
+                "total": len(scraper_names)
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error listing scrapers: {e}", exc_info=True)
+        return APIResponse(
+            success=False,
+            error={"code": "LIST_ERROR", "message": str(e)}
+        )
+
+
 @router.get("/providers", response_model=APIResponse)
 async def list_providers(
+    include_missing_scrapers: bool = Query(False, description="Include providers with scrapers that don't exist in DB yet"),
     current_user: User = Depends(require_permission('offers')),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """
     List all energy providers
+
+    Args:
+        include_missing_scrapers: If True, also returns providers with scrapers not yet in DB
 
     Returns:
         APIResponse with list of providers
@@ -1231,7 +1264,11 @@ async def list_providers(
         providers = result.scalars().all()
 
         providers_data = []
+        existing_names = set()
+
         for provider in providers:
+            existing_names.add(provider.name)
+
             # Count active offers
             offers_result = await db.execute(
                 select(func.count()).select_from(EnergyOffer).where(
@@ -1243,6 +1280,9 @@ async def list_providers(
             )
             offers_count = offers_result.scalar()
 
+            # Check if this provider has a scraper
+            has_scraper = provider.name in PriceUpdateService.SCRAPERS
+
             providers_data.append({
                 "id": provider.id,
                 "name": provider.name,
@@ -1250,9 +1290,33 @@ async def list_providers(
                 "website": provider.website,
                 "is_active": provider.is_active,
                 "active_offers_count": offers_count,
+                "has_scraper": has_scraper,
+                "scraper_urls": provider.scraper_urls,
                 "created_at": provider.created_at.isoformat(),
                 "updated_at": provider.updated_at.isoformat(),
             })
+
+        # Add providers with scrapers that don't exist in DB yet
+        if include_missing_scrapers:
+            for scraper_name in PriceUpdateService.SCRAPERS.keys():
+                if scraper_name not in existing_names:
+                    # Generate a placeholder ID and default values
+                    providers_data.append({
+                        "id": f"scraper-{scraper_name.lower().replace(' ', '-')}",
+                        "name": scraper_name,
+                        "logo_url": None,
+                        "website": None,
+                        "is_active": False,
+                        "active_offers_count": 0,
+                        "has_scraper": True,
+                        "scraper_urls": None,
+                        "created_at": None,
+                        "updated_at": None,
+                        "not_in_database": True,  # Flag to indicate this is a placeholder
+                    })
+
+        # Sort by name
+        providers_data.sort(key=lambda x: x["name"])
 
         return APIResponse(
             success=True,
