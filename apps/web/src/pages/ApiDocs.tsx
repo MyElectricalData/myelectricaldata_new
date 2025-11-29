@@ -5,11 +5,22 @@ import { useEffect, useMemo } from 'react'
 import { useThemeStore } from '@/stores/themeStore'
 import { Link } from 'react-router-dom'
 
+// Runtime environment from env.js (generated at container startup)
+declare global {
+  interface Window {
+    __ENV__?: {
+      VITE_API_BASE_URL?: string
+      VITE_BACKEND_URL?: string
+    }
+  }
+}
+
 export default function ApiDocs() {
   // Get the access token from localStorage
   const accessToken = useMemo(() => localStorage.getItem('access_token'), [])
   const { isDark } = useThemeStore()
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081'
+  // Use runtime config first, then build-time env, then default
+  const apiBaseUrl = window.__ENV__?.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || '/api'
 
   useEffect(() => {
     // Hide the "Explore" link and customize Swagger UI colors
