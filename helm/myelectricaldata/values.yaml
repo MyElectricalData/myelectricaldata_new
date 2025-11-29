@@ -53,7 +53,8 @@ backend:
     timeoutSeconds: 3
     failureThreshold: 3
 
-  # Persistent storage for data
+  # Persistent storage for SQLite database (only used when postgres.enabled is false)
+  # When using PostgreSQL, this PVC is automatically disabled
   persistence:
     enabled: true
     size: 1Gi

@@ -211,7 +211,8 @@ spec:
               mountPath: /logs
       volumes:
         - name: data
-          {{- if .Values.backend.persistence.enabled }}
+          {{- /* Use PVC only for SQLite mode (postgres.enabled is false) */ -}}
+          {{- if and .Values.backend.persistence.enabled (not .Values.postgres.enabled) }}
           persistentVolumeClaim:
             claimName: {{ include "myelectricaldata.backend.fullname" . }}
           {{- else }}
