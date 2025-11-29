@@ -56,6 +56,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               return false
             }
 
+            // Don't persist energy providers/offers - they change when scrapers run
+            // and must always be fresh from the server to avoid stale cache issues
+            if (queryKey === 'energy-providers' || queryKey === 'energy-offers') {
+              return false
+            }
+
             // Always persist detail queries if they have data
             // Using IndexedDB persister to handle large data (~3MB per query)
             if (queryKey === 'consumptionDetail' || queryKey === 'productionDetail') {

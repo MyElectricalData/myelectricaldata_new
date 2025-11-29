@@ -193,14 +193,14 @@ export function LoadingStatusBadge() {
         )}
       </div>
 
-      {/* Tooltip volant avec détails - 2 colonnes */}
+      {/* Tooltip volant avec détails - même largeur que le badge parent */}
       {showTooltip && (
-        <div className="absolute top-full left-0 mt-2 w-full sm:w-full z-50 animate-in fade-in slide-in-from-top-1 duration-200">
+        <div className="absolute top-full left-0 right-0 mt-2 z-50 animate-in fade-in slide-in-from-top-1 duration-200">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 p-4">
             <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
               Progression du chargement
             </h4>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={`grid gap-4 ${consumptionTasks.length > 0 && productionTasks.length > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
               {/* Colonne Consommation */}
               {consumptionTasks.length > 0 && (
                 <div className="flex flex-col gap-3">
