@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 from datetime import datetime, UTC
 import logging
 import json
+import asyncio
 from typing import Optional
 from ..models import User, PDL, EnergyProvider, EnergyOffer
 from ..models.database import get_db
@@ -14,6 +15,26 @@ from ..services import rate_limiter, cache_service
 from ..services.price_update_service import PriceUpdateService
 
 logger = logging.getLogger(__name__)
+
+# Mutex pour bloquer les synchronisations simultanées de fournisseurs
+_scraper_lock = asyncio.Lock()
+_scraper_status: dict = {
+    "running": False,
+    "provider": None,
+    "started_at": None,
+    "current_step": None,
+    "steps": [],
+    "progress": 0
+}
+
+
+def _update_scraper_progress(step: str, progress: int):
+    """Update scraper progress status"""
+    global _scraper_status
+    _scraper_status["current_step"] = step
+    _scraper_status["progress"] = progress
+    if step not in _scraper_status["steps"]:
+        _scraper_status["steps"].append(step)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -837,6 +858,32 @@ async def clear_logs(
 
 # Energy Provider Offers Management
 
+@router.get("/offers/sync-status", response_model=APIResponse)
+async def get_sync_status(
+    current_user: User = Depends(require_permission('offers')),
+) -> APIResponse:
+    """
+    Get the current synchronization status for energy provider offers
+
+    Returns whether a sync is running, which provider is being synced, and when it started.
+    Requires 'offers' permission.
+
+    Returns:
+        APIResponse with sync status information
+    """
+    return APIResponse(
+        success=True,
+        data={
+            "sync_in_progress": _scraper_lock.locked(),
+            "provider": _scraper_status["provider"],
+            "started_at": _scraper_status["started_at"],
+            "current_step": _scraper_status["current_step"],
+            "steps": _scraper_status["steps"],
+            "progress": _scraper_status["progress"]
+        }
+    )
+
+
 @router.get("/offers/preview", response_model=APIResponse)
 async def preview_offers_update(
     provider: Optional[str] = Query(None, description="Provider name (EDF, Enercoop, TotalEnergies). If not specified, all providers will be previewed."),
@@ -856,73 +903,116 @@ async def preview_offers_update(
     Returns:
         APIResponse with preview comparison between current and scraped offers
     """
-    try:
-        service = PriceUpdateService(db)
+    global _scraper_status
 
-        if provider:
-            # Preview single provider
-            if provider not in PriceUpdateService.SCRAPERS:
+    # Vérifier si une synchronisation est déjà en cours
+    if _scraper_lock.locked():
+        return APIResponse(
+            success=False,
+            error={
+                "code": "SYNC_IN_PROGRESS",
+                "message": f"Une synchronisation est déjà en cours pour le fournisseur '{_scraper_status['provider']}' depuis {_scraper_status['started_at']}"
+            }
+        )
+
+    async with _scraper_lock:
+        try:
+            _scraper_status = {
+                "running": True,
+                "provider": provider or "all",
+                "started_at": datetime.now(UTC).isoformat(),
+                "current_step": "Initialisation",
+                "steps": ["Initialisation"],
+                "progress": 5
+            }
+
+            service = PriceUpdateService(db)
+
+            if provider:
+                # Preview single provider
+                if provider not in PriceUpdateService.SCRAPERS:
+                    return APIResponse(
+                        success=False,
+                        error={
+                            "code": "INVALID_PROVIDER",
+                            "message": f"Unknown provider: {provider}. Available: {', '.join(PriceUpdateService.SCRAPERS.keys())}"
+                        }
+                    )
+
+                _update_scraper_progress(f"Téléchargement des tarifs {provider}", 20)
+                preview_result = await service.preview_provider_update(provider)
+                _update_scraper_progress("Analyse des changements", 80)
+
+                if not preview_result.get("success"):
+                    return APIResponse(
+                        success=False,
+                        error={
+                            "code": "PREVIEW_FAILED",
+                            "message": preview_result.get("error", "Unknown error")
+                        }
+                    )
+
                 return APIResponse(
-                    success=False,
-                    error={
-                        "code": "INVALID_PROVIDER",
-                        "message": f"Unknown provider: {provider}. Available: {', '.join(PriceUpdateService.SCRAPERS.keys())}"
+                    success=True,
+                    data={
+                        "preview": {
+                            provider: {
+                                "offers_to_create": preview_result["offers_to_create"],
+                                "offers_to_update": preview_result["offers_to_update"],
+                                "offers_to_deactivate": preview_result["offers_to_deactivate"],
+                                "summary": {
+                                    "total_offers": preview_result["summary"]["total_scraped"],
+                                    "new": preview_result["summary"]["new"],
+                                    "updated": preview_result["summary"]["updated"],
+                                    "deactivated": preview_result["summary"]["deactivated"],
+                                }
+                            }
+                        },
+                        "timestamp": datetime.now(UTC).isoformat()
                     }
                 )
+            else:
+                # Preview all providers
+                preview_results = {}
+                providers_list = list(PriceUpdateService.SCRAPERS.keys())
+                total_providers = len(providers_list)
 
-            preview_result = await service.preview_provider_update(provider)
+                for idx, provider_name in enumerate(providers_list):
+                    progress = 10 + int((idx / total_providers) * 80)
+                    _update_scraper_progress(f"Téléchargement {provider_name} ({idx + 1}/{total_providers})", progress)
 
-            if not preview_result.get("success"):
-                return APIResponse(
-                    success=False,
-                    error={
-                        "code": "PREVIEW_FAILED",
-                        "message": preview_result.get("error", "Unknown error")
-                    }
-                )
+                    try:
+                        preview_result = await service.preview_provider_update(provider_name)
 
-            return APIResponse(
-                success=True,
-                data={
-                    "preview": {
-                        provider: {
-                            "offers_to_create": preview_result["offers_to_create"],
-                            "offers_to_update": preview_result["offers_to_update"],
-                            "offers_to_deactivate": preview_result["offers_to_deactivate"],
-                            "summary": {
-                                "total_offers": preview_result["summary"]["total_scraped"],
-                                "new": preview_result["summary"]["new"],
-                                "updated": preview_result["summary"]["updated"],
-                                "deactivated": preview_result["summary"]["deactivated"],
+                        if preview_result.get("success"):
+                            preview_results[provider_name] = {
+                                "offers_to_create": preview_result["offers_to_create"],
+                                "offers_to_update": preview_result["offers_to_update"],
+                                "offers_to_deactivate": preview_result["offers_to_deactivate"],
+                                "summary": {
+                                    "total_offers": preview_result["summary"]["total_scraped"],
+                                    "new": preview_result["summary"]["new"],
+                                    "updated": preview_result["summary"]["updated"],
+                                    "deactivated": preview_result["summary"]["deactivated"],
+                                }
                             }
-                        }
-                    },
-                    "timestamp": datetime.now(UTC).isoformat()
-                }
-            )
-        else:
-            # Preview all providers
-            preview_results = {}
-
-            for provider_name in PriceUpdateService.SCRAPERS.keys():
-                try:
-                    preview_result = await service.preview_provider_update(provider_name)
-
-                    if preview_result.get("success"):
-                        preview_results[provider_name] = {
-                            "offers_to_create": preview_result["offers_to_create"],
-                            "offers_to_update": preview_result["offers_to_update"],
-                            "offers_to_deactivate": preview_result["offers_to_deactivate"],
-                            "summary": {
-                                "total_offers": preview_result["summary"]["total_scraped"],
-                                "new": preview_result["summary"]["new"],
-                                "updated": preview_result["summary"]["updated"],
-                                "deactivated": preview_result["summary"]["deactivated"],
+                        else:
+                            preview_results[provider_name] = {
+                                "error": preview_result.get("error", "Unknown error"),
+                                "offers_to_create": [],
+                                "offers_to_update": [],
+                                "offers_to_deactivate": [],
+                                "summary": {
+                                    "total_offers": 0,
+                                    "new": 0,
+                                    "updated": 0,
+                                    "deactivated": 0,
+                                }
                             }
-                        }
-                    else:
+                    except Exception as e:
+                        logger.error(f"Error previewing {provider_name}: {e}", exc_info=True)
                         preview_results[provider_name] = {
-                            "error": preview_result.get("error", "Unknown error"),
+                            "error": str(e),
                             "offers_to_create": [],
                             "offers_to_update": [],
                             "offers_to_deactivate": [],
@@ -933,38 +1023,26 @@ async def preview_offers_update(
                                 "deactivated": 0,
                             }
                         }
-                except Exception as e:
-                    logger.error(f"Error previewing {provider_name}: {e}", exc_info=True)
-                    preview_results[provider_name] = {
-                        "error": str(e),
-                        "offers_to_create": [],
-                        "offers_to_update": [],
-                        "offers_to_deactivate": [],
-                        "summary": {
-                            "total_offers": 0,
-                            "new": 0,
-                            "updated": 0,
-                            "deactivated": 0,
-                        }
-                    }
 
+                return APIResponse(
+                    success=True,
+                    data={
+                        "preview": preview_results,
+                        "timestamp": datetime.now(UTC).isoformat()
+                    }
+                )
+
+        except Exception as e:
+            logger.error(f"Error previewing offers: {e}", exc_info=True)
             return APIResponse(
-                success=True,
-                data={
-                    "preview": preview_results,
-                    "timestamp": datetime.now(UTC).isoformat()
+                success=False,
+                error={
+                    "code": "PREVIEW_ERROR",
+                    "message": str(e)
                 }
             )
-
-    except Exception as e:
-        logger.error(f"Error previewing offers: {e}", exc_info=True)
-        return APIResponse(
-            success=False,
-            error={
-                "code": "PREVIEW_ERROR",
-                "message": str(e)
-            }
-        )
+        finally:
+            _scraper_status = {"running": False, "provider": None, "started_at": None, "current_step": None, "steps": [], "progress": 0}
 
 
 @router.post("/offers/refresh", response_model=APIResponse)
@@ -985,69 +1063,97 @@ async def refresh_offers(
     Returns:
         APIResponse with update results
     """
-    try:
-        service = PriceUpdateService(db)
+    global _scraper_status
 
-        if provider:
-            # Update single provider
-            if provider not in PriceUpdateService.SCRAPERS:
-                return APIResponse(
-                    success=False,
-                    error={
-                        "code": "INVALID_PROVIDER",
-                        "message": f"Unknown provider: {provider}. Available: {', '.join(PriceUpdateService.SCRAPERS.keys())}"
-                    }
-                )
-
-            result = await service.update_provider(provider)
-
-            if not result.get("success"):
-                return APIResponse(
-                    success=False,
-                    error={
-                        "code": "UPDATE_FAILED",
-                        "message": result.get("error", "Unknown error")
-                    }
-                )
-
-            return APIResponse(
-                success=True,
-                data={
-                    "message": f"Successfully updated {provider}",
-                    "result": result
-                }
-            )
-        else:
-            # Update all providers
-            results = await service.update_all_providers()
-
-            successful = sum(1 for r in results.values() if r.get("success"))
-            failed = len(results) - successful
-
-            total_created = sum(r.get("offers_created", 0) for r in results.values() if r.get("success"))
-            total_updated = sum(r.get("offers_updated", 0) for r in results.values() if r.get("success"))
-
-            return APIResponse(
-                success=True,
-                data={
-                    "message": f"Updated {successful} providers ({failed} failed)",
-                    "providers_updated": successful,
-                    "providers_failed": failed,
-                    "total_offers_created": total_created,
-                    "total_offers_updated": total_updated,
-                    "results": results
-                }
-            )
-
-    except Exception as e:
-        logger.error(f"Error refreshing offers: {e}", exc_info=True)
+    # Vérifier si une synchronisation est déjà en cours
+    if _scraper_lock.locked():
         return APIResponse(
             success=False,
             error={
-                "code": "REFRESH_ERROR",
-                "message": str(e)
+                "code": "SYNC_IN_PROGRESS",
+                "message": f"Une synchronisation est déjà en cours pour le fournisseur '{_scraper_status['provider']}' depuis {_scraper_status['started_at']}"
             }
         )
+
+    async with _scraper_lock:
+        try:
+            _scraper_status = {
+                "running": True,
+                "provider": provider or "all",
+                "started_at": datetime.now(UTC).isoformat(),
+                "current_step": "Initialisation",
+                "steps": ["Initialisation"],
+                "progress": 5
+            }
+
+            service = PriceUpdateService(db)
+
+            if provider:
+                # Update single provider
+                if provider not in PriceUpdateService.SCRAPERS:
+                    return APIResponse(
+                        success=False,
+                        error={
+                            "code": "INVALID_PROVIDER",
+                            "message": f"Unknown provider: {provider}. Available: {', '.join(PriceUpdateService.SCRAPERS.keys())}"
+                        }
+                    )
+
+                _update_scraper_progress(f"Téléchargement des tarifs {provider}", 20)
+                result = await service.update_provider(provider)
+                _update_scraper_progress("Mise à jour de la base de données", 80)
+
+                if not result.get("success"):
+                    return APIResponse(
+                        success=False,
+                        error={
+                            "code": "UPDATE_FAILED",
+                            "message": result.get("error", "Unknown error")
+                        }
+                    )
+
+                _update_scraper_progress("Terminé", 100)
+                return APIResponse(
+                    success=True,
+                    data={
+                        "message": f"Successfully updated {provider}",
+                        "result": result
+                    }
+                )
+            else:
+                # Update all providers
+                _update_scraper_progress("Mise à jour de tous les fournisseurs", 10)
+                results = await service.update_all_providers()
+
+                successful = sum(1 for r in results.values() if r.get("success"))
+                failed = len(results) - successful
+
+                total_created = sum(r.get("offers_created", 0) for r in results.values() if r.get("success"))
+                total_updated = sum(r.get("offers_updated", 0) for r in results.values() if r.get("success"))
+
+                return APIResponse(
+                    success=True,
+                    data={
+                        "message": f"Updated {successful} providers ({failed} failed)",
+                        "providers_updated": successful,
+                        "providers_failed": failed,
+                        "total_offers_created": total_created,
+                        "total_offers_updated": total_updated,
+                        "results": results
+                    }
+                )
+
+        except Exception as e:
+            logger.error(f"Error refreshing offers: {e}", exc_info=True)
+            return APIResponse(
+                success=False,
+                error={
+                    "code": "REFRESH_ERROR",
+                    "message": str(e)
+                }
+            )
+        finally:
+            _scraper_status = {"running": False, "provider": None, "started_at": None, "current_step": None, "steps": [], "progress": 0}
 
 
 @router.delete("/offers/purge", response_model=APIResponse)

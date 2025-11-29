@@ -23,11 +23,11 @@ backend:
 
   resources:
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 2000m
+      memory: 2048Mi
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 500m
+      memory: 768Mi
 
   # Environment variables
   env:
@@ -35,22 +35,23 @@ backend:
     PYTHONUNBUFFERED: "1"
 
   # Health checks
+  # IMPORTANT: timeouts augmentés pour supporter les opérations longues (scraping PDF)
   livenessProbe:
     httpGet:
       path: /ping
       port: http
     initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 3
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 6
 
   readinessProbe:
     httpGet:
       path: /ping
       port: http
     initialDelaySeconds: 10
-    periodSeconds: 5
-    timeoutSeconds: 3
+    periodSeconds: 10
+    timeoutSeconds: 5
     failureThreshold: 3
 
   # Persistent storage for SQLite database (only used when postgres.enabled is false)
@@ -89,11 +90,11 @@ frontend:
 
   resources:
     limits:
+      cpu: 300m
+      memory: 384Mi
+    requests:
       cpu: 100m
       memory: 128Mi
-    requests:
-      cpu: 50m
-      memory: 64Mi
 
   # Environment variables for the frontend
   # These are injected at runtime via env.js

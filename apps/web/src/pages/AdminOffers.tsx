@@ -2,7 +2,7 @@ import { useState, useEffect as React_useEffect } from 'react'
 import * as React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Zap, Edit2, Trash2, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, CheckSquare, Square, X, Eye, RefreshCw, Loader2 } from 'lucide-react'
-import { energyApi, type EnergyProvider, type EnergyOffer, type RefreshPreview } from '@/api/energy'
+import { energyApi, type EnergyProvider, type EnergyOffer, type RefreshPreview, type SyncStatus } from '@/api/energy'
 import { usePermissions } from '@/hooks/usePermissions'
 import toast from 'react-hot-toast'
 
@@ -106,6 +106,22 @@ export default function AdminOffers() {
         return response.data as EnergyOffer[]
       }
       return []
+    },
+  })
+
+  // Fetch sync status (poll every 3 seconds when a sync is in progress)
+  const { data: syncStatus } = useQuery({
+    queryKey: ['sync-status'],
+    queryFn: async () => {
+      const response = await energyApi.getSyncStatus()
+      if (response.success && response.data) {
+        return response.data as SyncStatus
+      }
+      return { sync_in_progress: false, provider: null, started_at: null, current_step: null, steps: [], progress: 0 }
+    },
+    refetchInterval: (query) => {
+      // Poll more frequently when sync is in progress
+      return query.state.data?.sync_in_progress ? 3000 : 10000
     },
   })
 
@@ -628,6 +644,99 @@ export default function AdminOffers() {
         </div>
       )}
 
+      {/* Sync in progress overlay with blur */}
+      {(syncStatus?.sync_in_progress || loadingPreview || refreshingProvider) && (() => {
+        // Determine the provider name to display
+        const displayProvider = syncStatus?.provider || loadingPreview || refreshingProvider
+        // Find the provider name from the ID if needed
+        const providerObj = providersData?.find(p => p.id === displayProvider)
+        const providerName = providerObj?.name || displayProvider
+        // Use syncStatus data if available, otherwise show initial state
+        const currentStep = syncStatus?.current_step || (loadingPreview ? 'Connexion au serveur...' : 'Initialisation...')
+        const progress = syncStatus?.progress || 0
+        const steps = syncStatus?.steps || []
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-lg w-full mx-4 border border-gray-200 dark:border-gray-700 animate-scale-in">
+              {/* Header with icon */}
+              <div className="text-center mb-6">
+                <div className="relative inline-block mb-4">
+                  <div className="w-20 h-20 rounded-full bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center">
+                    <Loader2 className="animate-spin text-primary-600 dark:text-primary-400" size={40} />
+                  </div>
+                  <div className="absolute inset-0 w-20 h-20 rounded-full border-4 border-primary-200 dark:border-primary-800 animate-pulse" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
+                  {loadingPreview ? 'Prévisualisation en cours' : 'Synchronisation en cours'}
+                </h3>
+                <p className="text-lg font-semibold text-primary-600 dark:text-primary-400">
+                  {providerName === 'all' ? 'Tous les fournisseurs' : providerName}
+                </p>
+              </div>
+
+              {/* Progress bar */}
+              <div className="mb-6">
+                <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  <span>Progression</span>
+                  <span className="font-semibold">{progress}%</span>
+                </div>
+                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Current step */}
+              <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 mb-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Étape en cours</p>
+                <p className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                  <RefreshCw className="animate-spin text-primary-500" size={16} />
+                  {currentStep}
+                </p>
+              </div>
+
+              {/* Steps completed */}
+              {steps.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Étapes complétées</p>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {steps.map((step: string, idx: number) => (
+                      <div
+                        key={idx}
+                        className={`flex items-center gap-2 text-sm ${
+                          step === currentStep
+                            ? 'text-primary-600 dark:text-primary-400 font-medium'
+                            : 'text-gray-500 dark:text-gray-400'
+                        }`}
+                      >
+                        {step === currentStep ? (
+                          <Loader2 className="animate-spin" size={14} />
+                        ) : (
+                          <span className="w-3.5 h-3.5 rounded-full bg-green-500 flex items-center justify-center">
+                            <span className="text-white text-xs">✓</span>
+                          </span>
+                        )}
+                        {step}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Start time */}
+              {syncStatus?.started_at && (
+                <p className="text-xs text-gray-400 dark:text-gray-500 text-center mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  Démarré à {new Date(syncStatus.started_at).toLocaleTimeString('fr-FR')}
+                </p>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
       <div className="space-y-6 w-full">
       {/* Provider Management Section */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 transition-colors duration-200 p-6">
@@ -647,6 +756,7 @@ export default function AdminOffers() {
                 const isLoadingPreview = loadingPreview === provider.id
                 const isRefreshing = refreshingProvider === provider.id
                 const isNotInDatabase = provider.not_in_database === true
+                const isSyncInProgress = syncStatus?.sync_in_progress && syncStatus.provider !== provider.name
 
                 // Find the most recent tariff date
                 const mostRecentDate = allProviderOffers
@@ -716,7 +826,7 @@ export default function AdminOffers() {
                     <div className="flex flex-col gap-2">
                       {/* Boutons d'action */}
                       {(() => {
-                        const isDisabled = isLoadingPreview || isRefreshing
+                        const isDisabled = isLoadingPreview || isRefreshing || isSyncInProgress
 
                         return (
                           <>
@@ -745,7 +855,7 @@ export default function AdminOffers() {
                               {hasAction('offers', 'delete') && !isNotInDatabase && (
                                 <button
                                   onClick={() => handlePurgeProvider(provider.id, provider.name)}
-                                  disabled={isRefreshing}
+                                  disabled={isDisabled}
                                   className="btn bg-red-600 hover:bg-red-700 text-white dark:bg-red-700 dark:hover:bg-red-800 flex-1 text-sm flex items-center justify-center gap-2"
                                 >
                                   <Trash2 size={16} />
@@ -1735,20 +1845,25 @@ export default function AdminOffers() {
 
       {/* Preview Modal */}
       {previewModalOpen && previewData && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="p-6 border-b border-gray-300 dark:border-gray-700">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 animate-slide-up">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-primary-50 to-transparent dark:from-primary-900/20 dark:to-transparent">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold flex items-center gap-2">
-                  <Eye className="text-primary-600 dark:text-primary-400" size={24} />
-                  Prévisualisation des changements - {previewData.provider}
+                <h2 className="text-2xl font-bold flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center">
+                    <Eye className="text-primary-600 dark:text-primary-400" size={22} />
+                  </div>
+                  <div>
+                    <span className="text-gray-900 dark:text-white">Prévisualisation des changements</span>
+                    <p className="text-sm font-normal text-primary-600 dark:text-primary-400">{previewData.provider}</p>
+                  </div>
                 </h2>
                 <button
                   onClick={() => {
                     setPreviewModalOpen(false)
                     setPreviewData(null)
                   }}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-all duration-200 hover:rotate-90"
                 >
                   <X size={24} />
                 </button>

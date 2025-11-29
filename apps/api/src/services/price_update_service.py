@@ -366,27 +366,48 @@ class PriceUpdateService:
             "peak_day_price", "hc_schedules"
         ]
 
+        # Price fields that should use tolerance comparison (avoid float precision issues)
+        price_fields = {
+            "subscription_price", "base_price", "hc_price", "hp_price",
+            "base_price_weekend", "hp_price_weekend", "hc_price_weekend",
+            "tempo_blue_hc", "tempo_blue_hp", "tempo_white_hc", "tempo_white_hp",
+            "tempo_red_hc", "tempo_red_hp", "ejp_normal", "ejp_peak",
+            "hc_price_winter", "hp_price_winter", "hc_price_summer", "hp_price_summer",
+            "peak_day_price"
+        }
+
+        # Tolerance for price comparison (0.00001 = 0.001 centime)
+        PRICE_TOLERANCE = 0.00001
+
         for field in comparable_fields:
             current_value = getattr(current_offer, field, None)
             new_value = scraped_dict.get(field)
 
-            # Normalize Decimal values for comparison (remove trailing zeros)
-            from decimal import Decimal
-            if isinstance(current_value, Decimal):
-                current_value = current_value.normalize()
-            if isinstance(new_value, (float, Decimal)):
-                new_value = Decimal(str(new_value)).normalize()
-
             # Handle None vs 0.0 comparison for numeric fields
-            if current_value != new_value:
-                # Skip if both are effectively None/0
-                if (current_value is None or current_value == 0.0) and (new_value is None or new_value == 0.0):
+            if (current_value is None or current_value == 0.0) and (new_value is None or new_value == 0.0):
+                continue
+
+            # For price fields, use tolerance comparison to avoid float precision issues
+            if field in price_fields:
+                # Convert to float for comparison
+                current_float = float(current_value) if current_value is not None else 0.0
+                new_float = float(new_value) if new_value is not None else 0.0
+
+                # If difference is below tolerance, consider them equal
+                if abs(current_float - new_float) < PRICE_TOLERANCE:
                     continue
 
                 diff[field] = {
-                    "old": current_value,
-                    "new": new_value
+                    "old": current_float,
+                    "new": new_float
                 }
+            else:
+                # For non-price fields, use exact comparison
+                if current_value != new_value:
+                    diff[field] = {
+                        "old": current_value,
+                        "new": new_value
+                    }
 
         return diff
 

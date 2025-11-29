@@ -124,6 +124,15 @@ export interface RefreshPreview {
   last_update?: string
 }
 
+export interface SyncStatus {
+  sync_in_progress: boolean
+  provider: string | null
+  started_at: string | null
+  current_step: string | null
+  steps: string[]
+  progress: number
+}
+
 export const energyApi = {
   // Public endpoints
   getProviders: async () => {
@@ -196,5 +205,10 @@ export const energyApi = {
 
   purgeProviderOffers: async (provider: string) => {
     return apiClient.delete('admin/offers/purge', { provider })
+  },
+
+  // Get sync status
+  getSyncStatus: async () => {
+    return apiClient.get<SyncStatus>('admin/offers/sync-status')
   },
 }

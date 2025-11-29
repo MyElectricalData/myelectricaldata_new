@@ -6,7 +6,7 @@ import io
 import re
 from datetime import datetime, UTC
 
-from .base import BasePriceScraper, OfferData
+from .base import BasePriceScraper, OfferData, run_sync_in_thread
 
 
 class EDFPriceScraper(BasePriceScraper):
@@ -149,7 +149,8 @@ class EDFPriceScraper(BasePriceScraper):
                     self.logger.error(error_msg)
                     errors.append(error_msg)
                 else:
-                    tarif_bleu_offers = self._parse_pdf(response.content)
+                    # Run PDF parsing in thread pool to avoid blocking event loop
+                    tarif_bleu_offers = await run_sync_in_thread(self._parse_pdf, response.content)
                     if not tarif_bleu_offers:
                         error_msg = "Échec du parsing du PDF Tarif Bleu - aucune offre extraite"
                         self.logger.error(error_msg)
@@ -171,7 +172,8 @@ class EDFPriceScraper(BasePriceScraper):
                     self.logger.warning(error_msg)
                     errors.append(error_msg)
                 else:
-                    zen_offers = self._parse_zen_weekend_pdf(response.content)
+                    # Run PDF parsing in thread pool to avoid blocking event loop
+                    zen_offers = await run_sync_in_thread(self._parse_zen_weekend_pdf, response.content)
                     if not zen_offers:
                         error_msg = "Échec du parsing du PDF Zen Week-End - aucune offre extraite"
                         self.logger.warning(error_msg)

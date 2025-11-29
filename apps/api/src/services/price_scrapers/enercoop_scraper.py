@@ -6,7 +6,12 @@ from pdfminer.high_level import extract_text
 import re
 from datetime import datetime, UTC
 
-from .base import BasePriceScraper, OfferData
+from .base import BasePriceScraper, OfferData, run_sync_in_thread
+
+
+def _extract_pdf_text(content: bytes) -> str:
+    """Extract text from PDF content (runs in thread pool)"""
+    return extract_text(BytesIO(content))
 
 
 class EnercoopPriceScraper(BasePriceScraper):
@@ -89,9 +94,8 @@ class EnercoopPriceScraper(BasePriceScraper):
                     self.logger.warning(error_msg)
                     errors.append(error_msg)
                 else:
-                    # Parse PDF
-                    pdf_data = BytesIO(response.content)
-                    text = extract_text(pdf_data)
+                    # Parse PDF in thread pool to avoid blocking event loop
+                    text = await run_sync_in_thread(_extract_pdf_text, response.content)
                     offers = self._parse_pdf(text)
 
                     if not offers:

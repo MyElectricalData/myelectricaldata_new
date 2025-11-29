@@ -1,10 +1,34 @@
 """Base class for energy provider price scrapers"""
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Callable, TypeVar
 from datetime import datetime, UTC
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Shared thread pool for CPU-intensive PDF parsing (prevents blocking event loop)
+# This allows FastAPI to continue responding to health checks during scraping
+pdf_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="pdf_parser")
+
+T = TypeVar('T')
+
+
+async def run_sync_in_thread(func: Callable[..., T], *args) -> T:
+    """
+    Run a synchronous function in a thread pool to avoid blocking the event loop.
+    Use this for CPU-intensive operations like PDF parsing.
+
+    Args:
+        func: The synchronous function to run
+        *args: Arguments to pass to the function
+
+    Returns:
+        The result of the function
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(pdf_executor, func, *args)
 
 
 class OfferData:
