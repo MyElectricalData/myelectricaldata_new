@@ -28,8 +28,31 @@ class PriceUpdateService:
         "Ekwateur": EkwateurScraper,
     }
 
+    # Default provider info (website URLs)
+    PROVIDER_DEFAULTS = {
+        "EDF": {"website": "https://particulier.edf.fr"},
+        "Enercoop": {"website": "https://www.enercoop.fr"},
+        "TotalEnergies": {"website": "https://totalenergies.fr"},
+        "Priméo Énergie": {"website": "https://www.primeo-energie.fr"},
+        "Engie": {"website": "https://particuliers.engie.fr"},
+        "ALPIQ": {"website": "https://particuliers.alpiq.fr"},
+        "Alterna": {"website": "https://www.alterna-energie.fr"},
+        "Ekwateur": {"website": "https://ekwateur.fr"},
+    }
+
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    @classmethod
+    def get_default_scraper_urls(cls, provider_name: str) -> list[str] | None:
+        """Get default scraper URLs from the scraper class"""
+        scraper_class = cls.SCRAPERS.get(provider_name)
+        if not scraper_class:
+            return None
+
+        # Instantiate scraper with no URLs to get defaults
+        scraper = scraper_class(scraper_urls=None)
+        return scraper.scraper_urls if hasattr(scraper, 'scraper_urls') else None
 
     async def update_all_providers(self) -> Dict[str, Any]:
         """
@@ -50,12 +73,17 @@ class PriceUpdateService:
 
         return results
 
-    async def update_provider(self, provider_name: str) -> Dict[str, Any]:
+    async def update_provider(
+        self,
+        provider_name: str,
+        cached_offers: List[Dict[str, Any]] | None = None
+    ) -> Dict[str, Any]:
         """
         Update prices for a specific provider
 
         Args:
             provider_name: Name of the provider (EDF, Enercoop, TotalEnergies)
+            cached_offers: Optional pre-scraped offers from preview (avoids re-scraping)
 
         Returns:
             Dict with update results
@@ -69,10 +97,15 @@ class PriceUpdateService:
             # Get or create provider
             provider = await self._get_or_create_provider(provider_name)
 
-            # Scrape prices (pass scraper_urls from database)
-            scraper_class = self.SCRAPERS[provider_name]
-            scraper = scraper_class(scraper_urls=provider.scraper_urls)
-            offers = await scraper.scrape()
+            # Use cached offers if provided, otherwise scrape
+            if cached_offers:
+                logger.info(f"Using {len(cached_offers)} cached offers for {provider_name}")
+                offers = [self._offer_from_cache(offer) for offer in cached_offers]
+            else:
+                # Scrape prices (pass scraper_urls from database)
+                scraper_class = self.SCRAPERS[provider_name]
+                scraper = scraper_class(scraper_urls=provider.scraper_urls)
+                offers = await scraper.scrape()
 
             if not offers:
                 return {"success": False, "error": "No offers found", "offers_updated": 0}
@@ -112,20 +145,88 @@ class PriceUpdateService:
             logger.error(f"Error updating {provider_name}: {str(e)}", exc_info=True)
             return {"success": False, "error": str(e)}
 
+    def _offer_from_cache(self, offer_dict: Dict[str, Any]) -> OfferData:
+        """Convert cached offer dict back to OfferData, parsing ISO date strings"""
+        # Parse ISO date strings back to datetime objects
+        valid_from = None
+        valid_to = None
+
+        if offer_dict.get("valid_from"):
+            try:
+                # Use datetime.fromisoformat() - built-in since Python 3.7
+                valid_from = datetime.fromisoformat(offer_dict["valid_from"])
+            except (ValueError, TypeError):
+                pass
+
+        if offer_dict.get("valid_to"):
+            try:
+                valid_to = datetime.fromisoformat(offer_dict["valid_to"])
+            except (ValueError, TypeError):
+                pass
+
+        return OfferData(
+            name=offer_dict["name"],
+            offer_type=offer_dict["offer_type"],
+            description=offer_dict.get("description"),
+            subscription_price=offer_dict.get("subscription_price", 0.0),
+            base_price=offer_dict.get("base_price"),
+            hc_price=offer_dict.get("hc_price"),
+            hp_price=offer_dict.get("hp_price"),
+            base_price_weekend=offer_dict.get("base_price_weekend"),
+            hp_price_weekend=offer_dict.get("hp_price_weekend"),
+            hc_price_weekend=offer_dict.get("hc_price_weekend"),
+            tempo_blue_hc=offer_dict.get("tempo_blue_hc"),
+            tempo_blue_hp=offer_dict.get("tempo_blue_hp"),
+            tempo_white_hc=offer_dict.get("tempo_white_hc"),
+            tempo_white_hp=offer_dict.get("tempo_white_hp"),
+            tempo_red_hc=offer_dict.get("tempo_red_hc"),
+            tempo_red_hp=offer_dict.get("tempo_red_hp"),
+            ejp_normal=offer_dict.get("ejp_normal"),
+            ejp_peak=offer_dict.get("ejp_peak"),
+            hc_price_winter=offer_dict.get("hc_price_winter"),
+            hp_price_winter=offer_dict.get("hp_price_winter"),
+            hc_price_summer=offer_dict.get("hc_price_summer"),
+            hp_price_summer=offer_dict.get("hp_price_summer"),
+            peak_day_price=offer_dict.get("peak_day_price"),
+            hc_schedules=offer_dict.get("hc_schedules"),
+            power_kva=offer_dict.get("power_kva"),
+            valid_from=valid_from,
+            valid_to=valid_to,
+        )
+
     async def _get_or_create_provider(self, name: str) -> EnergyProvider:
-        """Get existing provider or create new one"""
+        """Get existing provider or create new one with default values"""
         result = await self.db.execute(select(EnergyProvider).where(EnergyProvider.name == name))
         provider = result.scalar_one_or_none()
 
+        # Get default values
+        defaults = self.PROVIDER_DEFAULTS.get(name, {})
+        default_urls = self.get_default_scraper_urls(name)
+
         if not provider:
-            logger.info(f"Creating new provider: {name}")
+            # Create new provider with defaults
+            logger.info(f"Creating new provider: {name} with default URLs")
             provider = EnergyProvider(
                 id=str(uuid.uuid4()),
                 name=name,
+                website=defaults.get("website"),
+                scraper_urls=default_urls,
                 is_active=True,
             )
             self.db.add(provider)
             await self.db.flush()
+        else:
+            # Update existing provider if scraper_urls is missing
+            updated = False
+            if not provider.scraper_urls and default_urls:
+                provider.scraper_urls = default_urls
+                updated = True
+                logger.info(f"Updated provider {name} with default scraper URLs")
+            if not provider.website and defaults.get("website"):
+                provider.website = defaults.get("website")
+                updated = True
+            if updated:
+                await self.db.flush()
 
         return provider
 
@@ -294,12 +395,12 @@ class PriceUpdateService:
                             "offer_type": matching_offer.offer_type,
                             "power_kva": matching_offer.power_kva,
                             "current": self._offer_to_dict(matching_offer),
-                            "new": scraped_offer.to_dict(),
+                            "new": scraped_offer.to_dict(for_json=True),
                             "changes": diff
                         })
                 else:
                     # New offer to create
-                    offers_to_create.append(scraped_offer.to_dict())
+                    offers_to_create.append(scraped_offer.to_dict(for_json=True))
 
             # Offers to deactivate (current offers not matched)
             offers_to_deactivate = []
@@ -323,12 +424,16 @@ class PriceUpdateService:
                 f"{len(offers_to_deactivate)} to deactivate"
             )
 
+            # Convert all scraped offers to dict for caching (JSON serializable)
+            all_scraped_offers = [offer.to_dict(for_json=True) for offer in scraped_offers]
+
             return {
                 "success": True,
                 "provider": provider_name,
                 "offers_to_create": offers_to_create,
                 "offers_to_update": offers_to_update,
                 "offers_to_deactivate": offers_to_deactivate,
+                "scraped_offers": all_scraped_offers,  # All scraped offers for caching
                 "summary": {
                     "total_current": len(current_offers),
                     "total_scraped": len(scraped_offers),

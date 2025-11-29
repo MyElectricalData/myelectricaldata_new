@@ -71,6 +71,31 @@ class CacheService:
         except Exception:
             return False
 
+    async def get_raw(self, key: str) -> Optional[str]:
+        """Get cached value without decryption (for non-sensitive data)"""
+        if not self.redis_client:
+            return None
+
+        try:
+            data = await self.redis_client.get(key)
+            if data:
+                return data.decode() if isinstance(data, bytes) else data
+            return None
+        except Exception:
+            return None
+
+    async def set_raw(self, key: str, value: str, ttl: Optional[int] = None) -> bool:
+        """Cache value without encryption (for non-sensitive data)"""
+        if not self.redis_client:
+            return False
+
+        try:
+            cache_ttl = ttl if ttl is not None else self.ttl
+            await self.redis_client.setex(key, cache_ttl, value)
+            return True
+        except Exception:
+            return False
+
     async def delete_pattern(self, pattern: str) -> int:
         """Delete all keys matching pattern"""
         if not self.redis_client:

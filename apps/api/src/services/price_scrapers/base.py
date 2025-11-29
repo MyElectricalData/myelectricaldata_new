@@ -103,9 +103,14 @@ class OfferData:
         self.valid_from = valid_from
         self.valid_to = valid_to
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for database insertion"""
-        return {
+    def to_dict(self, for_json: bool = False) -> Dict[str, Any]:
+        """
+        Convert to dictionary for database insertion or JSON serialization.
+
+        Args:
+            for_json: If True, convert datetime to ISO strings for JSON serialization
+        """
+        result = {
             "name": self.name,
             "offer_type": self.offer_type,
             "description": self.description,
@@ -131,11 +136,21 @@ class OfferData:
             "peak_day_price": self.peak_day_price,
             "hc_schedules": self.hc_schedules,
             "power_kva": self.power_kva,
-            "valid_from": self.valid_from,
-            "valid_to": self.valid_to,
-            "price_updated_at": datetime.now(UTC),
             "is_active": True,
         }
+
+        if for_json:
+            # Convert datetime to ISO string for JSON serialization (cache)
+            result["valid_from"] = self.valid_from.isoformat() if self.valid_from else None
+            result["valid_to"] = self.valid_to.isoformat() if self.valid_to else None
+            result["price_updated_at"] = datetime.now(UTC).isoformat()
+        else:
+            # Keep native datetime for database insertion
+            result["valid_from"] = self.valid_from
+            result["valid_to"] = self.valid_to
+            result["price_updated_at"] = datetime.now(UTC)
+
+        return result
 
 
 class BasePriceScraper(ABC):

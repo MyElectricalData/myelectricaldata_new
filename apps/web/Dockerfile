@@ -1,22 +1,37 @@
-# Build stage
+# =============================================================================
+# Stage 1: Dependencies (cached separately from code)
+# =============================================================================
+FROM node:20-alpine AS deps
+
+WORKDIR /app
+
+# Copy ONLY package files first (better cache)
+COPY package*.json ./
+
+# Install dependencies (cached if package-lock.json unchanged)
+RUN npm ci
+
+# =============================================================================
+# Stage 2: Builder
+# =============================================================================
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci
-
-# Copy source code
+# Copy source code (changes frequently)
 COPY . .
 
 # Build the application
 # Note: VITE_* variables will be injected at runtime via env.js
 RUN npm run build
 
-# Production stage
+# =============================================================================
+# Stage 3: Production image
+# =============================================================================
 FROM nginx:alpine
 
 # Copy custom nginx config

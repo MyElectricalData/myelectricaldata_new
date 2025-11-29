@@ -199,8 +199,9 @@ export const energyApi = {
   },
 
   refreshOffers: async (provider?: string) => {
-    const params = provider ? { provider } : {}
-    return apiClient.post('admin/offers/refresh', params)
+    // Provider is passed as query parameter, not body
+    const url = provider ? `admin/offers/refresh?provider=${encodeURIComponent(provider)}` : 'admin/offers/refresh'
+    return apiClient.post(url)
   },
 
   purgeProviderOffers: async (provider: string) => {

@@ -6,13 +6,15 @@ from datetime import datetime, UTC
 import logging
 import json
 import asyncio
-from typing import Optional
+from typing import Optional, List
 from ..models import User, PDL, EnergyProvider, EnergyOffer
 from ..models.database import get_db
 from ..middleware import require_admin, require_permission, get_current_user
 from ..schemas import APIResponse
-from ..services import rate_limiter, cache_service
+from ..services import rate_limiter
 from ..services.price_update_service import PriceUpdateService
+from ..config import settings
+import redis.asyncio as redis
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,55 @@ _scraper_status: dict = {
     "steps": [],
     "progress": 0
 }
+
+# Cache pour les offres scrapées (évite de re-scraper entre preview et refresh)
+# TTL de 5 minutes - les offres scrapées sont réutilisées si le refresh est fait rapidement
+SCRAPED_OFFERS_CACHE_TTL = 300  # 5 minutes
+
+
+async def _get_redis_client():
+    """Get Redis client"""
+    return await redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
+
+
+async def _cache_scraped_offers(provider: str, offers: List[dict]) -> None:
+    """Cache les offres scrapées pour éviter un double scraping"""
+    try:
+        client = await _get_redis_client()
+        cache_key = f"scraped_offers:{provider}"
+        await client.setex(cache_key, SCRAPED_OFFERS_CACHE_TTL, json.dumps(offers))
+        await client.close()
+        logger.info(f"Cached {len(offers)} scraped offers for {provider} (TTL: {SCRAPED_OFFERS_CACHE_TTL}s)")
+    except Exception as e:
+        logger.error(f"Failed to cache offers for {provider}: {e}")
+
+
+async def _get_cached_offers(provider: str) -> List[dict] | None:
+    """Récupère les offres scrapées du cache si disponibles"""
+    try:
+        client = await _get_redis_client()
+        cache_key = f"scraped_offers:{provider}"
+        cached = await client.get(cache_key)
+        await client.close()
+        if cached:
+            offers = json.loads(cached)
+            logger.info(f"Found {len(offers)} cached offers for {provider}")
+            return offers
+    except Exception as e:
+        logger.error(f"Failed to get cached offers for {provider}: {e}")
+    return None
+
+
+async def _clear_cached_offers(provider: str) -> None:
+    """Supprime les offres scrapées du cache après utilisation"""
+    try:
+        client = await _get_redis_client()
+        cache_key = f"scraped_offers:{provider}"
+        await client.delete(cache_key)
+        await client.close()
+        logger.info(f"Cleared cached offers for {provider}")
+    except Exception as e:
+        logger.error(f"Failed to clear cached offers for {provider}: {e}")
 
 
 def _update_scraper_progress(step: str, progress: int):
@@ -952,6 +1003,10 @@ async def preview_offers_update(
                         }
                     )
 
+                # Cache scraped offers for later refresh (avoids re-scraping)
+                if preview_result.get("scraped_offers"):
+                    await _cache_scraped_offers(provider, preview_result["scraped_offers"])
+
                 return APIResponse(
                     success=True,
                     data={
@@ -1099,9 +1154,25 @@ async def refresh_offers(
                         }
                     )
 
-                _update_scraper_progress(f"Téléchargement des tarifs {provider}", 20)
-                result = await service.update_provider(provider)
-                _update_scraper_progress("Mise à jour de la base de données", 80)
+                # Check for cached offers from preview (avoids re-scraping)
+                cached_offers = await _get_cached_offers(provider)
+
+                if cached_offers:
+                    # Continue from where preview left off (80%)
+                    # Preview: 0% → 20% (download) → 80% (analysis done)
+                    # Refresh with cache: 80% → 90% (DB update) → 100% (done)
+                    _update_scraper_progress(f"Utilisation des données en cache pour {provider}", 82)
+                else:
+                    _update_scraper_progress(f"Téléchargement des tarifs {provider}", 20)
+
+                result = await service.update_provider(provider, cached_offers=cached_offers)
+
+                # Progress depends on whether we used cache
+                _update_scraper_progress("Mise à jour de la base de données", 90 if cached_offers else 80)
+
+                # Clear cache after use
+                if cached_offers:
+                    await _clear_cached_offers(provider)
 
                 if not result.get("success"):
                     return APIResponse(
@@ -1116,8 +1187,9 @@ async def refresh_offers(
                 return APIResponse(
                     success=True,
                     data={
-                        "message": f"Successfully updated {provider}",
-                        "result": result
+                        "message": f"Successfully updated {provider}" + (" (from cache)" if cached_offers else ""),
+                        "result": result,
+                        "used_cache": cached_offers is not None
                     }
                 )
             else:
@@ -1350,31 +1422,40 @@ async def list_available_scrapers(
 
 @router.get("/providers", response_model=APIResponse)
 async def list_providers(
-    include_missing_scrapers: bool = Query(False, description="Include providers with scrapers that don't exist in DB yet"),
     current_user: User = Depends(require_permission('offers')),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """
     List all energy providers
 
-    Args:
-        include_missing_scrapers: If True, also returns providers with scrapers not yet in DB
+    Automatically creates missing providers from scrapers with default values.
 
     Returns:
         APIResponse with list of providers
     """
     try:
+        # First, ensure all scrapers have corresponding providers in DB
+        service = PriceUpdateService(db)
+        existing_result = await db.execute(select(EnergyProvider.name))
+        existing_names = {row[0] for row in existing_result.fetchall()}
+
+        # Create missing providers with defaults
+        for scraper_name in PriceUpdateService.SCRAPERS.keys():
+            if scraper_name not in existing_names:
+                logger.info(f"Auto-creating missing provider: {scraper_name}")
+                await service._get_or_create_provider(scraper_name)
+
+        await db.commit()
+
+        # Now fetch all providers
         result = await db.execute(
             select(EnergyProvider).order_by(EnergyProvider.name)
         )
         providers = result.scalars().all()
 
         providers_data = []
-        existing_names = set()
 
         for provider in providers:
-            existing_names.add(provider.name)
-
             # Count active offers
             offers_result = await db.execute(
                 select(func.count()).select_from(EnergyOffer).where(
@@ -1389,6 +1470,11 @@ async def list_providers(
             # Check if this provider has a scraper
             has_scraper = provider.name in PriceUpdateService.SCRAPERS
 
+            # Get default URLs if provider has none
+            scraper_urls = provider.scraper_urls
+            if not scraper_urls and has_scraper:
+                scraper_urls = PriceUpdateService.get_default_scraper_urls(provider.name)
+
             providers_data.append({
                 "id": provider.id,
                 "name": provider.name,
@@ -1397,29 +1483,10 @@ async def list_providers(
                 "is_active": provider.is_active,
                 "active_offers_count": offers_count,
                 "has_scraper": has_scraper,
-                "scraper_urls": provider.scraper_urls,
+                "scraper_urls": scraper_urls,
                 "created_at": provider.created_at.isoformat(),
                 "updated_at": provider.updated_at.isoformat(),
             })
-
-        # Add providers with scrapers that don't exist in DB yet
-        if include_missing_scrapers:
-            for scraper_name in PriceUpdateService.SCRAPERS.keys():
-                if scraper_name not in existing_names:
-                    # Generate a placeholder ID and default values
-                    providers_data.append({
-                        "id": f"scraper-{scraper_name.lower().replace(' ', '-')}",
-                        "name": scraper_name,
-                        "logo_url": None,
-                        "website": None,
-                        "is_active": False,
-                        "active_offers_count": 0,
-                        "has_scraper": True,
-                        "scraper_urls": None,
-                        "created_at": None,
-                        "updated_at": None,
-                        "not_in_database": True,  # Flag to indicate this is a placeholder
-                    })
 
         # Sort by name
         providers_data.sort(key=lambda x: x["name"])

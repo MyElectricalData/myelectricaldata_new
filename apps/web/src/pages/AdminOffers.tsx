@@ -109,8 +109,8 @@ export default function AdminOffers() {
     },
   })
 
-  // Fetch sync status (poll every 3 seconds when a sync is in progress)
-  const { data: syncStatus } = useQuery({
+  // Fetch sync status (poll every second when a sync is in progress or refresh is active)
+  const { data: syncStatus, refetch: refetchSyncStatus } = useQuery({
     queryKey: ['sync-status'],
     queryFn: async () => {
       const response = await energyApi.getSyncStatus()
@@ -120,8 +120,11 @@ export default function AdminOffers() {
       return { sync_in_progress: false, provider: null, started_at: null, current_step: null, steps: [], progress: 0 }
     },
     refetchInterval: (query) => {
-      // Poll more frequently when sync is in progress
-      return query.state.data?.sync_in_progress ? 3000 : 10000
+      // Poll much more frequently when sync is in progress or we're refreshing
+      if (refreshingProvider || loadingPreview || query.state.data?.sync_in_progress) {
+        return 500 // 500ms for responsive progress updates
+      }
+      return 10000 // 10s when idle
     },
   })
 
@@ -176,30 +179,27 @@ export default function AdminOffers() {
 
   // Refresh offers handler
   const handleRefreshOffers = async (providerId: string, providerName: string, fromPreview = false) => {
+    // Close preview modal immediately if coming from preview
+    // The sync progress modal will take over (triggered by refreshingProvider)
+    // Note: We do NOT reset progress - syncStatus from backend keeps the current progress
+    if (fromPreview) {
+      setPreviewModalOpen(false)
+      setPreviewData(null)
+    }
+
     setRefreshingProvider(providerId)
-    setApplyProgress(0)
+    // Don't reset applyProgress - let syncStatus.progress from backend continue
+
+    // Start polling sync status immediately
+    refetchSyncStatus()
 
     try {
-      // Simulate progress steps
-      setApplyProgress(10) // Starting
-
       const response = await energyApi.refreshOffers(providerName)
-      setApplyProgress(60) // API call done
 
       if (response.success) {
-        setApplyProgress(80) // Invalidating cache
         await queryClient.invalidateQueries({ queryKey: ['energy-offers'] })
         await queryClient.invalidateQueries({ queryKey: ['energy-providers'] })
-
-        setApplyProgress(100) // Complete
         toast.success(`Offres de ${providerName} rafraîchies avec succès`)
-
-        if (fromPreview) {
-          // Wait a bit to show 100% before closing
-          await new Promise(resolve => setTimeout(resolve, 300))
-          setPreviewModalOpen(false)
-          setPreviewData(null)
-        }
       } else {
         toast.error('Échec du rafraîchissement des offres')
       }
@@ -208,7 +208,8 @@ export default function AdminOffers() {
       toast.error(errorMessage)
     } finally {
       setRefreshingProvider(null)
-      setApplyProgress(0)
+      // Final refresh to clear sync status
+      refetchSyncStatus()
     }
   }
 
@@ -668,7 +669,7 @@ export default function AdminOffers() {
                   <div className="absolute inset-0 w-20 h-20 rounded-full border-4 border-primary-200 dark:border-primary-800 animate-pulse" />
                 </div>
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
-                  {loadingPreview ? 'Prévisualisation en cours' : 'Synchronisation en cours'}
+                  {loadingPreview ? 'Prévisualisation en cours' : refreshingProvider ? 'Application en cours' : 'Synchronisation en cours'}
                 </h3>
                 <p className="text-lg font-semibold text-primary-600 dark:text-primary-400">
                   {providerName === 'all' ? 'Tous les fournisseurs' : providerName}
