@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowRight, Shield, Zap, Key, Moon, Sun, Heart, Lock, Database, BarChart3, RefreshCw, ChevronDown, Sparkles, TrendingUp, Github, Server, Home, Radio, LineChart, Container } from 'lucide-react'
+import { ArrowRight, Shield, Zap, Key, Moon, Sun, Heart, Lock, Database, BarChart3, RefreshCw, ChevronDown, Sparkles, TrendingUp, Github, Server, Home, Radio, LineChart, Container, AlertCircle, UserPlus, ExternalLink } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useThemeStore } from '@/stores/themeStore'
 import { useState, useEffect, useRef } from 'react'
@@ -476,9 +476,51 @@ export default function Landing() {
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl sm:text-4xl font-bold text-center mb-16 text-gray-900 dark:text-white">
+          <h2 className="text-3xl sm:text-4xl font-bold text-center mb-8 text-gray-900 dark:text-white">
             Comment ça marche ?
           </h2>
+
+          {/* Alerte importante : deux comptes distincts */}
+          <div className="max-w-4xl mx-auto mb-12 p-6 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-2xl border-2 border-amber-300 dark:border-amber-700 shadow-lg">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <AlertCircle className="text-amber-600 dark:text-amber-400" size={32} />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold mb-3 text-gray-900 dark:text-white flex items-center gap-2">
+                  <span>Deux comptes distincts</span>
+                </h3>
+                <div className="space-y-4 text-gray-700 dark:text-gray-300">
+                  <p className="text-lg leading-relaxed">
+                    Votre compte <strong className="text-primary-600 dark:text-primary-400">MyElectricalData</strong> est <strong className="text-amber-700 dark:text-amber-400">totalement indépendant</strong> de votre compte Enedis. Ce sont deux comptes séparés avec des identifiants différents.
+                  </p>
+                  <div className="grid md:grid-cols-2 gap-4 mt-4">
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-primary-200 dark:border-primary-700">
+                      <div className="flex items-center gap-2 mb-2">
+                        <UserPlus className="text-primary-600 dark:text-primary-400" size={20} />
+                        <span className="font-semibold text-primary-700 dark:text-primary-400">Compte MyElectricalData</span>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Créé sur cette plateforme avec votre email. Vous obtenez des identifiants API (client_id / client_secret) pour accéder à vos données.
+                      </p>
+                    </div>
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-green-200 dark:border-green-700">
+                      <div className="flex items-center gap-2 mb-2">
+                        <ExternalLink className="text-green-600 dark:text-green-400" size={20} />
+                        <span className="font-semibold text-green-700 dark:text-green-400">Compte Enedis</span>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Votre compte personnel sur le site Enedis. Utilisé lors du consentement pour autoriser l'accès à vos données Linky.
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-base mt-4 p-3 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+                    <strong className="text-amber-700 dark:text-amber-400">📋 Processus :</strong> Créez d'abord votre compte MyElectricalData, puis lors du consentement vous serez redirigé vers le site officiel d'Enedis où vous vous connecterez avec <em>vos identifiants Enedis</em> pour autoriser l'accès.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div className="relative">
             {/* Timeline line */}
@@ -495,10 +537,13 @@ export default function Landing() {
                   <div className="inline-block p-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 border border-gray-200 dark:border-gray-700">
                     <h3 className="text-2xl font-bold mb-3 text-gray-900 dark:text-white flex items-center justify-center md:justify-end gap-2">
                       <Key className="text-primary-600 dark:text-primary-400" size={28} />
-                      Création de compte
+                      Création de compte MyElectricalData
                     </h3>
                     <p className="text-gray-600 dark:text-gray-400 text-lg">
-                      Créez votre compte et obtenez vos identifiants API (client_id et client_secret).
+                      Créez votre compte <strong>sur notre plateforme</strong> et obtenez vos identifiants API (client_id et client_secret).
+                    </p>
+                    <p className="text-sm text-gray-500 dark:text-gray-500 mt-2 italic">
+                      Ce compte est distinct de votre compte Enedis.
                     </p>
                   </div>
                 </div>
@@ -528,7 +573,11 @@ export default function Landing() {
                       Consentement Enedis
                     </h3>
                     <p className="text-gray-600 dark:text-gray-400 text-lg">
-                      Autorisez la passerelle à accéder à vos données via le portail officiel Enedis.
+                      Vous êtes redirigé vers le <strong>site officiel Enedis</strong> où vous vous connectez avec <strong>votre compte Enedis personnel</strong> pour autoriser l'accès à vos données.
+                    </p>
+                    <p className="text-sm text-green-600 dark:text-green-400 mt-2 flex items-center justify-center md:justify-start gap-1">
+                      <ExternalLink size={14} />
+                      Connexion sécurisée sur enedis.fr
                     </p>
                   </div>
                 </div>
