@@ -159,6 +159,8 @@ export default function PageHeader() {
               <div className="text-sm text-gray-600 dark:text-gray-400 italic">
                 {location.pathname === '/production'
                   ? 'Aucun PDL de production non lié trouvé'
+                  : location.pathname === '/consumption'
+                  ? 'Aucun PDL avec l\'option consommation activée'
                   : 'Aucun point de livraison actif trouvé'}
               </div>
             ) : (
