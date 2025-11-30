@@ -43,7 +43,14 @@ export function MonthlyHcHp({ monthlyHcHpByYear, selectedPDLDetails, isDarkMode 
   const [refAreaRight, setRefAreaRight] = useState<string>('')
   const [zoomDomain, setZoomDomain] = useState<{ left: number; right: number } | null>(null)
 
-  if (monthlyHcHpByYear.length === 0 || !selectedPDLDetails?.offpeak_hours) {
+  // Don't show Monthly HC/HP if:
+  // - No data available
+  // - No offpeak hours configured
+  // - User has BASE pricing (no HC/HP distinction)
+  const pricingOption = selectedPDLDetails?.pricing_option
+  const isBasePricing = pricingOption === 'BASE'
+
+  if (monthlyHcHpByYear.length === 0 || !selectedPDLDetails?.offpeak_hours || isBasePricing) {
     return null
   }
 

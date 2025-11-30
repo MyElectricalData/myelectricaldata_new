@@ -19,7 +19,14 @@ interface HcHpDistributionProps {
 export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistributionProps) {
   const [selectedHcHpPeriod, setSelectedHcHpPeriod] = useState(0)
 
-  if (hcHpByYear.length === 0 || !selectedPDLDetails?.offpeak_hours) {
+  // Don't show HC/HP distribution if:
+  // - No data available
+  // - No offpeak hours configured
+  // - User has BASE pricing (no HC/HP distinction)
+  const pricingOption = selectedPDLDetails?.pricing_option
+  const isBasePricing = pricingOption === 'BASE'
+
+  if (hcHpByYear.length === 0 || !selectedPDLDetails?.offpeak_hours || isBasePricing) {
     return null
   }
 
