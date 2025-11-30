@@ -50,6 +50,7 @@ class PDLResponse(BaseModel):
     display_order: Optional[int] = None
     subscribed_power: Optional[int] = None
     offpeak_hours: Optional[Union[list[str], dict]] = None  # Array format or legacy object format
+    pricing_option: Optional[str] = None  # BASE, HC_HP, TEMPO, EJP, HC_WEEKEND
     has_consumption: bool = True
     has_production: bool = False
     is_active: bool = True

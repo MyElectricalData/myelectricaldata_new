@@ -17,6 +17,7 @@ class PDL(Base, TimestampMixin):
     # Contract information
     subscribed_power: Mapped[int | None] = mapped_column(Integer, nullable=True)  # kVA
     offpeak_hours: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # HC schedules by day
+    pricing_option: Mapped[str | None] = mapped_column(String(50), nullable=True)  # BASE, HC_HP, TEMPO, EJP, HC_WEEKEND
     has_consumption: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # PDL has consumption data
     has_production: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)  # PDL has production data
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # PDL is active/enabled

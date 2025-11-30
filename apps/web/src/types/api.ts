@@ -63,6 +63,9 @@ export interface TokenResponse {
   token_type: string
 }
 
+// Pricing option types for electricity tariffs
+export type PricingOption = 'BASE' | 'HC_HP' | 'TEMPO' | 'EJP' | 'WEEKEND' | 'SEASONAL'
+
 export interface PDL {
   id: string
   usage_point_id: string
@@ -71,6 +74,7 @@ export interface PDL {
   display_order?: number
   subscribed_power?: number
   offpeak_hours?: string[] | Record<string, string> // Array format or legacy object format
+  pricing_option?: PricingOption // Tariff type: BASE, HC_HP, TEMPO, EJP, HC_WEEKEND
   has_consumption?: boolean
   has_production?: boolean
   is_active?: boolean
