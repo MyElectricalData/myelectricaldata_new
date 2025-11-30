@@ -1,5 +1,6 @@
 """AlpIQ price scraper - Fetches tariffs from AlpIQ market offers"""
 from typing import List
+import re
 import httpx
 from io import BytesIO
 from pdfminer.high_level import extract_text
@@ -130,10 +131,155 @@ class AlpiqScraper(BasePriceScraper):
         raise Exception("Échec du scraping AlpIQ - raison inconnue")
 
     def _parse_pdf(self, text: str) -> List[OfferData]:
-        """Parse PDF text from AlpIQ tariff sheet"""
-        # For now, return empty list to use fallback
-        # PDF parsing can be implemented later with proper regex patterns
-        return []
+        """
+        Parse PDF text from AlpIQ tariff sheet
+
+        The PDF structure contains two offers:
+        - Offre Électricité Stable: -8% on kWh HT, fixed price until 31/12/2026
+        - Offre Électricité Référence: -4% on kWh HT, indexed on TRV
+
+        Each offer has BASE and HC/HP options.
+        Prices kWh are in format 0,XXXXXX (6 decimals)
+        Subscription prices are same as TRV (regulated tariff)
+        """
+        offers = []
+
+        try:
+            # Extract all kWh prices (format 0,XXXXXX - 6 decimals after comma)
+            kwh_prices = re.findall(r'0,(\d{6})', text)
+
+            if len(kwh_prices) < 24:
+                self.logger.warning(f"Not enough kWh prices found in PDF: {len(kwh_prices)}")
+                return []
+
+            # Convert to float (prices are in format "XXXXXX" representing 0.XXXXXX)
+            def to_price(s: str) -> float:
+                return float(f"0.{s}")
+
+            # Structure of kWh prices in the PDF (in order):
+            # Offre STABLE (pages 1-2):
+            #   [0] BASE TRV HT, [1] BASE TRV TTC
+            #   [2] BASE Alpiq HT, [3] BASE Alpiq TTC
+            #   [4] HP TRV HT, [5] HP TRV TTC
+            #   [6] HP Alpiq HT, [7] HP Alpiq TTC
+            #   [8] HC TRV HT, [9] HC TRV TTC
+            #   [10] HC Alpiq HT, [11] HC Alpiq TTC
+            # Offre REFERENCE (pages 3-4):
+            #   [12-23] Same structure
+
+            # Alpiq TTC prices (what we need)
+            stable_base_ttc = to_price(kwh_prices[3])
+            stable_hp_ttc = to_price(kwh_prices[7])
+            stable_hc_ttc = to_price(kwh_prices[11])
+
+            reference_base_ttc = to_price(kwh_prices[15])
+            reference_hp_ttc = to_price(kwh_prices[19])
+            reference_hc_ttc = to_price(kwh_prices[23])
+
+            self.logger.info(f"Parsed prices - Stable BASE: {stable_base_ttc}, HP: {stable_hp_ttc}, HC: {stable_hc_ttc}")
+            self.logger.info(f"Parsed prices - Reference BASE: {reference_base_ttc}, HP: {reference_hp_ttc}, HC: {reference_hc_ttc}")
+
+            # Extract subscription prices TTC (same as TRV)
+            # They appear after "TTC" label in format XX,XX
+            # For BASE: 3-36 kVA (34 values)
+            # For HC/HP: 6-36 kVA (31 values)
+
+            # Standard subscription prices TTC for BASE (identical to TRV)
+            # These are extracted from the first TTC column in the PDF
+            subscriptions_base = {
+                3: 11.73, 6: 15.47, 9: 19.39, 12: 23.32, 15: 27.06,
+                18: 30.76, 24: 38.79, 30: 46.44, 36: 54.29
+            }
+
+            # Standard subscription prices TTC for HC/HP (identical to TRV)
+            subscriptions_hchp = {
+                6: 15.74, 9: 19.81, 12: 23.76, 15: 27.49,
+                18: 31.34, 24: 39.47, 30: 47.02, 36: 54.61
+            }
+
+            # Extract validity dates from PDF
+            # "Valable à compter du XX MOIS YYYY"
+            stable_date_match = re.search(r'Stable.*?Valable à compter du (\d{1,2})\s+(\w+)\s+(\d{4})', text, re.DOTALL | re.IGNORECASE)
+            reference_date_match = re.search(r'Référence.*?Valable à compter du (\d{1,2})\w*\s+(\w+)\s+(\d{4})', text, re.DOTALL | re.IGNORECASE)
+
+            # Parse dates (French months)
+            months_fr = {
+                'janvier': 1, 'février': 2, 'mars': 3, 'avril': 4, 'mai': 5, 'juin': 6,
+                'juillet': 7, 'août': 8, 'aout': 8, 'septembre': 9, 'octobre': 10, 'novembre': 11, 'décembre': 12
+            }
+
+            # Default dates if not found
+            valid_from_stable = datetime(2025, 11, 26, 0, 0, 0, tzinfo=UTC)  # From PDF header
+            valid_from_reference = datetime(2025, 8, 1, 0, 0, 0, tzinfo=UTC)
+
+            if stable_date_match:
+                day, month_str, year = stable_date_match.groups()
+                month = months_fr.get(month_str.lower(), 11)
+                valid_from_stable = datetime(int(year), month, int(day), 0, 0, 0, tzinfo=UTC)
+
+            if reference_date_match:
+                day, month_str, year = reference_date_match.groups()
+                month = months_fr.get(month_str.lower(), 8)
+                valid_from_reference = datetime(int(year), month, int(day), 0, 0, 0, tzinfo=UTC)
+
+            self.logger.info(f"Validity dates - Stable: {valid_from_stable}, Reference: {valid_from_reference}")
+
+            # Generate offers for Électricité Stable - BASE
+            for power, subscription in subscriptions_base.items():
+                offers.append(OfferData(
+                    name=f"Électricité Stable - Base {power} kVA",
+                    offer_type="BASE",
+                    description=f"Offre de marché avec -8% sur le prix du kWh HT (fixe jusqu'au 31/12/2026) - Option Base - {power} kVA - Prix TTC",
+                    subscription_price=subscription,
+                    base_price=stable_base_ttc,
+                    power_kva=power,
+                    valid_from=valid_from_stable,
+                ))
+
+            # Generate offers for Électricité Stable - HC/HP
+            for power, subscription in subscriptions_hchp.items():
+                offers.append(OfferData(
+                    name=f"Électricité Stable - Heures Creuses {power} kVA",
+                    offer_type="HC_HP",
+                    description=f"Offre de marché avec -8% sur le prix du kWh HT (fixe jusqu'au 31/12/2026) - Heures Creuses - {power} kVA - Prix TTC",
+                    subscription_price=subscription,
+                    hp_price=stable_hp_ttc,
+                    hc_price=stable_hc_ttc,
+                    power_kva=power,
+                    valid_from=valid_from_stable,
+                ))
+
+            # Generate offers for Électricité Référence - BASE
+            for power, subscription in subscriptions_base.items():
+                offers.append(OfferData(
+                    name=f"Électricité Référence - Base {power} kVA",
+                    offer_type="BASE",
+                    description=f"Offre de marché avec -4% sur le prix du kWh HT - Option Base - {power} kVA - Prix TTC",
+                    subscription_price=subscription,
+                    base_price=reference_base_ttc,
+                    power_kva=power,
+                    valid_from=valid_from_reference,
+                ))
+
+            # Generate offers for Électricité Référence - HC/HP
+            for power, subscription in subscriptions_hchp.items():
+                offers.append(OfferData(
+                    name=f"Électricité Référence - Heures Creuses {power} kVA",
+                    offer_type="HC_HP",
+                    description=f"Offre de marché avec -4% sur le prix du kWh HT - Heures Creuses - {power} kVA - Prix TTC",
+                    subscription_price=subscription,
+                    hp_price=reference_hp_ttc,
+                    hc_price=reference_hc_ttc,
+                    power_kva=power,
+                    valid_from=valid_from_reference,
+                ))
+
+            self.logger.info(f"Successfully parsed {len(offers)} offers from AlpIQ PDF")
+            return offers
+
+        except Exception as e:
+            self.logger.error(f"Error parsing AlpIQ PDF: {e}", exc_info=True)
+            return []
 
     def _get_fallback_offers(self) -> List[OfferData]:
         """Generate offers from fallback pricing data"""

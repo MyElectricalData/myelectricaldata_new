@@ -1,5 +1,6 @@
 """Alterna price scraper - Fetches tariffs from Alterna market offers"""
 from typing import List
+import re
 import httpx
 from io import BytesIO
 from pdfminer.high_level import extract_text
@@ -94,19 +95,25 @@ class AlternaScraper(BasePriceScraper):
         # Try to scrape from PDFs
         try:
             offers = []
-            for pdf_url in self.scraper_urls[:2]:  # Only scrape first 2 PDFs (Locale and Française)
+            # Map PDF URLs to offer names
+            pdf_configs = [
+                (self.scraper_urls[0] if len(self.scraper_urls) > 0 else self.LOCALE_PDF_URL, "Électricité verte 100% locale"),
+                (self.scraper_urls[1] if len(self.scraper_urls) > 1 else self.FRANCAISE_PDF_URL, "Électricité verte 100% française"),
+            ]
+
+            for pdf_url, offer_name in pdf_configs:
                 try:
                     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                         response = await client.get(pdf_url)
                         if response.status_code != 200:
-                            error_msg = f"Échec du téléchargement du PDF Alterna (HTTP {response.status_code})"
+                            error_msg = f"Échec du téléchargement du PDF Alterna {offer_name} (HTTP {response.status_code})"
                             self.logger.warning(error_msg)
                             errors.append(error_msg)
                             continue
 
                         # Parse PDF in thread pool to avoid blocking event loop
                         text = await run_sync_in_thread(_extract_pdf_text, response.content)
-                        parsed_offers = self._parse_pdf(text)
+                        parsed_offers = self._parse_pdf(text, offer_name)
 
                         if parsed_offers:
                             offers.extend(parsed_offers)
@@ -137,11 +144,164 @@ class AlternaScraper(BasePriceScraper):
         else:
             raise Exception(f"Échec complet du scraping Alterna (y compris fallback) : {' | '.join(errors)}")
 
-    def _parse_pdf(self, text: str) -> List[OfferData]:
-        """Parse PDF text from Alterna tariff sheet"""
-        # For now, return empty list to use fallback
-        # PDF parsing can be implemented later with proper regex patterns
-        return []
+    def _parse_pdf(self, text: str, offer_name: str) -> List[OfferData]:
+        """
+        Parse PDF text from Alterna tariff sheet
+
+        Alterna PDFs have two pages:
+        - Page 1: HTT prices (hors taxes)
+        - Page 2: TTC prices (toutes taxes comprises) - what we want
+
+        Structure after "Tarifs TTC":
+        - Puissances: 3, 6, 9, 12, 15, 18, 24, 30, 36 kVA
+        - Abonnements BASE (9 values)
+        - Prix kWh BASE (9 identical values)
+        - Abonnements HC/HP (8 values, starting at 6 kVA)
+        - Prix HP (8 identical values)
+        - Prix HC (8 identical values)
+        """
+        offers = []
+
+        try:
+            # Find TTC section (page 2)
+            ttc_marker = "Tarifs TTC"
+            if ttc_marker not in text:
+                self.logger.warning(f"TTC section not found in {offer_name} PDF")
+                return []
+
+            # Get only TTC part
+            ttc_section = text.split(ttc_marker)[1]
+
+            # Extract all prices (format X,XXXX with 4 decimals for kWh)
+            # Subscription prices are XX,XX format
+            all_numbers = re.findall(r'(\d{1,2},\d{2,4})', ttc_section)
+
+            if len(all_numbers) < 40:
+                self.logger.warning(f"Not enough prices found in {offer_name} PDF: {len(all_numbers)}")
+                return []
+
+            # Parse the structure:
+            # Lines 0-8: puissances (3,6,9,12,15,18,24,30,36) - skip
+            # Lines 9-17: abonnements BASE TTC (9 values)
+            # Lines 18-26: prix kWh BASE TTC (9 identical values)
+            # Lines 27-34: abonnements HC/HP TTC (8 values, 6-36 kVA)
+            # Lines 35-42: prix HP TTC (8 identical values)
+            # Lines 43-50: prix HC TTC (8 identical values)
+
+            def to_float(s: str) -> float:
+                return float(s.replace(',', '.'))
+
+            # Skip puissance numbers and extract actual prices
+            # The first 9 numbers after TTC marker that look like subscriptions (10-60 range)
+            subscriptions_base = []
+            prices_base = []
+            subscriptions_hchp = []
+            prices_hp = []
+            prices_hc = []
+
+            idx = 0
+            # Skip power values (3, 6, 9, 12, 15, 18, 24, 30, 36)
+            while idx < len(all_numbers) and to_float(all_numbers[idx]) < 10:
+                idx += 1
+
+            # Abonnements BASE (9 values: 11.73 to 54.29)
+            for i in range(9):
+                if idx + i < len(all_numbers):
+                    subscriptions_base.append(to_float(all_numbers[idx + i]))
+            idx += 9
+
+            # Prix kWh BASE (9 identical values around 0.18)
+            for i in range(9):
+                if idx + i < len(all_numbers):
+                    val = to_float(all_numbers[idx + i])
+                    if val < 1:  # kWh price
+                        prices_base.append(val)
+            idx += 9
+
+            # Abonnements HC/HP (8 values starting at 6 kVA)
+            for i in range(8):
+                if idx + i < len(all_numbers):
+                    val = to_float(all_numbers[idx + i])
+                    if val > 10:  # Subscription
+                        subscriptions_hchp.append(val)
+            idx += 8
+
+            # Prix HP (8 identical values)
+            for i in range(8):
+                if idx + i < len(all_numbers):
+                    val = to_float(all_numbers[idx + i])
+                    if val < 1:
+                        prices_hp.append(val)
+            idx += 8
+
+            # Prix HC (8 identical values)
+            for i in range(8):
+                if idx + i < len(all_numbers):
+                    val = to_float(all_numbers[idx + i])
+                    if val < 1:
+                        prices_hc.append(val)
+
+            # Validate extracted data
+            if len(subscriptions_base) < 9 or len(prices_base) < 1:
+                self.logger.warning(f"Invalid BASE data in {offer_name}: subs={len(subscriptions_base)}, prices={len(prices_base)}")
+                return []
+
+            if len(subscriptions_hchp) < 8 or len(prices_hp) < 1 or len(prices_hc) < 1:
+                self.logger.warning(f"Invalid HC/HP data in {offer_name}: subs={len(subscriptions_hchp)}, hp={len(prices_hp)}, hc={len(prices_hc)}")
+                return []
+
+            # Use first value for kWh prices (they're all identical)
+            base_price = prices_base[0]
+            hp_price = prices_hp[0]
+            hc_price = prices_hc[0]
+
+            self.logger.info(f"Parsed {offer_name}: BASE={base_price}, HP={hp_price}, HC={hc_price}")
+
+            # Extract validity date
+            date_match = re.search(r'applicables? au (\d{2})/(\d{2})/(\d{4})', ttc_section, re.IGNORECASE)
+            if date_match:
+                day, month, year = date_match.groups()
+                valid_from = datetime(int(year), int(month), int(day), 0, 0, 0, tzinfo=UTC)
+            else:
+                valid_from = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+            # Power levels
+            powers_base = [3, 6, 9, 12, 15, 18, 24, 30, 36]
+            powers_hchp = [6, 9, 12, 15, 18, 24, 30, 36]
+
+            # Generate BASE offers
+            for i, power in enumerate(powers_base):
+                if i < len(subscriptions_base):
+                    offers.append(OfferData(
+                        name=f"{offer_name} - Base {power} kVA",
+                        offer_type="BASE",
+                        description=f"Offre d'électricité verte {offer_name} à prix fixe - Option Base - {power} kVA - Prix TTC",
+                        subscription_price=subscriptions_base[i],
+                        base_price=base_price,
+                        power_kva=power,
+                        valid_from=valid_from,
+                    ))
+
+            # Generate HC/HP offers
+            for i, power in enumerate(powers_hchp):
+                if i < len(subscriptions_hchp):
+                    offers.append(OfferData(
+                        name=f"{offer_name} - Heures Creuses {power} kVA",
+                        offer_type="HC_HP",
+                        description=f"Offre d'électricité verte {offer_name} à prix fixe - Heures Creuses - {power} kVA - Prix TTC",
+                        subscription_price=subscriptions_hchp[i],
+                        hp_price=hp_price,
+                        hc_price=hc_price,
+                        power_kva=power,
+                        valid_from=valid_from,
+                    ))
+
+            self.logger.info(f"Successfully parsed {len(offers)} offers from {offer_name} PDF")
+            return offers
+
+        except Exception as e:
+            self.logger.error(f"Error parsing {offer_name} PDF: {e}", exc_info=True)
+            return []
 
     def _get_fallback_offers(self) -> List[OfferData]:
         """Generate offers from fallback pricing data"""
