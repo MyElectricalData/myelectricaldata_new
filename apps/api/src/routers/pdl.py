@@ -52,6 +52,10 @@ class PDLLinkProduction(BaseModel):
     linked_production_pdl_id: str | None = None  # None to unlink
 
 
+class PDLUpdatePricingOption(BaseModel):
+    pricing_option: str | None = None  # BASE, HC_HP, TEMPO, EJP, HC_WEEKEND
+
+
 class PDLOrderItem(BaseModel):
     id: str
     order: int
@@ -88,6 +92,7 @@ async def list_pdls(
             display_order=pdl.display_order,
             subscribed_power=pdl.subscribed_power,
             offpeak_hours=pdl.offpeak_hours,
+            pricing_option=pdl.pricing_option,
             has_consumption=pdl.has_consumption,
             has_production=pdl.has_production,
             is_active=pdl.is_active,
@@ -297,6 +302,7 @@ async def create_pdl(
         created_at=pdl.created_at,
         subscribed_power=pdl.subscribed_power,
         offpeak_hours=pdl.offpeak_hours,
+        pricing_option=pdl.pricing_option,
         has_consumption=pdl.has_consumption,
         has_production=pdl.has_production,
         is_active=pdl.is_active,
@@ -335,6 +341,7 @@ async def get_pdl(
         display_order=pdl.display_order,
         subscribed_power=pdl.subscribed_power,
         offpeak_hours=pdl.offpeak_hours,
+        pricing_option=pdl.pricing_option,
         has_consumption=pdl.has_consumption,
         has_production=pdl.has_production,
         is_active=pdl.is_active,
@@ -457,6 +464,62 @@ async def toggle_pdl_active(
             "id": pdl.id,
             "usage_point_id": pdl.usage_point_id,
             "is_active": pdl.is_active,
+        },
+    )
+
+
+@router.patch("/{pdl_id}/pricing-option", response_model=APIResponse)
+async def update_pdl_pricing_option(
+    pdl_id: str = Path(..., description="PDL ID (UUID)", openapi_examples={"example_uuid": {"summary": "Example UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    pricing_data: PDLUpdatePricingOption = Body(..., openapi_examples={
+        "base": {"summary": "Tarif Base", "value": {"pricing_option": "BASE"}},
+        "hc_hp": {"summary": "Heures Creuses / Heures Pleines", "value": {"pricing_option": "HC_HP"}},
+        "tempo": {"summary": "Tarif Tempo", "value": {"pricing_option": "TEMPO"}},
+        "ejp": {"summary": "Effacement Jour de Pointe", "value": {"pricing_option": "EJP"}},
+        "hc_weekend": {"summary": "HC Nuit & Week-end", "value": {"pricing_option": "HC_WEEKEND"}},
+        "clear": {"summary": "Remove pricing option", "value": {"pricing_option": None}}
+    }),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """
+    Update PDL pricing option (tariff type).
+
+    Available options:
+    - **BASE**: Single price 24/7
+    - **HC_HP**: Off-peak hours (Heures Creuses) / Peak hours (Heures Pleines)
+    - **TEMPO**: 6-tier pricing based on day color (blue/white/red) and period (HC/HP)
+    - **EJP**: Peak Day Curtailment (22 expensive days per year)
+    - **HC_WEEKEND**: Off-peak hours extended to weekends
+    """
+    result = await db.execute(select(PDL).where(PDL.id == pdl_id, PDL.user_id == current_user.id))
+    pdl = result.scalar_one_or_none()
+
+    if not pdl:
+        return APIResponse(success=False, error=ErrorDetail(code="PDL_NOT_FOUND", message="PDL not found"))
+
+    # Validate pricing option if provided
+    valid_options = ["BASE", "HC_HP", "TEMPO", "EJP", "HC_WEEKEND"]
+    if pricing_data.pricing_option is not None and pricing_data.pricing_option not in valid_options:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="INVALID_PRICING_OPTION",
+                message=f"Invalid pricing option. Must be one of: {', '.join(valid_options)}"
+            )
+        )
+
+    pdl.pricing_option = pricing_data.pricing_option
+
+    await db.commit()
+    await db.refresh(pdl)
+
+    return APIResponse(
+        success=True,
+        data={
+            "id": pdl.id,
+            "usage_point_id": pdl.usage_point_id,
+            "pricing_option": pdl.pricing_option,
         },
     )
 
@@ -701,6 +764,7 @@ async def admin_add_pdl(
         created_at=pdl.created_at,
         subscribed_power=pdl.subscribed_power,
         offpeak_hours=pdl.offpeak_hours,
+        pricing_option=pdl.pricing_option,
         has_consumption=pdl.has_consumption,
         has_production=pdl.has_production,
         is_active=pdl.is_active,

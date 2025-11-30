@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { PDL, PDLCreate } from '@/types/api'
+import type { PDL, PDLCreate, PricingOption } from '@/types/api'
 
 export const pdlApi = {
   list: async () => {
@@ -32,6 +32,14 @@ export const pdlApi = {
 
   toggleActive: async (id: string, is_active: boolean) => {
     return apiClient.patch<PDL>(`pdl/${id}/active`, { is_active })
+  },
+
+  updatePricingOption: async (id: string, pricing_option: PricingOption | null) => {
+    return apiClient.patch<{
+      id: string
+      usage_point_id: string
+      pricing_option: PricingOption | null
+    }>(`pdl/${id}/pricing-option`, { pricing_option })
   },
 
   linkProduction: async (consumptionPdlId: string, productionPdlId: string | null) => {
