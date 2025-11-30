@@ -54,6 +54,7 @@ npm run dev
 |---------|-------------|
 | [**Installation**](/setup/docker) | Guides d'installation et de configuration |
 | [**Fonctionnalités**](/features-spec/simulator) | Spécifications des fonctionnalités |
+| [**Architecture**](/architecture/summary) | Vue d'ensemble technique et [chiffrement](/architecture/encryption) |
 | [**Design System**](/design) | Règles de design et composants UI |
 | [**API**](/enedis-api/endpoint) | Documentation des API Enedis et RTE |
 
@@ -96,7 +97,7 @@ npm run dev
 ## 🔐 Sécurité
 
 - **Isolation des données** : Chaque utilisateur n'accède qu'à ses propres PDL
-- **Chiffrement** : Données en cache chiffrées avec la clé secrète de l'utilisateur
+- **[Chiffrement Fernet](/architecture/encryption)** : Données en cache chiffrées avec la clé secrète de l'utilisateur
 - **OAuth2** : Flux de consentement Enedis sécurisé
 - **Rate limiting** : Protection contre les abus
 

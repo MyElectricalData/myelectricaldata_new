@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Info, Trash2, RefreshCw, Edit2, Save, X, Zap, Clock, Factory, Plus, Minus, Eye, EyeOff, Calendar, MoreVertical } from 'lucide-react'
+import { Info, Trash2, RefreshCw, Edit2, Save, X, Zap, Clock, Factory, Plus, Minus, Eye, EyeOff, Calendar, MoreVertical, Receipt } from 'lucide-react'
 import { pdlApi } from '@/api/pdl'
 import { oauthApi } from '@/api/oauth'
-import type { PDL } from '@/types/api'
+import type { PDL, PricingOption } from '@/types/api'
 
 interface PDLCardProps {
   pdl: PDL
@@ -287,6 +287,18 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
         return Promise.reject(new Error('Modifications désactivées en mode démo'))
       }
       return pdlApi.linkProduction(pdl.id, productionPdlId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pdls'] })
+    },
+  })
+
+  const updatePricingOptionMutation = useMutation({
+    mutationFn: (pricing_option: PricingOption | null) => {
+      if (isDemo) {
+        return Promise.reject(new Error('Modifications désactivées en mode démo'))
+      }
+      return pdlApi.updatePricingOption(pdl.id, pricing_option)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pdls'] })
@@ -815,6 +827,31 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                     </select>
                   </div>
 
+                  {/* Pricing Option (Tariff Type) */}
+                  <div className="flex items-center justify-between" data-tour="pdl-pricing-option">
+                    <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                      <Receipt size={16} />
+                      <span>Option tarifaire :</span>
+                    </div>
+                    <select
+                      value={pdl.pricing_option || ''}
+                      onChange={(e) => {
+                        const value = e.target.value as PricingOption | ''
+                        updatePricingOptionMutation.mutate(value === '' ? null : value as PricingOption)
+                      }}
+                      disabled={updatePricingOptionMutation.isPending}
+                      className="w-44 px-3 py-1.5 text-sm font-medium bg-white dark:bg-gray-800 border-2 border-blue-300 dark:border-blue-700 rounded-lg text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 cursor-pointer transition-all shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <option value="">Sélectionner</option>
+                      <option value="BASE">Base</option>
+                      <option value="HC_HP">Heures Creuses</option>
+                      <option value="TEMPO">Tempo</option>
+                      <option value="WEEKEND">Nuit & Week-end</option>
+                      <option value="SEASONAL">Saisonnier</option>
+                      <option value="EJP">EJP (ancien)</option>
+                    </select>
+                  </div>
+
                   {/* Offpeak Hours */}
                   <div className="space-y-3" data-tour="pdl-offpeak">
                     <div className="flex items-center justify-between">
@@ -1093,6 +1130,11 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
       {updateTypeMutation.isError && (
         <div className="mt-2 text-xs text-red-600 dark:text-red-400">
           Erreur lors de la mise à jour du type de PDL
+        </div>
+      )}
+      {updatePricingOptionMutation.isError && (
+        <div className="mt-2 text-xs text-red-600 dark:text-red-400">
+          Erreur lors de la mise à jour de l'option tarifaire
         </div>
       )}
 
