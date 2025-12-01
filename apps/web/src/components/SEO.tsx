@@ -11,7 +11,7 @@ interface SEOProps {
 }
 
 const BASE_URL = 'https://www.myelectricaldata.fr';
-const DEFAULT_IMAGE = `${BASE_URL}/og-image.svg`;
+const DEFAULT_IMAGE = `${BASE_URL}/og-image.png`;
 const SITE_NAME = 'MyElectricalData';
 
 /**
