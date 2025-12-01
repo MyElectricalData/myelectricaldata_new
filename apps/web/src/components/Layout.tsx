@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import toast, { Toaster } from 'react-hot-toast'
 import AdminTabs from './AdminTabs'
 import ApiDocsTabs from './ApiDocsTabs'
+import ConsumptionTabs from './ConsumptionTabs'
 import PageHeader from './PageHeader'
 import { PageTransition } from './PageTransition'
 import { useQueryClient } from '@tanstack/react-query'
@@ -34,13 +35,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // Menu items
   const menuItems = [
     { to: '/dashboard', icon: Home, label: 'Tableau de bord' },
-    { to: '/consumption', icon: TrendingUp, label: 'Consommation' },
+    { to: '/consumption_kwh', icon: TrendingUp, label: 'Consommation' },
     { to: '/production', icon: Sun, label: 'Production' },
     { to: '/simulator', icon: Calculator, label: 'Simulateur' },
     { to: '/contribute', icon: Users, label: 'Contribuer' },
     { to: '/tempo', icon: Calendar, label: 'Tempo' },
     { to: '/ecowatt', icon: Zap, label: 'EcoWatt' },
   ]
+
+  // Check if we're on a consumption page (for active state and tabs)
+  const isConsumptionPage = location.pathname.startsWith('/consumption')
 
   // Clear cache function (admin only)
   const handleClearCache = async () => {
@@ -154,26 +158,32 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-4">
           <div className="space-y-1 px-2">
-            {menuItems.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
-                  location.pathname === item.to
-                    ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-                title={sidebarCollapsed ? item.label : ''}
-                data-tour={item.to === '/consumption' ? 'nav-consumption' :
-                          item.to === '/simulator' ? 'nav-simulator' :
-                          item.to === '/contribute' ? 'nav-contribute' : undefined}
-              >
-                <item.icon size={20} className="flex-shrink-0" />
-                {!sidebarCollapsed && (
-                  <span className="font-medium">{item.label}</span>
-                )}
-              </Link>
-            ))}
+            {menuItems.map((item) => {
+              // Special handling for consumption - active if any consumption page
+              const isActive = item.to === '/consumption_kwh'
+                ? isConsumptionPage
+                : location.pathname === item.to
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
+                    isActive
+                      ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                  title={sidebarCollapsed ? item.label : ''}
+                  data-tour={item.to === '/consumption_kwh' ? 'nav-consumption' :
+                            item.to === '/simulator' ? 'nav-simulator' :
+                            item.to === '/contribute' ? 'nav-contribute' : undefined}
+                >
+                  <item.icon size={20} className="flex-shrink-0" />
+                  {!sidebarCollapsed && (
+                    <span className="font-medium">{item.label}</span>
+                  )}
+                </Link>
+              )
+            })}
 
             {/* Admin Link */}
             {canAccessAdmin() && (
@@ -326,21 +336,27 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-4">
           <div className="space-y-1 px-2">
-            {menuItems.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
-                  location.pathname === item.to
-                    ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <item.icon size={20} />
-                <span className="font-medium">{item.label}</span>
-              </Link>
-            ))}
+            {menuItems.map((item) => {
+              // Special handling for consumption - active if any consumption page
+              const isActive = item.to === '/consumption_kwh'
+                ? isConsumptionPage
+                : location.pathname === item.to
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
+                    isActive
+                      ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <item.icon size={20} />
+                  <span className="font-medium">{item.label}</span>
+                </Link>
+              )
+            })}
 
             {canAccessAdmin() && (
               <>
@@ -459,11 +475,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <PageHeader />
           {location.pathname.startsWith('/admin') && <AdminTabs />}
           {location.pathname.startsWith('/api-docs') && <ApiDocsTabs />}
+          {isConsumptionPage && <ConsumptionTabs />}
         </div>
 
         {/* Main Content */}
         <main className={`flex-1 bg-gray-50 dark:bg-gray-900 ${isAdminLogsPage ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-          <div className={`container mx-auto px-3 sm:px-4 lg:px-6 max-w-[1920px] ${isAdminLogsPage ? 'h-full pb-0' : 'pb-6'} ${(location.pathname.startsWith('/admin') || location.pathname.startsWith('/api-docs')) ? 'pt-4' : ''}`}>
+          <div className={`container mx-auto px-3 sm:px-4 lg:px-6 max-w-[1920px] ${isAdminLogsPage ? 'h-full pb-0' : 'pb-6'} ${(location.pathname.startsWith('/admin') || location.pathname.startsWith('/api-docs') || isConsumptionPage) ? 'pt-4' : ''}`}>
             <PageTransition key={location.pathname}>
               {children}
             </PageTransition>

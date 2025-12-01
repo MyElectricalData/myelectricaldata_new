@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { TrendingUp, Sun, Calculator, Download, Lock, LayoutDashboard, Calendar, Zap, Users, AlertCircle, BookOpen, Settings as SettingsIcon, Key, Shield, FileText, Activity } from 'lucide-react'
+import { TrendingUp, Sun, Calculator, Download, Lock, LayoutDashboard, Calendar, Zap, Users, AlertCircle, BookOpen, Settings as SettingsIcon, Key, Shield, FileText, Activity, Euro } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
 import { usePdlStore } from '@/stores/pdlStore'
@@ -12,7 +12,7 @@ import type { PDL } from '@/types/api'
 
 // Pages qui affichent le sélecteur de PDL avec bouton "Récupérer"
 const PDL_SELECTOR_PAGES = [
-  '/consumption', '/production', '/simulator', '/dashboard', '/tempo', '/ecowatt', '/contribute',
+  '/consumption_kwh', '/consumption_euro', '/production', '/simulator', '/dashboard', '/tempo', '/ecowatt', '/contribute',
   '/faq', '/api-docs', '/api-docs/auth', '/settings',
   '/admin', '/admin/users', '/admin/tempo', '/admin/ecowatt', '/admin/contributions', '/admin/offers', '/admin/roles', '/admin/logs', '/admin/add-pdl'
 ]
@@ -20,7 +20,8 @@ const PDL_SELECTOR_PAGES = [
 // Configuration des titres et icônes par page
 const PAGE_CONFIG: Record<string, { title: string; icon: typeof TrendingUp; subtitle?: string }> = {
   '/dashboard': { title: 'Tableau de bord', icon: LayoutDashboard, subtitle: 'Gérez vos points de livraison' },
-  '/consumption': { title: 'Consommation', icon: TrendingUp, subtitle: 'Visualisez et analysez votre consommation électrique' },
+  '/consumption_kwh': { title: 'Consommation', icon: TrendingUp, subtitle: 'Visualisez et analysez votre consommation électrique en kWh' },
+  '/consumption_euro': { title: 'Consommation', icon: Euro, subtitle: 'Visualisez et analysez le coût de votre consommation en euros' },
   '/production': { title: 'Production', icon: Sun, subtitle: 'Visualisez et analysez votre production d\'énergie solaire' },
   '/simulator': { title: 'Comparateur des abonnements', icon: Calculator, subtitle: 'Comparez automatiquement le coût de toutes les offres disponibles' },
   '/tempo': { title: 'Calendrier Tempo', icon: Calendar, subtitle: 'Historique des jours Tempo bleus, blancs et rouges fourni par RTE' },
@@ -107,6 +108,9 @@ export default function PageHeader() {
   const Icon = config.icon
   const activePdls = pdls.filter((p: PDL) => p.is_active)
 
+  // Check if on a consumption page
+  const isConsumptionPage = location.pathname.startsWith('/consumption')
+
   // Filter PDLs based on page
   const displayedPdls = location.pathname === '/production'
     ? (() => {
@@ -130,7 +134,7 @@ export default function PageHeader() {
 
         return [...consumptionWithProduction, ...standaloneProduction]
       })()
-    : location.pathname === '/consumption'
+    : isConsumptionPage
     ? activePdls.filter((pdl: PDL) => pdl.has_consumption)
     : activePdls
 
@@ -159,7 +163,7 @@ export default function PageHeader() {
               <div className="text-sm text-gray-600 dark:text-gray-400 italic">
                 {location.pathname === '/production'
                   ? 'Aucun PDL de production non lié trouvé'
-                  : location.pathname === '/consumption'
+                  : isConsumptionPage
                   ? 'Aucun PDL avec l\'option consommation activée'
                   : 'Aucun point de livraison actif trouvé'}
               </div>

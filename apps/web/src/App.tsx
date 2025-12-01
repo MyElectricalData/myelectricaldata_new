@@ -25,7 +25,8 @@ import AdminRoles from './pages/AdminRoles'
 import AdminLogs from './pages/AdminLogs'
 import Tempo from './pages/Tempo'
 import EcoWatt from './pages/EcoWatt'
-import Consumption from './pages/Consumption'
+import ConsumptionKwh from './pages/ConsumptionKwh'
+import ConsumptionEuro from './pages/ConsumptionEuro'
 import Production from './pages/Production'
 import FAQ from './pages/FAQ'
 import ApiDocs from './pages/ApiDocs'
@@ -191,12 +192,27 @@ function App() {
           </ProtectedRoute>
         }
       />
+      {/* Consumption routes with submenu */}
       <Route
         path="/consumption"
+        element={<Navigate to="/consumption_kwh" replace />}
+      />
+      <Route
+        path="/consumption_kwh"
         element={
           <ProtectedRoute>
             <Layout>
-              <Consumption />
+              <ConsumptionKwh />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/consumption_euro"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <ConsumptionEuro />
             </Layout>
           </ProtectedRoute>
         }
