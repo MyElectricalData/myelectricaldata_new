@@ -343,6 +343,87 @@ if (showOnlyRecent) {
 )}
 ```
 
+## Year Filter Buttons (Multi-sélection)
+
+Pattern utilisé sur la page Balance pour filtrer par années avec multi-sélection.
+
+### Règles
+
+1. Layout en ligne : `flex gap-4`
+2. Boutons flex : `flex-1` pour répartition égale
+3. Ordre inversé : années récentes en premier (`[...years].reverse()`)
+4. Minimum 1 année sélectionnée
+5. Style sélectionné : fond semi-transparent + bordure colorée
+6. Indicateur de sélection : cercle coloré en haut à droite
+
+### Couleurs par année (par index)
+
+```tsx
+const styles = [
+  { border: 'rgb(16, 185, 129)', bg: 'rgba(16, 185, 129, 0.125)', text: 'text-emerald-400', dot: 'bg-emerald-400' },  // Emerald (année la plus récente)
+  { border: 'rgb(99, 102, 241)', bg: 'rgba(99, 102, 241, 0.125)', text: 'text-indigo-400', dot: 'bg-indigo-400' },    // Indigo
+  { border: 'rgb(96, 165, 250)', bg: 'rgba(96, 165, 250, 0.125)', text: 'text-blue-400', dot: 'bg-blue-400' }         // Blue
+]
+```
+
+### Code de référence
+
+```tsx
+{/* Year filter */}
+{chartData.years.length > 1 && (
+  <div className="flex gap-4">
+    {[...chartData.years].reverse().map((year, index) => {
+      const isSelected = selectedYears.includes(year)
+      const styles = [
+        { border: 'rgb(16, 185, 129)', bg: 'rgba(16, 185, 129, 0.125)', text: 'text-emerald-400', dot: 'bg-emerald-400' },
+        { border: 'rgb(99, 102, 241)', bg: 'rgba(99, 102, 241, 0.125)', text: 'text-indigo-400', dot: 'bg-indigo-400' },
+        { border: 'rgb(96, 165, 250)', bg: 'rgba(96, 165, 250, 0.125)', text: 'text-blue-400', dot: 'bg-blue-400' }
+      ]
+      const style = styles[index % styles.length]
+      return (
+        <button
+          key={year}
+          onClick={() => {
+            if (isSelected && selectedYears.length > 1) {
+              setSelectedYears(selectedYears.filter(y => y !== year))
+            } else if (!isSelected) {
+              setSelectedYears([...selectedYears, year])
+            }
+          }}
+          className={`relative flex-1 px-5 py-4 rounded-xl text-xl font-bold transition-all text-left border-2 ${
+            isSelected
+              ? style.text
+              : 'border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:border-gray-400 dark:hover:border-gray-600'
+          }`}
+          style={isSelected ? { backgroundColor: style.bg, borderColor: style.border } : undefined}
+        >
+          {year}
+          {/* Indicateur de sélection */}
+          <span className={`absolute top-3 right-3 w-3 h-3 rounded-full transition-all ${
+            isSelected
+              ? style.dot
+              : 'bg-gray-400 dark:bg-gray-600'
+          }`} />
+        </button>
+      )
+    })}
+  </div>
+)}
+```
+
+### État initial
+
+```tsx
+const [selectedYears, setSelectedYears] = useState<string[]>([])
+
+// Initialiser avec toutes les années quand les données sont disponibles
+useEffect(() => {
+  if (chartData?.years?.length && selectedYears.length === 0) {
+    setSelectedYears(chartData.years)
+  }
+}, [chartData?.years, selectedYears.length])
+```
+
 ## Voir aussi
 
 - [09 - Formulaires](./09-forms.md) - Pour les selects et checkboxes

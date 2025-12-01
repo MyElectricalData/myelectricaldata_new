@@ -7,7 +7,7 @@ interface LoadingOverlayProps {
   /** Sous-message optionnel (ex: "Veuillez patienter...") */
   subMessage?: string
   /** Type de données en cours de chargement pour adapter le message */
-  dataType?: 'consumption' | 'production' | 'simulation'
+  dataType?: 'consumption' | 'production' | 'simulation' | 'balance'
   /** Si true, joue l'animation de sortie (fade out) */
   isExiting?: boolean
   /** Contenu à afficher en arrière-plan (sera flouté) */
@@ -37,6 +37,10 @@ export function LoadingOverlay({
     simulation: {
       message: 'Chargement du simulateur',
       subMessage: 'Récupération des données...'
+    },
+    balance: {
+      message: 'Chargement du bilan énergétique',
+      subMessage: 'Récupération depuis le cache...'
     }
   }
 
