@@ -13,16 +13,20 @@ export default function Contribute() {
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({})
 
   // Fetch providers
-  const { data: providersData } = useQuery({
+  const { data: providersData, isLoading: isLoadingProviders, error: providersError } = useQuery({
     queryKey: ['energy-providers'],
     queryFn: async () => {
       const response = await energyApi.getProviders()
+      console.log('[Contribute] Providers API response:', response)
       if (response.success && Array.isArray(response.data)) {
         return response.data as EnergyProvider[]
       }
       return []
     },
   })
+
+  // Debug: Log providers state
+  console.log('[Contribute] providersData:', providersData, 'isLoading:', isLoadingProviders, 'error:', providersError)
 
   // Fetch user's contributions
   const { data: myContributions } = useQuery({
