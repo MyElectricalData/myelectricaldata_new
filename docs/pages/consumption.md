@@ -1,16 +1,51 @@
-# Page Consommation
+# Section Consommation
 
-**Route:** `/consumption`
+## Structure des routes
+
+La section Consommation utilise un **sous-menu avec deux onglets** :
+
+| Route | Description | Statut |
+|-------|-------------|--------|
+| `/consumption` | Redirige vers `/consumption_kwh` | Redirect |
+| `/consumption_kwh` | Consommation en kWh | Implementé |
+| `/consumption_euro` | Consommation en euros | Coming Soon |
+
+## Architecture
+
+```
+apps/web/src/
+├── components/
+│   └── ConsumptionTabs.tsx          # Sous-menu onglets kWh/Euro
+├── pages/
+│   ├── ConsumptionKwh/              # Page kWh (complete)
+│   │   ├── index.tsx
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   └── types/
+│   └── ConsumptionEuro/             # Page Euro (placeholder)
+│       └── index.tsx
+```
+
+## Documentation détaillée
+
+- **Page kWh** : Voir `consumption-kwh.md` pour les spécifications complètes
+- **Page Euro** : Voir `consumption-euro.md` pour les spécifications à venir
+
+---
+
+# Page Consommation kWh
+
+**Route:** `/consumption_kwh`
 
 ## Description
 
-Page permettant aux utilisateurs de **visualiser et analyser leur consommation électrique** récupérée depuis l'API Enedis.
+Page permettant aux utilisateurs de **visualiser et analyser leur consommation électrique en kWh** récupérée depuis l'API Enedis.
 
 **Important:** Garde la structure des fonctionnalités : elle définit l'ordre souhaité, les différents blocs et leurs regroupements.
 
-## État d'implémentation actuel
+## Etat d'implementation actuel
 
-### ✅ Fonctionnalités complètes (100% !)
+### Fonctionnalites completes (100%)
 
 #### 1. Sélection du PDL ✅
 
@@ -167,9 +202,10 @@ Page permettant aux utilisateurs de **visualiser et analyser leur consommation �
 - lucide-react pour les icônes
 - react-hot-toast pour les notifications
 
-## Fichiers liés
+## Fichiers lies
 
-- **Frontend** : `apps/web/src/pages/Consumption.tsx` (3462 lignes)
+- **Frontend** : `apps/web/src/pages/ConsumptionKwh/` (dossier avec composants)
+- **Tabs** : `apps/web/src/components/ConsumptionTabs.tsx`
 - **API** : `apps/web/src/api/enedis.ts`, `apps/web/src/api/pdl.ts`
 - **Types** : `apps/web/src/types/api.ts`
 - **Backend** : `apps/api/src/routers/enedis.py`, `apps/api/src/routers/pdl.py`
@@ -215,86 +251,48 @@ Page permettant aux utilisateurs de **visualiser et analyser leur consommation �
 
 ---
 
-## Architecture actuelle du fichier Consumption.tsx
+## Architecture actuelle du dossier ConsumptionKwh
 
-### Structure (3462 lignes)
+### Structure (refactorisee)
 
-| Section                    | Lignes    | Description                                         |
-| -------------------------- | --------- | --------------------------------------------------- |
-| **Imports**                | 1-26      | React, React Query, Recharts, APIs, hooks           |
-| **États**                  | 29-66     | 20+ états pour sélection, UI, chargement, calculs   |
-| **Hooks React Query**      | 86-249    | PDLs, consumption daily, max power, detail          |
-| **useEffect**              | 260-431   | Auto-select, auto-load, warnings, loading states    |
-| **fetchConsumptionData()** | 433-787   | Fetch avec retry logic ADAM-ERR0123                 |
-| **confirmClearCache()**    | 794-833   | Vide React Query + localStorage + IndexedDB + Redis |
-| **chartData**              | 836-1029  | Agrégation par mois et année glissante              |
-| **powerByYearData**        | 1031-1099 | Données puissance max par année                     |
-| **detailByDayData**        | 1108-1258 | Données détaillées par jour (PT30M/PT15M)           |
-| **hcHpByYear**             | 1260-1404 | 🔑 Calcul HC/HP par année (backend prêt)            |
-| **monthlyHcHpByYear**      | 1406-1529 | 🔑 Calcul HC/HP mensuel (backend prêt)              |
-| **Navigation clavier**     | 1578-1611 | Arrow keys pour jours/semaines                      |
-| **JSX render**             | 1613-3460 | UI complète avec tous les graphiques                |
-
-### Composants à extraire (refactoring futur)
-
-Pour réduire la taille du fichier monolithique :
-
-```text
-apps/web/src/pages/Consumption/
-├── index.tsx                    # Orchestration principale
+```
+apps/web/src/pages/ConsumptionKwh/
+├── index.tsx                           # Page principale
 ├── components/
-│   ├── PDLSelector.tsx          # Sélection PDL
-│   ├── LoadingProgress.tsx      # Indicateurs progression
-│   ├── YearlyConsumption.tsx    # Stats annuelles
-│   ├── HcHpDistribution.tsx     # 🆕 Camemberts HC/HP (à créer)
-│   ├── AnnualCurve.tsx          # Courbe annuelle
-│   ├── DetailedLoadCurve.tsx    # Courbe de charge
-│   ├── MonthlyHcHp.tsx          # 🆕 Barres HC/HP mensuel (à créer)
-│   ├── PowerPeaks.tsx           # Pics de puissance
-│   ├── WeekNavigator.tsx        # 🆕 Calendrier + raccourcis (à créer)
-│   └── InfoBlock.tsx            # Bloc d'information
+│   ├── AnnualCurve.tsx                # Courbe annuelle
+│   ├── ConfirmModal.tsx               # Modal de confirmation
+│   ├── DataFetchSection.tsx           # Section recuperation donnees
+│   ├── HcHpDistribution.tsx           # Repartition HC/HP (camemberts)
+│   ├── InfoBlock.tsx                  # Bloc d'information
+│   ├── LoadingProgress.tsx            # Indicateurs de progression
+│   ├── ModernButton.tsx               # Bouton moderne
+│   ├── MonthlyHcHp.tsx                # HC/HP mensuel (barres)
+│   ├── PDLSelector.tsx                # Selecteur PDL
+│   ├── PowerPeaks.tsx                 # Pics de puissance
+│   ├── YearlyConsumption.tsx          # Comparaison mensuelle
+│   └── YearlyStatCards.tsx            # Cartes annuelles
 ├── hooks/
-│   ├── useConsumptionData.ts    # Fetch et cache
-│   ├── useHcHpCalculation.ts    # Calculs HC/HP
-│   └── useDateNavigation.ts     # Navigation dates
-└── utils/
-    ├── dateCalculations.ts      # Calculs UTC
-    ├── dataTransformations.ts   # Parsing intervalles
-    └── exportUtils.ts           # Export JSON
+│   ├── useConsumptionCalcs.ts         # Calculs consommation
+│   ├── useConsumptionData.ts          # Gestion donnees
+│   └── useConsumptionFetch.ts         # Fetch API
+└── types/
+    └── consumption.types.ts           # Types TypeScript
 ```
 
 ---
 
-## 🎉 Statut : Implémentation complète
+## Statut : Implementation complete
 
-Toutes les fonctionnalités spécifiées sont implémentées et opérationnelles.
+Toutes les fonctionnalites specifiees sont implementees et operationnelles.
 
-### Prochaines étapes recommandées (optionnel)
+Le code a ete refactorise en composants modulaires pour une meilleure maintenabilite.
 
-#### Priorité 1 : Refactoring pour maintenabilité
+### Prochaines etapes
 
-1. **Extraire les composants** pour réduire la taille du fichier monolithique (3462 lignes)
+#### Page Consommation Euro
 
-   - PDLSelector.tsx
-   - LoadingProgress.tsx
-   - YearlyConsumption.tsx
-   - HcHpDistribution.tsx
-   - AnnualCurve.tsx
-   - DetailedLoadCurve.tsx
-   - MonthlyHcHp.tsx
-   - PowerPeaks.tsx
-   - InfoBlock.tsx
-
-2. **Créer des hooks personnalisés** pour la logique réutilisable
-   - useConsumptionData.ts
-   - useHcHpCalculation.ts
-   - useDateNavigation.ts
-
-#### Priorité 2 : Optimisations potentielles
-
-1. Améliorer les performances de rendu pour les gros volumes de données
-2. Ajouter des tests unitaires pour les calculs HC/HP
-3. Améliorer l'accessibilité (ARIA labels, navigation clavier complète)
+Implementation de la page `/consumption_euro` pour afficher la consommation convertie en euros.
+Voir `consumption-euro.md` pour les specifications.
 
 ---
 

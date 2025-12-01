@@ -5,26 +5,40 @@
 - **Pour l'UX/UI** (interface, composants, design) : Utiliser l'agent **frontend-specialist**
 - **Pour le backend** (API, base de données, logique métier) : Utiliser l'agent **backend-specialist**
 
-## 📋 Spécifications de la page
+## 📋 Structure des routes
 
-**Toutes les spécifications détaillées de cette page sont disponibles dans :**
+La page Consommation utilise un **sous-menu avec deux onglets** :
 
-👉 `@docs/pages/consumption.md`
+| Route | Description | Commande |
+|-------|-------------|----------|
+| `/consumption` | Redirige vers `/consumption_kwh` | - |
+| `/consumption_kwh` | Consommation en kWh (implémenté) | `/web_consumption_kwh` |
+| `/consumption_euro` | Consommation en euros (coming soon) | `/web_consumption_euro` |
 
-**Avant de commencer à travailler sur cette page :**
+## 📋 Spécifications
 
-1. Lis le fichier de spécifications complet ci-dessus
-2. Respecte l'ordre d'affichage des fonctionnalités défini dans les specs
-3. Consulte les notes techniques importantes pour les détails d'implémentation
+**Spécifications détaillées :**
+
+- 👉 `@docs/pages/consumption.md` - Vue d'ensemble et structure
+- 👉 `@docs/pages/consumption-kwh.md` - Page kWh (fonctionnelle)
+- 👉 `@docs/pages/consumption-euro.md` - Page Euro (à venir)
 
 ## Description rapide
 
-Tu travailles sur la page `/consumption` de l'application MyElectricalData.
+La section Consommation permet aux utilisateurs de **visualiser et analyser leur consommation électrique** récupérée depuis l'API Enedis.
 
-Cette page permet aux utilisateurs de **visualiser et analyser leur consommation électrique** récupérée depuis l'API Enedis.
+- **kWh** : Affiche les données brutes de consommation en kWh
+- **Euro** : Convertira la consommation en euros selon les tarifs (à venir)
 
-## 🎉 Statut : Implémentation complète (100%)
+## Composants partagés
 
-Toutes les fonctionnalités spécifiées dans `@docs/pages/consumption.md` sont implémentées et opérationnelles.
+- `ConsumptionTabs.tsx` : Sous-menu avec onglets kWh/Euro
+- Le Layout affiche automatiquement les tabs pour les routes `/consumption*`
 
-**Fichier principal** : `apps/web/src/pages/Consumption.tsx` (3462 lignes)
+## Fichiers principaux
+
+| Fichier | Description |
+|---------|-------------|
+| `apps/web/src/components/ConsumptionTabs.tsx` | Composant des onglets |
+| `apps/web/src/pages/ConsumptionKwh/` | Page kWh (dossier) |
+| `apps/web/src/pages/ConsumptionEuro/` | Page Euro (dossier) |
