@@ -1,24 +1,6 @@
-import { useState, useEffect } from 'react'
-import { Euro, Database, ArrowRight, AlertCircle } from 'lucide-react'
-import { usePdlStore } from '@/stores/pdlStore'
+import { Euro, ArrowRight, AlertCircle } from 'lucide-react'
 
 export default function ConsumptionEuro() {
-  const { selectedPdl: selectedPDL } = usePdlStore()
-  const [isDarkMode, setIsDarkMode] = useState(false)
-
-  // Detect dark mode
-  useEffect(() => {
-    const checkDarkMode = () => {
-      setIsDarkMode(document.documentElement.classList.contains('dark'))
-    }
-    checkDarkMode()
-    const observer = new MutationObserver(checkDarkMode)
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class']
-    })
-    return () => observer.disconnect()
-  }, [])
 
   return (
     <div className="w-full">
