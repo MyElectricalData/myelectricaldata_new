@@ -37,11 +37,11 @@ export function MonthlyComparison({ chartData, isDarkMode, selectedYear }: Month
   const prodColors = ['#10B981', '#34D399', '#6EE7B7'] // Green shades
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-4">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-4 transition-colors duration-200">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
           Comparaison mensuelle Production vs Consommation
-        </h3>
+        </h2>
         <button
           onClick={handleExport}
           className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"

@@ -17,7 +17,7 @@ export function BalanceSummaryCards({ chartData, hasDetailedData }: BalanceSumma
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {/* Total Consumption */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-4 transition-colors duration-200">
         <div className="flex items-center gap-3 mb-2">
           <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
             <Home className="text-blue-600 dark:text-blue-400" size={20} />
@@ -30,7 +30,7 @@ export function BalanceSummaryCards({ chartData, hasDetailedData }: BalanceSumma
       </div>
 
       {/* Total Production */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-4 transition-colors duration-200">
         <div className="flex items-center gap-3 mb-2">
           <div className="p-2 rounded-lg bg-yellow-100 dark:bg-yellow-900/30">
             <Sun className="text-yellow-600 dark:text-yellow-400" size={20} />
@@ -43,7 +43,7 @@ export function BalanceSummaryCards({ chartData, hasDetailedData }: BalanceSumma
       </div>
 
       {/* Net Balance */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-4 transition-colors duration-200">
         <div className="flex items-center gap-3 mb-2">
           <div className={`p-2 rounded-lg ${isPositiveBalance ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
             {isPositiveBalance ? (
@@ -63,7 +63,7 @@ export function BalanceSummaryCards({ chartData, hasDetailedData }: BalanceSumma
       </div>
 
       {/* Self-Consumption Rate */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-4 transition-colors duration-200">
         <div className="flex items-center gap-3 mb-2">
           <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
             <Percent className="text-purple-600 dark:text-purple-400" size={20} />

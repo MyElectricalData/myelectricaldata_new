@@ -69,9 +69,12 @@ export default function Balance() {
   if (balancePdls.length === 0) {
     return (
       <div className="pt-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Scale className="text-primary-600 dark:text-primary-400" size={32} />
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Bilan Energetique</h1>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+            <Scale className="text-primary-600 dark:text-primary-400" size={32} />
+            Bilan Energetique
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">Production vs Consommation</p>
         </div>
 
         <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6">
@@ -96,9 +99,12 @@ export default function Balance() {
   if (!isValidForBalance) {
     return (
       <div className="pt-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Scale className="text-primary-600 dark:text-primary-400" size={32} />
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Bilan Energetique</h1>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+            <Scale className="text-primary-600 dark:text-primary-400" size={32} />
+            Bilan Energetique
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">Production vs Consommation</p>
         </div>
 
         {/* PDL Selector */}
@@ -141,9 +147,12 @@ export default function Balance() {
   if (!hasConsumptionData || !hasProductionData) {
     return (
       <div className="pt-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Scale className="text-primary-600 dark:text-primary-400" size={32} />
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Bilan Energetique</h1>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+            <Scale className="text-primary-600 dark:text-primary-400" size={32} />
+            Bilan Energetique
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">Production vs Consommation</p>
         </div>
 
         {/* PDL Selector */}
@@ -198,9 +207,12 @@ export default function Balance() {
   if (isLoading) {
     return (
       <div className="pt-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Scale className="text-primary-600 dark:text-primary-400" size={32} />
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Bilan Energetique</h1>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+            <Scale className="text-primary-600 dark:text-primary-400" size={32} />
+            Bilan Energetique
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">Production vs Consommation</p>
         </div>
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
@@ -213,9 +225,12 @@ export default function Balance() {
   if (!chartData) {
     return (
       <div className="pt-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Scale className="text-primary-600 dark:text-primary-400" size={32} />
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Bilan Energetique</h1>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+            <Scale className="text-primary-600 dark:text-primary-400" size={32} />
+            Bilan Energetique
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">Production vs Consommation</p>
         </div>
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6">
           <p className="text-red-700 dark:text-red-300">
@@ -230,14 +245,14 @@ export default function Balance() {
     <div className="pt-6 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Scale className="text-primary-600 dark:text-primary-400" size={32} />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Bilan Energetique</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Production vs Consommation - PDL {selectedPdl}
-            </p>
-          </div>
+        <div>
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+            <Scale className="text-primary-600 dark:text-primary-400" size={32} />
+            Bilan Energetique
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Production vs Consommation - PDL {selectedPdl}
+          </p>
         </div>
 
         {/* PDL Selector */}
