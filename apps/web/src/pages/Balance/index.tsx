@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Database, ArrowRight, AlertTriangle } from 'lucide-react'
+import { Database, ArrowRight, AlertTriangle, Info } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { usePdlStore } from '@/stores/pdlStore'
 import { useBalanceData } from './hooks/useBalanceData'

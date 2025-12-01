@@ -134,7 +134,7 @@ export function OfferPricingCard({ selectedOffer }: OfferPricingCardProps) {
       {offerType === 'EJP' && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <PriceItem label="Jour Normal" value={formatPricePerKwh(selectedOffer.ejp_normal)} />
-          <PriceItem label="Jour Pointe" value={formatPricePerKwh(selectedOffer.ejp_pointe)} highlight="red" />
+          <PriceItem label="Jour Pointe" value={formatPricePerKwh(selectedOffer.ejp_peak)} highlight="red" />
           <PriceItem
             label="Abonnement"
             value={`${formatCurrency(typeof selectedOffer.subscription_price === 'string' ? parseFloat(selectedOffer.subscription_price) : selectedOffer.subscription_price)}/mois`}

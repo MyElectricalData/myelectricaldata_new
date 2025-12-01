@@ -121,9 +121,7 @@ export function useConsumptionEuroCalcs({
   selectedPDL,
   selectedPDLDetails,
   selectedOffer,
-  // hcHpCalculationTrigger is kept in props for API consistency but not used in deps
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  hcHpCalculationTrigger
+  hcHpCalculationTrigger: _hcHpCalculationTrigger
 }: UseConsumptionEuroCalcsProps) {
   const queryClient = useQueryClient()
 
