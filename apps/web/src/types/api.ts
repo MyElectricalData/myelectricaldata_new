@@ -81,6 +81,7 @@ export interface PDL {
   oldest_available_data_date?: string // ISO date string (YYYY-MM-DD) - Oldest date where Enedis has data
   activation_date?: string // ISO date string (YYYY-MM-DD) - Contract activation date (from Enedis)
   linked_production_pdl_id?: string // Link to production PDL for combined graphs
+  selected_offer_id?: string // Selected energy offer ID
 }
 
 export interface CacheDeleteResponse {

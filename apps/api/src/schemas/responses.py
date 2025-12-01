@@ -57,6 +57,7 @@ class PDLResponse(BaseModel):
     oldest_available_data_date: Optional[date] = None  # Oldest date where Enedis has data (meter activation)
     activation_date: Optional[date] = None  # Contract activation date (from Enedis)
     linked_production_pdl_id: Optional[str] = None  # Link to production PDL for combined graphs
+    selected_offer_id: Optional[str] = None  # Selected energy offer ID
 
 
 class CacheDeleteResponse(BaseModel):
