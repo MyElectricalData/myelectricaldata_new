@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Info, Trash2, RefreshCw, Edit2, Save, X, Zap, Clock, Factory, Plus, Minus, Eye, EyeOff, Calendar, MoreVertical, Receipt } from 'lucide-react'
+import { Info, Trash2, RefreshCw, Edit2, Save, X, Zap, Clock, Factory, Plus, Minus, Eye, EyeOff, Calendar, MoreVertical, ShoppingBag } from 'lucide-react'
 import { pdlApi } from '@/api/pdl'
 import { oauthApi } from '@/api/oauth'
-import type { PDL, PricingOption } from '@/types/api'
+import type { PDL } from '@/types/api'
+import OfferSelector from './OfferSelector'
 
 interface PDLCardProps {
   pdl: PDL
@@ -294,11 +295,23 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
   })
 
   const updatePricingOptionMutation = useMutation({
-    mutationFn: (pricing_option: PricingOption | null) => {
+    mutationFn: (pricing_option: string | null) => {
       if (isDemo) {
         return Promise.reject(new Error('Modifications désactivées en mode démo'))
       }
-      return pdlApi.updatePricingOption(pdl.id, pricing_option)
+      return pdlApi.updatePricingOption(pdl.id, pricing_option as import('@/types/api').PricingOption | null)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pdls'] })
+    },
+  })
+
+  const updateSelectedOfferMutation = useMutation({
+    mutationFn: (selected_offer_id: string | null) => {
+      if (isDemo) {
+        return Promise.reject(new Error('Modifications désactivées en mode démo'))
+      }
+      return pdlApi.updateSelectedOffer(pdl.id, selected_offer_id)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pdls'] })
@@ -827,29 +840,20 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                     </select>
                   </div>
 
-                  {/* Pricing Option (Tariff Type) */}
-                  <div className="flex items-center justify-between" data-tour="pdl-pricing-option">
+                  {/* Energy Offer Selection */}
+                  <div className="space-y-2" data-tour="pdl-energy-offer">
                     <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                      <Receipt size={16} />
-                      <span>Option tarifaire :</span>
+                      <ShoppingBag size={16} />
+                      <span>Offre tarifaire :</span>
                     </div>
-                    <select
-                      value={pdl.pricing_option || ''}
-                      onChange={(e) => {
-                        const value = e.target.value as PricingOption | ''
-                        updatePricingOptionMutation.mutate(value === '' ? null : value as PricingOption)
+                    <OfferSelector
+                      selectedOfferId={pdl.selected_offer_id}
+                      subscribedPower={pdl.subscribed_power}
+                      onChange={(offerId) => {
+                        updateSelectedOfferMutation.mutate(offerId)
                       }}
-                      disabled={updatePricingOptionMutation.isPending}
-                      className="w-44 px-3 py-1.5 text-sm font-medium bg-white dark:bg-gray-800 border-2 border-blue-300 dark:border-blue-700 rounded-lg text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 cursor-pointer transition-all shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <option value="">Sélectionner</option>
-                      <option value="BASE">Base</option>
-                      <option value="HC_HP">Heures Creuses</option>
-                      <option value="TEMPO">Tempo</option>
-                      <option value="WEEKEND">Nuit & Week-end</option>
-                      <option value="SEASONAL">Saisonnier</option>
-                      <option value="EJP">EJP (ancien)</option>
-                    </select>
+                      disabled={updateSelectedOfferMutation.isPending}
+                    />
                   </div>
 
                   {/* Offpeak Hours */}

@@ -42,6 +42,15 @@ export const pdlApi = {
     }>(`pdl/${id}/pricing-option`, { pricing_option })
   },
 
+  updateSelectedOffer: async (id: string, selected_offer_id: string | null) => {
+    return apiClient.patch<{
+      id: string
+      usage_point_id: string
+      selected_offer_id: string | null
+      pricing_option: PricingOption | null
+    }>(`pdl/${id}/selected-offer`, { selected_offer_id })
+  },
+
   linkProduction: async (consumptionPdlId: string, productionPdlId: string | null) => {
     return apiClient.patch<{
       id: string
