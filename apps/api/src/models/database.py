@@ -15,5 +15,12 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db() -> None:
+    """Initialize the database: create tables and seed default data."""
+    # Create all tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Seed default roles and permissions
+    from .seed import init_default_roles_and_permissions
+    async with async_session_maker() as session:
+        await init_default_roles_and_permissions(session)
