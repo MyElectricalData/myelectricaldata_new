@@ -26,9 +26,14 @@ make watch            # Start backend file watcher
 make stop-watch       # Stop backend file watcher
 
 # Database
-make db-shell         # Access PostgreSQL shell
-make db-backup        # Backup database
-make migrate          # Apply database migrations
+make db-shell            # Access PostgreSQL shell
+make db-backup           # Backup database
+make migrate             # Apply all pending migrations
+make migrate-downgrade   # Rollback last migration
+make migrate-history     # Show migration history
+make migrate-current     # Show current migration revision
+make migrate-revision    # Generate a new migration (autogenerate)
+make migrate-stamp       # Stamp database with current revision
 
 # Maintenance
 make logs             # Show all logs
@@ -99,15 +104,32 @@ uv run black src tests
 uv run ruff check --fix src tests
 ```
 
-**Database Migration:**
+**Database Migration (Alembic):**
 
 ```bash
 # Auto-detect: SQLite (default) or PostgreSQL based on DATABASE_URL
 # SQLite: sqlite+aiosqlite:///./data/myelectricaldata.db
 # PostgreSQL: postgresql+asyncpg://user:pass@postgres:5432/db
 
-# Migration scripts in apps/api/migrations/
-docker compose exec backend python /app/migrations/migration_name.py
+# Apply all pending migrations
+docker compose exec backend alembic upgrade head
+
+# Rollback last migration
+docker compose exec backend alembic downgrade -1
+
+# Show migration history
+docker compose exec backend alembic history
+
+# Generate a new migration (after modifying models)
+docker compose exec backend alembic revision --autogenerate -m "Description"
+
+# For existing databases, stamp with current revision
+docker compose exec backend alembic stamp head
+
+# Local development (from apps/api/)
+cd apps/api
+uv run alembic upgrade head
+uv run alembic revision --autogenerate -m "Description"
 ```
 
 ### Frontend (apps/web/)

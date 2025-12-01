@@ -40,8 +40,11 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 # Copy application code (changes frequently - last layer)
 COPY . .
 
+# Make entrypoint executable
+RUN chmod +x /app/entrypoint.sh
+
 # Expose port
 EXPOSE 8000
 
-# Start the application directly with uvicorn
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start with entrypoint (runs migrations then uvicorn)
+ENTRYPOINT ["/app/entrypoint.sh"]

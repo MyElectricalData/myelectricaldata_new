@@ -51,9 +51,14 @@ help:
 	@echo "  make backend-restart - Restart backend container"
 	@echo ""
 	@echo "$(YELLOW)Database:$(NC)"
-	@echo "  make db-shell     - Access PostgreSQL shell"
-	@echo "  make db-backup    - Backup database"
-	@echo "  make migrate      - Apply database migrations"
+	@echo "  make db-shell         - Access PostgreSQL shell"
+	@echo "  make db-backup        - Backup database"
+	@echo "  make migrate          - Apply all pending migrations"
+	@echo "  make migrate-downgrade - Rollback last migration"
+	@echo "  make migrate-history  - Show migration history"
+	@echo "  make migrate-current  - Show current migration revision"
+	@echo "  make migrate-revision - Generate a new migration"
+	@echo "  make migrate-stamp    - Stamp database with current revision"
 	@echo ""
 	@echo "$(YELLOW)Documentation:$(NC)"
 	@echo "  make docs         - Start documentation server via Docker (http://localhost:8002)"
@@ -179,15 +184,40 @@ db-backup:
 	$(COMPOSE) exec -T postgres pg_dump -U myelectricaldata myelectricaldata > $(LOG_DIR)/backups/backup_$$(date +%Y%m%d_%H%M%S).sql
 	@echo "$(GREEN)Backup saved to $(LOG_DIR)/backups/$(NC)"
 
-## Apply database migrations
+## Apply database migrations (Alembic)
 migrate:
 	@echo "$(GREEN)Applying database migrations...$(NC)"
-	@if [ -f ./apps/api/scripts/create_refresh_tracker_table.sql ]; then \
-		docker exec -i myelectricaldata-postgres psql -U myelectricaldata -d myelectricaldata < ./apps/api/scripts/create_refresh_tracker_table.sql; \
-		echo "$(GREEN)Migrations applied$(NC)"; \
-	else \
-		echo "$(YELLOW)No migrations found$(NC)"; \
-	fi
+	$(COMPOSE) exec backend alembic upgrade head
+	@echo "$(GREEN)Migrations applied$(NC)"
+
+## Rollback last migration
+migrate-downgrade:
+	@echo "$(YELLOW)Rolling back last migration...$(NC)"
+	$(COMPOSE) exec backend alembic downgrade -1
+	@echo "$(GREEN)Rollback complete$(NC)"
+
+## Show migration history
+migrate-history:
+	@echo "$(GREEN)Migration history:$(NC)"
+	$(COMPOSE) exec backend alembic history
+
+## Show current migration revision
+migrate-current:
+	@echo "$(GREEN)Current migration revision:$(NC)"
+	$(COMPOSE) exec backend alembic current
+
+## Generate a new migration (autogenerate)
+migrate-revision:
+	@echo "$(GREEN)Creating new migration...$(NC)"
+	@read -p "Enter migration message: " msg; \
+	$(COMPOSE) exec backend alembic revision --autogenerate -m "$$msg"
+	@echo "$(GREEN)Migration created$(NC)"
+
+## Stamp the database with current revision (for existing databases)
+migrate-stamp:
+	@echo "$(YELLOW)Stamping database with head revision...$(NC)"
+	$(COMPOSE) exec backend alembic stamp head
+	@echo "$(GREEN)Database stamped$(NC)"
 
 ## Show all logs
 logs:
@@ -444,4 +474,4 @@ docker-info:
 	@echo "  Backend:  $(IMAGE_BACKEND):$(VERSION)"
 	@echo "  Frontend: $(IMAGE_FRONTEND):$(VERSION)"
 
-.PHONY: help dev up up-fg down restart watch stop-watch stop-docs backend-logs backend-restart db-shell db-backup migrate logs ps clean rebuild check-deps install-fswatch docs docs-build docs-dev docs-down docker-login docker-build docker-build-backend docker-build-frontend docker-push docker-push-backend docker-push-frontend docker-release docker-release-native docker-release-multiarch docker-release-amd64 docker-release-arm64 docker-release-ci docker-buildx-setup docker-info
+.PHONY: help dev up up-fg down restart watch stop-watch stop-docs backend-logs backend-restart db-shell db-backup migrate migrate-downgrade migrate-history migrate-current migrate-revision migrate-stamp logs ps clean rebuild check-deps install-fswatch docs docs-build docs-dev docs-down docker-login docker-build docker-build-backend docker-build-frontend docker-push docker-push-backend docker-push-frontend docker-release docker-release-native docker-release-multiarch docker-release-amd64 docker-release-arm64 docker-release-ci docker-buildx-setup docker-info

@@ -1,4 +1,4 @@
-.PHONY: install run test lint format clean sync
+.PHONY: install run test lint format clean sync migrate migrate-upgrade migrate-downgrade migrate-revision migrate-history migrate-current
 
 install:
 	uv sync
@@ -30,3 +30,25 @@ clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 	rm -rf .pytest_cache .coverage htmlcov .mypy_cache .venv
+
+# Alembic migrations
+migrate: migrate-upgrade
+
+migrate-upgrade:
+	uv run alembic upgrade head
+
+migrate-downgrade:
+	uv run alembic downgrade -1
+
+migrate-revision:
+	@read -p "Enter migration message: " msg; \
+	uv run alembic revision --autogenerate -m "$$msg"
+
+migrate-history:
+	uv run alembic history
+
+migrate-current:
+	uv run alembic current
+
+migrate-stamp-head:
+	uv run alembic stamp head

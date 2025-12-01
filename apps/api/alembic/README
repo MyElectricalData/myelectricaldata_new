@@ -1,0 +1,25 @@
+Generic single-database configuration with async support.
+
+This Alembic environment is configured for async SQLAlchemy with support for both
+PostgreSQL (asyncpg) and SQLite (aiosqlite).
+
+Usage:
+    # Generate a new migration
+    cd apps/api
+    alembic revision --autogenerate -m "Description of changes"
+
+    # Apply all migrations
+    alembic upgrade head
+
+    # Rollback one migration
+    alembic downgrade -1
+
+    # Show current revision
+    alembic current
+
+    # Show migration history
+    alembic history
+
+Docker Usage:
+    docker compose exec backend alembic upgrade head
+    docker compose exec backend alembic revision --autogenerate -m "Description"
