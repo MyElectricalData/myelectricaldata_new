@@ -425,6 +425,7 @@ useEffect(() => {
 - `/consumption` - `Consumption/components/InfoBlock.tsx` (composant dédié)
 - `/production` - InfoBlock inline dans `Production/index.tsx`
 - `/simulator` - InfoBlock inline dans `Simulator.tsx`
+- `/balance` - `Balance/components/InfoBlock.tsx` (composant dédié)
 
 #### Bénéfices UX
 

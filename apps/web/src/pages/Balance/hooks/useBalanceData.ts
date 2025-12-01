@@ -40,15 +40,22 @@ export function useBalanceData(selectedPDL: string, dateRange: DateRange | null)
 
   // Determine the production PDL to use
   // If the selected PDL has linked_production_pdl_id, use that for production data
+  const productionPDLDetails = useMemo(() => {
+    if (!selectedPDLDetails) return null
+    if (selectedPDLDetails.linked_production_pdl_id) {
+      // Find the linked production PDL by its UUID (id)
+      return pdls.find(p => p.id === selectedPDLDetails.linked_production_pdl_id) || null
+    }
+    return null
+  }, [selectedPDLDetails, pdls])
+
   const productionPDL = useMemo(() => {
     if (!selectedPDLDetails) return selectedPDL
-    if (selectedPDLDetails.linked_production_pdl_id) {
-      // Find the linked production PDL
-      const linkedPdl = pdls.find(p => p.id === selectedPDLDetails.linked_production_pdl_id)
-      return linkedPdl?.usage_point_id || selectedPDL
+    if (productionPDLDetails) {
+      return productionPDLDetails.usage_point_id
     }
     return selectedPDL
-  }, [selectedPDLDetails, selectedPDL, pdls])
+  }, [selectedPDLDetails, selectedPDL, productionPDLDetails])
 
   // Read consumption data from cache (already fetched by ConsumptionKwh page)
   const consumptionResponse = useQuery<EnedisApiResponse | null>({
@@ -148,6 +155,7 @@ export function useBalanceData(selectedPDL: string, dateRange: DateRange | null)
     balancePdls,
     selectedPDLDetails,
     productionPDL,
+    productionPDLDetails,
     consumptionData,
     productionData,
     consumptionDetailData,

@@ -1,4 +1,4 @@
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Download } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { BalanceChartData } from '../types/balance.types'
@@ -6,18 +6,18 @@ import type { BalanceChartData } from '../types/balance.types'
 interface MonthlyComparisonProps {
   chartData: BalanceChartData
   isDarkMode: boolean
-  selectedYear: string | null
+  selectedYears: string[]
 }
 
-export function MonthlyComparison({ chartData, isDarkMode, selectedYear }: MonthlyComparisonProps) {
+export function MonthlyComparison({ chartData, isDarkMode, selectedYears }: MonthlyComparisonProps) {
   const handleExport = () => {
     const jsonData = JSON.stringify(chartData.byMonth, null, 2)
     navigator.clipboard.writeText(jsonData)
     toast.success('Donnees mensuelles copiees dans le presse-papier')
   }
 
-  // Filter data by selected year or show all
-  const years = selectedYear ? [selectedYear] : chartData.years
+  // Use selected years or all years if none selected
+  const years = selectedYears.length > 0 ? selectedYears : chartData.years
 
   // Prepare data for the chart
   const data = chartData.byMonth.map(month => {
@@ -53,7 +53,7 @@ export function MonthlyComparison({ chartData, isDarkMode, selectedYear }: Month
 
       <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
         <ResponsiveContainer width="100%" height={400}>
-          <BarChart data={data} barGap={0} barCategoryGap="20%">
+          <BarChart data={data} barGap={1} barCategoryGap="1%">
             <CartesianGrid strokeDasharray="3 3" stroke="#9CA3AF" opacity={0.3} />
             <XAxis
               dataKey="monthLabel"
@@ -84,13 +84,6 @@ export function MonthlyComparison({ chartData, isDarkMode, selectedYear }: Month
                 const year = name.split('_')[1]
                 const label = isProduction ? `Production ${year}` : `Consommation ${year}`
                 return [`${value.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} kWh`, label]
-              }}
-            />
-            <Legend
-              formatter={(value: string) => {
-                const isProduction = value.startsWith('prod_')
-                const year = value.split('_')[1]
-                return isProduction ? `Prod ${year}` : `Conso ${year}`
               }}
             />
             <ReferenceLine y={0} stroke="#6B7280" />

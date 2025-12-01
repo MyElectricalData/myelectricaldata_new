@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { Database, ArrowRight, AlertTriangle, Info } from 'lucide-react'
+import { useState, useMemo, useEffect } from 'react'
+import { Database, ArrowRight, AlertTriangle } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { usePdlStore } from '@/stores/pdlStore'
 import { useBalanceData } from './hooks/useBalanceData'
@@ -8,7 +8,10 @@ import { BalanceSummaryCards } from './components/BalanceSummaryCards'
 import { MonthlyComparison } from './components/MonthlyComparison'
 import { NetBalanceCurve } from './components/NetBalanceCurve'
 import { YearlyTable } from './components/YearlyTable'
+import { InfoBlock } from './components/InfoBlock'
 import { AnimatedSection } from '@/components/AnimatedSection'
+import { LoadingOverlay } from '@/components/LoadingOverlay'
+import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
 import type { DateRange } from './types/balance.types'
 
 export default function Balance() {
@@ -27,18 +30,22 @@ export default function Balance() {
   }, [])
 
   const [dateRange] = useState<DateRange>(defaultDateRange)
-  const [selectedYear, setSelectedYear] = useState<string | null>(null)
+  const [selectedYears, setSelectedYears] = useState<string[]>([])
+  const [isInitialLoadingFromCache, setIsInitialLoadingFromCache] = useState(false)
+  const [isLoadingExiting, setIsLoadingExiting] = useState(false)
+  const [isInitializing, setIsInitializing] = useState(true)
+  const [isInfoExpanded, setIsInfoExpanded] = useState(false)
 
   // Fetch data from cache
   const {
     balancePdls,
     selectedPDLDetails,
     productionPDL,
+    productionPDLDetails,
     consumptionData,
     productionData,
     consumptionDetailData,
     productionDetailData,
-    isLoading,
     hasConsumptionData,
     hasProductionData,
     hasDetailedData
@@ -52,11 +59,71 @@ export default function Balance() {
     productionDetailData
   )
 
+  // Reset loading states when PDL changes
+  useEffect(() => {
+    setIsInitialLoadingFromCache(false)
+    setIsLoadingExiting(false)
+    setIsInitializing(true)
+  }, [selectedPdl])
+
+  // End initialization after cache has time to hydrate
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitializing(false)
+    }, 100) // Short delay for cache hydration
+    return () => clearTimeout(timer)
+  }, [selectedPdl])
+
+  // Initialize selected years when chartData becomes available
+  useEffect(() => {
+    if (chartData?.years?.length && selectedYears.length === 0) {
+      setSelectedYears(chartData.years)
+    }
+  }, [chartData?.years, selectedYears.length])
+
+  // Detect cache data and show loading overlay
+  // Note: Intentionally not including isInitialLoadingFromCache and isLoadingExiting
+  // in deps to prevent infinite loops (this is a "run once when data arrives" effect)
+  useEffect(() => {
+    // Only trigger if we have data in cache and initialization is complete
+    if (!isInitializing && hasConsumptionData && hasProductionData && !isInitialLoadingFromCache && !isLoadingExiting) {
+      // Show loading overlay while hydrating cache data
+      setIsInitialLoadingFromCache(true)
+
+      // Trigger exit animation after short delay
+      setTimeout(() => {
+        setIsLoadingExiting(true)
+        // Hide loading overlay after exit animation completes (300ms)
+        setTimeout(() => {
+          setIsInitialLoadingFromCache(false)
+          setIsLoadingExiting(false)
+        }, 300)
+      }, 500) // Small delay to show loading state
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInitializing, hasConsumptionData, hasProductionData])
+
   // Check if selected PDL is valid for balance view
   const isValidForBalance = useMemo(() => {
     if (!selectedPDLDetails) return false
     return selectedPDLDetails.has_production === true || !!selectedPDLDetails.linked_production_pdl_id
   }, [selectedPDLDetails])
+
+  // Block rendering during initialization to prevent flash of content
+  if (isInitializing) {
+    return <div className="pt-6 w-full" />
+  }
+
+  // Show loading overlay when loading cached data
+  if (isInitialLoadingFromCache) {
+    return (
+      <div className="pt-6 w-full">
+        <LoadingOverlay dataType="balance" isExiting={isLoadingExiting}>
+          <LoadingPlaceholder type="balance" />
+        </LoadingOverlay>
+      </div>
+    )
+  }
 
   // No PDLs with production
   if (balancePdls.length === 0) {
@@ -136,23 +203,12 @@ export default function Balance() {
                 </ul>
               </div>
             )}
-            {productionPDL !== selectedPdl && productionPDL && (
+            {productionPDL !== selectedPdl && productionPDLDetails && (
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
-                Note: Ce PDL utilise un PDL de production lié ({productionPDL})
+                Note: Ce PDL utilise un PDL de production lié ({productionPDLDetails.name || productionPDLDetails.usage_point_id})
               </p>
             )}
           </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="pt-6 w-full">
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
         </div>
       </div>
     )
@@ -184,7 +240,7 @@ export default function Balance() {
   return (
     <div className="pt-6 w-full space-y-6">
       {/* Info banner when viewing consumption PDL with linked production */}
-      {productionPDL !== selectedPdl && productionPDL && (
+      {productionPDL !== selectedPdl && productionPDLDetails && (
         <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-2 border-green-300 dark:border-green-700 rounded-xl shadow-sm transition-colors duration-200">
           <div className="flex items-start gap-3">
             <svg className="w-6 h-6 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -196,9 +252,13 @@ export default function Balance() {
               </h3>
               <p className="text-sm text-green-800 dark:text-green-200">
                 Le bilan énergétique utilise les données de production du PDL{' '}
-                <span className="font-mono font-semibold">{productionPDL}</span>{' '}
+                <span className="font-mono font-semibold">
+                  {productionPDLDetails.name || productionPDLDetails.usage_point_id}
+                </span>{' '}
                 lié au PDL de consommation{' '}
-                <span className="font-mono font-semibold">{selectedPdl}</span>.
+                <span className="font-mono font-semibold">
+                  {selectedPDLDetails?.name || selectedPdl}
+                </span>.
               </p>
             </div>
           </div>
@@ -212,31 +272,43 @@ export default function Balance() {
 
       {/* Year filter */}
       {chartData.years.length > 1 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filtrer par année:</span>
-          <button
-            onClick={() => setSelectedYear(null)}
-            className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-              selectedYear === null
-                ? 'bg-primary-600 text-white'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-            }`}
-          >
-            Toutes
-          </button>
-          {chartData.years.map(year => (
-            <button
-              key={year}
-              onClick={() => setSelectedYear(year)}
-              className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                selectedYear === year
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-              }`}
-            >
-              {year}
-            </button>
-          ))}
+        <div className="flex gap-4">
+          {[...chartData.years].reverse().map((year, index) => {
+            const isSelected = selectedYears.includes(year)
+            // Couleurs correspondant au graphique avec fond semi-transparent
+            const styles = [
+              { border: 'rgb(16, 185, 129)', bg: 'rgba(16, 185, 129, 0.125)', text: 'text-emerald-400', dot: 'bg-emerald-400' },
+              { border: 'rgb(99, 102, 241)', bg: 'rgba(99, 102, 241, 0.125)', text: 'text-indigo-400', dot: 'bg-indigo-400' },
+              { border: 'rgb(96, 165, 250)', bg: 'rgba(96, 165, 250, 0.125)', text: 'text-blue-400', dot: 'bg-blue-400' }
+            ]
+            const style = styles[index % styles.length]
+            return (
+              <button
+                key={year}
+                onClick={() => {
+                  if (isSelected && selectedYears.length > 1) {
+                    setSelectedYears(selectedYears.filter(y => y !== year))
+                  } else if (!isSelected) {
+                    setSelectedYears([...selectedYears, year])
+                  }
+                }}
+                className={`relative flex-1 px-5 py-4 rounded-xl text-xl font-bold transition-all text-left border-2 ${
+                  isSelected
+                    ? style.text
+                    : 'border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:border-gray-400 dark:hover:border-gray-600'
+                }`}
+                style={isSelected ? { backgroundColor: style.bg, borderColor: style.border } : undefined}
+              >
+                {year}
+                {/* Indicateur de sélection */}
+                <span className={`absolute top-3 right-3 w-3 h-3 rounded-full transition-all ${
+                  isSelected
+                    ? style.dot
+                    : 'bg-gray-400 dark:bg-gray-600'
+                }`} />
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -245,7 +317,7 @@ export default function Balance() {
         <MonthlyComparison
           chartData={chartData}
           isDarkMode={isDark}
-          selectedYear={selectedYear}
+          selectedYears={selectedYears}
         />
       </AnimatedSection>
 
@@ -259,31 +331,8 @@ export default function Balance() {
         <YearlyTable chartData={chartData} hasDetailedData={hasDetailedData} />
       </AnimatedSection>
 
-      {/* Info about self-consumption calculation */}
-      <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 transition-colors duration-200">
-        <h4 className="font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-          <Info size={18} className="text-gray-500" />
-          À propos du taux d'autoconsommation
-        </h4>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          {hasDetailedData ? (
-            <>
-              Le taux d'autoconsommation est calculé précisément à partir des données 30 minutes.
-              Il représente la part de votre production solaire que vous consommez directement,
-              sans passer par le réseau.
-            </>
-          ) : (
-            <>
-              Le taux d'autoconsommation est <strong>estimé</strong> à partir des données journalières.
-              Pour un calcul plus précis, chargez les données détaillées (courbe de charge 30min)
-              depuis les pages Consommation et Production.
-            </>
-          )}
-        </p>
-        <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">
-          Formule: Autoconsommation = min(Production, Consommation) / Production × 100
-        </p>
-      </div>
+      {/* Info Block */}
+      <InfoBlock isExpanded={isInfoExpanded} onToggle={() => setIsInfoExpanded(!isInfoExpanded)} />
     </div>
   )
 }

@@ -1,8 +1,8 @@
-import { TrendingUp, BarChart3, Zap, Calendar, Activity } from 'lucide-react'
+import { TrendingUp, TrendingDown, BarChart3, Zap, Calendar, Activity, Home, Sun, Percent } from 'lucide-react'
 
 interface LoadingPlaceholderProps {
   /** Type de page pour adapter le placeholder */
-  type: 'consumption' | 'production' | 'simulation'
+  type: 'consumption' | 'production' | 'simulation' | 'balance'
 }
 
 /**
@@ -17,6 +17,8 @@ export function LoadingPlaceholder({ type }: LoadingPlaceholderProps) {
       return <ProductionPlaceholder />
     case 'simulation':
       return <SimulationPlaceholder />
+    case 'balance':
+      return <BalancePlaceholder />
     default:
       return <ConsumptionPlaceholder />
   }
@@ -182,6 +184,63 @@ function SimulationPlaceholder() {
           </h2>
         </div>
         <ChartPlaceholder height={250} type="bar" />
+      </div>
+    </div>
+  )
+}
+
+/** Placeholder pour la page Bilan Énergétique */
+function BalancePlaceholder() {
+  return (
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCardPlaceholder
+          icon={<Home className="text-blue-500" size={24} />}
+          label="Consommation"
+          value="57 243"
+          unit="kWh"
+        />
+        <StatCardPlaceholder
+          icon={<Sun className="text-yellow-500" size={24} />}
+          label="Production"
+          value="9 718"
+          unit="kWh"
+        />
+        <StatCardPlaceholder
+          icon={<TrendingDown className="text-red-500" size={24} />}
+          label="Bilan Net"
+          value="-47 525"
+          unit="kWh"
+        />
+        <StatCardPlaceholder
+          icon={<Percent className="text-purple-500" size={24} />}
+          label="Autoconsommation"
+          value="74.1"
+          unit="%"
+        />
+      </div>
+
+      {/* Monthly Comparison Chart */}
+      <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-6">
+        <div className="flex items-center gap-2 mb-6">
+          <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Comparaison mensuelle Production vs Consommation
+          </h2>
+        </div>
+        <ChartPlaceholder height={300} type="bar" />
+      </div>
+
+      {/* Net Balance Curve */}
+      <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-6">
+        <div className="flex items-center gap-2 mb-6">
+          <Activity className="text-primary-600 dark:text-primary-400" size={20} />
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Bilan net journalier
+          </h2>
+        </div>
+        <ChartPlaceholder height={250} color="green" />
       </div>
     </div>
   )

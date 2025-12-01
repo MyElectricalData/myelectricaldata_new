@@ -122,26 +122,6 @@ export function YearlyTable({ chartData, hasDetailedData }: YearlyTableProps) {
               )
             })}
           </tbody>
-          <tfoot>
-            <tr className="bg-gray-100 dark:bg-gray-700/50 font-bold">
-              <td className="py-3 px-4 text-gray-900 dark:text-white">Total</td>
-              <td className="py-3 px-4 text-right text-blue-600 dark:text-blue-400">
-                {formatKwh(chartData.totals.consumption)} kWh
-              </td>
-              <td className="py-3 px-4 text-right text-yellow-600 dark:text-yellow-400">
-                {formatKwh(chartData.totals.production)} kWh
-              </td>
-              <td className="py-3 px-4 text-right">
-                <span className={chartData.totals.netBalance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                  {chartData.totals.netBalance >= 0 ? '+' : ''}{formatKwh(chartData.totals.netBalance)} kWh
-                </span>
-              </td>
-              <td className="py-3 px-4 text-right text-purple-600 dark:text-purple-400">
-                {chartData.totals.selfConsumptionRate.toFixed(1)}%
-              </td>
-              <td className="py-3 px-4"></td>
-            </tr>
-          </tfoot>
         </table>
       </div>
     </div>
