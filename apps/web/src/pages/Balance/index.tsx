@@ -183,13 +183,25 @@ export default function Balance() {
   // Main content with data
   return (
     <div className="w-full space-y-6">
-      {/* Linked PDL info */}
-      {productionPDL !== selectedPdl && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-2 transition-colors duration-200">
-          <p className="text-sm text-blue-700 dark:text-blue-300">
-            <Info className="inline mr-2" size={16} />
-            Production liée au PDL: <strong>{productionPDL}</strong>
-          </p>
+      {/* Info banner when viewing consumption PDL with linked production */}
+      {productionPDL !== selectedPdl && productionPDL && (
+        <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-2 border-green-300 dark:border-green-700 rounded-xl shadow-sm transition-colors duration-200">
+          <div className="flex items-start gap-3">
+            <svg className="w-6 h-6 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 mb-1">
+                Production liée utilisée
+              </h3>
+              <p className="text-sm text-green-800 dark:text-green-200">
+                Le bilan énergétique utilise les données de production du PDL{' '}
+                <span className="font-mono font-semibold">{productionPDL}</span>{' '}
+                lié au PDL de consommation{' '}
+                <span className="font-mono font-semibold">{selectedPdl}</span>.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
