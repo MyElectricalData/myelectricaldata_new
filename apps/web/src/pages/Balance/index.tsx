@@ -275,6 +275,8 @@ export default function Balance() {
         <div className="flex gap-4">
           {[...chartData.years].reverse().map((year, index) => {
             const isSelected = selectedYears.includes(year)
+            const yearData = chartData.byYear.find(y => y.year === year)
+            const productionKwh = yearData ? (yearData.production / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 0 }) : '0'
             // Couleurs correspondant au graphique avec fond semi-transparent
             const styles = [
               { border: 'rgb(16, 185, 129)', bg: 'rgba(16, 185, 129, 0.125)', text: 'text-emerald-400', dot: 'bg-emerald-400' },
@@ -292,14 +294,17 @@ export default function Balance() {
                     setSelectedYears([...selectedYears, year])
                   }
                 }}
-                className={`relative flex-1 px-5 py-4 rounded-xl text-xl font-bold transition-all text-left border-2 ${
+                className={`relative flex-1 px-5 py-4 rounded-xl transition-all text-left border-2 ${
                   isSelected
                     ? style.text
                     : 'border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:border-gray-400 dark:hover:border-gray-600'
                 }`}
                 style={isSelected ? { backgroundColor: style.bg, borderColor: style.border } : undefined}
               >
-                {year}
+                <div className="text-xl font-bold">{year}</div>
+                <div className={`text-sm font-medium ${isSelected ? 'opacity-80' : 'opacity-60'}`}>
+                  Production : {productionKwh} kWh
+                </div>
                 {/* Indicateur de sélection */}
                 <span className={`absolute top-3 right-3 w-3 h-3 rounded-full transition-all ${
                   isSelected
