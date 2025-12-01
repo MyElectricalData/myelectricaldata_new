@@ -207,8 +207,8 @@ export function AnnualCurve({ chartData, isDarkMode }: AnnualCurveProps) {
         <ResponsiveContainer width="100%" height={350}>
           <LineChart
             data={displayData}
-            onMouseDown={(e) => e && e.activeLabel && setRefAreaLeft(e.activeLabel)}
-            onMouseMove={(e) => refAreaLeft && e && e.activeLabel && setRefAreaRight(e.activeLabel)}
+            onMouseDown={(e) => e && e.activeLabel && setRefAreaLeft(String(e.activeLabel))}
+            onMouseMove={(e) => refAreaLeft && e && e.activeLabel && setRefAreaRight(String(e.activeLabel))}
             onMouseUp={zoom}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#9CA3AF" opacity={0.3} />
