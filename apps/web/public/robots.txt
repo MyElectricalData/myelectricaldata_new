@@ -1,30 +1,40 @@
 # Robots.txt pour MyElectricalData
 # https://www.myelectricaldata.fr
+#
+# ⚠️ BETA MODE: Site en cours de développement
+# Tout le référencement est désactivé temporairement
+# Décommenter la configuration ci-dessous pour activer le référencement
 
 User-agent: *
+Disallow: /
 
-# Pages publiques autorisées
-Allow: /
-Allow: /faq
-Allow: /api-docs
-Allow: /login
-Allow: /signup
-
-# Pages privées à ne pas indexer
-Disallow: /dashboard
-Disallow: /consumption*
-Disallow: /production
-Disallow: /simulator
-Disallow: /settings
-Disallow: /admin*
-Disallow: /api/
-
-# Fichiers techniques
-Disallow: /*.json$
-Disallow: /*.js.map$
-
-# Sitemap
-Sitemap: https://www.myelectricaldata.fr/sitemap.xml
-
-# Crawl-delay recommandé (en secondes)
-Crawl-delay: 1
+# =============================================================================
+# CONFIGURATION PRODUCTION (à activer quand le site sort de beta)
+# =============================================================================
+# User-agent: *
+#
+# # Pages publiques autorisées
+# Allow: /
+# Allow: /faq
+# Allow: /api-docs
+# Allow: /login
+# Allow: /signup
+#
+# # Pages privées à ne pas indexer
+# Disallow: /dashboard
+# Disallow: /consumption*
+# Disallow: /production
+# Disallow: /simulator
+# Disallow: /settings
+# Disallow: /admin*
+# Disallow: /api/
+#
+# # Fichiers techniques
+# Disallow: /*.json$
+# Disallow: /*.js.map$
+#
+# # Sitemap
+# Sitemap: https://www.myelectricaldata.fr/sitemap.xml
+#
+# # Crawl-delay recommandé (en secondes)
+# Crawl-delay: 1
