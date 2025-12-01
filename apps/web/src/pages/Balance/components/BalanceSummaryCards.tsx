@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, Zap, Sun, Home, Percent } from 'lucide-react'
+import { TrendingUp, TrendingDown, Sun, Home, Percent } from 'lucide-react'
 import type { BalanceChartData } from '../types/balance.types'
 
 interface BalanceSummaryCardsProps {

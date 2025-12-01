@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Scale, AlertTriangle, Info } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Database, ArrowRight, AlertTriangle, Info } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { usePdlStore } from '@/stores/pdlStore'
 import { useBalanceData } from './hooks/useBalanceData'
@@ -13,7 +13,7 @@ import type { DateRange } from './types/balance.types'
 
 export default function Balance() {
   const { isDark } = useThemeStore()
-  const { selectedPdl, setSelectedPdl } = usePdlStore()
+  const { selectedPdl } = usePdlStore()
 
   // Default date range: 3 years back
   const defaultDateRange = useMemo((): DateRange => {
@@ -52,13 +52,6 @@ export default function Balance() {
     productionDetailData
   )
 
-  // Auto-select first balance PDL if none selected
-  useEffect(() => {
-    if (!selectedPdl && balancePdls.length > 0) {
-      setSelectedPdl(balancePdls[0].usage_point_id)
-    }
-  }, [selectedPdl, balancePdls, setSelectedPdl])
-
   // Check if selected PDL is valid for balance view
   const isValidForBalance = useMemo(() => {
     if (!selectedPDLDetails) return false
@@ -68,27 +61,19 @@ export default function Balance() {
   // No PDLs with production
   if (balancePdls.length === 0) {
     return (
-      <div className="pt-6">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-            <Scale className="text-primary-600 dark:text-primary-400" size={32} />
-            Bilan Energetique
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">Production vs Consommation</p>
-        </div>
-
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" size={24} />
-            <div>
-              <h3 className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
-                Aucun PDL avec production detecte
-              </h3>
-              <p className="text-yellow-700 dark:text-yellow-300 text-sm">
-                Pour acceder au bilan energetique, vous devez avoir au moins un PDL avec des donnees de production.
-                Rendez-vous sur la page <strong>Production</strong> pour configurer votre PDL producteur.
-              </p>
+      <div className="w-full">
+        <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+          <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+            <div className="w-20 h-20 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center mb-6">
+              <AlertTriangle className="w-10 h-10 text-yellow-600 dark:text-yellow-400" />
             </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Aucun PDL avec production détecté
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 max-w-md mb-6">
+              Pour accéder au bilan énergétique, vous devez avoir au moins un PDL avec des données de production.
+              Rendez-vous sur la page <span className="font-semibold text-primary-600 dark:text-primary-400">Production</span> pour configurer votre PDL producteur.
+            </p>
           </div>
         </div>
       </div>
@@ -98,105 +83,64 @@ export default function Balance() {
   // Selected PDL is not valid for balance
   if (!isValidForBalance) {
     return (
-      <div className="pt-6">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-            <Scale className="text-primary-600 dark:text-primary-400" size={32} />
-            Bilan Energetique
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">Production vs Consommation</p>
-        </div>
-
-        {/* PDL Selector */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Selectionner un PDL avec production
-          </label>
-          <select
-            value={selectedPdl}
-            onChange={(e) => setSelectedPdl(e.target.value)}
-            className="w-full max-w-md px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          >
-            {balancePdls.map((pdl) => (
-              <option key={pdl.usage_point_id} value={pdl.usage_point_id}>
-                {pdl.usage_point_id} {pdl.alias ? `(${pdl.alias})` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
-          <div className="flex items-start gap-3">
-            <Info className="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" size={24} />
-            <div>
-              <h3 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">
-                PDL selectionne sans production
-              </h3>
-              <p className="text-blue-700 dark:text-blue-300 text-sm">
-                Le PDL actuellement selectionne n'a pas de donnees de production.
-                Selectionnez un PDL avec production dans la liste ci-dessus.
-              </p>
+      <div className="w-full">
+        <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+          <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+            <div className="w-20 h-20 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mb-6">
+              <Info className="w-10 h-10 text-blue-600 dark:text-blue-400" />
             </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              PDL sélectionné sans production
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 max-w-md mb-6">
+              Le PDL actuellement sélectionné n'a pas de données de production.
+              Sélectionnez un PDL avec production dans le sélecteur en haut de page.
+            </p>
           </div>
         </div>
       </div>
     )
   }
 
-  // No data in cache
+  // No data in cache - Empty state similar to ConsumptionKwh
   if (!hasConsumptionData || !hasProductionData) {
     return (
-      <div className="pt-6">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-            <Scale className="text-primary-600 dark:text-primary-400" size={32} />
-            Bilan Energetique
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">Production vs Consommation</p>
-        </div>
-
-        {/* PDL Selector */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            PDL selectionne
-          </label>
-          <select
-            value={selectedPdl}
-            onChange={(e) => setSelectedPdl(e.target.value)}
-            className="w-full max-w-md px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          >
-            {balancePdls.map((pdl) => (
-              <option key={pdl.usage_point_id} value={pdl.usage_point_id}>
-                {pdl.usage_point_id} {pdl.alias ? `(${pdl.alias})` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
-          <div className="flex items-start gap-3">
-            <Info className="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" size={24} />
-            <div>
-              <h3 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">
-                Donnees non disponibles en cache
-              </h3>
-              <p className="text-blue-700 dark:text-blue-300 text-sm mb-3">
-                Pour afficher le bilan energetique, vous devez d'abord charger les donnees :
-              </p>
-              <ul className="text-blue-700 dark:text-blue-300 text-sm list-disc list-inside space-y-1">
-                {!hasConsumptionData && (
-                  <li>Rendez-vous sur la page <strong>Consommation</strong> et cliquez sur "Recuperer les donnees"</li>
-                )}
-                {!hasProductionData && (
-                  <li>Rendez-vous sur la page <strong>Production</strong> et cliquez sur "Recuperer les donnees"</li>
-                )}
-              </ul>
-              {productionPDL !== selectedPdl && (
-                <p className="text-blue-600 dark:text-blue-400 text-xs mt-3">
-                  Note: Ce PDL utilise un PDL de production lie ({productionPDL})
-                </p>
-              )}
+      <div className="w-full">
+        <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+          <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+            <div className="w-20 h-20 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center mb-6">
+              <Database className="w-10 h-10 text-primary-600 dark:text-primary-400" />
             </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Données non disponibles en cache
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 max-w-md mb-6">
+              Pour afficher le bilan énergétique, vous devez d'abord charger les données
+              en cliquant sur le bouton
+              <span className="font-semibold text-primary-600 dark:text-primary-400"> Récupérer </span>
+              en haut à droite de la page.
+            </p>
+            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-4">
+              <span>Sélectionnez un PDL</span>
+              <ArrowRight className="w-4 h-4" />
+              <span>Cliquez sur "Récupérer"</span>
+              <ArrowRight className="w-4 h-4" />
+              <span>Visualisez votre bilan</span>
+            </div>
+            {(!hasConsumptionData || !hasProductionData) && (
+              <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                <p className="mb-1">Données manquantes :</p>
+                <ul className="list-disc list-inside">
+                  {!hasConsumptionData && <li>Consommation</li>}
+                  {!hasProductionData && <li>Production</li>}
+                </ul>
+              </div>
+            )}
+            {productionPDL !== selectedPdl && productionPDL && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
+                Note: Ce PDL utilise un PDL de production lié ({productionPDL})
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -206,14 +150,7 @@ export default function Balance() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="pt-6">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-            <Scale className="text-primary-600 dark:text-primary-400" size={32} />
-            Bilan Energetique
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">Production vs Consommation</p>
-        </div>
+      <div className="w-full">
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
         </div>
@@ -221,75 +158,50 @@ export default function Balance() {
     )
   }
 
-  // No chart data
+  // No chart data (calculation error)
   if (!chartData) {
     return (
-      <div className="pt-6">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-            <Scale className="text-primary-600 dark:text-primary-400" size={32} />
-            Bilan Energetique
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">Production vs Consommation</p>
-        </div>
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6">
-          <p className="text-red-700 dark:text-red-300">
-            Erreur lors du calcul des donnees de bilan.
-          </p>
+      <div className="w-full">
+        <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+          <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+            <div className="w-20 h-20 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-6">
+              <AlertTriangle className="w-10 h-10 text-red-600 dark:text-red-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Erreur de calcul
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 max-w-md">
+              Une erreur est survenue lors du calcul des données de bilan.
+              Veuillez recharger les données depuis les pages Consommation et Production.
+            </p>
+          </div>
         </div>
       </div>
     )
   }
 
+  // Main content with data
   return (
-    <div className="pt-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-            <Scale className="text-primary-600 dark:text-primary-400" size={32} />
-            Bilan Energetique
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Production vs Consommation - PDL {selectedPdl}
-          </p>
-        </div>
-
-        {/* PDL Selector */}
-        {balancePdls.length > 1 && (
-          <select
-            value={selectedPdl}
-            onChange={(e) => setSelectedPdl(e.target.value)}
-            className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          >
-            {balancePdls.map((pdl) => (
-              <option key={pdl.usage_point_id} value={pdl.usage_point_id}>
-                {pdl.usage_point_id} {pdl.alias ? `(${pdl.alias})` : ''}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-
+    <div className="w-full space-y-6">
       {/* Linked PDL info */}
       {productionPDL !== selectedPdl && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-2">
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-2 transition-colors duration-200">
           <p className="text-sm text-blue-700 dark:text-blue-300">
             <Info className="inline mr-2" size={16} />
-            Production liee au PDL: <strong>{productionPDL}</strong>
+            Production liée au PDL: <strong>{productionPDL}</strong>
           </p>
         </div>
       )}
 
       {/* Summary Cards */}
-      <AnimatedSection delay={0}>
+      <AnimatedSection delay={0} isVisible={true}>
         <BalanceSummaryCards chartData={chartData} hasDetailedData={hasDetailedData} />
       </AnimatedSection>
 
       {/* Year filter */}
       {chartData.years.length > 1 && (
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filtrer par annee:</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filtrer par année:</span>
           <button
             onClick={() => setSelectedYear(null)}
             className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
@@ -317,7 +229,7 @@ export default function Balance() {
       )}
 
       {/* Monthly Comparison Chart */}
-      <AnimatedSection delay={100}>
+      <AnimatedSection delay={100} isVisible={true}>
         <MonthlyComparison
           chartData={chartData}
           isDarkMode={isDark}
@@ -326,38 +238,38 @@ export default function Balance() {
       </AnimatedSection>
 
       {/* Net Balance Curve */}
-      <AnimatedSection delay={200}>
+      <AnimatedSection delay={200} isVisible={true}>
         <NetBalanceCurve chartData={chartData} isDarkMode={isDark} />
       </AnimatedSection>
 
       {/* Yearly Table */}
-      <AnimatedSection delay={300}>
+      <AnimatedSection delay={300} isVisible={true}>
         <YearlyTable chartData={chartData} hasDetailedData={hasDetailedData} />
       </AnimatedSection>
 
       {/* Info about self-consumption calculation */}
-      <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+      <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 transition-colors duration-200">
         <h4 className="font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
           <Info size={18} className="text-gray-500" />
-          A propos du taux d'autoconsommation
+          À propos du taux d'autoconsommation
         </h4>
         <p className="text-sm text-gray-600 dark:text-gray-400">
           {hasDetailedData ? (
             <>
-              Le taux d'autoconsommation est calcule precisement a partir des donnees 30 minutes.
-              Il represente la part de votre production solaire que vous consommez directement,
-              sans passer par le reseau.
+              Le taux d'autoconsommation est calculé précisément à partir des données 30 minutes.
+              Il représente la part de votre production solaire que vous consommez directement,
+              sans passer par le réseau.
             </>
           ) : (
             <>
-              Le taux d'autoconsommation est <strong>estime</strong> a partir des donnees journalieres.
-              Pour un calcul plus precis, chargez les donnees detaillees (courbe de charge 30min)
+              Le taux d'autoconsommation est <strong>estimé</strong> à partir des données journalières.
+              Pour un calcul plus précis, chargez les données détaillées (courbe de charge 30min)
               depuis les pages Consommation et Production.
             </>
           )}
         </p>
         <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">
-          Formule: Autoconsommation = min(Production, Consommation) / Production x 100
+          Formule: Autoconsommation = min(Production, Consommation) / Production × 100
         </p>
       </div>
     </div>
