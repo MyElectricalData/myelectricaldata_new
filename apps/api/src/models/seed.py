@@ -3,6 +3,7 @@ Default roles and permissions seed data.
 
 This module provides functions to initialize default roles and permissions
 in the database when the application starts for the first time.
+It also ensures ADMIN_EMAILS users always have the admin role.
 """
 
 import logging
@@ -183,5 +184,74 @@ async def init_default_roles_and_permissions(db: AsyncSession) -> None:
 
     except Exception as e:
         logger.error(f"[SEED] Error initializing roles and permissions: {e}")
+        await db.rollback()
+        raise
+
+
+async def sync_admin_users(db: AsyncSession) -> None:
+    """
+    Ensure all users in ADMIN_EMAILS have the admin role.
+
+    This function runs at every startup to guarantee that configured
+    admin emails always have admin privileges, even if their role
+    was accidentally changed.
+    """
+    from ..config import settings
+    from .user import User
+
+    if not settings.ADMIN_EMAILS:
+        logger.info("[SEED] No ADMIN_EMAILS configured, skipping admin sync")
+        return
+
+    try:
+        # Get admin role
+        result = await db.execute(select(Role).where(Role.name == "admin"))
+        admin_role = result.scalar_one_or_none()
+
+        if not admin_role:
+            logger.warning("[SEED] Admin role not found, cannot sync admin users")
+            return
+
+        # Parse admin emails
+        admin_emails = [e.strip().lower() for e in settings.ADMIN_EMAILS.split(",") if e.strip()]
+
+        if not admin_emails:
+            return
+
+        logger.info(f"[SEED] Syncing admin role for {len(admin_emails)} configured admin(s)...")
+
+        updated_count = 0
+        for email in admin_emails:
+            # Find user by email (case-insensitive)
+            result = await db.execute(
+                select(User).where(User.email.ilike(email))
+            )
+            user = result.scalar_one_or_none()
+
+            if not user:
+                logger.debug(f"[SEED] Admin user not found (not yet registered): {email}")
+                continue
+
+            # Check if user needs update
+            needs_update = False
+            if user.role_id != admin_role.id:
+                user.role_id = admin_role.id
+                needs_update = True
+            if not user.is_admin:
+                user.is_admin = True
+                needs_update = True
+
+            if needs_update:
+                updated_count += 1
+                logger.info(f"[SEED] Admin role assigned to: {user.email}")
+
+        if updated_count > 0:
+            await db.commit()
+            logger.info(f"[SEED] Admin sync complete: {updated_count} user(s) updated")
+        else:
+            logger.info("[SEED] Admin sync complete: all admin users already have correct role")
+
+    except Exception as e:
+        logger.error(f"[SEED] Error syncing admin users: {e}")
         await db.rollback()
         raise
