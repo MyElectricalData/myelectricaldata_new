@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Home, LogOut, Moon, Sun, Heart, Shield, BookOpen, Calculator, Users, Menu, X, Calendar, ChevronLeft, ChevronRight, HelpCircle, UserCircle, Zap, TrendingUp, Trash2 } from 'lucide-react'
+import { Home, LogOut, Moon, Sun, Heart, Shield, BookOpen, Calculator, Users, Menu, X, Calendar, ChevronLeft, ChevronRight, HelpCircle, UserCircle, Zap, TrendingUp, Trash2, Scale } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useThemeStore } from '@/stores/themeStore'
@@ -40,6 +40,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/dashboard', icon: Home, label: 'Tableau de bord' },
     { to: '/consumption_kwh', icon: TrendingUp, label: 'Consommation' },
     { to: '/production', icon: Sun, label: 'Production' },
+    { to: '/balance', icon: Scale, label: 'Bilan' },
     { to: '/simulator', icon: Calculator, label: 'Simulateur' },
     { to: '/contribute', icon: Users, label: 'Contribuer' },
     { to: '/tempo', icon: Calendar, label: 'Tempo' },
