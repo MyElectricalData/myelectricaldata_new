@@ -21,6 +21,10 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
     # Seed default roles and permissions
-    from .seed import init_default_roles_and_permissions
+    from .seed import init_default_roles_and_permissions, sync_admin_users
     async with async_session_maker() as session:
         await init_default_roles_and_permissions(session)
+
+    # Ensure ADMIN_EMAILS users have admin role (runs every startup)
+    async with async_session_maker() as session:
+        await sync_admin_users(session)
