@@ -10,6 +10,8 @@ import ApiDocsTabs from './ApiDocsTabs'
 import ConsumptionTabs from './ConsumptionTabs'
 import PageHeader from './PageHeader'
 import { PageTransition } from './PageTransition'
+import { SEO } from './SEO'
+import { useSEO } from '@/hooks/useSEO'
 import { useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/api/admin'
 
@@ -18,6 +20,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { canAccessAdmin } = usePermissions()
   const { isDark, toggleTheme } = useThemeStore()
   const location = useLocation()
+  const seoProps = useSEO()
   const isAdminLogsPage = location.pathname === '/admin/logs'
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -133,6 +136,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen flex">
+      {/* Dynamic SEO meta tags */}
+      <SEO {...seoProps} />
+
       {/* Sidebar - Desktop */}
       <aside className={`hidden md:flex flex-col bg-white dark:bg-gray-800 border-r border-gray-300 dark:border-gray-700 transition-all duration-300 fixed left-0 top-0 h-screen z-40 ${sidebarCollapsed ? 'w-16' : 'w-56'}`}>
         {/* Logo */}

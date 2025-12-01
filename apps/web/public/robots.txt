@@ -1,0 +1,30 @@
+# Robots.txt pour MyElectricalData
+# https://www.myelectricaldata.fr
+
+User-agent: *
+
+# Pages publiques autorisées
+Allow: /
+Allow: /faq
+Allow: /api-docs
+Allow: /login
+Allow: /signup
+
+# Pages privées à ne pas indexer
+Disallow: /dashboard
+Disallow: /consumption*
+Disallow: /production
+Disallow: /simulator
+Disallow: /settings
+Disallow: /admin*
+Disallow: /api/
+
+# Fichiers techniques
+Disallow: /*.json$
+Disallow: /*.js.map$
+
+# Sitemap
+Sitemap: https://www.myelectricaldata.fr/sitemap.xml
+
+# Crawl-delay recommandé (en secondes)
+Crawl-delay: 1

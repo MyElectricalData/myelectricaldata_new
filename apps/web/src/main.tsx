@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { QueryClient } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
+import { HelmetProvider } from 'react-helmet-async'
 import { get, set, del } from 'idb-keyval'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
@@ -36,6 +37,7 @@ const persister = {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
+    <HelmetProvider>
     <PersistQueryClientProvider
       client={queryClient}
       persistOptions={{
@@ -84,5 +86,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       </BrowserRouter>
       <ReactQueryDevtools initialIsOpen={false} />
     </PersistQueryClientProvider>
+    </HelmetProvider>
   </React.StrictMode>
 )
