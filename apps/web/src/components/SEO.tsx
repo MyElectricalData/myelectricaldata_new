@@ -10,7 +10,8 @@ interface SEOProps {
   noIndex?: boolean;
 }
 
-const BASE_URL = 'https://www.myelectricaldata.fr';
+// TODO: Changer en https://www.myelectricaldata.fr pour la production
+const BASE_URL = 'https://www.v2.myelectricaldata.fr';
 const DEFAULT_IMAGE = `${BASE_URL}/og-image.png`;
 const SITE_NAME = 'MyElectricalData';
 
