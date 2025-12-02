@@ -11,7 +11,7 @@ from ..models import User, PDL, EnergyProvider, EnergyOffer
 from ..models.database import get_db
 from ..middleware import require_admin, require_permission, get_current_user
 from ..schemas import APIResponse
-from ..services import rate_limiter
+from ..services import rate_limiter, cache_service
 from ..services.price_update_service import PriceUpdateService
 from ..config import settings
 import redis.asyncio as redis
