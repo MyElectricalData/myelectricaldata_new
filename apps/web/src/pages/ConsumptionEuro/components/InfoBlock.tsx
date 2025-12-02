@@ -41,10 +41,10 @@ export function InfoBlock({ isExpanded, onToggle }: InfoBlockProps) {
       {/* Collapsible Content */}
       {isExpanded && (
         <div className="px-6 pb-6 space-y-4">
-          {/* Cache Warning */}
-          <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
-            <p className="text-sm text-orange-800 dark:text-orange-200">
-              <strong>💾 Cache automatique :</strong> L'utilisation de cette page entraîne un stockage temporaire de vos données de consommation dans le cache de la passerelle. Ces données sont chiffrées et expirent automatiquement après <strong>24 heures</strong>.
+          {/* Cache Information */}
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+            <p className="text-sm text-yellow-800 dark:text-yellow-200">
+              <strong>💾 Cache automatique :</strong> L'utilisation de la page de consommation active automatiquement le cache. Vos données de consommation seront stockées temporairement pour améliorer les performances et éviter de solliciter excessivement l'API Enedis. Les données en cache expirent automatiquement après <strong>24 heures</strong>.
             </p>
           </div>
 

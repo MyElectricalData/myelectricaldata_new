@@ -165,6 +165,11 @@ export default function ConsumptionEuro() {
     }
   }, [selectedPDL, hasDataInCache, dateRange])
 
+  // Expand info block when no data, collapse when data is available
+  useEffect(() => {
+    setIsInfoExpanded(!hasDataInCache)
+  }, [hasDataInCache])
+
   // Poll for cache updates
   useEffect(() => {
     let pollCount = 0
@@ -274,7 +279,7 @@ export default function ConsumptionEuro() {
       )}
 
       {/* Current offer info with pricing details */}
-      {hasOffer && selectedOfferWithProvider && (
+      {hasDataInCache && hasOffer && selectedOfferWithProvider && (
         <AnimatedSection isVisible={true} delay={0}>
           <div className="mb-6">
             <OfferPricingCard selectedOffer={selectedOfferWithProvider} />
@@ -427,15 +432,11 @@ export default function ConsumptionEuro() {
         </div>
       </AnimatedSection>
 
-      {/* Info block */}
-      {hasCostData && (
-        <AnimatedSection isVisible={true} delay={300}>
-          <InfoBlock
-            isExpanded={isInfoExpanded}
-            onToggle={() => setIsInfoExpanded(!isInfoExpanded)}
-          />
-        </AnimatedSection>
-      )}
+      {/* Info block - Always visible like in Consumption kWh page */}
+      <InfoBlock
+        isExpanded={isInfoExpanded}
+        onToggle={() => setIsInfoExpanded(!isInfoExpanded)}
+      />
     </div>
   )
 }
