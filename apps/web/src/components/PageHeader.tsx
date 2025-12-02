@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { TrendingUp, Sun, Calculator, Download, Lock, LayoutDashboard, Calendar, Zap, Users, AlertCircle, BookOpen, Settings as SettingsIcon, Key, Shield, FileText, Activity, Euro } from 'lucide-react'
+import { TrendingUp, Sun, Calculator, Download, Lock, LayoutDashboard, Calendar, Zap, Users, AlertCircle, BookOpen, Settings as SettingsIcon, Key, Shield, FileText, Activity, Euro, Scale } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
 import { usePdlStore } from '@/stores/pdlStore'
@@ -12,7 +12,7 @@ import type { PDL } from '@/types/api'
 
 // Pages qui affichent le sélecteur de PDL avec bouton "Récupérer"
 const PDL_SELECTOR_PAGES = [
-  '/consumption_kwh', '/consumption_euro', '/production', '/simulator', '/dashboard', '/tempo', '/ecowatt', '/contribute',
+  '/consumption_kwh', '/consumption_euro', '/production', '/balance', '/simulator', '/dashboard', '/tempo', '/ecowatt', '/contribute',
   '/faq', '/api-docs', '/api-docs/auth', '/settings',
   '/admin', '/admin/users', '/admin/tempo', '/admin/ecowatt', '/admin/contributions', '/admin/offers', '/admin/roles', '/admin/logs', '/admin/add-pdl'
 ]
@@ -23,6 +23,7 @@ const PAGE_CONFIG: Record<string, { title: string; icon: typeof TrendingUp; subt
   '/consumption_kwh': { title: 'Consommation', icon: TrendingUp, subtitle: 'Visualisez et analysez votre consommation électrique en kWh' },
   '/consumption_euro': { title: 'Consommation', icon: Euro, subtitle: 'Visualisez et analysez le coût de votre consommation en euros' },
   '/production': { title: 'Production', icon: Sun, subtitle: 'Visualisez et analysez votre production d\'énergie solaire' },
+  '/balance': { title: 'Bilan Énergétique', icon: Scale, subtitle: 'Comparez votre production et consommation pour analyser votre autoconsommation' },
   '/simulator': { title: 'Comparateur des abonnements', icon: Calculator, subtitle: 'Comparez automatiquement le coût de toutes les offres disponibles' },
   '/tempo': { title: 'Calendrier Tempo', icon: Calendar, subtitle: 'Historique des jours Tempo bleus, blancs et rouges fourni par RTE' },
   '/ecowatt': { title: 'EcoWatt - Signal RTE', icon: Zap, subtitle: 'Suivez en temps réel l\'état du réseau électrique français' },

@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from ..models import User, PDL
+from ..models.energy_provider import EnergyOffer
 from ..models.database import get_db
 from ..schemas import PDLCreate, PDLResponse, APIResponse, ErrorDetail
 from ..schemas.requests import AdminPDLCreate
@@ -56,6 +57,10 @@ class PDLUpdatePricingOption(BaseModel):
     pricing_option: str | None = None  # BASE, HC_HP, TEMPO, EJP, HC_WEEKEND
 
 
+class PDLUpdateSelectedOffer(BaseModel):
+    selected_offer_id: str | None = None  # Energy offer ID or None to unselect
+
+
 class PDLOrderItem(BaseModel):
     id: str
     order: int
@@ -99,6 +104,7 @@ async def list_pdls(
             oldest_available_data_date=pdl.oldest_available_data_date,
             activation_date=pdl.activation_date,
             linked_production_pdl_id=pdl.linked_production_pdl_id,
+            selected_offer_id=pdl.selected_offer_id,
         )
         for pdl in pdls
     ]
@@ -309,6 +315,7 @@ async def create_pdl(
         oldest_available_data_date=pdl.oldest_available_data_date,
         activation_date=pdl.activation_date,
         linked_production_pdl_id=pdl.linked_production_pdl_id,
+        selected_offer_id=pdl.selected_offer_id,
     )
 
     return APIResponse(success=True, data=pdl_response.model_dump())
@@ -348,6 +355,7 @@ async def get_pdl(
         oldest_available_data_date=pdl.oldest_available_data_date,
         activation_date=pdl.activation_date,
         linked_production_pdl_id=pdl.linked_production_pdl_id,
+        selected_offer_id=pdl.selected_offer_id,
     )
 
     return APIResponse(success=True, data=pdl_response.model_dump())
@@ -519,6 +527,75 @@ async def update_pdl_pricing_option(
         data={
             "id": pdl.id,
             "usage_point_id": pdl.usage_point_id,
+            "pricing_option": pdl.pricing_option,
+        },
+    )
+
+
+@router.patch("/{pdl_id}/selected-offer", response_model=APIResponse)
+async def update_pdl_selected_offer(
+    pdl_id: str = Path(..., description="PDL ID (UUID)", openapi_examples={"example_uuid": {"summary": "Example UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
+    offer_data: PDLUpdateSelectedOffer = Body(..., openapi_examples={
+        "select_offer": {"summary": "Select an energy offer", "value": {"selected_offer_id": "550e8400-e29b-41d4-a716-446655440001"}},
+        "clear": {"summary": "Remove selected offer", "value": {"selected_offer_id": None}}
+    }),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """
+    Update PDL selected energy offer.
+
+    This endpoint allows you to select an energy offer for a PDL.
+    When an offer is selected, the PDL's pricing_option will be automatically
+    updated to match the offer's offer_type.
+
+    Set `selected_offer_id` to `null` to remove the selection.
+    """
+    result = await db.execute(select(PDL).where(PDL.id == pdl_id, PDL.user_id == current_user.id))
+    pdl = result.scalar_one_or_none()
+
+    if not pdl:
+        return APIResponse(success=False, error=ErrorDetail(code="PDL_NOT_FOUND", message="PDL not found"))
+
+    # If clearing the selection
+    if offer_data.selected_offer_id is None:
+        pdl.selected_offer_id = None
+        await db.commit()
+        await db.refresh(pdl)
+
+        return APIResponse(
+            success=True,
+            data={
+                "id": pdl.id,
+                "usage_point_id": pdl.usage_point_id,
+                "selected_offer_id": None,
+                "pricing_option": pdl.pricing_option,
+            },
+        )
+
+    # Validate the offer exists and is active
+    result = await db.execute(select(EnergyOffer).where(EnergyOffer.id == offer_data.selected_offer_id, EnergyOffer.is_active == True))
+    offer = result.scalar_one_or_none()
+
+    if not offer:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(code="OFFER_NOT_FOUND", message="Energy offer not found or not active")
+        )
+
+    # Update PDL with selected offer and sync pricing_option
+    pdl.selected_offer_id = offer.id
+    pdl.pricing_option = offer.offer_type
+
+    await db.commit()
+    await db.refresh(pdl)
+
+    return APIResponse(
+        success=True,
+        data={
+            "id": pdl.id,
+            "usage_point_id": pdl.usage_point_id,
+            "selected_offer_id": pdl.selected_offer_id,
             "pricing_option": pdl.pricing_option,
         },
     )
@@ -771,6 +848,7 @@ async def admin_add_pdl(
         oldest_available_data_date=pdl.oldest_available_data_date,
         activation_date=pdl.activation_date,
         linked_production_pdl_id=pdl.linked_production_pdl_id,
+        selected_offer_id=pdl.selected_offer_id,
     )
 
     return APIResponse(success=True, data=pdl_response.model_dump())

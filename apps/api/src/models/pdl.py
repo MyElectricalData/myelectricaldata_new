@@ -24,10 +24,12 @@ class PDL(Base, TimestampMixin):
     oldest_available_data_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # Oldest date where Enedis has data (meter activation date)
     activation_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # Contract activation date (from Enedis)
     linked_production_pdl_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("pdls.id"), nullable=True)  # Link to production PDL for combined graphs
+    selected_offer_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("energy_offers.id", ondelete="SET NULL"), nullable=True)  # Selected energy offer
 
     # Relations
     user: Mapped["User"] = relationship("User", back_populates="pdls")
     linked_production_pdl: Mapped["PDL | None"] = relationship("PDL", remote_side=[id], foreign_keys=[linked_production_pdl_id], uselist=False)
+    selected_offer: Mapped["EnergyOffer | None"] = relationship("EnergyOffer", foreign_keys=[selected_offer_id])
 
     def __repr__(self) -> str:
         return f"<PDL(id={self.id}, usage_point_id={self.usage_point_id})>"

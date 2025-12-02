@@ -28,6 +28,7 @@ import EcoWatt from './pages/EcoWatt'
 import ConsumptionKwh from './pages/ConsumptionKwh'
 import ConsumptionEuro from './pages/ConsumptionEuro'
 import Production from './pages/Production'
+import Balance from './pages/Balance'
 import FAQ from './pages/FAQ'
 import ApiDocs from './pages/ApiDocs'
 import Diagnostic from './pages/Diagnostic'
@@ -223,6 +224,16 @@ function App() {
           <ProtectedRoute>
             <Layout>
               <Production />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/balance"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <Balance />
             </Layout>
           </ProtectedRoute>
         }
