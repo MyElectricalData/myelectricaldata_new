@@ -1,0 +1,64 @@
+{
+  "name": "k8s-auto-deploy-script",
+  "description": "Script de déploiement automatique K8s avec mode dev (volumes locaux)",
+  "onStart": {
+    "command": "./scripts/k8s-deploy.sh deploy",
+    "description": "Déploie automatiquement sur K8s au démarrage du projet",
+    "waitForReady": true,
+    "timeout": 300
+  },
+  "onStop": {
+    "command": "./scripts/k8s-deploy.sh delete",
+    "description": "Supprime le déploiement K8s à l'arrêt du projet",
+    "confirm": true
+  },
+  "scripts": {
+    "k8s:deploy": {
+      "command": "./scripts/k8s-deploy.sh deploy",
+      "description": "Déploie l'application en mode dev sur K8s (rancher-desktop)"
+    },
+    "k8s:deploy:prod": {
+      "command": "./scripts/k8s-deploy.sh --prod deploy",
+      "description": "Déploie l'application en mode production sur K8s"
+    },
+    "k8s:delete": {
+      "command": "./scripts/k8s-deploy.sh delete",
+      "description": "Supprime le déploiement K8s"
+    },
+    "k8s:status": {
+      "command": "./scripts/k8s-deploy.sh status",
+      "description": "Affiche le statut du déploiement K8s"
+    },
+    "k8s:logs:backend": {
+      "command": "./scripts/k8s-deploy.sh logs backend",
+      "description": "Affiche les logs du backend"
+    },
+    "k8s:logs:frontend": {
+      "command": "./scripts/k8s-deploy.sh logs frontend",
+      "description": "Affiche les logs du frontend"
+    }
+  },
+  "kubernetes": {
+    "context": "rancher-desktop",
+    "namespace": "auto",
+    "devMode": {
+      "enabled": true,
+      "hostPath": "/Users/cvalentin/Git/myelectricaldata_new",
+      "mounts": {
+        "backend": {
+          "src": "apps/api/src",
+          "static": "apps/api/static"
+        },
+        "frontend": {
+          "src": "apps/web/src",
+          "public": "apps/web/public"
+        }
+      }
+    },
+    "helm": {
+      "chart": "helm/myelectricaldata",
+      "valuesFile": "helm/values-dev.yaml",
+      "releasePrefix": "med"
+    }
+  }
+}
