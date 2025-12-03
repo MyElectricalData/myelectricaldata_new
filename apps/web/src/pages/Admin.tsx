@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { adminApi } from '@/api/admin'
 import { Users, Activity, CheckCircle, XCircle, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Trash2, AlertTriangle } from 'lucide-react'
+import { LoadingOverlay } from '@/components/LoadingOverlay'
 
 type SortField = 'total' | 'cached' | 'no_cache'
 type SortDirection = 'asc' | 'desc'
@@ -31,7 +32,7 @@ export default function Admin() {
     return sortDirection === 'desc' ? <ArrowDown size={14} /> : <ArrowUp size={14} />
   }
 
-  const { data: statsResponse } = useQuery({
+  const { data: statsResponse, isLoading, isError } = useQuery({
     queryKey: ['admin-stats'],
     queryFn: () => adminApi.getGlobalStats(),
     refetchInterval: 30000,
@@ -125,6 +126,26 @@ export default function Admin() {
               >
                 {clearAllCacheMutation.isPending ? 'Vidage...' : 'Vider le cache'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {isLoading && (
+        <LoadingOverlay dataType="admin" />
+      )}
+
+      {/* Error State */}
+      {isError && !isLoading && (
+        <div className="card border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20">
+          <div className="flex items-center gap-3">
+            <XCircle className="text-red-600 dark:text-red-400" size={24} />
+            <div>
+              <h3 className="font-semibold text-red-900 dark:text-red-200">Erreur de chargement</h3>
+              <p className="text-sm text-red-700 dark:text-red-300">
+                Impossible de charger les statistiques. Vérifiez que le backend est accessible.
+              </p>
             </div>
           </div>
         </div>
