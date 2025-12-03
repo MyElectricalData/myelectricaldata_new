@@ -89,6 +89,14 @@ help:
 	@echo "  REGISTRY=$(REGISTRY)"
 	@echo "  GITHUB_ORG=$(GITHUB_ORG)"
 	@echo ""
+	@echo "$(YELLOW)Kubernetes (rancher-desktop):$(NC)"
+	@echo "  make k8s-deploy       - Deploy to K8s in dev mode (volume mounts)"
+	@echo "  make k8s-deploy-prod  - Deploy to K8s in production mode"
+	@echo "  make k8s-delete       - Delete deployment from K8s"
+	@echo "  make k8s-status       - Show deployment status"
+	@echo "  make k8s-logs-backend - Show backend logs"
+	@echo "  make k8s-logs-frontend - Show frontend logs"
+	@echo ""
 
 ## Start development environment with hot reload
 dev: check-deps
@@ -474,4 +482,37 @@ docker-info:
 	@echo "  Backend:  $(IMAGE_BACKEND):$(VERSION)"
 	@echo "  Frontend: $(IMAGE_FRONTEND):$(VERSION)"
 
-.PHONY: help dev up up-fg down restart watch stop-watch stop-docs backend-logs backend-restart db-shell db-backup migrate migrate-downgrade migrate-history migrate-current migrate-revision migrate-stamp logs ps clean rebuild check-deps install-fswatch docs docs-build docs-dev docs-down docker-login docker-build docker-build-backend docker-build-frontend docker-push docker-push-backend docker-push-frontend docker-release docker-release-native docker-release-multiarch docker-release-amd64 docker-release-arm64 docker-release-ci docker-buildx-setup docker-info
+# =============================================================================
+# Kubernetes Commands (rancher-desktop)
+# =============================================================================
+
+K8S_DEPLOY_SCRIPT = ./scripts/k8s-deploy.sh
+
+## Deploy to Kubernetes (dev mode with volume mounts)
+k8s-deploy:
+	@echo "$(GREEN)Deploying to Kubernetes (dev mode)...$(NC)"
+	@$(K8S_DEPLOY_SCRIPT) deploy
+
+## Deploy to Kubernetes (production mode with built images)
+k8s-deploy-prod:
+	@echo "$(GREEN)Deploying to Kubernetes (production mode)...$(NC)"
+	@$(K8S_DEPLOY_SCRIPT) --prod deploy
+
+## Delete Kubernetes deployment
+k8s-delete:
+	@echo "$(YELLOW)Deleting Kubernetes deployment...$(NC)"
+	@$(K8S_DEPLOY_SCRIPT) delete
+
+## Show Kubernetes deployment status
+k8s-status:
+	@$(K8S_DEPLOY_SCRIPT) status
+
+## Show backend logs in Kubernetes
+k8s-logs-backend:
+	@$(K8S_DEPLOY_SCRIPT) logs backend
+
+## Show frontend logs in Kubernetes
+k8s-logs-frontend:
+	@$(K8S_DEPLOY_SCRIPT) logs frontend
+
+.PHONY: help dev up up-fg down restart watch stop-watch stop-docs backend-logs backend-restart db-shell db-backup migrate migrate-downgrade migrate-history migrate-current migrate-revision migrate-stamp logs ps clean rebuild check-deps install-fswatch docs docs-build docs-dev docs-down docker-login docker-build docker-build-backend docker-build-frontend docker-push docker-push-backend docker-push-frontend docker-release docker-release-native docker-release-multiarch docker-release-amd64 docker-release-arm64 docker-release-ci docker-buildx-setup docker-info k8s-deploy k8s-deploy-prod k8s-delete k8s-status k8s-logs-backend k8s-logs-frontend

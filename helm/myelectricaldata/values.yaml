@@ -7,6 +7,24 @@ global:
   imagePullSecrets: []
   storageClass: ""
 
+# Development mode configuration
+# Mounts local source code into pods for hot-reload development
+devMode:
+  enabled: false
+  # Base path on the host machine where the project is located
+  # This path will be used to mount source code into containers
+  hostPath: "/path/to/myelectricaldata"
+  # Backend source code mount (relative to hostPath)
+  backend:
+    # Mount path for source code inside container
+    srcPath: "apps/api/src"
+    dataPath: "apps/api/data"
+    staticPath: "apps/api/static"
+  # Frontend source code mount (relative to hostPath)
+  frontend:
+    srcPath: "apps/web/src"
+    publicPath: "apps/web/public"
+
 # Backend (FastAPI) configuration
 backend:
   enabled: true

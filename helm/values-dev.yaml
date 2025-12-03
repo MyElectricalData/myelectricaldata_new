@@ -1,0 +1,139 @@
+# Development values for local Kubernetes deployment
+# Used with rancher-desktop context
+
+# Use lightweight resources for local dev
+backend:
+  replicaCount: 1
+  image:
+    # Use uv image with Python - has uv pre-installed for fast dependency management
+    repository: ghcr.io/astral-sh/uv
+    tag: "python3.12-alpine"
+    pullPolicy: IfNotPresent
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1024Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+  # Relaxed probes for development
+  # Note: httpHeaders with Host: localhost is required because of TrustedHostMiddleware
+  livenessProbe:
+    httpGet:
+      path: /ping
+      port: http
+      httpHeaders:
+        - name: Host
+          value: localhost
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 10
+
+  readinessProbe:
+    httpGet:
+      path: /ping
+      port: http
+      httpHeaders:
+        - name: Host
+          value: localhost
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 5
+
+  # Disable pod security context for dev (may conflict with host mounts)
+  podSecurityContext: {}
+  securityContext: {}
+
+frontend:
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1536Mi  # Increased for npm ci and vite dev server
+    requests:
+      cpu: 200m
+      memory: 512Mi
+
+  # Disable pod security context for dev
+  podSecurityContext: {}
+  securityContext: {}
+
+# Ingress for local access
+ingress:
+  enabled: true
+  className: "apisix"  # Use apisix ingress controller
+  annotations:
+    # Disable SSL/HTTPS for local development
+    k8s.apisix.apache.org/ssl-redirect: "false"
+    k8s.apisix.apache.org/http-to-https: "false"
+    k8s.apisix.apache.org/enable-websocket: "true"
+    kubernetes.io/ingress.allow-http: "true"
+  tls: []
+
+# Lightweight Redis for dev
+redis:
+  enabled: true
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  persistence:
+    enabled: false  # No persistence needed for dev
+
+# Lightweight PostgreSQL for dev
+postgres:
+  enabled: true
+  auth:
+    password: "devpassword123"  # Simple password for local dev only
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  persistence:
+    enabled: true
+    size: 1Gi
+
+# Dummy secrets for development
+secrets:
+  secretKey:
+    value: "dev-secret-key-do-not-use-in-production-1234567890"
+  adminEmails:
+    value: "admin@localhost"
+  enedis:
+    environment: "sandbox"
+    clientId:
+      value: "dev-enedis-client-id"
+    clientSecret:
+      value: "dev-enedis-client-secret"
+  rte:
+    clientId:
+      value: "dev-rte-client-id"
+    clientSecret:
+      value: "dev-rte-client-secret"
+  mailgun:
+    apiKey:
+      value: "dev-mailgun-api-key"
+    domain:
+      value: "dev.mailgun.domain"
+    fromEmail:
+      value: "dev@localhost"
+
+# Disable HPA and PDB for dev
+autoscaling:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+
+networkPolicy:
+  enabled: false

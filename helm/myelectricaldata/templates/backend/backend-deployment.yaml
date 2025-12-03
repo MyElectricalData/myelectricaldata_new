@@ -42,6 +42,25 @@ spec:
           image: busybox:1.36
           command: ['sh', '-c', 'until nc -z {{ .Release.Name }}-redis {{ .Values.redis.service.port | default 6379 }}; do echo "Waiting for Redis..."; sleep 2; done; echo "Redis is ready!"']
         {{- end }}
+        {{- if .Values.devMode.enabled }}
+        # Install Python dependencies in dev mode using uv
+        - name: uv-sync
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          workingDir: /workspace
+          env:
+            - name: UV_CACHE_DIR
+              value: "/workspace/.cache"
+          command: ['sh', '-c', 'cp /host-app/pyproject.toml /host-app/uv.lock /host-app/README.md /workspace/ && uv sync --frozen']
+          volumeMounts:
+            - name: host-backend-files
+              mountPath: /host-app
+              readOnly: true
+            - name: workspace
+              mountPath: /workspace
+            - name: dev-src
+              mountPath: /workspace/src
+              readOnly: true
+        {{- end }}
       containers:
         - name: backend
           {{- with .Values.backend.securityContext }}
@@ -50,15 +69,34 @@ spec:
           {{- end }}
           image: "{{ .Values.global.imageRegistry }}{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
           imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          {{- if .Values.devMode.enabled }}
+          workingDir: /workspace
+          command: ["uv"]
+          args: ["run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/workspace/src"]
+          {{- end }}
           ports:
             - name: http
               containerPort: 8000
               protocol: TCP
+          {{- if .Values.devMode.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ include "myelectricaldata.backend.fullname" . }}-env
+                optional: true
+          {{- end }}
           env:
             - name: TZ
               value: {{ .Values.backend.env.TZ | quote }}
             - name: PYTHONUNBUFFERED
               value: {{ .Values.backend.env.PYTHONUNBUFFERED | quote }}
+            {{- if .Values.devMode.enabled }}
+            - name: WATCHFILES_FORCE_POLLING
+              value: "true"
+            - name: WATCHFILES_POLL_INTERVAL
+              value: "1000"
+            - name: UV_CACHE_DIR
+              value: "/tmp/uv-cache"
+            {{- end }}
             # PostgreSQL password MUST be defined before DATABASE_URL for $(POSTGRES_PASSWORD) substitution
             - name: POSTGRES_PASSWORD
               valueFrom:
@@ -209,6 +247,14 @@ spec:
               mountPath: /app/data
             - name: logs
               mountPath: /logs
+            {{- if .Values.devMode.enabled }}
+            - name: workspace
+              mountPath: /workspace
+            - name: dev-src
+              mountPath: /workspace/src
+            - name: dev-static
+              mountPath: /app/static
+            {{- end }}
       volumes:
         - name: data
           {{- /* Use PVC only for SQLite mode (postgres.enabled is false) */ -}}
@@ -220,6 +266,22 @@ spec:
           {{- end }}
         - name: logs
           emptyDir: {}
+        {{- if .Values.devMode.enabled }}
+        - name: dev-src
+          hostPath:
+            path: {{ .Values.devMode.hostPath }}/{{ .Values.devMode.backend.srcPath }}
+            type: Directory
+        - name: dev-static
+          hostPath:
+            path: {{ .Values.devMode.hostPath }}/{{ .Values.devMode.backend.staticPath }}
+            type: DirectoryOrCreate
+        - name: host-backend-files
+          hostPath:
+            path: {{ .Values.devMode.hostPath }}/apps/api
+            type: Directory
+        - name: workspace
+          emptyDir: {}
+        {{- end }}
       {{- with .Values.backend.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
