@@ -110,7 +110,7 @@ async def verify_pdl_ownership(usage_point_id: str, user: User, db: AsyncSession
 def adjust_date_range(start: str, end: str) -> tuple[str, str]:
     """
     Adjust date range to ensure it's valid for Enedis API:
-    1. Cap end date to today if it's in the future
+    1. Cap end date to yesterday (J-1) since Enedis only provides data up to J-1
     2. If start == end, move start to 1 day before
     Returns (adjusted_start, adjusted_end) as strings (YYYY-MM-DD).
     """
@@ -123,11 +123,13 @@ def adjust_date_range(start: str, end: str) -> tuple[str, str]:
         paris_tz = ZoneInfo("Europe/Paris")
         today_paris = datetime.now(paris_tz).replace(hour=0, minute=0, second=0, microsecond=0)
         today = today_paris.replace(tzinfo=None)
+        # Enedis data is only available up to yesterday (J-1)
+        yesterday = today - timedelta(days=1)
 
-        # 1. Cap end date to today if it's in the future
-        if end_date > today:
-            logger.info(f"[DATE ADJUST] End date {end} is in the future, capping to today {today.strftime('%Y-%m-%d')}")
-            end_date = today
+        # 1. Cap end date to yesterday if it's after yesterday (including today)
+        if end_date > yesterday:
+            logger.info(f"[DATE ADJUST] End date {end} is after yesterday (J-1), capping to {yesterday.strftime('%Y-%m-%d')}")
+            end_date = yesterday
 
         # 2. If start == end, move start to 1 day before
         if start_date >= end_date:
@@ -1094,16 +1096,21 @@ async def get_consumption_detail_batch(
                     # Use chunk_end + 1 day to get last 23:30 reading
                     fetch_end_date = chunk_end_date + timedelta(days=1)
 
-                # CRITICAL: Never request data beyond yesterday (Enedis only has J-1 data)
-                if fetch_end_date > yesterday:
-                    fetch_end_date = yesterday
+                # CRITICAL: Never request data beyond today (Enedis returns J-1 data when end=today)
+                # We use TODAY (not yesterday) as the cap because Enedis API requires end > start
+                # and returns data up to J-1 of the end date
+                if fetch_end_date > today:
+                    fetch_end_date = today
 
                 fetch_end = fetch_end_date.strftime("%Y-%m-%d")
 
                 # CRITICAL: Enedis requires at least 2 days (start != end)
+                # If we would skip, extend start backwards to ensure we have a valid range
                 if current_start_str == fetch_end:
-                    log_with_pdl("warning", usage_point_id, f"[BATCH SKIP] Cannot fetch single day {current_start_str} (Enedis requires min 2 days). Skipping.")
-                    break  # Skip this chunk
+                    # Extend start 1 day backwards to get a 2-day range
+                    extended_start = current_start - timedelta(days=1)
+                    current_start_str = extended_start.strftime("%Y-%m-%d")
+                    log_with_pdl("info", usage_point_id, f"[BATCH EXTEND] Extended start from {current_start.strftime('%Y-%m-%d')} to {current_start_str} to ensure min 2-day range")
 
                 try:
                     if is_demo:
@@ -1703,16 +1710,21 @@ async def get_production_detail_batch(
                     # Use chunk_end + 1 day to get last 23:30 reading
                     fetch_end_date = chunk_end_date + timedelta(days=1)
 
-                # CRITICAL: Never request data beyond yesterday (Enedis only has J-1 data)
-                if fetch_end_date > yesterday:
-                    fetch_end_date = yesterday
+                # CRITICAL: Never request data beyond today (Enedis returns J-1 data when end=today)
+                # We use TODAY (not yesterday) as the cap because Enedis API requires end > start
+                # and returns data up to J-1 of the end date
+                if fetch_end_date > today:
+                    fetch_end_date = today
 
                 fetch_end = fetch_end_date.strftime("%Y-%m-%d")
 
                 # CRITICAL: Enedis requires at least 2 days (start != end)
+                # If we would skip, extend start backwards to ensure we have a valid range
                 if current_start_str == fetch_end:
-                    log_with_pdl("warning", usage_point_id, f"[BATCH PRODUCTION SKIP] Cannot fetch single day {current_start_str} (Enedis requires min 2 days). Skipping.")
-                    break  # Skip this chunk
+                    # Extend start 1 day backwards to get a 2-day range
+                    extended_start = current_start - timedelta(days=1)
+                    current_start_str = extended_start.strftime("%Y-%m-%d")
+                    log_with_pdl("info", usage_point_id, f"[BATCH PRODUCTION EXTEND] Extended start from {current_start.strftime('%Y-%m-%d')} to {current_start_str} to ensure min 2-day range")
 
                 try:
                     if is_demo:
