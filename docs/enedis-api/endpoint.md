@@ -31,6 +31,61 @@ Le parcours OAuth (autorisation + recuperation du token) est documente dans `doc
 | Customer                     | Informations titulaires (identite, contacts).                   | `https://gw.ext.prod-sandbox.api.enedis.fr/customers_i/v5`        | `https://gw.ext.prod.api.enedis.fr/customers_i/v5`        | `docs/enedis-api/openapi/10-customer.json`                     |
 | Contact                      | Coordonnees de contact client.                                  | `https://gw.ext.prod-sandbox.api.enedis.fr/customers_cd/v5`       | `https://gw.ext.prod.api.enedis.fr/customers_cd/v5`       | `docs/enedis-api/openapi/11-contact.json`                      |
 
+## Contraintes de dates de l'API Enedis
+
+L'API Enedis impose plusieurs contraintes sur les plages de dates. Ces contraintes sont gerees automatiquement par le backend (`apps/api/src/routers/enedis.py`).
+
+### Disponibilite des donnees (J-1)
+
+**Les donnees Enedis ne sont disponibles que jusqu'a la veille (J-1) de la date actuelle.**
+
+- Si aujourd'hui est le 04/12/2025, les donnees les plus recentes disponibles sont celles du 03/12/2025
+- Les donnees sont mises a disposition chaque jour a partir de 8h (heure de Paris)
+- Certains compteurs peuvent remonter leurs donnees plus tard ; elles deviennent alors accessibles le lendemain
+
+### Plages de dates par type d'endpoint
+
+| Endpoint                | Plage max par appel | Historique max        | Notes                                      |
+|-------------------------|--------------------|-----------------------|--------------------------------------------|
+| Courbe de charge detail | **7 jours**        | 24 mois + 15 jours    | Donnees au pas 30min (ou 10/15/60min)      |
+| Consommation journaliere| 365 jours          | 36 mois + 15 jours    | Une valeur par jour                        |
+| Puissance max           | 365 jours          | 36 mois + 15 jours    | Une valeur par jour                        |
+| Production detail       | **7 jours**        | 24 mois + 15 jours    | Donnees au pas 30min                       |
+| Production journaliere  | 365 jours          | 36 mois + 15 jours    | Une valeur par jour                        |
+
+### Contrainte minimum 2 jours (start < end)
+
+**L'API Enedis exige que la date de debut soit strictement inferieure a la date de fin.**
+
+- Une requete avec `start=2025-12-03` et `end=2025-12-03` sera rejetee
+- Pour obtenir les donnees d'un seul jour, il faut demander une plage d'au moins 2 jours
+- Exemple : pour le 03/12, demander `start=2025-12-02, end=2025-12-04`
+
+### Gestion automatique par le backend
+
+Le backend (`apps/api/src/routers/enedis.py`) gere automatiquement ces contraintes :
+
+1. **`adjust_date_range()`** : Ajuste automatiquement la date de fin a J-1 si elle depasse
+2. **Endpoints batch** : Decoupent les grandes plages en chunks de 7 jours max
+3. **Extension automatique** : Si une requete ne contient qu'un seul jour (ex: hier), le backend etend la plage vers le passe pour garantir min 2 jours
+4. **Cache granulaire** : Chaque jour est mis en cache individuellement pour eviter les re-telechargements
+
+### Exemple de flux pour recuperer les donnees d'hier
+
+```
+Frontend demande: start=2025-12-03, end=2025-12-03 (hier)
+                           ↓
+Backend adjust_date_range(): end reste 2025-12-03 (< today)
+                           ↓
+Backend batch: detecte start == end → etend start a 2025-12-02
+                           ↓
+Appel Enedis: start=2025-12-02, end=2025-12-04 (today)
+                           ↓
+Enedis retourne: donnees du 02/12 et 03/12 (J-1 de end)
+                           ↓
+Backend filtre: garde uniquement les donnees demandees (03/12)
+```
+
 ## Bonnes pratiques
 
 - Chaque endpoint doit etre invoque via la passerelle interne (voir `docs/features-spec/05-gateway.md`).
