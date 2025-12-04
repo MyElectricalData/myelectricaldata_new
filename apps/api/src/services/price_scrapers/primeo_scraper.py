@@ -21,32 +21,31 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
     # Priméo Énergie pricing PDF URL
     TARIFF_PDF_URL = "https://particuliers.primeo-energie.fr/wp-content/uploads/GT-Offre-Fixe-20_.pdf"
 
-    # Fallback: Manual pricing data (updated 2025-12-05 from PDF)
+    # Fallback: Manual pricing data TTC (updated 2025-12-05 from PDF)
     # Source: https://particuliers.primeo-energie.fr/wp-content/uploads/GT-Offre-Fixe-20_.pdf
     # Prices valid from 04/08/2025 - Prix bloqué jusqu'au 31/12/2026
-    # Note: -20% sur le prix du kWh HT par rapport au TRV
+    # Note: Tarifs TTC (toutes taxes comprises)
     FALLBACK_PRICES = {
         "FIXE_BASE": {
-            3: {"subscription": 8.51, "kwh": 0.1327},
-            6: {"subscription": 11.07, "kwh": 0.1327},
-            9: {"subscription": 13.79, "kwh": 0.1327},
-            12: {"subscription": 16.51, "kwh": 0.1327},
-            15: {"subscription": 19.07, "kwh": 0.1327},
-            18: {"subscription": 21.60, "kwh": 0.1327},
-            24: {"subscription": 27.18, "kwh": 0.1327},
-            30: {"subscription": 32.45, "kwh": 0.1327},
-            36: {"subscription": 37.88, "kwh": 0.1327},
+            3: {"subscription": 11.73, "kwh": 0.1634},
+            6: {"subscription": 15.47, "kwh": 0.1634},
+            9: {"subscription": 19.43, "kwh": 0.1634},
+            12: {"subscription": 23.32, "kwh": 0.1634},
+            15: {"subscription": 27.06, "kwh": 0.1634},
+            18: {"subscription": 30.76, "kwh": 0.1634},
+            24: {"subscription": 38.80, "kwh": 0.1634},
+            30: {"subscription": 46.44, "kwh": 0.1634},
+            36: {"subscription": 54.29, "kwh": 0.1634},
         },
         "FIXE_HC_HP": {
-            3: {"subscription": 11.74, "hp": 0.1434, "hc": 0.1147},
-            6: {"subscription": 15.47, "hp": 0.1434, "hc": 0.1147},
-            9: {"subscription": 19.39, "hp": 0.1434, "hc": 0.1147},
-            12: {"subscription": 23.32, "hp": 0.1434, "hc": 0.1147},
-            15: {"subscription": 27.06, "hp": 0.1434, "hc": 0.1147},
-            18: {"subscription": 30.76, "hp": 0.1434, "hc": 0.1147},
-            24: {"subscription": 38.80, "hp": 0.1434, "hc": 0.1147},
-            30: {"subscription": 46.44, "hp": 0.1434, "hc": 0.1147},
-            36: {"subscription": 54.29, "hp": 0.1434, "hc": 0.1147},
+            6: {"subscription": 15.74, "hp": 0.1736, "hc": 0.1380},
+            9: {"subscription": 19.81, "hp": 0.1736, "hc": 0.1380},
+            12: {"subscription": 23.76, "hp": 0.1736, "hc": 0.1380},
+            15: {"subscription": 27.49, "hp": 0.1736, "hc": 0.1380},
+            18: {"subscription": 31.34, "hp": 0.1736, "hc": 0.1380},
+            24: {"subscription": 39.47, "hp": 0.1736, "hc": 0.1380},
+            30: {"subscription": 47.02, "hp": 0.1736, "hc": 0.1380},
+            36: {"subscription": 54.61, "hp": 0.1736, "hc": 0.1380},
         },
     }
 
@@ -113,7 +112,7 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
         - HC/HP option: subscription prices per kVA + HP and HC prices
 
         The PDF text is extracted with pdfminer and contains mixed tables.
-        We need to parse the HT (hors taxes) prices, not TTC.
+        We extract the TTC (toutes taxes comprises) prices from the lower table.
         """
         offers = []
         valid_from = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -162,25 +161,24 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
 
     def _extract_base_prices(self, text: str) -> dict:
         """
-        Extract BASE tariff prices from PDF text.
+        Extract BASE tariff TTC prices from PDF text.
 
-        The PDF text when split by 'kVA' gives parts like:
-        - Part 1: "8,516 " = price 8.51 for 3 kVA, "6" is start of next power
-        - Part 2: "11,0711,309 " = price 11.07 for 6 kVA (+ TRV), "9" is next power
-        etc.
+        The PDF structure concatenates values like: "8,516 kVA" where 8,51 is for 3 kVA.
+        For BASE, there's only the Primeo price (no TRV column visible in data).
 
-        BASE section has 9 powers (3-36 kVA), then HC/HP section follows.
+        The BASE subscriptions in the PDF are actually HT values.
+        We need to look at the "Tarif TTC" section for kWh prices.
+
+        TTC BASE kWh price: 0,1634 €/kWh (found in Tarif TTC section)
+        BASE subscriptions: We use the values from the table (HT basis, same as display)
         """
         prices = {}
 
-        # Extract the kWh BASE price (HT) - look for 0,1327 pattern
-        kwh_price = 0.1327  # Default
-        kwh_matches = re.findall(r"0[,\.]1[23]\d{2}", text)
-        for m in kwh_matches:
-            val = float(m.replace(",", "."))
-            if 0.12 < val < 0.15:
-                kwh_price = val
-                break
+        # Extract the kWh BASE price TTC - look for 0,1634 pattern
+        kwh_price = 0.1634  # Default TTC
+        kwh_match = re.search(r"0[,\.]163\d", text)
+        if kwh_match:
+            kwh_price = float(kwh_match.group(0).replace(",", "."))
 
         # Split by 'kVA' and parse each part
         parts = text.split("kVA")
@@ -189,8 +187,7 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
         base_powers = [3, 6, 9, 12, 15, 18, 24, 30, 36]
         subscription_mapping = {}
 
-        # Find the starting index for BASE section
-        # BASE section starts after headers, look for part containing "3 "
+        # Find the starting index for BASE section (first "3 " pattern)
         start_idx = None
         for i, part in enumerate(parts):
             if part.strip().endswith("3 ") or part.strip().endswith("3") or "3 " in part[-5:]:
@@ -202,99 +199,19 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
                 part_idx = start_idx + i
                 if part_idx < len(parts):
                     part = parts[part_idx]
-                    # Extract the first price from this part (Primeo price)
-                    # Format: "8,516 " -> price is 8,51 (exactly 2 decimals)
+                    # Extract the first price (Primeo price - these are the displayed values)
                     price_match = re.match(r"(\d+[,\.]\d{2})", part)
                     if price_match:
                         price = float(price_match.group(1).replace(",", "."))
-                        if 5 < price < 45:  # Valid subscription range for BASE
+                        if 5 < price < 45:  # Valid subscription range
                             subscription_mapping[power] = price
 
         # Fallback to hardcoded values if extraction failed
+        # Note: These are the values displayed in the PDF (effective prices)
         fallback = {
-            3: 8.51,
-            6: 11.07,
-            9: 13.79,
-            12: 16.51,
-            15: 19.07,
-            18: 21.60,
-            24: 27.18,
-            30: 32.45,
-            36: 37.88,
-        }
-        for power in fallback:
-            if power not in subscription_mapping:
-                subscription_mapping[power] = fallback[power]
-
-        # Build the prices dict
-        for power, subscription in subscription_mapping.items():
-            prices[power] = {
-                "subscription": subscription,
-                "kwh": kwh_price,
-            }
-
-        return prices
-
-    def _extract_hc_hp_prices(self, text: str) -> dict:
-        """
-        Extract HC/HP tariff prices from PDF text.
-
-        HC/HP section comes after BASE section in the PDF.
-        The split parts look like:
-        - Part 10: "11,746 " = price 11.74 for 3 kVA (HC/HP)
-        - Part 11: "15,4715,749 " = price 15.47 for 6 kVA
-        etc.
-        """
-        prices = {}
-
-        # Extract HP and HC kWh prices (HT)
-        hp_price = 0.1434  # Default
-        hc_price = 0.1147  # Default
-
-        # Look for HP pattern (around 0.14xx)
-        hp_match = re.search(r"0[,\.]14\d{2}", text)
-        if hp_match:
-            hp_price = float(hp_match.group(0).replace(",", "."))
-
-        # Look for HC pattern (around 0.11xx)
-        hc_match = re.search(r"0[,\.]11\d{2}", text)
-        if hc_match:
-            hc_price = float(hc_match.group(0).replace(",", "."))
-
-        # Split by 'kVA' and parse HC/HP section
-        parts = text.split("kVA")
-
-        # HC/HP powers (no 3 kVA in standard HC/HP, but Primeo might include it)
-        hchp_powers = [3, 6, 9, 12, 15, 18, 24, 30, 36]
-        subscription_mapping = {}
-
-        # Find the starting index for HC/HP section
-        # It comes after BASE section (9 entries) and some headers
-        # Look for the second occurrence of "3 " pattern (HC/HP table)
-        occurrences = []
-        for i, part in enumerate(parts):
-            if part.strip().endswith("3 ") or part.strip().endswith("3") or (len(part) > 2 and "3 " in part[-5:]):
-                occurrences.append(i)
-
-        # The second occurrence is the HC/HP section
-        if len(occurrences) >= 2:
-            start_idx = occurrences[1] + 1
-            for i, power in enumerate(hchp_powers):
-                part_idx = start_idx + i
-                if part_idx < len(parts):
-                    part = parts[part_idx]
-                    # Extract the first price from this part (exactly 2 decimals)
-                    price_match = re.match(r"(\d+[,\.]\d{2})", part)
-                    if price_match:
-                        price = float(price_match.group(1).replace(",", "."))
-                        if 10 < price < 60:  # Valid subscription range for HC/HP
-                            subscription_mapping[power] = price
-
-        # Fallback to hardcoded values
-        fallback = {
-            3: 11.74,
+            3: 11.73,
             6: 15.47,
-            9: 19.39,
+            9: 19.43,
             12: 23.32,
             15: 27.06,
             18: 30.76,
@@ -306,15 +223,104 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
             if power not in subscription_mapping:
                 subscription_mapping[power] = fallback[power]
 
-        # Build the prices dict (exclude 3 kVA if not valid for HC/HP)
+        # Build the prices dict with TTC kWh price
         for power, subscription in subscription_mapping.items():
-            # Standard HC/HP is 6+ kVA, but include 3 if Primeo offers it
-            if power >= 3:
-                prices[power] = {
-                    "subscription": subscription,
-                    "hp": hp_price,
-                    "hc": hc_price,
-                }
+            prices[power] = {
+                "subscription": subscription,
+                "kwh": kwh_price,
+            }
+
+        return prices
+
+    def _extract_hc_hp_prices(self, text: str) -> dict:
+        """
+        Extract HC/HP tariff TTC prices from PDF text.
+
+        The PDF concatenates values like: "15,4715,749 kVA" where:
+        - 15,47 is Primeo HT price for 6 kVA
+        - 15,74 is TRV/TTC price for 6 kVA
+        - 9 is the start of next power (9 kVA)
+
+        We extract the SECOND price (TTC) from each part.
+
+        TTC kWh prices:
+        - HP TTC: 0,1736 €/kWh
+        - HC TTC: 0,1380 €/kWh
+
+        Note: HC/HP starts at 6 kVA (no 3 kVA option for HC/HP).
+        """
+        prices = {}
+
+        # Extract HP and HC kWh prices TTC
+        hp_price = 0.1736  # Default TTC
+        hp_match = re.search(r"0[,\.]173\d", text)
+        if hp_match:
+            hp_price = float(hp_match.group(0).replace(",", "."))
+
+        hc_price = 0.1380  # Default TTC
+        hc_match = re.search(r"0[,\.]138\d", text)
+        if hc_match:
+            hc_price = float(hc_match.group(0).replace(",", "."))
+
+        # Split by 'kVA' and parse HC/HP section
+        parts = text.split("kVA")
+
+        # HC/HP powers (starts at 6 kVA)
+        hchp_powers = [6, 9, 12, 15, 18, 24, 30, 36]
+        subscription_mapping = {}
+
+        # Find the HC/HP section (2nd occurrence of "3 " pattern)
+        occurrences = []
+        for i, part in enumerate(parts):
+            if part.strip().endswith("3 ") or part.strip().endswith("3") or (len(part) > 2 and "3 " in part[-5:]):
+                occurrences.append(i)
+
+        # The 2nd occurrence (index 1) is the HC/HP section
+        if len(occurrences) >= 2:
+            start_idx = occurrences[1] + 1  # Start after the "3 " marker (which is 3 kVA HT entry)
+            # Part at start_idx is for 3 kVA (11,74), next part (start_idx + 1) is for 6 kVA
+            start_idx += 1  # Skip 3 kVA, start from 6 kVA
+
+            for i, power in enumerate(hchp_powers):
+                part_idx = start_idx + i
+                if part_idx < len(parts):
+                    part = parts[part_idx]
+                    # Extract the SECOND price (TTC) from this part
+                    # Format: "15,4715,749" -> first=15,47 (HT), second=15,74 (TTC)
+                    all_prices = re.findall(r"(\d+[,\.]\d{2})", part)
+                    if len(all_prices) >= 2:
+                        # Second price is TTC
+                        price = float(all_prices[1].replace(",", "."))
+                        if 10 < price < 60:  # Valid TTC subscription range
+                            subscription_mapping[power] = price
+                    elif len(all_prices) == 1:
+                        # Only one price found, use it (might be the last entry)
+                        price = float(all_prices[0].replace(",", "."))
+                        if 10 < price < 60:
+                            subscription_mapping[power] = price
+
+        # Fallback to hardcoded TTC values
+        fallback = {
+            6: 15.74,
+            9: 19.81,
+            12: 23.76,
+            15: 27.49,
+            18: 31.34,
+            24: 39.47,
+            30: 47.02,
+            36: 54.61,
+        }
+        for power in fallback:
+            if power not in subscription_mapping:
+                subscription_mapping[power] = fallback[power]
+
+        # Build the prices dict (HC/HP is 6+ kVA only)
+        for power, subscription in subscription_mapping.items():
+            prices[power] = {
+                "subscription": subscription,
+                "hp": hp_price,
+                "hc": hc_price,
+            }
 
         return prices
 
