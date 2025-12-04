@@ -319,9 +319,12 @@ export default function Simulator() {
       const selectedPdlData = Array.isArray(pdlsData) ? pdlsData.find((p) => p.usage_point_id === selectedPdl) : undefined
       const subscribedPower = selectedPdlData?.subscribed_power
 
+      // Ensure offersData is an array
+      const offersArray = Array.isArray(offersData) ? offersData : []
+
       // Filter offers by subscribed power if available
-      const filteredOffers = subscribedPower && offersData
-        ? offersData.filter((offer) => {
+      const filteredOffers = subscribedPower && offersArray.length > 0
+        ? offersArray.filter((offer) => {
             const match = offer.name.match(/(\d+)\s*kVA/i)
             if (match) {
               const offerPower = parseInt(match[1])
@@ -329,10 +332,14 @@ export default function Simulator() {
             }
             return true
           })
-        : offersData || []
+        : offersArray
+
+      if (offersArray.length === 0) {
+        throw new Error('Aucune offre disponible. Veuillez patienter le temps du chargement des offres.')
+      }
 
       if (filteredOffers.length === 0) {
-        throw new Error('Aucune offre disponible pour la puissance souscrite de votre PDL')
+        throw new Error(`Aucune offre disponible pour la puissance souscrite de ${subscribedPower} kVA`)
       }
 
       // Calculer les simulations pour chaque offre
@@ -875,8 +882,12 @@ export default function Simulator() {
     }
 
     // Don't auto-launch if PDL data, offers, or providers are not loaded yet
-    if (!pdlsData || !offersData || !providersData) {
-      logger.log('[Auto-launch] Skipping auto-launch - data not loaded yet')
+    if (!pdlsData || !Array.isArray(offersData) || offersData.length === 0 || !providersData) {
+      logger.log('[Auto-launch] Skipping auto-launch - data not loaded yet', {
+        pdlsData: !!pdlsData,
+        offersData: Array.isArray(offersData) ? offersData.length : 'not array',
+        providersData: !!providersData
+      })
       return
     }
 
