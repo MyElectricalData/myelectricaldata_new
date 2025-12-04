@@ -13,6 +13,11 @@ on:
         required: false
         default: ''
 
+# Annule les builds en cours sur la même branche
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   CHART_PATH: helm/myelectricaldata

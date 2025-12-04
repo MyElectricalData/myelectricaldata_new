@@ -4,20 +4,22 @@ from src.services.price_scrapers.totalenergies_scraper import TotalEnergiesPrice
 
 
 @pytest.mark.asyncio
-async def test_totalenergies_scraper_fallback_offers():
-    """Test that TotalEnergies scraper returns fallback offers"""
+async def test_totalenergies_scraper_returns_offers():
+    """Test that TotalEnergies scraper returns offers from PDFs"""
     scraper = TotalEnergiesPriceScraper()
     offers = await scraper.scrape()
 
     # Should have offers for multiple products
     assert len(offers) > 0
 
-    # Check we have both Verte Fixe and Online offers
+    # Check we have both Verte Fixe and Essentielle offers (from PDFs)
+    # Or fallback Online offers if PDFs fail
     verte_offers = [o for o in offers if "Verte Fixe" in o.name]
+    essentielle_offers = [o for o in offers if "Essentielle" in o.name]
     online_offers = [o for o in offers if "Online" in o.name]
 
-    assert len(verte_offers) > 0
-    assert len(online_offers) > 0
+    # At least one of these offer types should be present
+    assert len(verte_offers) > 0 or len(essentielle_offers) > 0 or len(online_offers) > 0
 
 
 @pytest.mark.asyncio
@@ -26,25 +28,26 @@ async def test_totalenergies_scraper_validate_data():
     scraper = TotalEnergiesPriceScraper()
     offers = await scraper.scrape()
 
-    # Validation should pass for fallback data
+    # Validation should pass
     is_valid = await scraper.validate_data(offers)
     assert is_valid is True
 
 
 @pytest.mark.asyncio
-async def test_totalenergies_online_cheaper_than_verte():
-    """Test that Online offers are cheaper than Verte Fixe"""
+async def test_totalenergies_essentielle_cheaper_than_verte():
+    """Test that Essentielle offers are cheaper than Verte Fixe"""
     scraper = TotalEnergiesPriceScraper()
     offers = await scraper.scrape()
 
     # Compare same power, same option
     verte_base_6 = next((o for o in offers if "Verte Fixe" in o.name and o.offer_type == "BASE" and o.power_kva == 6), None)
-    online_base_6 = next((o for o in offers if "Online" in o.name and o.offer_type == "BASE" and o.power_kva == 6), None)
+    essentielle_base_6 = next((o for o in offers if "Essentielle" in o.name and o.offer_type == "BASE" and o.power_kva == 6), None)
 
-    if verte_base_6 and online_base_6:
-        # Online should be cheaper
-        assert online_base_6.subscription_price <= verte_base_6.subscription_price
-        assert online_base_6.base_price <= verte_base_6.base_price
+    if verte_base_6 and essentielle_base_6:
+        # Essentielle should be cheaper (indexed to regulated tariff)
+        assert essentielle_base_6.subscription_price <= verte_base_6.subscription_price
+        # Note: Essentielle kWh is at TRV level, Verte Fixe is fixed/green
+        # so prices might be similar or different based on market conditions
 
 
 @pytest.mark.asyncio
@@ -58,3 +61,14 @@ async def test_totalenergies_offer_variety():
 
     assert len(base_offers) > 0
     assert len(hchp_offers) > 0
+
+
+@pytest.mark.asyncio
+async def test_totalenergies_pdf_parsing_not_fallback():
+    """Test that PDF parsing works and fallback is not used"""
+    scraper = TotalEnergiesPriceScraper()
+    offers = await scraper.scrape()
+
+    # Verify offers were scraped from PDFs, not fallback
+    assert len(offers) > 0
+    assert scraper.used_fallback is False

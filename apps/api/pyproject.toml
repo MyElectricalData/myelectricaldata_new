@@ -69,4 +69,6 @@ disallow_untyped_defs = true
 [dependency-groups]
 dev = [
     "ruff>=0.13.3",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
 ]

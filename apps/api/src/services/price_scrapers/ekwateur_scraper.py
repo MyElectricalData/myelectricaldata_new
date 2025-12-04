@@ -1,7 +1,9 @@
 """Ekwateur price scraper - Fetches tariffs from Ekwateur website"""
+import re
 from typing import List
 import httpx
 from datetime import datetime, UTC
+from bs4 import BeautifulSoup
 
 from .base import BasePriceScraper, OfferData
 
@@ -12,46 +14,22 @@ class EkwateurScraper(BasePriceScraper):
     # Ekwateur pricing page URL
     PRICING_URL = "https://ekwateur.fr/prix-kwh-electricite-abonnement-ekwateur/"
 
-    # Fallback: Manual pricing data (updated November 2025)
+    # Fallback: Manual pricing data (updated December 2025)
     # Source: https://ekwateur.fr/prix-kwh-electricite-abonnement-ekwateur/
     # Note: Ekwateur only provides pricing for 3, 6, 9 kVA on their website
     FALLBACK_PRICES = {
-        "VARIABLE_BASE": {
-            # Électricité verte - Prix variable - Option Base
-            # Prix TTC novembre 2025
-            3: {"subscription": 15.89, "kwh": 0.2000},
-            6: {"subscription": 19.70, "kwh": 0.2000},
-            9: {"subscription": 23.65, "kwh": 0.2018},
-        },
-        "VARIABLE_HC_HP": {
-            # Électricité verte - Prix variable - Heures Creuses
-            3: {"subscription": 15.96, "hp": 0.2189, "hc": 0.1704},
-            6: {"subscription": 20.10, "hp": 0.2189, "hc": 0.1704},
-            9: {"subscription": 24.28, "hp": 0.2189, "hc": 0.1704},
-        },
         "FIXE_BASE": {
             # Électricité verte - Prix fixe - Option Base
-            3: {"subscription": 11.73, "kwh": 0.1791},
-            6: {"subscription": 19.70, "kwh": 0.1791},
-            9: {"subscription": 23.65, "kwh": 0.2015},
+            # Prix TTC décembre 2025
+            3: {"subscription": 11.78, "kwh": 0.1606},
+            6: {"subscription": 15.57, "kwh": 0.1606},
+            9: {"subscription": 19.655, "kwh": 0.1606},
         },
         "FIXE_HC_HP": {
             # Électricité verte - Prix fixe - Heures Creuses
-            3: {"subscription": 15.08, "hp": 0.2257, "hc": 0.1770},
-            6: {"subscription": 15.74, "hp": 0.2257, "hc": 0.1770},
-            9: {"subscription": 24.28, "hp": 0.2257, "hc": 0.1770},
-        },
-        "VE_BASE": {
-            # Électricité verte - Spéciale véhicule électrique - Option Base
-            3: {"subscription": 15.89, "kwh": 0.1929},
-            6: {"subscription": 19.70, "kwh": 0.1929},
-            9: {"subscription": 23.65, "kwh": 0.2015},
-        },
-        "VE_HC_HP": {
-            # Électricité verte - Spéciale véhicule électrique - Heures Creuses
-            3: {"subscription": 15.96, "hp": 0.2257, "hc": 0.1347},
-            6: {"subscription": 20.10, "hp": 0.2257, "hc": 0.1347},
-            9: {"subscription": 24.28, "hp": 0.2257, "hc": 0.1347},
+            3: {"subscription": 15.13, "hp": 0.17914, "hc": 0.14026},
+            6: {"subscription": 15.84, "hp": 0.17914, "hc": 0.1426},
+            9: {"subscription": 20.48, "hp": 0.17914, "hc": 0.1426},
         },
     }
 
@@ -107,46 +85,198 @@ class EkwateurScraper(BasePriceScraper):
             raise Exception(f"Échec complet du scraping Ekwateur (y compris fallback) : {' | '.join(errors)}")
 
     def _parse_html(self, html: str) -> List[OfferData]:
-        """Parse HTML from Ekwateur pricing page"""
-        # For now, return empty list to use fallback
-        # HTML parsing can be implemented later with BeautifulSoup or regex
-        return []
+        """
+        Parse HTML from Ekwateur pricing page.
+
+        The page contains 2 tables:
+        - Table 1: kWh prices (Base, HP, HC) per power level (3, 6, 9 kVA)
+        - Table 2: Subscription prices per power level
+        """
+        offers = []
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Find all pricing tables
+        tables = soup.find_all("table")
+        if len(tables) < 2:
+            self.logger.warning(f"Expected at least 2 tables, found {len(tables)}")
+            return []
+
+        # Parse pricing data from tables
+        kwh_data = self._parse_kwh_table(tables)
+        subscription_data = self._parse_subscription_table(tables)
+
+        if not kwh_data or not subscription_data:
+            self.logger.warning("Failed to parse pricing tables")
+            return []
+
+        # Current date for valid_from
+        valid_from = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        # Generate offers: Prix fixe BASE
+        for power in [3, 6, 9]:
+            base_key = f"base_{power}"
+            if base_key in kwh_data and base_key in subscription_data:
+                offers.append(
+                    OfferData(
+                        name=f"Électricité verte - Prix fixe - Base {power} kVA",
+                        offer_type="BASE",
+                        description=f"Offre d'électricité 100% verte à prix fixe - Option Base - {power} kVA",
+                        subscription_price=subscription_data[base_key],
+                        base_price=kwh_data[base_key],
+                        power_kva=power,
+                        valid_from=valid_from,
+                    )
+                )
+
+        # Generate offers: Prix fixe HC/HP
+        for power in [3, 6, 9]:
+            hp_key = f"hp_{power}"
+            hc_key = f"hc_{power}"
+            sub_key = f"hchp_{power}"
+            if hp_key in kwh_data and hc_key in kwh_data and sub_key in subscription_data:
+                offers.append(
+                    OfferData(
+                        name=f"Électricité verte - Prix fixe - Heures Creuses {power} kVA",
+                        offer_type="HC_HP",
+                        description=f"Offre d'électricité 100% verte à prix fixe - Heures Creuses - {power} kVA",
+                        subscription_price=subscription_data[sub_key],
+                        hp_price=kwh_data[hp_key],
+                        hc_price=kwh_data[hc_key],
+                        power_kva=power,
+                        valid_from=valid_from,
+                    )
+                )
+
+        self.logger.info(f"Parsed {len(offers)} offers from HTML")
+        return offers
+
+    def _parse_kwh_table(self, tables: list) -> dict:
+        """
+        Parse kWh prices from the first table (kWh prices).
+
+        Table structure:
+        - Headers: Offre | Base (3,6,9 kVA) | Heures pleines (3,6,9 kVA) | Heures creuses (3,6,9 kVA)
+        - Data row: "Électricité vertePrix fixe" | 9 prices
+
+        Returns dict with keys like 'base_3', 'hp_6', 'hc_9'
+        """
+        data = {}
+
+        # First table contains kWh prices (has "heures creuses" in header)
+        for table in tables:
+            text = table.get_text().lower()
+            if "heures creuses" not in text:
+                continue
+
+            rows = table.find_all("tr")
+            for row in rows:
+                cells = row.find_all(["td", "th"])
+                if len(cells) < 2:
+                    continue
+
+                row_text = row.get_text().lower()
+
+                # Look for the data row with prices (contains "prix fixe" or "électricité")
+                if "prix fixe" in row_text or "électricité" in row_text:
+                    # Extract all prices from cells
+                    prices = []
+                    for cell in cells:
+                        cell_text = cell.get_text().strip().replace(",", ".").replace("€", "")
+                        # Match price patterns like "0.1606"
+                        price_match = re.search(r"(\d+\.\d+)", cell_text)
+                        if price_match:
+                            try:
+                                price = float(price_match.group(1))
+                                # kWh prices are typically between 0.10 and 0.50
+                                if 0.05 < price < 0.60:
+                                    prices.append(price)
+                            except ValueError:
+                                pass
+
+                    # If we found 9 prices: Base(3,6,9), HP(3,6,9), HC(3,6,9)
+                    if len(prices) >= 9:
+                        data["base_3"] = prices[0]
+                        data["base_6"] = prices[1]
+                        data["base_9"] = prices[2]
+                        data["hp_3"] = prices[3]
+                        data["hp_6"] = prices[4]
+                        data["hp_9"] = prices[5]
+                        data["hc_3"] = prices[6]
+                        data["hc_6"] = prices[7]
+                        data["hc_9"] = prices[8]
+                        self.logger.info(f"Parsed kWh prices: {data}")
+                        return data
+
+        return data
+
+    def _parse_subscription_table(self, tables: list) -> dict:
+        """
+        Parse subscription prices from the second table.
+
+        Table structure:
+        - Headers: Offre | Base (3,6,9 kVA) | Heures pleines/Heures creuses (3,6,9 kVA)
+        - Data row: "Électricité vertePrix fixe" | 6 prices
+
+        Returns dict with keys like 'base_3', 'hchp_6'
+        """
+        data = {}
+
+        # Second table contains subscription prices (has "heures pleines / heures creuses" combined)
+        for table in tables:
+            text = table.get_text().lower()
+            # This table has combined "heures pleines / heures creuses" header, not separate
+            if "heures creuses" in text and "heures pleines" in text:
+                # Check if it's the subscription table (no 9-column kWh prices)
+                # by looking for the combined header pattern
+                header_text = table.find("thead").get_text().lower() if table.find("thead") else text
+                if "heures pleines / heures creuses" in header_text or text.count("kva") == 6:
+                    pass  # This is the subscription table
+                else:
+                    continue
+
+            rows = table.find_all("tr")
+            for row in rows:
+                cells = row.find_all(["td", "th"])
+                if len(cells) < 2:
+                    continue
+
+                row_text = row.get_text().lower()
+
+                # Look for the data row with prices
+                if "prix fixe" in row_text or "électricité" in row_text:
+                    prices = []
+                    for cell in cells:
+                        cell_text = cell.get_text().strip().replace(",", ".").replace("€", "")
+                        # Match price patterns like "15.57"
+                        price_match = re.search(r"(\d+\.\d+)", cell_text)
+                        if price_match:
+                            try:
+                                price = float(price_match.group(1))
+                                # Subscription prices are typically between 5 and 50 €/month
+                                if 5.0 < price < 60.0:
+                                    prices.append(price)
+                            except ValueError:
+                                pass
+
+                    # If we found 6 prices: Base(3,6,9), HC/HP(3,6,9)
+                    if len(prices) >= 6:
+                        data["base_3"] = prices[0]
+                        data["base_6"] = prices[1]
+                        data["base_9"] = prices[2]
+                        data["hchp_3"] = prices[3]
+                        data["hchp_6"] = prices[4]
+                        data["hchp_9"] = prices[5]
+                        self.logger.info(f"Parsed subscription prices: {data}")
+                        return data
+
+        return data
 
     def _get_fallback_offers(self) -> List[OfferData]:
-        """Generate offers from fallback pricing data"""
+        """Generate offers from fallback pricing data (December 2025)"""
         offers = []
 
-        # Date: November 2025
-        valid_from = datetime(2025, 11, 1, 0, 0, 0, 0, tzinfo=UTC)
-
-        # Électricité verte - Prix variable - BASE
-        for power, prices in self.FALLBACK_PRICES["VARIABLE_BASE"].items():
-            offers.append(
-                OfferData(
-                    name=f"Électricité verte - Prix variable - Base {power} kVA",
-                    offer_type="BASE",
-                    description=f"Offre d'électricité 100% verte à prix variable indexé sur le marché - Option Base - {power} kVA",
-                    subscription_price=prices["subscription"],
-                    base_price=prices["kwh"],
-                    power_kva=power,
-                    valid_from=valid_from,
-                )
-            )
-
-        # Électricité verte - Prix variable - HC/HP
-        for power, prices in self.FALLBACK_PRICES["VARIABLE_HC_HP"].items():
-            offers.append(
-                OfferData(
-                    name=f"Électricité verte - Prix variable - Heures Creuses {power} kVA",
-                    offer_type="HC_HP",
-                    description=f"Offre d'électricité 100% verte à prix variable indexé sur le marché - Heures Creuses - {power} kVA",
-                    subscription_price=prices["subscription"],
-                    hp_price=prices["hp"],
-                    hc_price=prices["hc"],
-                    power_kva=power,
-                    valid_from=valid_from,
-                )
-            )
+        # Date: December 2025
+        valid_from = datetime(2025, 12, 1, 0, 0, 0, 0, tzinfo=UTC)
 
         # Électricité verte - Prix fixe - BASE
         for power, prices in self.FALLBACK_PRICES["FIXE_BASE"].items():
@@ -154,7 +284,7 @@ class EkwateurScraper(BasePriceScraper):
                 OfferData(
                     name=f"Électricité verte - Prix fixe - Base {power} kVA",
                     offer_type="BASE",
-                    description=f"Offre d'électricité 100% verte à prix fixe pendant 1 an - Option Base - {power} kVA",
+                    description=f"Offre d'électricité 100% verte à prix fixe - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
                     base_price=prices["kwh"],
                     power_kva=power,
@@ -168,36 +298,7 @@ class EkwateurScraper(BasePriceScraper):
                 OfferData(
                     name=f"Électricité verte - Prix fixe - Heures Creuses {power} kVA",
                     offer_type="HC_HP",
-                    description=f"Offre d'électricité 100% verte à prix fixe pendant 1 an - Heures Creuses - {power} kVA",
-                    subscription_price=prices["subscription"],
-                    hp_price=prices["hp"],
-                    hc_price=prices["hc"],
-                    power_kva=power,
-                    valid_from=valid_from,
-                )
-            )
-
-        # Électricité verte - Spéciale VE - BASE
-        for power, prices in self.FALLBACK_PRICES["VE_BASE"].items():
-            offers.append(
-                OfferData(
-                    name=f"Électricité verte - Spéciale VE - Base {power} kVA",
-                    offer_type="BASE",
-                    description=f"Offre d'électricité 100% verte spéciale véhicule électrique - Option Base - {power} kVA",
-                    subscription_price=prices["subscription"],
-                    base_price=prices["kwh"],
-                    power_kva=power,
-                    valid_from=valid_from,
-                )
-            )
-
-        # Électricité verte - Spéciale VE - HC/HP
-        for power, prices in self.FALLBACK_PRICES["VE_HC_HP"].items():
-            offers.append(
-                OfferData(
-                    name=f"Électricité verte - Spéciale VE - Heures Creuses {power} kVA",
-                    offer_type="HC_HP",
-                    description=f"Offre d'électricité 100% verte spéciale véhicule électrique - Heures Creuses - {power} kVA - HC renforcées",
+                    description=f"Offre d'électricité 100% verte à prix fixe - Heures Creuses - {power} kVA",
                     subscription_price=prices["subscription"],
                     hp_price=prices["hp"],
                     hc_price=prices["hc"],
