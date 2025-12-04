@@ -85,23 +85,34 @@ export function useConsumptionCalcs({
     const period3End = new Date(mostRecentDate.getTime() - 730 * 24 * 60 * 60 * 1000)
     const period3Start = new Date(mostRecentDate.getTime() - 1095 * 24 * 60 * 60 * 1000)
 
+    // Create meaningful labels for 365-day rolling periods
+    // Format: "YYYY-YYYY" if period spans two years, otherwise just "YYYY"
+    const formatPeriodLabel = (startDate: Date, endDate: Date): string => {
+      const startYear = startDate.getFullYear()
+      const endYear = endDate.getFullYear()
+      if (startYear === endYear) {
+        return String(endYear)
+      }
+      return `${startYear}-${endYear}`
+    }
+
     const periods = [
       {
-        label: String(period1End.getFullYear()),
+        label: formatPeriodLabel(period1Start, period1End),
         startDaysAgo: 0,
         endDaysAgo: 365,
         startDate: period1Start,
         endDate: period1End
       },
       {
-        label: String(period2End.getFullYear()),
+        label: formatPeriodLabel(period2Start, period2End),
         startDaysAgo: 365,
         endDaysAgo: 730,
         startDate: period2Start,
         endDate: period2End
       },
       {
-        label: String(period3End.getFullYear()),
+        label: formatPeriodLabel(period3Start, period3End),
         startDaysAgo: 730,
         endDaysAgo: 1095,
         startDate: period3Start,
@@ -261,10 +272,20 @@ export function useConsumptionCalcs({
     const period3End = new Date(mostRecentDate.getTime() - 730 * 24 * 60 * 60 * 1000)
     const period3Start = new Date(mostRecentDate.getTime() - 1095 * 24 * 60 * 60 * 1000)
 
+    // Create meaningful labels for 365-day rolling periods
+    const formatPeriodLabel = (startDate: Date, endDate: Date): string => {
+      const startYear = startDate.getFullYear()
+      const endYear = endDate.getFullYear()
+      if (startYear === endYear) {
+        return String(endYear)
+      }
+      return `${startYear}-${endYear}`
+    }
+
     const periods = [
-      { label: String(period1End.getFullYear()), startDate: period1Start, endDate: period1End, data: [] as any[] },
-      { label: String(period2End.getFullYear()), startDate: period2Start, endDate: period2End, data: [] as any[] },
-      { label: String(period3End.getFullYear()), startDate: period3Start, endDate: period3End, data: [] as any[] },
+      { label: formatPeriodLabel(period1Start, period1End), startDate: period1Start, endDate: period1End, data: [] as any[] },
+      { label: formatPeriodLabel(period2Start, period2End), startDate: period2Start, endDate: period2End, data: [] as any[] },
+      { label: formatPeriodLabel(period3Start, period3End), startDate: period3Start, endDate: period3End, data: [] as any[] },
     ]
 
     // Group readings by period
