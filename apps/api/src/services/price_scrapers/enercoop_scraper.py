@@ -20,6 +20,9 @@ class EnercoopPriceScraper(BasePriceScraper):
     # Enercoop pricing PDF URL
     TARIFF_PDF_URL = "https://www.faq.enercoop.fr/hc/fr/article_attachments/29227207696786"
 
+    # Standard power levels offered by Enercoop (subset of 1-36 kVA)
+    STANDARD_POWERS = [3, 6, 9, 12, 15, 18, 24, 30, 36]
+
     # Fallback: Manual pricing data TTC (updated 2025-08-01)
     # Source: https://www.faq.enercoop.fr/hc/fr/article_attachments/29227207696786
     # Note: Tous les prix sont TTC (incluant TVA 20%, CTA, CSPE)
@@ -45,7 +48,7 @@ class EnercoopPriceScraper(BasePriceScraper):
             30: {"subscription": 67.37, "hp": 0.27436, "hc": 0.19008},
             36: {"subscription": 79.20, "hp": 0.27436, "hc": 0.19008},
         },
-        "WEEKEND": {  # Flexi Watt - Nuit & Week-end - TTC
+        "HC_NUIT_WEEKEND": {  # Flexi Watt - Nuit & Week-end - TTC
             6: {"subscription": 16.48, "hp": 0.29320, "hc": 0.16537},
             9: {"subscription": 21.97, "hp": 0.29320, "hc": 0.16537},
             12: {"subscription": 27.35, "hp": 0.29320, "hc": 0.16537},
@@ -55,7 +58,7 @@ class EnercoopPriceScraper(BasePriceScraper):
             30: {"subscription": 62.57, "hp": 0.29320, "hc": 0.16537},
             36: {"subscription": 74.30, "hp": 0.29320, "hc": 0.16537},
         },
-        "SEASONAL": {  # Flexi Watt - 2 saisons - TTC
+        "SEASONAL": {  # Flexi Watt - 2 saisons - TTC (updated 2025-08-01)
             6: {"subscription": 17.40, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
             9: {"subscription": 23.19, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
             12: {"subscription": 28.87, "hp_winter": 0.31128, "hc_winter": 0.23096, "hp_summer": 0.19397, "hc_summer": 0.13579},
@@ -127,7 +130,10 @@ class EnercoopPriceScraper(BasePriceScraper):
 
     def _parse_pdf(self, text: str) -> List[OfferData]:
         """
-        Parse PDF text from Enercoop tariff sheet to extract prices
+        Parse PDF text from Enercoop tariff sheet to extract prices.
+
+        The PDF contains tables with 36 rows (1-36 kVA) with HTT and TTC columns.
+        We extract TTC prices for standard power levels (3, 6, 9, 12, 15, 18, 24, 30, 36 kVA).
 
         Args:
             text: Extracted PDF text content
@@ -140,79 +146,128 @@ class EnercoopPriceScraper(BasePriceScraper):
             valid_from = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
             # Extract Basic Watt - Base offers
-            basic_section = self._extract_section(text, "Basic Watt - base")
-            if basic_section:
-                basic_offers = self._parse_basic_watt(basic_section, valid_from)
-                offers.extend(basic_offers)
+            basic_offers = self._parse_basic_watt_section(text, valid_from)
+            offers.extend(basic_offers)
 
             # Extract Flexi Watt - Heures Creuses offers
-            flexi_hc_section = self._extract_section(text, "Flexi Watt - heures creuses")
-            if flexi_hc_section:
-                flexi_hc_offers = self._parse_flexi_watt_hc(flexi_hc_section, valid_from)
-                offers.extend(flexi_hc_offers)
+            hc_offers = self._parse_flexi_watt_hc_section(text, valid_from)
+            offers.extend(hc_offers)
+
+            # Extract Flexi Watt - Nuit & Week-end offers
+            weekend_offers = self._parse_flexi_watt_weekend_section(text, valid_from)
+            offers.extend(weekend_offers)
+
+            # Extract Flexi Watt - 2 saisons offers
+            seasonal_offers = self._parse_flexi_watt_seasonal_section(text, valid_from)
+            offers.extend(seasonal_offers)
 
             return offers
         except Exception as e:
             self.logger.error(f"Error parsing PDF: {e}", exc_info=True)
             return []
 
-    def _extract_section(self, text: str, section_name: str) -> str:
-        """Extract a pricing section from PDF text"""
-        try:
-            start_idx = text.find(section_name)
-            if start_idx == -1:
-                return ""
+    def _extract_section_between(self, text: str, start_marker: str, end_markers: list[str]) -> str:
+        """
+        Extract text section between start marker and first matching end marker.
 
-            # Find the end (next section or end of useful content)
-            end_markers = ["Flexi Watt", "Option", "(1)", "L'énergie est notre avenir"]
-            end_idx = len(text)
+        Args:
+            text: Full PDF text
+            start_marker: String marking section start
+            end_markers: List of strings that could mark section end
 
-            for marker in end_markers:
-                marker_idx = text.find(marker, start_idx + len(section_name))
-                if marker_idx != -1 and marker_idx < end_idx:
-                    if marker != section_name:  # Don't stop at same section name
-                        end_idx = marker_idx
-
-            return text[start_idx:end_idx]
-        except Exception as e:
-            self.logger.error(f"Error extracting section {section_name}: {e}")
+        Returns:
+            Extracted section text or empty string if not found
+        """
+        start_idx = text.find(start_marker)
+        if start_idx == -1:
             return ""
 
-    def _parse_basic_watt(self, section: str, valid_from: datetime) -> List[OfferData]:
-        """Parse Basic Watt (BASE) offers from PDF section"""
+        end_idx = len(text)
+        for marker in end_markers:
+            marker_idx = text.find(marker, start_idx + len(start_marker))
+            if marker_idx != -1 and marker_idx < end_idx:
+                end_idx = marker_idx
+
+        return text[start_idx:end_idx]
+
+    def _extract_subscription_prices(self, section: str) -> dict[int, float]:
+        """
+        Extract subscription prices (TTC) from a section.
+
+        The PDF structure is:
+        - First 36 prices are HTT (index 0-35 for kVA 1-36)
+        - Next 36 prices are TTC (index 36-71 for kVA 1-36)
+
+        We extract TTC prices for standard power levels.
+
+        Args:
+            section: Text section containing the pricing table
+
+        Returns:
+            Dict mapping power (kVA) to subscription price (€/month TTC)
+        """
+        subscription_prices: dict[int, float] = {}
+
+        # Extract all price patterns (XX,XX €) from the section
+        price_pattern = re.compile(r'(\d+,\d{2})\s*€')
+        prices = price_pattern.findall(section)
+
+        if len(prices) < 72:  # Need at least 72 prices (36 HTT + 36 TTC)
+            self.logger.warning(f"Not enough subscription prices found ({len(prices)}), expected 72")
+            return subscription_prices
+
+        # TTC prices start at index 36
+        # For power N, TTC price is at index 36 + (N - 1) = 35 + N
+        for power in self.STANDARD_POWERS:
+            ttc_index = 35 + power
+            if ttc_index < len(prices):
+                price_str = prices[ttc_index].replace(',', '.')
+                subscription_prices[power] = float(price_str)
+
+        return subscription_prices
+
+    def _parse_basic_watt_section(self, text: str, valid_from: datetime) -> List[OfferData]:
+        """
+        Parse Basic Watt - Base section from PDF.
+
+        Args:
+            text: Full PDF text
+            valid_from: Offer validity start date
+
+        Returns:
+            List of BASE offers
+        """
         offers = []
-        lines = section.split('\n')
 
-        # Parse power levels (3, 6, 9, 12, 15, 18, 24, 30, 36 kVA)
-        powers = [3, 6, 9, 12, 15, 18, 24, 30, 36]
+        # Find section: starts with "Basic Watt - base" or "Basic Watt - Base"
+        section = self._extract_section_between(
+            text,
+            "Basic Watt - base",
+            ["Flexi Watt", "L'énergie est notre avenir"]
+        )
 
-        # Find TTC subscription prices and kWh price
-        # Look for subscription pattern: XX,XX €
-        subscription_prices = {}
-        kwh_price_ttc = None
+        if not section:
+            self.logger.warning("Basic Watt - base section not found in PDF")
+            return offers
 
-        for line in lines:
-            # Try to find "X,XXXXX €" pattern for kWh price
-            kwh_match = re.search(r'0,\d{5}\s*€', line)
-            if kwh_match and not kwh_price_ttc:
-                price_str = kwh_match.group().replace('€', '').replace(',', '.').strip()
-                kwh_price_ttc = float(price_str)
+        # Extract kWh price TTC (format: 0,XXXXX €)
+        # The PDF has 4 kWh prices: HTT old, TTC old, HTT current, TTC current
+        # We want the last one (TTC current, index 3)
+        kwh_matches = re.findall(r'0,(\d{5})\s*€', section)
 
-            # Try to find subscription prices
-            sub_match = re.findall(r'\d+,\d{2}\s*€', line)
-            if sub_match:
-                for price_str in sub_match:
-                    price = float(price_str.replace('€', '').replace(',', '.').strip())
-                    if 4 <= price <= 50:  # Reasonable subscription price range
-                        # Map to next available power level
-                        for power in powers:
-                            if power not in subscription_prices:
-                                subscription_prices[power] = price
-                                break
+        if len(kwh_matches) < 4:
+            self.logger.warning(f"Could not find kWh TTC price in Basic Watt section (found {len(kwh_matches)})")
+            return offers
 
-        # Create offers for powers we found prices for
-        for power in powers:
-            if power in subscription_prices and kwh_price_ttc:
+        # Last match is the current TTC price
+        kwh_price_ttc = float(f"0.{kwh_matches[3]}")
+
+        # Extract subscription prices
+        subscription_prices = self._extract_subscription_prices(section)
+
+        # Create offers for standard powers
+        for power in self.STANDARD_POWERS:
+            if power in subscription_prices:
                 offers.append(
                     OfferData(
                         name=f"Basic Watt - Base {power} kVA",
@@ -227,47 +282,179 @@ class EnercoopPriceScraper(BasePriceScraper):
 
         return offers
 
-    def _parse_flexi_watt_hc(self, section: str, valid_from: datetime) -> List[OfferData]:
-        """Parse Flexi Watt Heures Creuses offers from PDF section"""
+    def _parse_flexi_watt_hc_section(self, text: str, valid_from: datetime) -> List[OfferData]:
+        """
+        Parse Flexi Watt - Heures Creuses section from PDF.
+
+        Args:
+            text: Full PDF text
+            valid_from: Offer validity start date
+
+        Returns:
+            List of HC_HP offers
+        """
         offers = []
-        lines = section.split('\n')
 
-        powers = [6, 9, 12, 15, 18, 24, 30, 36]  # HC not available for 3 kVA
-        subscription_prices = {}
-        hp_price_ttc = None
-        hc_price_ttc = None
+        # Find section
+        section = self._extract_section_between(
+            text,
+            "Flexi Watt - heures creuses",
+            ["Flexi Watt - nuit", "Flexi Watt -  nuit", "L'énergie est notre avenir"]
+        )
 
-        for line in lines:
-            # Find HP and HC prices
-            kwh_matches = re.findall(r'0,\d{5}\s*€', line)
-            if len(kwh_matches) >= 2:
-                if not hp_price_ttc:
-                    hp_price_ttc = float(kwh_matches[0].replace('€', '').replace(',', '.').strip())
-                if not hc_price_ttc:
-                    hc_price_ttc = float(kwh_matches[1].replace('€', '').replace(',', '.').strip())
+        if not section:
+            self.logger.warning("Flexi Watt - heures creuses section not found in PDF")
+            return offers
 
-            # Find subscription prices
-            sub_matches = re.findall(r'\d+,\d{2}\s*€', line)
-            if sub_matches:
-                for price_str in sub_matches:
-                    price = float(price_str.replace('€', '').replace(',', '.').strip())
-                    if 10 <= price <= 70:  # Reasonable subscription price range for HC
-                        for power in powers:
-                            if power not in subscription_prices:
-                                subscription_prices[power] = price
-                                break
+        # Extract HP and HC prices TTC (format: 0,XXXXX €)
+        # Order in PDF: HP HTT, HP TTC, HC HTT, HC TTC
+        kwh_matches = re.findall(r'0,(\d{5})\s*€', section)
 
-        # Create offers
-        for power in powers:
-            if power in subscription_prices and hp_price_ttc and hc_price_ttc:
+        if len(kwh_matches) < 4:
+            self.logger.warning(f"Could not find HP/HC TTC prices in Flexi Watt HC section (found {len(kwh_matches)})")
+            return offers
+
+        # HP TTC is second match (index 1), HC TTC is fourth match (index 3)
+        hp_price_ttc = float(f"0.{kwh_matches[1]}")
+        hc_price_ttc = float(f"0.{kwh_matches[3]}")
+
+        # Extract subscription prices
+        subscription_prices = self._extract_subscription_prices(section)
+
+        # HC not available for 3 kVA
+        hc_powers = [p for p in self.STANDARD_POWERS if p >= 6]
+
+        for power in hc_powers:
+            if power in subscription_prices:
                 offers.append(
                     OfferData(
                         name=f"Flexi Watt - Heures Creuses {power} kVA",
                         offer_type="HC_HP",
-                        description=f"Électricité 100% renouvelable - Heures Creuses/Pleines - {power} kVA",
+                        description=f"Électricité 100% renouvelable - Heures Creuses Enedis - {power} kVA",
                         subscription_price=subscription_prices[power],
                         hp_price=hp_price_ttc,
                         hc_price=hc_price_ttc,
+                        power_kva=power,
+                        valid_from=valid_from,
+                    )
+                )
+
+        return offers
+
+    def _parse_flexi_watt_weekend_section(self, text: str, valid_from: datetime) -> List[OfferData]:
+        """
+        Parse Flexi Watt - Nuit & Week-end section from PDF.
+
+        Args:
+            text: Full PDF text
+            valid_from: Offer validity start date
+
+        Returns:
+            List of HC_NUIT_WEEKEND offers
+        """
+        offers = []
+
+        # Find section - look for the table header "Flexi Watt - nuit & week-end"
+        section = self._extract_section_between(
+            text,
+            "Flexi Watt - nuit & week-end",
+            ["Offre Flexi Watt - 2 saisons", "Flexi Watt - 2 saisons", "L'énergie est notre avenir"]
+        )
+
+        if not section:
+            self.logger.warning("Flexi Watt - Nuit & Week-end section not found in PDF")
+            return offers
+
+        # Extract HP and HC prices TTC
+        kwh_matches = re.findall(r'0,(\d{5})\s*€', section)
+
+        if len(kwh_matches) < 4:
+            self.logger.warning(f"Could not find HP/HC TTC prices in Flexi Watt Weekend section (found {len(kwh_matches)})")
+            return offers
+
+        hp_price_ttc = float(f"0.{kwh_matches[1]}")
+        hc_price_ttc = float(f"0.{kwh_matches[3]}")
+
+        # Extract subscription prices
+        subscription_prices = self._extract_subscription_prices(section)
+
+        # Weekend option not available for 3 kVA
+        weekend_powers = [p for p in self.STANDARD_POWERS if p >= 6]
+
+        for power in weekend_powers:
+            if power in subscription_prices:
+                offers.append(
+                    OfferData(
+                        name=f"Flexi Watt - Nuit & Week-end {power} kVA",
+                        offer_type="HC_NUIT_WEEKEND",
+                        description=f"Électricité 100% renouvelable - HC nuit (23h-6h) et week-end - {power} kVA",
+                        subscription_price=subscription_prices[power],
+                        hp_price=hp_price_ttc,
+                        hc_price=hc_price_ttc,
+                        power_kva=power,
+                        valid_from=valid_from,
+                    )
+                )
+
+        return offers
+
+    def _parse_flexi_watt_seasonal_section(self, text: str, valid_from: datetime) -> List[OfferData]:
+        """
+        Parse Flexi Watt - 2 saisons section from PDF.
+
+        Args:
+            text: Full PDF text
+            valid_from: Offer validity start date
+
+        Returns:
+            List of SEASONAL offers
+        """
+        offers = []
+
+        # Find section - stop before "Option" or "Jours de pointe" to exclude the option variant
+        section = self._extract_section_between(
+            text,
+            "Offre Flexi Watt - 2 saisons",
+            ["Option", "Jours de pointe", "2 saisons HP/HC", "L'énergie est notre avenir"]
+        )
+
+        if not section:
+            self.logger.warning("Flexi Watt - 2 saisons section not found in PDF")
+            return offers
+
+        # Extract seasonal prices TTC
+        # Order in PDF: HP Winter HTT, HP Winter TTC, HC Winter HTT, HC Winter TTC,
+        #               HP Summer HTT, HP Summer TTC, HC Summer HTT, HC Summer TTC
+        kwh_matches = re.findall(r'0,(\d{5})\s*€', section)
+
+        if len(kwh_matches) < 8:
+            self.logger.warning(f"Could not find seasonal TTC prices (found {len(kwh_matches)})")
+            return offers
+
+        # TTC prices are at indices 1, 3, 5, 7
+        hp_winter_ttc = float(f"0.{kwh_matches[1]}")
+        hc_winter_ttc = float(f"0.{kwh_matches[3]}")
+        hp_summer_ttc = float(f"0.{kwh_matches[5]}")
+        hc_summer_ttc = float(f"0.{kwh_matches[7]}")
+
+        # Extract subscription prices
+        subscription_prices = self._extract_subscription_prices(section)
+
+        # Seasonal option not available for 3 kVA
+        seasonal_powers = [p for p in self.STANDARD_POWERS if p >= 6]
+
+        for power in seasonal_powers:
+            if power in subscription_prices:
+                offers.append(
+                    OfferData(
+                        name=f"Flexi Watt - 2 saisons {power} kVA",
+                        offer_type="SEASONAL",
+                        description=f"Électricité 100% renouvelable - Tarifs hiver/été avec heures creuses - {power} kVA",
+                        subscription_price=subscription_prices[power],
+                        hp_price_winter=hp_winter_ttc,
+                        hc_price_winter=hc_winter_ttc,
+                        hp_price_summer=hp_summer_ttc,
+                        hc_price_summer=hc_summer_ttc,
                         power_kva=power,
                         valid_from=valid_from,
                     )
@@ -314,12 +501,12 @@ class EnercoopPriceScraper(BasePriceScraper):
                 )
             )
 
-        # WEEKEND offers (Flexi Watt - Nuit & Week-end)
-        for power, prices in self.FALLBACK_PRICES["WEEKEND"].items():
+        # HC_NUIT_WEEKEND offers (Flexi Watt - Nuit & Week-end)
+        for power, prices in self.FALLBACK_PRICES["HC_NUIT_WEEKEND"].items():
             offers.append(
                 OfferData(
                     name=f"Flexi Watt - Nuit & Week-end {power} kVA",
-                    offer_type="WEEKEND",
+                    offer_type="HC_NUIT_WEEKEND",
                     description=f"Électricité 100% renouvelable - HC nuit (23h-6h) et week-end - {power} kVA",
                     subscription_price=prices["subscription"],
                     hp_price=prices["hp"],
@@ -367,17 +554,23 @@ class EnercoopPriceScraper(BasePriceScraper):
                 self.logger.error(f"Invalid offer: {offer.name}")
                 return False
 
-            # Validate price consistency
+            # Validate price consistency based on offer type
             if offer.offer_type == "BASE" and (not offer.base_price or offer.base_price <= 0):
                 self.logger.error(f"BASE offer missing base_price: {offer.name}")
                 return False
 
-            if offer.offer_type == "HC_HP" and (not offer.hp_price or not offer.hc_price):
-                self.logger.error(f"HC_HP offer missing prices: {offer.name}")
+            if offer.offer_type in ("HC_HP", "HC_NUIT_WEEKEND") and (not offer.hp_price or not offer.hc_price):
+                self.logger.error(f"{offer.offer_type} offer missing prices: {offer.name}")
                 return False
 
+            if offer.offer_type == "SEASONAL":
+                if not all([offer.hp_price_winter, offer.hc_price_winter,
+                           offer.hp_price_summer, offer.hc_price_summer]):
+                    self.logger.error(f"SEASONAL offer missing seasonal prices: {offer.name}")
+                    return False
+
             # Validate power range
-            if offer.power_kva not in [3, 6, 9, 12, 15, 18, 24, 30, 36]:
+            if offer.power_kva not in self.STANDARD_POWERS:
                 self.logger.error(f"Invalid power: {offer.power_kva}")
                 return False
 
