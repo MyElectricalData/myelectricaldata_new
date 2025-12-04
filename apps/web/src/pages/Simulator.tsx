@@ -762,96 +762,8 @@ export default function Simulator() {
     return results
   }
 
-  if (pdlsLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="animate-spin text-primary-600 dark:text-primary-400" size={32} />
-      </div>
-    )
-  }
-
-  if (pdlsError) {
-    return (
-      <div className="w-full">
-        <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 rounded-lg p-6">
-          <div className="flex items-center gap-3">
-            <AlertCircle className="text-red-600 dark:text-red-400" size={24} />
-            <div>
-              <h3 className="font-semibold text-red-800 dark:text-red-300">Erreur</h3>
-              <p className="text-red-700 dark:text-red-400">
-                Impossible de charger vos points de livraison. Veuillez réessayer.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (!pdlsData || pdlsData.length === 0) {
-    return (
-      <div className="space-y-6 pt-6">
-        <div className="card p-8 text-center">
-          <p className="text-gray-600 dark:text-gray-400">
-            Aucun PDL disponible.{' '}
-            <a href="/dashboard" className="text-primary-600 dark:text-primary-400 hover:underline">
-              Veuillez ajouter un point de livraison depuis votre tableau de bord.
-            </a>
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'BASE':
-        return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-      case 'BASE_WEEKEND':
-        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
-      case 'HC_HP':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-      case 'WEEKEND':
-      case 'HC_NUIT_WEEKEND':
-        return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300'
-      case 'HC_WEEKEND':
-        return 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300'
-      case 'SEASONAL':
-        return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300'
-      case 'TEMPO':
-        return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
-      case 'EJP':
-        return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300'
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300'
-    }
-  }
-
-  const getTypeLabel = (type: string) => {
-    switch (type) {
-      case 'BASE':
-        return 'Base'
-      case 'BASE_WEEKEND':
-        return 'Base Week-end'
-      case 'HC_HP':
-        return 'HC/HP'
-      case 'WEEKEND':
-      case 'HC_NUIT_WEEKEND':
-        return 'HC Nuit & Week-end'
-      case 'HC_WEEKEND':
-        return 'HC Week-end'
-      case 'SEASONAL':
-        return 'Saisonnier'
-      case 'TEMPO':
-        return 'Tempo'
-      case 'EJP':
-        return 'EJP'
-      default:
-        return type
-    }
-  }
-
   // Auto-launch simulation if cache data exists
+  // IMPORTANT: This hook must be before any early returns to respect React's rules of hooks
   useEffect(() => {
     logger.log('[Auto-launch] useEffect triggered', {
       selectedPdl,
@@ -912,37 +824,8 @@ export default function Simulator() {
     }
   }, [selectedPdl, isSimulating, simulationResult, hasAutoLaunched, isDemo, pdlsData, offersData, providersData, queryClient, handleSimulation])
 
-  const toggleRowExpansion = (offerId: string) => {
-    setExpandedRows((prev) => {
-      const newSet = new Set(prev)
-      if (newSet.has(offerId)) {
-        newSet.delete(offerId)
-      } else {
-        newSet.add(offerId)
-      }
-      return newSet
-    })
-  }
-
-  const handleSort = (column: 'total' | 'subscription' | 'energy') => {
-    if (sortBy === column) {
-      // Toggle sort order if clicking the same column
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-    } else {
-      // Set new column and default to ascending
-      setSortBy(column)
-      setSortOrder('asc')
-    }
-  }
-
-  const getSortIcon = (column: 'total' | 'subscription' | 'energy') => {
-    if (sortBy !== column) {
-      return <ArrowUpDown size={14} className="opacity-40" />
-    }
-    return sortOrder === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-  }
-
   // Filter and sort simulation results
+  // IMPORTANT: This hook must be before any early returns to respect React's rules of hooks
   const filteredAndSortedResults = useMemo(() => {
     if (!simulationResult || !Array.isArray(simulationResult)) return []
 
@@ -985,6 +868,7 @@ export default function Simulator() {
   }, [simulationResult, filterType, filterProvider, showOnlyRecent, sortBy, sortOrder])
 
   // Get unique providers and types for filter options
+  // IMPORTANT: These hooks must be before any early returns to respect React's rules of hooks
   const availableProviders = useMemo(() => {
     if (!simulationResult || !Array.isArray(simulationResult)) return []
     const providers = new Set(simulationResult.map((r) => r.providerName))
@@ -996,6 +880,130 @@ export default function Simulator() {
     const types = new Set(simulationResult.map((r) => r.offerType))
     return Array.from(types).sort()
   }, [simulationResult])
+
+  // ==================== EARLY RETURNS (after all hooks) ====================
+  // These must come AFTER all hooks to respect React's rules of hooks
+
+  if (pdlsLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="animate-spin text-primary-600 dark:text-primary-400" size={32} />
+      </div>
+    )
+  }
+
+  if (pdlsError) {
+    return (
+      <div className="w-full">
+        <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 rounded-lg p-6">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="text-red-600 dark:text-red-400" size={24} />
+            <div>
+              <h3 className="font-semibold text-red-800 dark:text-red-300">Erreur</h3>
+              <p className="text-red-700 dark:text-red-400">
+                Impossible de charger vos points de livraison. Veuillez réessayer.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!pdlsData || pdlsData.length === 0) {
+    return (
+      <div className="space-y-6 pt-6">
+        <div className="card p-8 text-center">
+          <p className="text-gray-600 dark:text-gray-400">
+            Aucun PDL disponible.{' '}
+            <a href="/dashboard" className="text-primary-600 dark:text-primary-400 hover:underline">
+              Veuillez ajouter un point de livraison depuis votre tableau de bord.
+            </a>
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ==================== HELPER FUNCTIONS (after early returns) ====================
+
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'BASE':
+        return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+      case 'BASE_WEEKEND':
+        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+      case 'HC_HP':
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+      case 'WEEKEND':
+      case 'HC_NUIT_WEEKEND':
+        return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300'
+      case 'HC_WEEKEND':
+        return 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300'
+      case 'SEASONAL':
+        return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300'
+      case 'TEMPO':
+        return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+      case 'EJP':
+        return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300'
+      default:
+        return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300'
+    }
+  }
+
+  const getTypeLabel = (type: string) => {
+    switch (type) {
+      case 'BASE':
+        return 'Base'
+      case 'BASE_WEEKEND':
+        return 'Base Week-end'
+      case 'HC_HP':
+        return 'HC/HP'
+      case 'WEEKEND':
+      case 'HC_NUIT_WEEKEND':
+        return 'HC Nuit & Week-end'
+      case 'HC_WEEKEND':
+        return 'HC Week-end'
+      case 'SEASONAL':
+        return 'Saisonnier'
+      case 'TEMPO':
+        return 'Tempo'
+      case 'EJP':
+        return 'EJP'
+      default:
+        return type
+    }
+  }
+
+  const toggleRowExpansion = (offerId: string) => {
+    setExpandedRows((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(offerId)) {
+        newSet.delete(offerId)
+      } else {
+        newSet.add(offerId)
+      }
+      return newSet
+    })
+  }
+
+  const handleSort = (column: 'total' | 'subscription' | 'energy') => {
+    if (sortBy === column) {
+      // Toggle sort order if clicking the same column
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+    } else {
+      // Set new column and default to ascending
+      setSortBy(column)
+      setSortOrder('asc')
+    }
+  }
+
+  const getSortIcon = (column: 'total' | 'subscription' | 'energy') => {
+    if (sortBy !== column) {
+      return <ArrowUpDown size={14} className="opacity-40" />
+    }
+    return sortOrder === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+  }
 
   // Clear cache function (admin only) - Unused for now as cache clearing is in the sidebar
   /*
