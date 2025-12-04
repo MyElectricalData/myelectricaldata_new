@@ -13,7 +13,6 @@ import { logger } from '@/utils/logger'
 import { ModernButton } from './Simulator/components/ModernButton'
 import { useIsDemo } from '@/hooks/useIsDemo'
 import { usePdlStore } from '@/stores/pdlStore'
-import { useDataFetchStore } from '@/stores/dataFetchStore'
 
 // Helper function to check if a date is weekend (Saturday or Sunday)
 function isWeekend(dateString: string): boolean {
@@ -180,8 +179,9 @@ export default function Simulator() {
   const [isInitializing, setIsInitializing] = useState(true)
   // const [isClearingCache, setIsClearingCache] = useState(false) // Unused for now
 
-  // Register fetch function in store for PageHeader button
-  const { setFetchDataFunction, setIsLoading } = useDataFetchStore()
+  // Note: We DO NOT register handleSimulation in the global store
+  // because PageHeader already handles the unified fetch function.
+  // The Simulator uses its own button to trigger simulation.
 
   // Filters and sorting state
   const [filterType, setFilterType] = useState<string>('all')
@@ -360,17 +360,6 @@ export default function Simulator() {
       setIsSimulating(false)
     }
   }, [selectedPdl, pdlsData, offersData, providersData, queryClient])
-
-  // Register fetch function in store for PageHeader button
-  useEffect(() => {
-    setFetchDataFunction(handleSimulation)
-    return () => setFetchDataFunction(null)
-  }, [handleSimulation, setFetchDataFunction])
-
-  // Sync loading state with store
-  useEffect(() => {
-    setIsLoading(isSimulating)
-  }, [isSimulating, setIsLoading])
 
   const calculateSimulationsForAllOffers = (consumptionData: any[], offers: EnergyOffer[], providers: EnergyProvider[], tempoColors: TempoDay[], pdl?: PDL) => {
     // Create a map of date -> TEMPO color for fast lookup
