@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { Suspense, lazy } from 'react'
 import { useAuth } from './hooks/useAuth'
 import Layout from './components/Layout'
 import PermissionRoute from './components/PermissionRoute'
@@ -13,7 +14,6 @@ import VerifyEmail from './pages/VerifyEmail'
 import Admin from './pages/Admin'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
-import Simulator from './pages/Simulator'
 import Contribute from './pages/Contribute'
 import AdminContributions from './pages/AdminContributions'
 import AdminOffers from './pages/AdminOffers'
@@ -30,11 +30,23 @@ import ConsumptionEuro from './pages/ConsumptionEuro'
 import Production from './pages/Production'
 import Balance from './pages/Balance'
 import FAQ from './pages/FAQ'
-import ApiDocs from './pages/ApiDocs'
 import Diagnostic from './pages/Diagnostic'
 import ApiAuth from './pages/ApiAuth'
 import NotFound from './pages/NotFound'
 import Forbidden from './pages/Forbidden'
+
+// Lazy load heavy pages (swagger-ui: ~1.3MB, jspdf: ~600KB)
+const Simulator = lazy(() => import('./pages/Simulator'))
+const ApiDocs = lazy(() => import('./pages/ApiDocs'))
+
+// Loading fallback for lazy-loaded pages
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+    </div>
+  )
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -118,7 +130,9 @@ function App() {
         element={
           <ProtectedRoute>
             <Layout>
-              <Simulator />
+              <Suspense fallback={<PageLoader />}>
+                <Simulator />
+              </Suspense>
             </Layout>
           </ProtectedRoute>
         }
@@ -158,7 +172,9 @@ function App() {
         element={
           <ProtectedRoute>
             <Layout>
-              <ApiDocs />
+              <Suspense fallback={<PageLoader />}>
+                <ApiDocs />
+              </Suspense>
             </Layout>
           </ProtectedRoute>
         }
