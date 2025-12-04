@@ -18,10 +18,10 @@ permissions:
   pages: write
   id-token: write
 
-# Un seul déploiement à la fois
+# Un seul déploiement à la fois - annule les builds en cours
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
