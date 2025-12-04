@@ -1,53 +1,41 @@
 ---
 description: Synchronise le worktree avec le projet root
-allowed-tools: Bash(git:*), Bash(rsync:*), Bash(ls:*), Bash(pwd:*)
+allowed-tools: Bash(rsync:*), Bash(ls:*), Bash(pwd:*)
 ---
 
 # Objectif
 
-Synchroniser le worktree Conductor en cours avec le projet root (`/Users/cvalentin/Git/myelectricaldata_new`) pour récupérer les dernières modifications.
+Copier les fichiers modifiés du worktree Conductor vers le projet root (`/Users/cvalentin/Git/myelectricaldata_new`) pour tester en live.
 
 ## Workflow de synchronisation
 
-### 1. Vérifier l'état du worktree actuel
+### 1. Copier les fichiers vers le projet root
+
+Utiliser rsync pour copier les fichiers modifiés (en excluant les dossiers git, node_modules, etc.) :
 
 ```bash
-git status
+rsync -av --progress \
+  --exclude='.git' \
+  --exclude='node_modules' \
+  --exclude='.conductor' \
+  --exclude='dist' \
+  --exclude='build' \
+  --exclude='.venv' \
+  --exclude='__pycache__' \
+  --exclude='.pytest_cache' \
+  --exclude='.mypy_cache' \
+  --exclude='*.pyc' \
+  /Users/cvalentin/Git/myelectricaldata_new/.conductor/santo/ \
+  /Users/cvalentin/Git/myelectricaldata_new/
 ```
 
-S'il y a des modifications locales non commitées, avertir l'utilisateur et demander s'il veut continuer (les modifications locales pourraient être écrasées).
+### 2. Confirmer la synchronisation
 
-### 2. Récupérer les derniers changements depuis main
-
-```bash
-# Fetch depuis origin
-git fetch origin main
-
-# Rebase sur origin/main pour récupérer les dernières modifications
-git rebase origin/main
-```
-
-### 3. En cas de conflit
-
-Si le rebase échoue à cause de conflits :
-1. Lister les fichiers en conflit avec `git status`
-2. Informer l'utilisateur des conflits
-3. Proposer soit de résoudre les conflits, soit d'abandonner avec `git rebase --abort`
-
-### 4. Vérification finale
-
-Après la synchronisation :
-```bash
-# Afficher les derniers commits pour confirmer la sync
-git log --oneline -5
-
-# Afficher l'état actuel
-git status
-```
+Afficher les fichiers copiés et informer l'utilisateur que la synchronisation est terminée.
 
 ## Notes importantes
 
-- Cette commande utilise `git rebase` pour garder un historique linéaire
-- Les modifications locales non commitées peuvent être écrasées
-- En cas d'erreur, utiliser `git rebase --abort` pour revenir à l'état précédent
-- Le worktree reste sur sa branche actuelle, seuls les commits de main sont intégrés
+- Cette commande copie les fichiers du worktree vers le projet root
+- Les dossiers `node_modules`, `.git`, `dist`, etc. sont exclus
+- Le projet root doit avoir ses services en cours d'exécution pour voir les changements (hot-reload)
+- Pour annuler, utiliser git dans le projet root : `git checkout -- .`
