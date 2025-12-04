@@ -152,16 +152,20 @@ class EkwateurScraper(BasePriceScraper):
 
     def _parse_kwh_table(self, tables: list) -> dict:
         """
-        Parse kWh prices from the pricing table.
+        Parse kWh prices from the first table (kWh prices).
+
+        Table structure:
+        - Headers: Offre | Base (3,6,9 kVA) | Heures pleines (3,6,9 kVA) | Heures creuses (3,6,9 kVA)
+        - Data row: "Électricité vertePrix fixe" | 9 prices
 
         Returns dict with keys like 'base_3', 'hp_6', 'hc_9'
         """
         data = {}
 
+        # First table contains kWh prices (has "heures creuses" in header)
         for table in tables:
-            text = table.get_text()
-            # Look for kWh indicator in the table
-            if "€/kWh" not in text and "kWh" not in text.lower():
+            text = table.get_text().lower()
+            if "heures creuses" not in text:
                 continue
 
             rows = table.find_all("tr")
@@ -170,17 +174,16 @@ class EkwateurScraper(BasePriceScraper):
                 if len(cells) < 2:
                     continue
 
-                # Try to find prices in cells
                 row_text = row.get_text().lower()
 
-                # Look for the row with "prix fixe" or the offer name
-                if "prix fixe" in row_text or "électricité verte" in row_text:
-                    # Extract all numeric values from cells
+                # Look for the data row with prices (contains "prix fixe" or "électricité")
+                if "prix fixe" in row_text or "électricité" in row_text:
+                    # Extract all prices from cells
                     prices = []
                     for cell in cells:
-                        cell_text = cell.get_text().strip()
-                        # Match price patterns like "0.1606" or "0,1606"
-                        price_match = re.search(r"(\d+[.,]\d+)", cell_text.replace(",", "."))
+                        cell_text = cell.get_text().strip().replace(",", ".").replace("€", "")
+                        # Match price patterns like "0.1606"
+                        price_match = re.search(r"(\d+\.\d+)", cell_text)
                         if price_match:
                             try:
                                 price = float(price_match.group(1))
@@ -190,7 +193,7 @@ class EkwateurScraper(BasePriceScraper):
                             except ValueError:
                                 pass
 
-                    # If we found 9 prices, they are likely Base(3,6,9), HP(3,6,9), HC(3,6,9)
+                    # If we found 9 prices: Base(3,6,9), HP(3,6,9), HC(3,6,9)
                     if len(prices) >= 9:
                         data["base_3"] = prices[0]
                         data["base_6"] = prices[1]
@@ -201,31 +204,35 @@ class EkwateurScraper(BasePriceScraper):
                         data["hc_3"] = prices[6]
                         data["hc_6"] = prices[7]
                         data["hc_9"] = prices[8]
+                        self.logger.info(f"Parsed kWh prices: {data}")
                         return data
-                    # If we found 3 prices, they might be for one category
-                    elif len(prices) == 3:
-                        # Check header to determine which category
-                        header = table.find("thead")
-                        if header and "base" in header.get_text().lower():
-                            data["base_3"] = prices[0]
-                            data["base_6"] = prices[1]
-                            data["base_9"] = prices[2]
 
         return data
 
     def _parse_subscription_table(self, tables: list) -> dict:
         """
-        Parse subscription prices from the pricing table.
+        Parse subscription prices from the second table.
+
+        Table structure:
+        - Headers: Offre | Base (3,6,9 kVA) | Heures pleines/Heures creuses (3,6,9 kVA)
+        - Data row: "Électricité vertePrix fixe" | 6 prices
 
         Returns dict with keys like 'base_3', 'hchp_6'
         """
         data = {}
 
+        # Second table contains subscription prices (has "heures pleines / heures creuses" combined)
         for table in tables:
-            text = table.get_text()
-            # Look for subscription indicator
-            if "abonnement" not in text.lower() and "€/mois" not in text:
-                continue
+            text = table.get_text().lower()
+            # This table has combined "heures pleines / heures creuses" header, not separate
+            if "heures creuses" in text and "heures pleines" in text:
+                # Check if it's the subscription table (no 9-column kWh prices)
+                # by looking for the combined header pattern
+                header_text = table.find("thead").get_text().lower() if table.find("thead") else text
+                if "heures pleines / heures creuses" in header_text or text.count("kva") == 6:
+                    pass  # This is the subscription table
+                else:
+                    continue
 
             rows = table.find_all("tr")
             for row in rows:
@@ -235,17 +242,17 @@ class EkwateurScraper(BasePriceScraper):
 
                 row_text = row.get_text().lower()
 
-                # Look for the row with "prix fixe" or the offer name
-                if "prix fixe" in row_text or "électricité verte" in row_text:
+                # Look for the data row with prices
+                if "prix fixe" in row_text or "électricité" in row_text:
                     prices = []
                     for cell in cells:
-                        cell_text = cell.get_text().strip()
-                        # Match price patterns like "15.57" or "15,57"
-                        price_match = re.search(r"(\d+[.,]\d+)", cell_text.replace(",", "."))
+                        cell_text = cell.get_text().strip().replace(",", ".").replace("€", "")
+                        # Match price patterns like "15.57"
+                        price_match = re.search(r"(\d+\.\d+)", cell_text)
                         if price_match:
                             try:
                                 price = float(price_match.group(1))
-                                # Subscription prices are typically between 10 and 50 €/month
+                                # Subscription prices are typically between 5 and 50 €/month
                                 if 5.0 < price < 60.0:
                                     prices.append(price)
                             except ValueError:
@@ -259,6 +266,7 @@ class EkwateurScraper(BasePriceScraper):
                         data["hchp_3"] = prices[3]
                         data["hchp_6"] = prices[4]
                         data["hchp_9"] = prices[5]
+                        self.logger.info(f"Parsed subscription prices: {data}")
                         return data
 
         return data
