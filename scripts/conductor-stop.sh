@@ -32,8 +32,8 @@ fi
 
 log_info "Arrêt des services pour: $COMPOSE_PROJECT_NAME"
 
-# Arrêter les conteneurs
-docker compose down
+# Arrêter les conteneurs (utiliser docker-compose.conductor.yml + override)
+docker compose -f docker-compose.conductor.yml -f docker-compose.override.yml down 2>/dev/null || docker compose -f docker-compose.conductor.yml down
 
 # Nettoyer les fichiers temporaires
 rm -f .conductor-ports
