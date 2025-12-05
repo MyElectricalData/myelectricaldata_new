@@ -18,7 +18,7 @@ Cette page permet aux **administrateurs de gérer les offres d'électricité** p
 Section dédiée à la mise à jour automatique des tarifs via les scrapers :
 
 - **Liste des 8 fournisseurs** : EDF, Enercoop, TotalEnergies, Priméo Énergie, Engie, ALPIQ, Alterna, Ekwateur
-- **Total : ~236 offres énergétiques**
+- **Total : ~253 offres énergétiques**
 - **Pour chaque fournisseur** :
   - **Logo du fournisseur** (via Clearbit Logo API)
   - Nom
@@ -30,7 +30,7 @@ Section dédiée à la mise à jour automatique des tarifs via les scrapers :
     - Enercoop : "Grille tarifaire (PDF officiel)"
     - TotalEnergies : "Offre Essentielle (Eco Electricité)", "Offre Verte Fixe"
     - Priméo Énergie : "Offre Fixe -20% (PDF)"
-    - Engie : "Elec Référence 1 an (PDF officiel)"
+    - Engie : "Tarifs Engie (HelloWatt)"
     - ALPIQ : "Électricité Stable (PDF officiel)"
     - Alterna : "Électricité verte 100% locale", "100% française", "100% VE"
     - Ekwateur : "Prix kwh électricité et abonnement"

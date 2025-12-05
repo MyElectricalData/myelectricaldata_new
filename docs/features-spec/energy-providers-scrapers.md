@@ -40,12 +40,12 @@ Exemples:
 | **Enercoop** | PDF | Grille tarifaire | 33 offres (5 types) |
 | **TotalEnergies** | PDF × 2 | Eco Electricité, Verte Fixe | 34 offres |
 | **Priméo Énergie** | PDF | Offre Fixe -20% | 17 offres |
-| **Engie** | PDF | Elec Référence 1 an | 17 offres |
+| **Engie** | Web (HelloWatt) | Référence 3 ans, Tranquillité | 34 offres |
 | **ALPIQ** | PDF | Stable et Référence | 34 offres |
 | **Alterna** | PDF × 3 | Locale, Française, VE | 34 offres |
 | **Ekwateur** | Web | Site web tarifs | 18 offres |
 
-**Total : ~236 offres**
+**Total : ~253 offres**
 
 ## Détails des Scrapers
 
@@ -138,17 +138,25 @@ Le simulateur traite ces deux types de manière identique pour le calcul des co�
 ### 5. Engie (`engie_scraper.py`)
 
 **Source**:
-- Elec Référence 1 an: `https://particuliers.engie.fr/content/dam/pdf/conditions-generales-et-grilles-tarifaires/electricite/Grille%20Tarifaire%20Elec%20R%C3%A9f%C3%A9rence%201%20an.pdf`
+- HelloWatt comparateur: `https://www.hellowatt.fr/fournisseurs/engie/tarif-prix-kwh-engie`
 
-**Types d'offres** (17 total):
-1. **Elec Référence 1 an** - Prix fixe pendant 1 an
+**Types d'offres** (34 total):
+1. **Elec Référence 3 ans** - Prix fixe pendant 3 ans
+   - BASE: 9 puissances (3-36 kVA)
+   - HC/HP: 8 puissances (6-36 kVA)
+2. **Elec Tranquillité** - Prix indexé avec protection
    - BASE: 9 puissances (3-36 kVA)
    - HC/HP: 8 puissances (6-36 kVA)
 
+**Prix TTC** (décembre 2025):
+- Référence 3 ans BASE: 0.2124€/kWh (3-6 kVA), 0.2109€/kWh (9+ kVA)
+- Tranquillité BASE: 0.2612€/kWh (3-6 kVA), 0.2597€/kWh (9+ kVA)
+
 **Mécanisme**:
-- Téléchargement PDF
-- Parsing (à implémenter)
-- Fallback sur données manuelles (août 2025)
+- Scraping HTTP avec httpx
+- Parsing HTML avec BeautifulSoup
+- Extraction de la date de mise à jour ("Mise à jour le X MONTH YEAR")
+- Fallback sur données manuelles (décembre 2025)
 
 ### 6. ALPIQ (`alpiq_scraper.py`)
 

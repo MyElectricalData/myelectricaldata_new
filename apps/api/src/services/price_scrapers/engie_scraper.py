@@ -1,63 +1,80 @@
-"""Engie price scraper - Fetches tariffs from Engie market offers"""
-from typing import List
+"""Engie price scraper - Fetches tariffs from HelloWatt comparison site"""
 import re
+from typing import List
 import httpx
-from io import BytesIO
-from pdfminer.high_level import extract_text
 from datetime import datetime, UTC
+from bs4 import BeautifulSoup
 
-from .base import BasePriceScraper, OfferData, run_sync_in_thread
-
-
-def _extract_pdf_text(content: bytes) -> str:
-    """Extract text from PDF content (runs in thread pool)"""
-    return extract_text(BytesIO(content))
+from .base import BasePriceScraper, OfferData
 
 
 class EngieScraper(BasePriceScraper):
-    """Scraper for Engie market offers"""
+    """Scraper for Engie market offers via HelloWatt"""
 
-    # Engie pricing PDF URL
-    REFERENCE_PDF_URL = "https://particuliers.engie.fr/content/dam/pdf/fiches-descriptives/fiche-descriptive-elec-reference.pdf"
+    # HelloWatt pricing page URL for Engie
+    HELLOWATT_URL = "https://www.hellowatt.fr/fournisseurs/engie/tarif-prix-kwh-engie"
 
-    # Fallback: Manual pricing data (updated 2025-01-22)
-    # Source: https://particuliers.engie.fr/content/dam/pdf/fiches-descriptives/fiche-descriptive-elec-reference.pdf
+    # Fallback: Manual pricing data (updated December 2025)
+    # Source: https://www.hellowatt.fr/fournisseurs/engie/tarif-prix-kwh-engie
     FALLBACK_PRICES = {
-        "REFERENCE_BASE": {
-            # Elec Référence 1 an - Comptage simple (BASE)
-            # Abonnement TTC + Prix kWh TTC (fourniture fixe 1 an)
-            3: {"subscription": 36.61, "kwh": 0.15998},
-            6: {"subscription": 34.12, "kwh": 0.15998},
-            9: {"subscription": 33.91, "kwh": 0.15998},
-            12: {"subscription": 33.72, "kwh": 0.15998},
-            15: {"subscription": 31.21, "kwh": 0.15998},
-            18: {"subscription": 28.27, "kwh": 0.15998},
-            24: {"subscription": 29.89, "kwh": 0.15998},
-            30: {"subscription": 27.05, "kwh": 0.15998},
-            36: {"subscription": 26.51, "kwh": 0.15998},
+        "REFERENCE_3ANS_BASE": {
+            # Elec Référence 3 ans - Option Base
+            # Abonnement TTC + Prix kWh TTC
+            3: {"subscription": 11.48, "kwh": 0.2124},
+            6: {"subscription": 14.97, "kwh": 0.2124},
+            9: {"subscription": 18.95, "kwh": 0.2109},
+            12: {"subscription": 22.47, "kwh": 0.2109},
+            15: {"subscription": 25.54, "kwh": 0.2109},
+            18: {"subscription": 28.51, "kwh": 0.2109},
+            24: {"subscription": 35.54, "kwh": 0.2109},
+            30: {"subscription": 42.19, "kwh": 0.2109},
+            36: {"subscription": 51.32, "kwh": 0.2109},
+        },
+        "REFERENCE_3ANS_HC_HP": {
+            # Elec Référence 3 ans - Heures Creuses
+            # Abonnement TTC + Prix HP/HC TTC
+            6: {"subscription": 15.57, "hp": 0.2184, "hc": 0.1742},
+            9: {"subscription": 19.88, "hp": 0.2169, "hc": 0.1727},
+            12: {"subscription": 23.64, "hp": 0.2169, "hc": 0.1727},
+            15: {"subscription": 27.08, "hp": 0.2169, "hc": 0.1727},
+            18: {"subscription": 30.26, "hp": 0.2169, "hc": 0.1727},
+            24: {"subscription": 37.86, "hp": 0.2169, "hc": 0.1727},
+            30: {"subscription": 45.06, "hp": 0.2169, "hc": 0.1727},
+            36: {"subscription": 54.91, "hp": 0.2169, "hc": 0.1727},
+        },
+        "TRANQUILLITE_BASE": {
+            # Elec Tranquillité - Option Base
+            3: {"subscription": 9.75, "kwh": 0.2612},
+            6: {"subscription": 12.80, "kwh": 0.2612},
+            9: {"subscription": 16.30, "kwh": 0.2597},
+            12: {"subscription": 19.34, "kwh": 0.2597},
+            15: {"subscription": 21.99, "kwh": 0.2597},
+            18: {"subscription": 24.55, "kwh": 0.2597},
+            24: {"subscription": 30.60, "kwh": 0.2597},
+            30: {"subscription": 36.30, "kwh": 0.2597},
+            36: {"subscription": 45.18, "kwh": 0.2597},
         },
         "TRANQUILLITE_HC_HP": {
-            # Elec Tranquillité 1 an - HP/HC
-            # Abonnement TTC + Prix HP/HC TTC (fourniture fixe 1 an)
-            6: {"subscription": 37.43, "hp": 0.16240, "hc": 0.13704},
-            9: {"subscription": 38.95, "hp": 0.16240, "hc": 0.13704},
-            12: {"subscription": 38.90, "hp": 0.16240, "hc": 0.13704},
-            15: {"subscription": 36.40, "hp": 0.16240, "hc": 0.13704},
-            18: {"subscription": 35.18, "hp": 0.16240, "hc": 0.13704},
-            24: {"subscription": 38.10, "hp": 0.16240, "hc": 0.13704},
-            30: {"subscription": 33.96, "hp": 0.16240, "hc": 0.13704},
-            36: {"subscription": 30.40, "hp": 0.16240, "hc": 0.13704},
+            # Elec Tranquillité - Heures Creuses
+            6: {"subscription": 13.32, "hp": 0.2803, "hc": 0.2144},
+            9: {"subscription": 17.10, "hp": 0.2788, "hc": 0.2129},
+            12: {"subscription": 20.35, "hp": 0.2788, "hc": 0.2129},
+            15: {"subscription": 23.33, "hp": 0.2788, "hc": 0.2129},
+            18: {"subscription": 26.06, "hp": 0.2788, "hc": 0.2129},
+            24: {"subscription": 32.61, "hp": 0.2788, "hc": 0.2129},
+            30: {"subscription": 38.81, "hp": 0.2788, "hc": 0.2129},
+            36: {"subscription": 47.29, "hp": 0.2788, "hc": 0.2129},
         },
     }
 
     def __init__(self, scraper_urls: list[str] | None = None):
         super().__init__("Engie")
         # Use URLs from database if provided, otherwise use default
-        self.scraper_urls = scraper_urls or [self.REFERENCE_PDF_URL]
+        self.scraper_urls = scraper_urls or [self.HELLOWATT_URL]
 
     async def fetch_offers(self) -> List[OfferData]:
         """
-        Fetch Engie tariffs - Download and parse PDF, fallback to manual data if needed
+        Fetch Engie tariffs from HelloWatt comparison site
 
         Returns:
             List[OfferData]: List of Engie offers
@@ -65,32 +82,30 @@ class EngieScraper(BasePriceScraper):
         errors = []
 
         try:
-            # Download PDF
-            pdf_url = self.scraper_urls[0] if self.scraper_urls else self.REFERENCE_PDF_URL
+            url = self.scraper_urls[0] if self.scraper_urls else self.HELLOWATT_URL
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-                response = await client.get(pdf_url)
+                response = await client.get(url)
                 if response.status_code != 200:
-                    error_msg = f"Échec du téléchargement du PDF Engie (HTTP {response.status_code})"
+                    error_msg = f"Échec du téléchargement de la page HelloWatt Engie (HTTP {response.status_code})"
                     self.logger.warning(error_msg)
                     errors.append(error_msg)
                 else:
-                    # Parse PDF in thread pool to avoid blocking event loop
-                    text = await run_sync_in_thread(_extract_pdf_text, response.content)
-                    offers = self._parse_pdf(text)
+                    html = response.text
+                    offers = self._parse_html(html)
 
                     if not offers:
-                        error_msg = "Échec du parsing du PDF Engie - aucune offre extraite"
+                        error_msg = "Échec du parsing de la page HelloWatt Engie - aucune offre extraite"
                         self.logger.warning(error_msg)
                         errors.append(error_msg)
                     else:
-                        self.logger.info(f"Successfully scraped {len(offers)} Engie offers from PDF")
+                        self.logger.info(f"Successfully scraped {len(offers)} Engie offers from HelloWatt")
                         return offers
         except Exception as e:
-            error_msg = f"Erreur lors du scraping du PDF Engie : {str(e)}"
+            error_msg = f"Erreur lors du scraping HelloWatt Engie : {str(e)}"
             self.logger.warning(error_msg)
             errors.append(error_msg)
 
-        # Use fallback data if PDF parsing failed
+        # Use fallback data if scraping failed
         if errors:
             self.logger.info(f"Using fallback data for Engie due to errors: {' | '.join(errors)}")
             fallback_offers = self._get_fallback_offers()
@@ -104,280 +119,343 @@ class EngieScraper(BasePriceScraper):
 
         raise Exception("Échec du scraping Engie - raison inconnue")
 
-    def _parse_pdf(self, text: str) -> List[OfferData]:
+    def _parse_html(self, html: str) -> List[OfferData]:
         """
-        Parse PDF text from Engie tariff sheet.
+        Parse HTML from HelloWatt Engie pricing page.
 
-        The PDF has two main sections:
-        1. "Fourniture comptage simple (CS)" - BASE offers for 3-36 kVA
-        2. "Fourniture comptage Heures pleines/Heures creuses (HP/HC)" - HC/HP offers for 6-36 kVA
-
-        Format in PDF (pdfminer extracts numbers separated by spaces):
-        - BASE: "puissance abo_HTT abo_TTC kwh_HTT kwh_TTC"
-        - HC/HP: "puissance abo_HTT abo_TTC hp_HTT hp_TTC hc_HTT hc_TTC"
+        HelloWatt uses h3 headers like "Grille Tarifaire Elec Référence 3 ans / Base"
+        followed by tables with pricing data.
         """
         offers = []
+        soup = BeautifulSoup(html, "html.parser")
 
-        try:
-            # Extract validity date from "Grille tarifaire - MONTH YEAR"
-            date_match = re.search(r'Grille tarifaire\s*-\s*(\w+)\s+(\d{4})', text, re.IGNORECASE)
-            if date_match:
-                month_str, year_str = date_match.groups()
-                months_fr = {
-                    'janvier': 1, 'février': 2, 'fevrier': 2, 'mars': 3, 'avril': 4,
-                    'mai': 5, 'juin': 6, 'juillet': 7, 'août': 8, 'aout': 8,
-                    'septembre': 9, 'octobre': 10, 'novembre': 11, 'décembre': 12, 'decembre': 12
-                }
-                month = months_fr.get(month_str.lower(), 9)  # Default to September
-                valid_from = datetime(int(year_str), month, 1, 0, 0, 0, tzinfo=UTC)
-                self.logger.info(f"Parsed validity date: {valid_from}")
-            else:
-                valid_from = datetime(2025, 9, 1, 0, 0, 0, tzinfo=UTC)
-                self.logger.warning("Could not parse validity date, using default: September 2025")
+        # Extract update date from page
+        valid_from = self._extract_update_date(soup)
+        self.logger.info(f"Extracted valid_from date: {valid_from}")
 
-            # Parse BASE offers (Comptage Simple)
-            base_prices = self._extract_base_prices(text)
-            for power, prices in base_prices.items():
-                offers.append(
-                    OfferData(
-                        name=f"Elec Référence 1 an - Base {power} kVA",
-                        offer_type="BASE",
-                        description=f"Offre à prix fixe pendant 1 an - Électricité verte - Option Base - {power} kVA",
-                        subscription_price=prices["subscription"],
-                        base_price=prices["kwh"],
-                        power_kva=power,
-                        valid_from=valid_from,
-                    )
-                )
+        # Find all h3 headers that contain "Grille Tarifaire" for electricity offers
+        headers = soup.find_all(['h2', 'h3', 'h4'])
+        self.logger.info(f"Found {len(headers)} headers on page")
 
-            # Parse HC/HP offers (Heures Pleines/Heures Creuses)
-            hc_hp_prices = self._extract_hc_hp_prices(text)
-            for power, prices in hc_hp_prices.items():
-                offers.append(
-                    OfferData(
-                        name=f"Elec Tranquillité 1 an - Heures Creuses {power} kVA",
-                        offer_type="HC_HP",
-                        description=f"Offre à prix fixe pendant 1 an - Électricité verte - Heures Creuses - {power} kVA",
-                        subscription_price=prices["subscription"],
-                        hp_price=prices["hp"],
-                        hc_price=prices["hc"],
-                        power_kva=power,
-                        valid_from=valid_from,
-                    )
-                )
+        for header in headers:
+            header_text = header.get_text().strip().lower()
 
-            if offers:
-                self.logger.info(f"Successfully parsed {len(offers)} offers from Engie PDF")
-            else:
-                self.logger.warning("No offers parsed from Engie PDF")
+            # Skip non-electricity offers (gas, dual)
+            if 'gaz' in header_text or 'duo' in header_text:
+                continue
 
-            return offers
+            # Look for electricity pricing tables
+            if 'grille tarifaire' not in header_text and 'elec' not in header_text:
+                continue
 
-        except Exception as e:
-            self.logger.error(f"Error parsing Engie PDF: {e}", exc_info=True)
-            return []
+            # Identify offer name and type from header
+            offer_name, offer_type = self._parse_header(header_text)
 
-    def _extract_base_prices(self, text: str) -> dict:
+            if not offer_name or not offer_type:
+                self.logger.debug(f"Could not identify offer from header: {header_text}")
+                continue
+
+            self.logger.info(f"Found header for {offer_name} ({offer_type}): {header_text}")
+
+            # Find the next table after this header
+            table = self._find_next_table(header)
+            if not table:
+                self.logger.debug(f"No table found after header: {header_text}")
+                continue
+
+            # Parse the table
+            pricing_data = self._parse_pricing_table(table, offer_type)
+            self.logger.info(f"Parsed {len(pricing_data)} power levels from table")
+
+            # Create offers from parsed data
+            for power, prices in pricing_data.items():
+                offer = self._create_offer(offer_name, offer_type, power, prices, valid_from)
+                if offer:
+                    offers.append(offer)
+
+        self.logger.info(f"Total parsed: {len(offers)} offers from HelloWatt HTML")
+        return offers
+
+    def _parse_header(self, header_text: str) -> tuple[str | None, str | None]:
         """
-        Extract BASE (Comptage Simple) prices from PDF text.
+        Parse a header text to extract offer name and type.
 
-        The PDF is structured in vertical columns, so pdfminer extracts values
-        on separate lines. The structure is:
-        - First, all subscription TTC values for 9 power levels (3-36 kVA)
-        - Then, alternating: abo_TTC, prix_HTT, prix_TTC for each power level
-
-        We look for the specific pattern where the first abo_TTC (36.61) appears,
-        then extract the sequence: abo_TTC, skip HTT, get TTC for each power.
+        Examples:
+        - "Grille Tarifaire Elec Référence 3 ans / Base" -> ("Elec Référence 3 ans", "BASE")
+        - "Grille Tarifaire Elec Tranquillité / Heures Creuses" -> ("Elec Tranquillité", "HC_HP")
+        - "Grille Tarifaire Elec Référence 3 ans / Heures Creuses - Heures Pleines" -> ("Elec Référence 3 ans", "HC_HP")
         """
-        prices = {}
-        powers = [3, 6, 9, 12, 15, 18, 24, 30, 36]
+        offer_name = None
+        offer_type = None
 
-        try:
-            lines = text.split('\n')
+        # Normalize text
+        text = header_text.lower()
 
-            # Find the BASE section - look for first subscription TTC value around 36.61
-            # The pattern is: find "0,10334" (prix HTT) followed by "0,15998" (prix TTC)
-            base_start_idx = None
-            for i, line in enumerate(lines):
-                stripped = line.strip()
-                # Look for the first BASE subscription TTC (around 36-37)
-                if stripped == '36,61':
-                    base_start_idx = i
+        # Determine offer type - check HC/HP patterns first (more specific)
+        # Pattern: "Heures Creuses - Heures Pleines" or "Heures Creuses" or "HC" or "HP"
+        if 'heures creuses' in text or 'heures pleines' in text:
+            offer_type = "HC_HP"
+        elif '/ hc' in text or '/ hp' in text:
+            offer_type = "HC_HP"
+        elif 'hc/hp' in text or 'hp/hc' in text:
+            offer_type = "HC_HP"
+        elif '/ base' in text:
+            offer_type = "BASE"
+        elif 'base' in text and 'heures' not in text:
+            offer_type = "BASE"
+
+        # Determine offer name
+        if 'référence 3 ans' in text or 'reference 3 ans' in text:
+            offer_name = "Elec Référence 3 ans"
+        elif 'référence 1 an' in text or 'reference 1 an' in text:
+            offer_name = "Elec Référence 1 an"
+        elif 'tranquillité' in text or 'tranquillite' in text:
+            offer_name = "Elec Tranquillité"
+        elif "elec' car" in text or 'elec car' in text:
+            offer_name = "Elec' Car"
+            # Elec' Car is always HC/HP type
+            offer_type = "HC_HP"
+
+        return offer_name, offer_type
+
+    def _find_next_table(self, header) -> "BeautifulSoup | None":
+        """Find the next table element after a header"""
+        # Try to find table in next siblings
+        for sibling in header.next_siblings:
+            if hasattr(sibling, 'name'):
+                if sibling.name == 'table':
+                    return sibling
+                # If we hit another header, stop looking
+                if sibling.name in ['h2', 'h3', 'h4']:
                     break
+                # Look for table inside divs or other containers
+                if sibling.name in ['div', 'section', 'article']:
+                    table = sibling.find('table')
+                    if table:
+                        return table
 
-            if base_start_idx is None:
-                self.logger.warning("Could not find BASE section start (36,61)")
-                return {}
+        # Try parent's next siblings
+        parent = header.parent
+        if parent:
+            for sibling in parent.next_siblings:
+                if hasattr(sibling, 'name'):
+                    if sibling.name == 'table':
+                        return sibling
+                    if sibling.name in ['div', 'section', 'article']:
+                        table = sibling.find('table')
+                        if table:
+                            return table
+                    # Stop if we hit another header-like element
+                    if sibling.name in ['h2', 'h3', 'h4']:
+                        break
 
-            self.logger.debug(f"Found BASE section start at line {base_start_idx}")
+        return None
 
-            # Extract values starting from base_start_idx
-            # Pattern for each power: abo_TTC, prix_HTT (skip), prix_TTC
-            # Example sequence: 36,61, 0,10334, 0,15998, 34,12, 0,10334, 0,15998, ...
-            # We need 27 values (9 powers × 3 values each)
-            values = []
-            for i in range(base_start_idx, min(base_start_idx + 60, len(lines))):
-                stripped = lines[i].strip()
-                # Stop when we have enough values OR hit the next section
-                if 'Tranquillité' in stripped or 'Acheminement' in stripped:
-                    break
-                if stripped and stripped not in ['-', 'HTT', 'TTC*', 'TTC']:
-                    try:
-                        val = float(stripped.replace(',', '.'))
-                        values.append(val)
-                        # Stop once we have 27 values (9 powers × 3)
-                        if len(values) >= 27:
-                            break
-                    except ValueError:
-                        pass
+    def _extract_update_date(self, soup: BeautifulSoup) -> datetime:
+        """Extract the update date from the page"""
+        # Look for "Mise à jour le X MONTH YEAR" pattern
+        text = soup.get_text()
+        date_match = re.search(r'Mise\s+à\s+jour\s+le\s+(\d+)\s+(\w+)\s+(\d{4})', text, re.IGNORECASE)
 
-            self.logger.debug(f"Extracted {len(values)} values for BASE: {values[:15]}...")
+        if date_match:
+            day_str, month_str, year_str = date_match.groups()
+            months_fr = {
+                'janvier': 1, 'février': 2, 'fevrier': 2, 'mars': 3, 'avril': 4,
+                'mai': 5, 'juin': 6, 'juillet': 7, 'août': 8, 'aout': 8,
+                'septembre': 9, 'octobre': 10, 'novembre': 11, 'décembre': 12, 'decembre': 12
+            }
+            month = months_fr.get(month_str.lower(), 12)
+            try:
+                return datetime(int(year_str), month, int(day_str), 0, 0, 0, tzinfo=UTC)
+            except ValueError:
+                pass
 
-            # Parse values: every 3 values = (abo_TTC, prix_HTT, prix_TTC)
-            for idx, power in enumerate(powers):
-                start = idx * 3
-                if start + 2 < len(values):
-                    abo_ttc = values[start]
-                    # values[start + 1] is prix_HTT (skip)
-                    prix_ttc = values[start + 2]
+        # Default to current month
+        return datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-                    # Validate the values
-                    if 20 < abo_ttc < 50 and 0.10 < prix_ttc < 0.25:
-                        prices[power] = {
-                            "subscription": abo_ttc,
-                            "kwh": prix_ttc
-                        }
-                        self.logger.debug(f"BASE {power} kVA: subscription={abo_ttc}, kwh={prix_ttc}")
+    def _parse_pricing_table(self, table, offer_type: str | None) -> dict:
+        """
+        Parse a pricing table and extract subscription and kWh prices per power level.
 
-            self.logger.info(f"Extracted {len(prices)} BASE prices from PDF")
-            return prices
+        Returns:
+            dict: {power_kva: {subscription: float, kwh: float} or {subscription: float, hp: float, hc: float}}
+        """
+        pricing_data = {}
+        rows = table.find_all("tr")
 
-        except Exception as e:
-            self.logger.error(f"Error extracting BASE prices: {e}", exc_info=True)
+        if not rows:
             return {}
 
-    def _extract_hc_hp_prices(self, text: str) -> dict:
-        """
-        Extract HC/HP (Heures Pleines/Heures Creuses) prices from PDF text.
+        # Determine column indices from header
+        header_row = rows[0]
+        headers = [cell.get_text().strip().lower() for cell in header_row.find_all(['th', 'td'])]
 
-        The PDF structure is complex for HC/HP:
-        - 6 and 9 kVA have complete data grouped: abo_TTC, hp_HTT, hp_TTC, hc_HTT, hc_TTC
-        - 12-36 kVA have subscriptions grouped first, then prices grouped
+        self.logger.debug(f"Table headers: {headers}")
 
-        The prices (hp_TTC, hc_TTC) are the same for all power levels (0.16240 and 0.13704)
-        Only subscriptions vary by power level.
-        """
-        prices = {}
+        # Find column indices
+        power_idx = None
+        sub_idx = None
+        base_idx = None
+        hp_idx = None
+        hc_idx = None
 
+        for idx, header in enumerate(headers):
+            header_lower = header.lower()
+            if 'puissance' in header_lower or 'kva' in header_lower:
+                power_idx = idx
+            elif 'abonnement' in header_lower:
+                sub_idx = idx
+            elif 'tarif base' in header_lower or ('base' in header_lower and 'tarif' in header_lower):
+                base_idx = idx
+            elif 'tarif' in header_lower and 'base' not in header_lower and hp_idx is None:
+                # Generic tarif column - use as base for BASE type
+                if offer_type == "BASE":
+                    base_idx = idx
+            elif 'hp' in header_lower or 'heures pleines' in header_lower or 'tarif hp' in header_lower:
+                hp_idx = idx
+            elif 'hc' in header_lower or 'heures creuses' in header_lower or 'tarif hc' in header_lower:
+                hc_idx = idx
+
+        # Default column positions if not found
+        if power_idx is None:
+            power_idx = 0
+        if sub_idx is None and len(headers) > 1:
+            sub_idx = 1
+
+        # For BASE type, try to find base price column
+        if offer_type == "BASE" and base_idx is None:
+            # Usually the last column is the price
+            if len(headers) > 2:
+                base_idx = len(headers) - 1
+
+        self.logger.debug(f"Column indices - power: {power_idx}, sub: {sub_idx}, base: {base_idx}, hp: {hp_idx}, hc: {hc_idx}")
+
+        # Parse data rows
+        for row in rows[1:]:  # Skip header
+            cells = row.find_all(['td', 'th'])
+            if len(cells) < 2:
+                continue
+
+            # Extract power (kVA)
+            power_text = cells[power_idx].get_text().strip() if power_idx < len(cells) else ""
+            power_match = re.search(r'(\d+)', power_text)
+            if not power_match:
+                continue
+            power = int(power_match.group(1))
+
+            if power not in [3, 6, 9, 12, 15, 18, 24, 30, 36]:
+                continue
+
+            # Extract subscription price
+            subscription = None
+            if sub_idx is not None and sub_idx < len(cells):
+                subscription = self._extract_price(cells[sub_idx].get_text())
+
+            if subscription is None:
+                self.logger.debug(f"No subscription found for power {power}")
+                continue
+
+            # Extract prices based on offer type
+            if offer_type == "HC_HP":
+                hp_price = None
+                hc_price = None
+
+                if hp_idx is not None and hp_idx < len(cells):
+                    hp_price = self._extract_price(cells[hp_idx].get_text())
+                if hc_idx is not None and hc_idx < len(cells):
+                    hc_price = self._extract_price(cells[hc_idx].get_text())
+
+                if hp_price and hc_price:
+                    pricing_data[power] = {
+                        "subscription": subscription,
+                        "hp": hp_price,
+                        "hc": hc_price
+                    }
+                    self.logger.debug(f"HC_HP {power}kVA: sub={subscription}, hp={hp_price}, hc={hc_price}")
+            else:
+                # BASE type
+                base_price = None
+                if base_idx is not None and base_idx < len(cells):
+                    base_price = self._extract_price(cells[base_idx].get_text())
+
+                # If no specific base column, try the last column
+                if base_price is None and len(cells) > 2:
+                    base_price = self._extract_price(cells[-1].get_text())
+
+                if base_price:
+                    pricing_data[power] = {
+                        "subscription": subscription,
+                        "kwh": base_price
+                    }
+                    self.logger.debug(f"BASE {power}kVA: sub={subscription}, kwh={base_price}")
+
+        return pricing_data
+
+    def _extract_price(self, text: str) -> float | None:
+        """Extract a price value from text"""
+        # Clean and normalize the text
+        text = text.strip().replace(',', '.').replace('€', '').replace(' ', '').replace('\xa0', '')
+
+        # Match price patterns (0.2124 or 14.97)
+        match = re.search(r'(\d+\.?\d*)', text)
+        if match:
+            try:
+                value = float(match.group(1))
+                # Basic sanity check - prices should be reasonable
+                if 0 < value < 1000:
+                    return value
+            except ValueError:
+                pass
+        return None
+
+    def _create_offer(
+        self,
+        offer_name: str,
+        offer_type: str,
+        power: int,
+        prices: dict,
+        valid_from: datetime
+    ) -> OfferData | None:
+        """Create an OfferData object from parsed data"""
         try:
-            lines = text.split('\n')
-
-            # Find the Tranquillité section
-            tranquillite_idx = None
-            for i, line in enumerate(lines):
-                if 'Tranquillité' in line:
-                    tranquillite_idx = i
-                    break
-
-            if tranquillite_idx is None:
-                self.logger.warning("Could not find Tranquillité section")
-                return {}
-
-            # Extract all numeric values from Tranquillité section until Acheminement
-            values = []
-            found_start = False
-            for i in range(tranquillite_idx, min(tranquillite_idx + 150, len(lines))):
-                stripped = lines[i].strip()
-
-                # Look for first subscription TTC value (around 37.43 for 6 kVA)
-                if not found_start:
-                    try:
-                        val = float(stripped.replace(',', '.'))
-                        if 35 < val < 40:  # First subscription TTC
-                            found_start = True
-                            values.append(val)
-                    except ValueError:
-                        pass
-                    continue
-
-                # Stop at Acheminement section
-                if 'Acheminement' in stripped or 'courte utilisation' in stripped:
-                    break
-
-                if stripped and stripped not in ['-', 'HTT', 'TTC*', 'TTC']:
-                    try:
-                        val = float(stripped.replace(',', '.'))
-                        values.append(val)
-                    except ValueError:
-                        pass
-
-            self.logger.debug(f"Extracted {len(values)} values for HC/HP")
-
-            # The structure observed in the PDF:
-            # [0-4]: 6 kVA: abo_TTC, hp_HTT, hp_TTC, hc_HTT, hc_TTC
-            # [5-9]: 9 kVA: abo_TTC, hp_HTT, hp_TTC, hc_HTT, hc_TTC
-            # [10-15]: Subscriptions TTC for 12, 15, 18, 24, 30, 36 kVA
-            # [16+]: Repeated price sets (hp_HTT, hp_TTC, hc_HTT, hc_TTC) for 12-36 kVA
-
-            if len(values) >= 10:
-                # 6 kVA: values[0]=abo_TTC, values[2]=hp_TTC, values[4]=hc_TTC
-                prices[6] = {
-                    "subscription": values[0],
-                    "hp": values[2],
-                    "hc": values[4]
-                }
-
-                # 9 kVA: values[5]=abo_TTC, values[7]=hp_TTC, values[9]=hc_TTC
-                prices[9] = {
-                    "subscription": values[5],
-                    "hp": values[7],
-                    "hc": values[9]
-                }
-
-                # 12-36 kVA: subscriptions at values[10-15], prices repeated
-                remaining_powers = [12, 15, 18, 24, 30, 36]
-                if len(values) >= 16:
-                    # The prices are the same for all (0.16240 and 0.13704)
-                    # We use the first hp_TTC and hc_TTC values extracted for 6 kVA
-                    hp_ttc = values[2]  # 0.16240
-                    hc_ttc = values[4]  # 0.13704
-
-                    for idx, power in enumerate(remaining_powers):
-                        sub_idx = 10 + idx
-                        if sub_idx < len(values):
-                            abo_ttc = values[sub_idx]
-                            # Validate subscription value
-                            if 25 < abo_ttc < 50:
-                                prices[power] = {
-                                    "subscription": abo_ttc,
-                                    "hp": hp_ttc,
-                                    "hc": hc_ttc
-                                }
-
-            # Log extracted prices
-            for power, data in prices.items():
-                self.logger.debug(f"HC/HP {power} kVA: subscription={data['subscription']}, hp={data['hp']}, hc={data['hc']}")
-
-            self.logger.info(f"Extracted {len(prices)} HC/HP prices from PDF")
-            return prices
-
+            if offer_type == "BASE":
+                return OfferData(
+                    name=f"{offer_name} - Base {power} kVA",
+                    offer_type="BASE",
+                    description=f"{offer_name} - Option Base - {power} kVA",
+                    subscription_price=prices["subscription"],
+                    base_price=prices.get("kwh"),
+                    power_kva=power,
+                    valid_from=valid_from,
+                )
+            elif offer_type == "HC_HP":
+                return OfferData(
+                    name=f"{offer_name} - Heures Creuses {power} kVA",
+                    offer_type="HC_HP",
+                    description=f"{offer_name} - Option Heures Creuses - {power} kVA",
+                    subscription_price=prices["subscription"],
+                    hp_price=prices.get("hp"),
+                    hc_price=prices.get("hc"),
+                    power_kva=power,
+                    valid_from=valid_from,
+                )
         except Exception as e:
-            self.logger.error(f"Error extracting HC/HP prices: {e}", exc_info=True)
-            return {}
+            self.logger.warning(f"Error creating offer {offer_name} {power}kVA: {e}")
+
+        return None
 
     def _get_fallback_offers(self) -> List[OfferData]:
-        """Generate offers from fallback pricing data"""
+        """Generate offers from fallback pricing data (December 2025)"""
         offers = []
-        # Date from PDF: Grille tarifaire - septembre 2025
-        valid_from = datetime(2025, 9, 1, 0, 0, 0, 0, tzinfo=UTC)
+        valid_from = datetime(2025, 12, 1, 0, 0, 0, tzinfo=UTC)
 
-        # Elec Référence 1 an - BASE offers
-        for power, prices in self.FALLBACK_PRICES["REFERENCE_BASE"].items():
+        # Elec Référence 3 ans - BASE
+        for power, prices in self.FALLBACK_PRICES["REFERENCE_3ANS_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Elec Référence 1 an - Base {power} kVA",
+                    name=f"Elec Référence 3 ans - Base {power} kVA",
                     offer_type="BASE",
-                    description=f"Offre à prix fixe pendant 1 an - Électricité verte - Option Base - {power} kVA",
+                    description=f"Elec Référence 3 ans - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
                     base_price=prices["kwh"],
                     power_kva=power,
@@ -385,13 +463,42 @@ class EngieScraper(BasePriceScraper):
                 )
             )
 
-        # Elec Tranquillité 1 an - HC/HP offers
+        # Elec Référence 3 ans - HC/HP
+        for power, prices in self.FALLBACK_PRICES["REFERENCE_3ANS_HC_HP"].items():
+            offers.append(
+                OfferData(
+                    name=f"Elec Référence 3 ans - Heures Creuses {power} kVA",
+                    offer_type="HC_HP",
+                    description=f"Elec Référence 3 ans - Option Heures Creuses - {power} kVA",
+                    subscription_price=prices["subscription"],
+                    hp_price=prices["hp"],
+                    hc_price=prices["hc"],
+                    power_kva=power,
+                    valid_from=valid_from,
+                )
+            )
+
+        # Elec Tranquillité - BASE
+        for power, prices in self.FALLBACK_PRICES["TRANQUILLITE_BASE"].items():
+            offers.append(
+                OfferData(
+                    name=f"Elec Tranquillité - Base {power} kVA",
+                    offer_type="BASE",
+                    description=f"Elec Tranquillité - Option Base - {power} kVA",
+                    subscription_price=prices["subscription"],
+                    base_price=prices["kwh"],
+                    power_kva=power,
+                    valid_from=valid_from,
+                )
+            )
+
+        # Elec Tranquillité - HC/HP
         for power, prices in self.FALLBACK_PRICES["TRANQUILLITE_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Elec Tranquillité 1 an - Heures Creuses {power} kVA",
+                    name=f"Elec Tranquillité - Heures Creuses {power} kVA",
                     offer_type="HC_HP",
-                    description=f"Offre à prix fixe pendant 1 an - Électricité verte - Heures Creuses - {power} kVA",
+                    description=f"Elec Tranquillité - Option Heures Creuses - {power} kVA",
                     subscription_price=prices["subscription"],
                     hp_price=prices["hp"],
                     hc_price=prices["hc"],
