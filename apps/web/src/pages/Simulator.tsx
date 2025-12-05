@@ -166,6 +166,56 @@ export default function Simulator() {
   // Selected PDL from global store
   const { selectedPdl, setSelectedPdl } = usePdlStore()
 
+  // HYBRID APPROACH for consumptionDetail: useQuery creates the cache entry for persistence,
+  // but we read data via subscription to avoid race conditions with IndexedDB hydration
+  const { isLoading: isConsumptionCacheLoading } = useQuery({
+    queryKey: ['consumptionDetail', selectedPdl],
+    queryFn: async () => {
+      // Read from cache - this makes the query succeed with status: 'success'
+      // Data is written to cache via setQueryData in useUnifiedDataFetch
+      const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPdl])
+      return cachedData || null
+    },
+    enabled: !!selectedPdl,
+    staleTime: Infinity, // Never refetch - data only comes from setQueryData
+    gcTime: 1000 * 60 * 60 * 24 * 7, // 7 days
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  })
+
+  // Read consumptionDetail data via direct cache access + subscription
+  const [cachedConsumptionData, setCachedConsumptionData] = useState<any>(null)
+
+  useEffect(() => {
+    if (!selectedPdl) {
+      setCachedConsumptionData(null)
+      return
+    }
+
+    // Read current data from cache (includes persisted data after hydration)
+    const initialData = queryClient.getQueryData(['consumptionDetail', selectedPdl])
+    if (initialData) {
+      logger.log('[Simulator] Initial cache data found:', !!initialData)
+      setCachedConsumptionData(initialData)
+    }
+
+    // Subscribe to future changes (when setQueryData is called or cache hydrates)
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (
+        event?.type === 'updated' &&
+        event?.query?.queryKey?.[0] === 'consumptionDetail' &&
+        event?.query?.queryKey?.[1] === selectedPdl
+      ) {
+        const updatedData = queryClient.getQueryData(['consumptionDetail', selectedPdl])
+        logger.log('[Simulator] Cache updated:', !!updatedData)
+        setCachedConsumptionData(updatedData)
+      }
+    })
+
+    return () => unsubscribe()
+  }, [selectedPdl, queryClient])
+
   // Simulation state
   const [isSimulating, setIsSimulating] = useState(false)
   const [simulationResult, setSimulationResult] = useState<any>(null)
@@ -213,18 +263,18 @@ export default function Simulator() {
     setIsInitializing(true)
   }, [selectedPdl])
 
-  // End initialization when required data is loaded (offers and providers)
+  // End initialization when required data is loaded (offers, providers, and cache hydration)
   // This ensures auto-launch can check cache properly before showing empty state
   useEffect(() => {
-    // Wait for offers and providers to finish loading
-    if (!offersLoading && !providersLoading) {
-      // Small delay to allow cache hydration to complete
+    // Wait for all data sources to finish loading
+    if (!offersLoading && !providersLoading && !isConsumptionCacheLoading) {
+      // Small delay to allow any final state updates
       const timer = setTimeout(() => {
         setIsInitializing(false)
       }, 50)
       return () => clearTimeout(timer)
     }
-  }, [selectedPdl, offersLoading, providersLoading])
+  }, [selectedPdl, offersLoading, providersLoading, isConsumptionCacheLoading])
 
   // Auto-collapse info section when simulation results are available
   useEffect(() => {
@@ -271,12 +321,11 @@ export default function Simulator() {
 
       logger.log(`Loading consumption data from cache: ${startDate} to ${endDate}`)
 
-      // Get all data from the single cache key (new format)
-      const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPdl]) as any
+      // Use cachedConsumptionData from state (already hydrated from IndexedDB via subscription)
       let allPoints: any[] = []
 
-      if (cachedData?.data?.meter_reading?.interval_reading) {
-        const readings = cachedData.data.meter_reading.interval_reading
+      if (cachedConsumptionData?.data?.meter_reading?.interval_reading) {
+        const readings = cachedConsumptionData.data.meter_reading.interval_reading
 
         // Filter readings to the desired date range (rolling year)
         allPoints = readings.filter((point: any) => {
@@ -364,7 +413,7 @@ export default function Simulator() {
     } finally {
       setIsSimulating(false)
     }
-  }, [selectedPdl, pdlsData, offersData, providersData, queryClient])
+  }, [selectedPdl, pdlsData, offersData, providersData, cachedConsumptionData])
 
   const calculateSimulationsForAllOffers = (consumptionData: any[], offers: EnergyOffer[], providers: EnergyProvider[], tempoColors: TempoDay[], pdl?: PDL) => {
     // Create a map of date -> TEMPO color for fast lookup
@@ -781,6 +830,8 @@ export default function Simulator() {
       providersDataLoaded: !!providersData,
       offersLoading,
       providersLoading,
+      isConsumptionCacheLoading,
+      hasCachedData: !!cachedConsumptionData,
     })
 
     // Don't auto-launch if already launched, simulating, or have results
@@ -789,8 +840,8 @@ export default function Simulator() {
       return
     }
 
-    // Don't auto-launch while data is still loading
-    if (offersLoading || providersLoading) {
+    // Don't auto-launch while data is still loading (including cache hydration)
+    if (offersLoading || providersLoading || isConsumptionCacheLoading) {
       logger.log('[Auto-launch] Skipping auto-launch - still loading data')
       return
     }
@@ -805,15 +856,13 @@ export default function Simulator() {
       return
     }
 
-    // Check if we have cached data for this PDL (uses new single cache key format)
-    const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPdl]) as any
-
-    if (!cachedData?.data?.meter_reading?.interval_reading?.length) {
+    // Use cachedConsumptionData from state (populated via subscription, handles IndexedDB hydration)
+    if (!cachedConsumptionData?.data?.meter_reading?.interval_reading?.length) {
       logger.log('[Auto-launch] ❌ No cached data found for PDL:', selectedPdl)
       return
     }
 
-    const readings = cachedData.data.meter_reading.interval_reading
+    const readings = cachedConsumptionData.data.meter_reading.interval_reading
     const totalPoints = readings.length
 
     // Check if we have enough data (at least 30 days worth = ~1440 points at 30min intervals)
@@ -835,7 +884,7 @@ export default function Simulator() {
     } else {
       logger.log(`❌ Not enough cached data (${totalPoints} points), skipping auto-launch`)
     }
-  }, [selectedPdl, isSimulating, simulationResult, hasAutoLaunched, isDemo, pdlsData, offersData, providersData, offersLoading, providersLoading, queryClient, handleSimulation])
+  }, [selectedPdl, isSimulating, simulationResult, hasAutoLaunched, isDemo, pdlsData, offersData, providersData, offersLoading, providersLoading, isConsumptionCacheLoading, cachedConsumptionData, handleSimulation])
 
   // Filter and sort simulation results
   // IMPORTANT: This hook must be before any early returns to respect React's rules of hooks
