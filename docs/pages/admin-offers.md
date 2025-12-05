@@ -17,8 +17,8 @@ Cette page permet aux **administrateurs de gérer les offres d'électricité** p
 
 Section dédiée à la mise à jour automatique des tarifs via les scrapers :
 
-- **Liste des 8 fournisseurs** : EDF, Enercoop, TotalEnergies, Priméo Énergie, Engie, ALPIQ, Alterna, Ekwateur
-- **Total : ~253 offres énergétiques**
+- **Liste des 9 fournisseurs** : EDF, Enercoop, TotalEnergies, Priméo Énergie, Engie, ALPIQ, Alterna, Ekwateur, Octopus
+- **Total : ~254 offres énergétiques**
 - **Pour chaque fournisseur** :
   - **Logo du fournisseur** (via Clearbit Logo API)
   - Nom
@@ -34,6 +34,7 @@ Section dédiée à la mise à jour automatique des tarifs via les scrapers :
     - ALPIQ : "Électricité Stable (PDF officiel)"
     - Alterna : "Électricité verte 100% locale", "100% française", "100% VE"
     - Ekwateur : "Prix kwh électricité et abonnement"
+    - Octopus : "Offre électricité tarifs"
   - **Bouton "Modifier les URLs"** (icône Edit2) : Permet d'éditer les URLs des scrapers si elles changent
   - **Bouton "Prévisualiser"** (icône Eye) :
     - Appelle `GET /api/admin/offers/preview?provider=X`
@@ -181,7 +182,7 @@ Le menu Admin regroupe toutes les pages d'administration :
 - Les offres TEMPO ont 6 tarifs différents (3 couleurs × 2 périodes)
 - Les offres SEASONAL supportent les tarifs Hiver/Été + Jour de pointe optionnel
 - Les offres Week-end ont des tarifs différenciés semaine/week-end
-- Le scraper est disponible pour 8 fournisseurs : EDF, Enercoop, TotalEnergies, Priméo Énergie, Engie, ALPIQ, Alterna, Ekwateur
+- Le scraper est disponible pour 9 fournisseurs : EDF, Enercoop, TotalEnergies, Priméo Énergie, Engie, ALPIQ, Alterna, Ekwateur, Octopus
 - Les logos des fournisseurs sont chargés via Clearbit Logo API
 
 ## Endpoints API
