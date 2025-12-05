@@ -7,6 +7,7 @@ from .engie_scraper import EngieScraper
 from .alpiq_scraper import AlpiqScraper
 from .alterna_scraper import AlternaScraper
 from .ekwateur_scraper import EkwateurScraper
+from .vattenfall_scraper import VattenfallScraper
 
 __all__ = [
     "BasePriceScraper",
@@ -18,4 +19,5 @@ __all__ = [
     "AlpiqScraper",
     "AlternaScraper",
     "EkwateurScraper",
+    "VattenfallScraper",
 ]
