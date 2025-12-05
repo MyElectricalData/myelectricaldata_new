@@ -31,15 +31,16 @@ export default defineConfig(({ mode }) => {
           chunkFileNames: 'assets/[name]-[hash].js',
           assetFileNames: 'assets/[name]-[hash].[ext]',
           manualChunks(id) {
-            // Core React - loaded on every page
+            // Core React + React-dependent UI libs - must stay together
+            // @headlessui/react uses React.forwardRef, so it must be in the same chunk
             if (id.includes('node_modules/react/') ||
                 id.includes('node_modules/react-dom/') ||
-                id.includes('node_modules/react-router-dom/')) {
+                id.includes('node_modules/react-router-dom/') ||
+                id.includes('@headlessui/react')) {
               return 'react-vendor';
             }
-            // UI components - loaded on most pages
+            // UI utilities - no React dependency
             if (id.includes('lucide-react') ||
-                id.includes('@headlessui/react') ||
                 id.includes('clsx')) {
               return 'ui-vendor';
             }
