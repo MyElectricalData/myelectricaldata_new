@@ -875,7 +875,7 @@ export default function AdminOffers() {
                                 'Enercoop': ['Grille tarifaire (PDF officiel)'],
                                 'TotalEnergies': ['Offre Essentielle (Eco Electricité)', 'Offre Verte Fixe'],
                                 'Priméo Énergie': ['Offre Fixe -20% (PDF)'],
-                                'Engie': ['Elec Référence 1 an (PDF officiel)'],
+                                'Engie': ['Tarifs Engie (HelloWatt)'],
                                 'ALPIQ': ['Électricité Stable (PDF officiel)'],
                                 'Alterna': ['Électricité verte 100% locale', 'Électricité verte 100% française', 'Électricité verte 100% VE'],
                                 'Ekwateur': ['Prix kwh électricité et abonnement']
@@ -2425,7 +2425,7 @@ export default function AdminOffers() {
                     'Enercoop': ['Grille tarifaire (PDF officiel)'],
                     'TotalEnergies': ['Offre Essentielle (Eco Electricité)', 'Offre Verte Fixe'],
                     'Priméo Énergie': ['Offre Fixe -20% (PDF)'],
-                    'Engie': ['Elec Référence 1 an (PDF officiel)'],
+                    'Engie': ['Tarifs Engie (HelloWatt)'],
                     'ALPIQ': ['Électricité Stable (PDF officiel)'],
                     'Alterna': ['Électricité verte 100% locale', 'Électricité verte 100% française', 'Électricité verte 100% VE'],
                     'Ekwateur': ['Prix kwh électricité et abonnement']
