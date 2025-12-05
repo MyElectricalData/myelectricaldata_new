@@ -141,7 +141,7 @@ export default function Simulator() {
   })
 
   // Fetch energy providers and offers
-  const { data: providersData } = useQuery({
+  const { data: providersData, isLoading: providersLoading } = useQuery({
     queryKey: ['energy-providers'],
     queryFn: async () => {
       const response = await energyApi.getProviders()
@@ -152,7 +152,7 @@ export default function Simulator() {
     },
   })
 
-  const { data: offersData } = useQuery({
+  const { data: offersData, isLoading: offersLoading } = useQuery({
     queryKey: ['energy-offers'],
     queryFn: async () => {
       const response = await energyApi.getOffers()
@@ -213,13 +213,18 @@ export default function Simulator() {
     setIsInitializing(true)
   }, [selectedPdl])
 
-  // End initialization after cache has time to hydrate
+  // End initialization when required data is loaded (offers and providers)
+  // This ensures auto-launch can check cache properly before showing empty state
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsInitializing(false)
-    }, 100) // Short delay for cache hydration
-    return () => clearTimeout(timer)
-  }, [selectedPdl])
+    // Wait for offers and providers to finish loading
+    if (!offersLoading && !providersLoading) {
+      // Small delay to allow cache hydration to complete
+      const timer = setTimeout(() => {
+        setIsInitializing(false)
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [selectedPdl, offersLoading, providersLoading])
 
   // Auto-collapse info section when simulation results are available
   useEffect(() => {
@@ -774,11 +779,19 @@ export default function Simulator() {
       pdlsDataLoaded: !!pdlsData,
       offersDataLoaded: !!offersData,
       providersDataLoaded: !!providersData,
+      offersLoading,
+      providersLoading,
     })
 
     // Don't auto-launch if already launched, simulating, or have results
     if (!selectedPdl || isSimulating || simulationResult || hasAutoLaunched) {
       logger.log('[Auto-launch] Skipping auto-launch due to conditions')
+      return
+    }
+
+    // Don't auto-launch while data is still loading
+    if (offersLoading || providersLoading) {
+      logger.log('[Auto-launch] Skipping auto-launch - still loading data')
       return
     }
 
@@ -822,7 +835,7 @@ export default function Simulator() {
     } else {
       logger.log(`❌ Not enough cached data (${totalPoints} points), skipping auto-launch`)
     }
-  }, [selectedPdl, isSimulating, simulationResult, hasAutoLaunched, isDemo, pdlsData, offersData, providersData, queryClient, handleSimulation])
+  }, [selectedPdl, isSimulating, simulationResult, hasAutoLaunched, isDemo, pdlsData, offersData, providersData, offersLoading, providersLoading, queryClient, handleSimulation])
 
   // Filter and sort simulation results
   // IMPORTANT: This hook must be before any early returns to respect React's rules of hooks
