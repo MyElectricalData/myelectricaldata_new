@@ -30,37 +30,24 @@ export default defineConfig(({ mode }) => {
           entryFileNames: 'assets/[name]-[hash].js',
           chunkFileNames: 'assets/[name]-[hash].js',
           assetFileNames: 'assets/[name]-[hash].[ext]',
-          manualChunks(id) {
-            // Core React + React-dependent UI libs - must stay together
-            // @headlessui/react uses React.forwardRef, so it must be in the same chunk
-            if (id.includes('node_modules/react/') ||
-                id.includes('node_modules/react-dom/') ||
-                id.includes('node_modules/react-router-dom/') ||
-                id.includes('@headlessui/react')) {
-              return 'react-vendor';
-            }
-            // UI utilities - no React dependency
-            if (id.includes('lucide-react') ||
-                id.includes('clsx')) {
-              return 'ui-vendor';
-            }
-            // Charts - only on dashboard/consumption pages
-            if (id.includes('recharts')) {
-              return 'chart-vendor';
-            }
-            // Data fetching - loaded on most pages
-            if (id.includes('@tanstack/react-query') ||
-                id.includes('axios') ||
-                id.includes('zustand')) {
-              return 'query-vendor';
-            }
-            // Heavy dependencies - lazy loaded
-            if (id.includes('swagger-ui-react')) {
-              return 'swagger-ui';
-            }
-            if (id.includes('jspdf') || id.includes('html2canvas')) {
-              return 'pdf-vendor';
-            }
+          manualChunks: {
+            // Core vendor - all node_modules except heavy lazy-loaded ones
+            // Using object syntax prevents circular dependency issues
+            vendor: [
+              'react',
+              'react-dom',
+              'react-router-dom',
+              '@headlessui/react',
+              '@tanstack/react-query',
+              'axios',
+              'zustand',
+              'lucide-react',
+              'clsx',
+            ],
+            // Charts - lazy loaded on dashboard/consumption pages
+            charts: ['recharts'],
+            // PDF generation - lazy loaded
+            pdf: ['jspdf', 'html2canvas'],
           },
         },
       },
