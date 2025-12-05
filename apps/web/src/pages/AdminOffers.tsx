@@ -490,8 +490,10 @@ export default function AdminOffers() {
   }
 
   // Filter and sort offers
-  const filteredAndSortedOffers = offersData
-    ?.filter((offer) => {
+  // Defensive check: ensure offersData is an array (can be undefined during loading or corrupted cache)
+  const offersArray = Array.isArray(offersData) ? offersData : []
+  const filteredAndSortedOffers = offersArray
+    .filter((offer) => {
       if (filterProvider !== 'all' && offer.provider_id !== filterProvider) return false
       if (filterType !== 'all' && offer.offer_type !== filterType) return false
       if (filterPower !== 'all' && offer.power_kva?.toString() !== filterPower) return false
@@ -538,7 +540,7 @@ export default function AdminOffers() {
   }, {} as Record<string, EnergyOffer[]>)
 
   // Group by provider (for counts - uses ALL offers, not filtered)
-  const allOffersByProvider = offersData?.reduce((acc, offer) => {
+  const allOffersByProvider = offersArray.reduce((acc, offer) => {
     if (!acc[offer.provider_id]) {
       acc[offer.provider_id] = []
     }
@@ -873,7 +875,7 @@ export default function AdminOffers() {
                                 'Enercoop': ['Grille tarifaire (PDF officiel)'],
                                 'TotalEnergies': ['Offre Essentielle (Eco Electricité)', 'Offre Verte Fixe'],
                                 'Priméo Énergie': ['Offre Fixe -20% (PDF)'],
-                                'Engie': ['Elec Référence 1 an (PDF officiel)'],
+                                'Engie': ['Tarifs Engie (HelloWatt)'],
                                 'ALPIQ': ['Électricité Stable (PDF officiel)'],
                                 'Alterna': ['Électricité verte 100% locale', 'Électricité verte 100% française', 'Électricité verte 100% VE'],
                                 'Ekwateur': ['Prix kwh électricité et abonnement']
@@ -2423,7 +2425,7 @@ export default function AdminOffers() {
                     'Enercoop': ['Grille tarifaire (PDF officiel)'],
                     'TotalEnergies': ['Offre Essentielle (Eco Electricité)', 'Offre Verte Fixe'],
                     'Priméo Énergie': ['Offre Fixe -20% (PDF)'],
-                    'Engie': ['Elec Référence 1 an (PDF officiel)'],
+                    'Engie': ['Tarifs Engie (HelloWatt)'],
                     'ALPIQ': ['Électricité Stable (PDF officiel)'],
                     'Alterna': ['Électricité verte 100% locale', 'Électricité verte 100% française', 'Électricité verte 100% VE'],
                     'Ekwateur': ['Prix kwh électricité et abonnement']
