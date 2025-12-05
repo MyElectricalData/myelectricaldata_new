@@ -1,0 +1,56 @@
+# Docker Compose pour Conductor (multi-instances)
+# Utilise Redis et PostgreSQL externes configurés via .env.local
+# Les ports sont définis dynamiquement dans docker-compose.override.yml
+
+services:
+
+  # Backend FastAPI
+  backend:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./.env.api
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WATCHFILES_FORCE_POLLING=true
+      - WATCHFILES_POLL_INTERVAL=1000
+      - TZ=Europe/Paris
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./apps/api/data:/app/data
+      - ./apps/api/src:/app/src
+      - ./apps/api/static:/app/static
+      - backend_logs:/logs
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend React/Vite
+  frontend:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    volumes:
+      - ./apps/web/src:/app/src
+      - ./apps/web/public:/app/public
+      - ./apps/web/index.html:/app/index.html
+      - ./apps/web/vite.config.ts:/app/vite.config.ts
+      - ./apps/web/tsconfig.json:/app/tsconfig.json
+      - ./apps/web/tsconfig.node.json:/app/tsconfig.node.json
+      - ./apps/web/tailwind.config.js:/app/tailwind.config.js
+      - ./apps/web/postcss.config.js:/app/postcss.config.js
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  backend_logs:
+    driver: local

@@ -63,12 +63,19 @@ export BACKEND_PORT
 log_info "Port Frontend: $FRONTEND_PORT"
 log_info "Port Backend: $BACKEND_PORT"
 
-# Vérifier la configuration Redis/PostgreSQL
+# Vérifier la configuration Redis/PostgreSQL (services externes)
+# Remplacer localhost par host.docker.internal pour l'accès depuis les conteneurs
 REDIS_URL="${REDIS_URL:-redis://localhost:6379/0}"
 DATABASE_URL="${DATABASE_URL:-sqlite+aiosqlite:///./data/myelectricaldata.db}"
 
-log_info "Redis: $REDIS_URL"
-log_info "Database: $(echo $DATABASE_URL | sed 's/:.*@/:***@/')"
+# Convertir les URLs pour Docker (localhost -> host.docker.internal)
+REDIS_URL_DOCKER=$(echo "$REDIS_URL" | sed 's/localhost/host.docker.internal/g')
+DATABASE_URL_DOCKER=$(echo "$DATABASE_URL" | sed 's/localhost/host.docker.internal/g')
+
+log_info "Redis (host): $REDIS_URL"
+log_info "Redis (docker): $REDIS_URL_DOCKER"
+log_info "Database (host): $(echo $DATABASE_URL | sed 's/:.*@/:***@/')"
+log_info "Database (docker): $(echo $DATABASE_URL_DOCKER | sed 's/:.*@/:***@/')"
 
 # Créer le fichier .env.api à partir du template si nécessaire
 if [ ! -f ".env.api" ]; then
@@ -78,20 +85,20 @@ if [ ! -f ".env.api" ]; then
     fi
 fi
 
-# Mettre à jour les URLs dans .env.api
+# Mettre à jour les URLs dans .env.api (utiliser les URLs Docker)
 if [ -f ".env.api" ]; then
-    # Mettre à jour REDIS_URL
+    # Mettre à jour REDIS_URL (version Docker)
     if grep -q "^REDIS_URL=" .env.api; then
-        sed -i.bak "s|^REDIS_URL=.*|REDIS_URL=$REDIS_URL|" .env.api
+        sed -i.bak "s|^REDIS_URL=.*|REDIS_URL=$REDIS_URL_DOCKER|" .env.api
     else
-        echo "REDIS_URL=$REDIS_URL" >> .env.api
+        echo "REDIS_URL=$REDIS_URL_DOCKER" >> .env.api
     fi
 
-    # Mettre à jour DATABASE_URL
+    # Mettre à jour DATABASE_URL (version Docker)
     if grep -q "^DATABASE_URL=" .env.api; then
-        sed -i.bak "s|^DATABASE_URL=.*|DATABASE_URL=$DATABASE_URL|" .env.api
+        sed -i.bak "s|^DATABASE_URL=.*|DATABASE_URL=$DATABASE_URL_DOCKER|" .env.api
     else
-        echo "DATABASE_URL=$DATABASE_URL" >> .env.api
+        echo "DATABASE_URL=$DATABASE_URL_DOCKER" >> .env.api
     fi
 
     # Mettre à jour FRONTEND_URL et BACKEND_URL pour le dev
@@ -108,17 +115,20 @@ VITE_APP_NAME=MyElectricalData
 EOF
 
 # Générer le docker-compose.override.yml avec les ports dynamiques
+# et sans dépendances vers redis/postgres (services externes)
 cat > docker-compose.override.yml <<EOF
 # Fichier généré automatiquement par conductor-start.sh
 # Ne pas éditer manuellement - les modifications seront écrasées
+# Mode Conductor: utilise Redis/PostgreSQL externes
 
 services:
   backend:
+    depends_on: []
     ports:
       - "${BACKEND_PORT}:8000"
     environment:
-      - REDIS_URL=${REDIS_URL}
-      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL_DOCKER}
+      - DATABASE_URL=${DATABASE_URL_DOCKER}
       - FRONTEND_URL=http://localhost:${FRONTEND_PORT}
       - BACKEND_URL=http://localhost:${BACKEND_PORT}
 
@@ -138,8 +148,9 @@ EOF
 
 log_info "Démarrage des services..."
 
-# Démarrer uniquement frontend et backend (sans redis, postgres, pgadmin, docs)
-docker compose up -d --build frontend backend
+# Utiliser docker-compose.conductor.yml (sans redis, postgres, pgadmin, docs)
+# + docker-compose.override.yml pour les ports dynamiques
+docker compose -f docker-compose.conductor.yml -f docker-compose.override.yml up -d --build
 
 # Attendre que les services soient prêts
 log_info "Attente du démarrage des services..."
