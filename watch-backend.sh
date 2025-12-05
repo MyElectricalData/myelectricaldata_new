@@ -48,28 +48,41 @@ echo $$ > "$PID_FILE"
 rm -f "$LOCK_FILE"
 
 echo "🔄 Watch-backend started with PID $$"
-echo "🔄 Watching for changes in apps/api/src/*.py"
+echo "🔄 Watching for changes in apps/api/src/**/*.py (recursive)"
 echo "Press Ctrl+C to stop"
 
-# Utilise fswatch sur macOS pour détecter les changements
-if command -v fswatch &> /dev/null; then
-    echo "✅ Using fswatch for file monitoring"
-    fswatch -o apps/api/src/*.py | while read num ; do
+# Debounce: évite les redémarrages multiples pour des changements rapides
+DEBOUNCE_SECONDS=2
+LAST_RESTART=0
+
+restart_backend() {
+    CURRENT_TIME=$(date +%s)
+    if [ $((CURRENT_TIME - LAST_RESTART)) -ge $DEBOUNCE_SECONDS ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] 📝 Change detected, restarting backend..."
         docker compose restart backend
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Backend restarted"
+        LAST_RESTART=$CURRENT_TIME
+    else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⏳ Debouncing, skipping restart"
+    fi
+}
+
+# Utilise fswatch sur macOS pour détecter les changements (récursif)
+if command -v fswatch &> /dev/null; then
+    echo "✅ Using fswatch for file monitoring (recursive)"
+    # -r: récursif, -e: exclure, --include: inclure seulement .py
+    fswatch -r -o --include '\.py$' --exclude '.*' apps/api/src | while read num ; do
+        restart_backend
     done
 else
     echo "⚠️  fswatch not found, using polling mode (less efficient)"
     echo "💡 Install fswatch with: brew install fswatch"
-    # Alternative: utilise find avec polling
+    # Alternative: utilise find avec polling (récursif)
     while true; do
-        CURRENT_HASH=$(find apps/api/src -name "*.py" -type f -exec md5 {} \; | md5)
+        CURRENT_HASH=$(find apps/api/src -name "*.py" -type f -exec md5 {} \; 2>/dev/null | md5)
         if [ "$LAST_HASH" != "$CURRENT_HASH" ]; then
-            if [ ! -z "$LAST_HASH" ]; then
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] 📝 Change detected, restarting backend..."
-                docker compose restart backend
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Backend restarted"
+            if [ -n "$LAST_HASH" ]; then
+                restart_backend
             fi
             LAST_HASH=$CURRENT_HASH
         fi
