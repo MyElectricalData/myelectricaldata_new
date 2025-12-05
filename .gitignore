@@ -49,6 +49,9 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
+# Conductor
+.conductor-ports
+
 # Logs
 *.log
 logs/

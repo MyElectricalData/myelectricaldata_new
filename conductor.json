@@ -1,64 +1,78 @@
 {
-  "name": "k8s-auto-deploy-script",
-  "description": "Script de déploiement automatique K8s avec mode dev (volumes locaux)",
+  "name": "myelectricaldata-dev",
+  "description": "Environnement de développement Docker Compose avec ports dynamiques",
   "onStart": {
-    "command": "./scripts/k8s-deploy.sh deploy",
-    "description": "Déploie automatiquement sur K8s au démarrage du projet",
+    "command": "./scripts/conductor-start.sh",
+    "description": "Démarre les services frontend et backend avec ports libres",
     "waitForReady": true,
-    "timeout": 300
+    "timeout": 180
   },
   "onStop": {
-    "command": "./scripts/k8s-deploy.sh delete",
-    "description": "Supprime le déploiement K8s à l'arrêt du projet",
-    "confirm": true
+    "command": "./scripts/conductor-stop.sh",
+    "description": "Arrête les services Docker Compose"
+  },
+  "services": {
+    "frontend": {
+      "type": "docker-compose",
+      "service": "frontend",
+      "portVariable": "FRONTEND_PORT",
+      "defaultPort": 8000,
+      "healthCheck": "http://localhost:${FRONTEND_PORT}"
+    },
+    "backend": {
+      "type": "docker-compose",
+      "service": "backend",
+      "portVariable": "BACKEND_PORT",
+      "defaultPort": 8081,
+      "healthCheck": "http://localhost:${BACKEND_PORT}/ping"
+    }
+  },
+  "infrastructure": {
+    "redis": {
+      "type": "external",
+      "envFile": ".env.local",
+      "envVariable": "REDIS_URL",
+      "default": "redis://localhost:6379/0"
+    },
+    "postgres": {
+      "type": "external",
+      "envFile": ".env.local",
+      "envVariable": "DATABASE_URL",
+      "default": "postgresql+asyncpg://myelectricaldata:mySecurePassword2025@localhost:5432/myelectricaldata"
+    }
   },
   "scripts": {
-    "k8s:deploy": {
-      "command": "./scripts/k8s-deploy.sh deploy",
-      "description": "Déploie l'application en mode dev sur K8s (rancher-desktop)"
+    "start": {
+      "command": "./scripts/conductor-start.sh",
+      "description": "Démarre les services frontend et backend"
     },
-    "k8s:deploy:prod": {
-      "command": "./scripts/k8s-deploy.sh --prod deploy",
-      "description": "Déploie l'application en mode production sur K8s"
+    "stop": {
+      "command": "./scripts/conductor-stop.sh",
+      "description": "Arrête les services Docker Compose"
     },
-    "k8s:delete": {
-      "command": "./scripts/k8s-deploy.sh delete",
-      "description": "Supprime le déploiement K8s"
+    "logs": {
+      "command": "docker compose logs -f frontend backend",
+      "description": "Affiche les logs des services"
     },
-    "k8s:status": {
-      "command": "./scripts/k8s-deploy.sh status",
-      "description": "Affiche le statut du déploiement K8s"
-    },
-    "k8s:logs:backend": {
-      "command": "./scripts/k8s-deploy.sh logs backend",
+    "logs:backend": {
+      "command": "docker compose logs -f backend",
       "description": "Affiche les logs du backend"
     },
-    "k8s:logs:frontend": {
-      "command": "./scripts/k8s-deploy.sh logs frontend",
+    "logs:frontend": {
+      "command": "docker compose logs -f frontend",
       "description": "Affiche les logs du frontend"
+    },
+    "restart": {
+      "command": "docker compose restart frontend backend",
+      "description": "Redémarre les services"
+    },
+    "status": {
+      "command": "docker compose ps",
+      "description": "Affiche le statut des services"
     }
   },
-  "kubernetes": {
-    "context": "rancher-desktop",
-    "namespace": "auto",
-    "devMode": {
-      "enabled": true,
-      "hostPath": "/Users/cvalentin/Git/myelectricaldata_new",
-      "mounts": {
-        "backend": {
-          "src": "apps/api/src",
-          "static": "apps/api/static"
-        },
-        "frontend": {
-          "src": "apps/web/src",
-          "public": "apps/web/public"
-        }
-      }
-    },
-    "helm": {
-      "chart": "helm/myelectricaldata",
-      "valuesFile": "helm/values-dev.yaml",
-      "releasePrefix": "med"
-    }
+  "env": {
+    "COMPOSE_PROJECT_NAME": "med-${CONDUCTOR_BRANCH_SLUG}",
+    "CONDUCTOR_BRANCH_SLUG": "${CONDUCTOR_BRANCH_SLUG:-dev}"
   }
 }
