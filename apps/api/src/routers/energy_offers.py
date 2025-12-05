@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, UTC
-from ..models import User, EnergyProvider, EnergyOffer, OfferContribution
+from ..models import User, EnergyProvider, EnergyOffer, OfferContribution, ContributionMessage
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
 from ..middleware import get_current_user, require_permission, require_action
@@ -405,6 +405,95 @@ async def reject_contribution(
     return APIResponse(success=True, data={"message": "Contribution rejected"})
 
 
+@router.post("/contributions/{contribution_id}/request-info", response_model=APIResponse)
+async def request_contribution_info(
+    contribution_id: str,
+    body: dict = Body(...),
+    current_user: User = Depends(require_permission('contributions')),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Request additional information from the contributor (requires contributions permission)"""
+    message = body.get("message")
+    if not message:
+        return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="Le message est obligatoire"))
+
+    result = await db.execute(select(OfferContribution).where(OfferContribution.id == contribution_id))
+    contribution = result.scalar_one_or_none()
+
+    if not contribution:
+        return APIResponse(success=False, error=ErrorDetail(code="NOT_FOUND", message="Contribution not found"))
+
+    if contribution.status != "pending":
+        return APIResponse(success=False, error=ErrorDetail(code="INVALID_STATUS", message="Contribution already reviewed"))
+
+    # Get the contributor
+    contributor_result = await db.execute(select(User).where(User.id == contribution.contributor_user_id))
+    contributor = contributor_result.scalar_one_or_none()
+
+    if not contributor:
+        return APIResponse(success=False, error=ErrorDetail(code="NOT_FOUND", message="Contributor not found"))
+
+    # Create the message record
+    contribution_message = ContributionMessage(
+        contribution_id=contribution_id,
+        sender_user_id=current_user.id,
+        message_type="info_request",
+        content=message,
+        is_from_admin=True,
+    )
+    db.add(contribution_message)
+    await db.commit()
+
+    # Send email to contributor
+    try:
+        await send_info_request_notification(contribution, contributor, message)
+    except Exception as e:
+        logger.error(f"[CONTRIBUTION] Failed to send info request notification: {str(e)}")
+        # Don't fail the request if email fails
+
+    return APIResponse(success=True, data={"message": "Information request sent successfully"})
+
+
+@router.get("/contributions/{contribution_id}/messages", response_model=APIResponse)
+async def get_contribution_messages(
+    contribution_id: str,
+    current_user: User = Depends(require_permission('contributions')),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Get all messages for a contribution (requires contributions permission)"""
+
+    # Check contribution exists
+    result = await db.execute(select(OfferContribution).where(OfferContribution.id == contribution_id))
+    contribution = result.scalar_one_or_none()
+
+    if not contribution:
+        return APIResponse(success=False, error=ErrorDetail(code="NOT_FOUND", message="Contribution not found"))
+
+    # Get all messages
+    messages_result = await db.execute(
+        select(ContributionMessage)
+        .where(ContributionMessage.contribution_id == contribution_id)
+        .order_by(ContributionMessage.created_at.asc())
+    )
+    messages = messages_result.scalars().all()
+
+    # Get sender info for each message
+    data = []
+    for msg in messages:
+        sender_result = await db.execute(select(User).where(User.id == msg.sender_user_id))
+        sender = sender_result.scalar_one_or_none()
+        data.append({
+            "id": msg.id,
+            "message_type": msg.message_type,
+            "content": msg.content,
+            "is_from_admin": msg.is_from_admin,
+            "sender_email": sender.email if sender else "Unknown",
+            "created_at": msg.created_at.isoformat(),
+        })
+
+    return APIResponse(success=True, data=data)
+
+
 # Admin endpoints - Manage offers
 @router.put("/offers/{offer_id}", response_model=APIResponse)
 async def update_offer(
@@ -755,4 +844,93 @@ MyElectricalData - Base de données communautaire des offres d'électricité
         logger.info(f"[CONTRIBUTION] Rejection notification sent to contributor: {contributor.email}")
     except Exception as e:
         logger.error(f"[CONTRIBUTION] Failed to send rejection email to {contributor.email}: {str(e)}")
+        raise
+
+
+async def send_info_request_notification(contribution: OfferContribution, contributor: User, message: str):
+    """Send email notification to contributor requesting more information"""
+    contributions_url = f"{settings.FRONTEND_URL}/contribute"
+
+    subject = f"Demande d'information - {contribution.offer_name}"
+
+    html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: white; margin: 0;">MyElectricalData</h1>
+    </div>
+
+    <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+        <h2 style="color: #333; margin-top: 0;">Demande d'information sur votre contribution</h2>
+
+        <p>Bonjour,</p>
+
+        <p>Nous examinons actuellement votre contribution pour l'offre <strong>{contribution.offer_name}</strong> et nous avons besoin d'informations supplémentaires.</p>
+
+        <div style="background: #e7f3ff; border-left: 4px solid #2196F3; padding: 15px; margin: 20px 0; border-radius: 0 5px 5px 0;">
+            <p style="margin: 0; font-weight: bold; color: #1565C0;">Message de l'administrateur :</p>
+            <p style="margin: 10px 0 0 0; color: #1565C0;">{message}</p>
+        </div>
+
+        <div style="background: white; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p><strong>Offre concernée :</strong> {contribution.offer_name}</p>
+            <p><strong>Type :</strong> {contribution.offer_type}</p>
+            <p><strong>Lien fourni :</strong> <a href="{contribution.price_sheet_url}" style="color: #667eea;">{contribution.price_sheet_url}</a></p>
+            <p><strong>Date de soumission :</strong> {contribution.created_at.strftime('%d/%m/%Y à %H:%M')}</p>
+        </div>
+
+        <p>Vous pouvez répondre en soumettant une nouvelle contribution avec les informations corrigées :</p>
+
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{contributions_url}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+                Mettre à jour ma contribution
+            </a>
+        </div>
+
+        <p style="color: #666; font-size: 14px;">Merci pour votre participation à la communauté MyElectricalData !</p>
+
+        <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+
+        <p style="color: #999; font-size: 12px; text-align: center;">
+            MyElectricalData - Base de données communautaire des offres d'électricité
+        </p>
+    </div>
+</body>
+</html>
+    """
+
+    text_content = f"""
+Demande d'information sur votre contribution - MyElectricalData
+
+Bonjour,
+
+Nous examinons actuellement votre contribution pour l'offre "{contribution.offer_name}" et nous avons besoin d'informations supplémentaires.
+
+Message de l'administrateur :
+{message}
+
+Offre concernée : {contribution.offer_name}
+Type : {contribution.offer_type}
+Lien fourni : {contribution.price_sheet_url}
+Date de soumission : {contribution.created_at.strftime('%d/%m/%Y à %H:%M')}
+
+Vous pouvez mettre à jour votre contribution ici :
+{contributions_url}
+
+Merci pour votre participation à la communauté MyElectricalData !
+
+---
+MyElectricalData - Base de données communautaire des offres d'électricité
+    """
+
+    try:
+        await email_service.send_email(contributor.email, subject, html_content, text_content)
+        logger.info(f"[CONTRIBUTION] Info request notification sent to contributor: {contributor.email}")
+    except Exception as e:
+        logger.error(f"[CONTRIBUTION] Failed to send info request email to {contributor.email}: {str(e)}")
         raise

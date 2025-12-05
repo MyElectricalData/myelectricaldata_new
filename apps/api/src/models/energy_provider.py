@@ -126,3 +126,17 @@ class OfferContribution(Base):
     review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+class ContributionMessage(Base):
+    """Messages exchanged about a contribution (admin requests, contributor responses)"""
+
+    __tablename__ = "contribution_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    contribution_id: Mapped[str] = mapped_column(String(36), ForeignKey("offer_contributions.id", ondelete="CASCADE"), nullable=False)
+    sender_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    message_type: Mapped[str] = mapped_column(String(50), nullable=False)  # info_request, contributor_response
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    is_from_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)

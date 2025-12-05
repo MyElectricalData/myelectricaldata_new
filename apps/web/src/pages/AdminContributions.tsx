@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Users, CheckCircle, XCircle, Calendar, User, Package, DollarSign, ExternalLink, Image, Zap } from 'lucide-react'
+import { Users, CheckCircle, XCircle, Calendar, User, Package, DollarSign, ExternalLink, Image, Zap, MessageCircle, Clock } from 'lucide-react'
 import { energyApi } from '@/api/energy'
 
 interface ExistingProvider {
@@ -80,9 +80,13 @@ export default function AdminContributions() {
   const queryClient = useQueryClient()
   const [selectedContribution, setSelectedContribution] = useState<PendingContribution | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [infoRequestMessage, setInfoRequestMessage] = useState('')
   const [showApproveModal, setShowApproveModal] = useState(false)
   const [showRejectModal, setShowRejectModal] = useState(false)
+  const [showInfoRequestModal, setShowInfoRequestModal] = useState(false)
   const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null)
+  const [contributionMessages, setContributionMessages] = useState<Record<string, Array<{id: string, message_type: string, content: string, is_from_admin: boolean, sender_email: string, created_at: string}>>>({})
+  const [loadingMessages, setLoadingMessages] = useState<Record<string, boolean>>({})
 
   // Fetch pending contributions
   const { data: contributions, isLoading } = useQuery({
@@ -132,6 +136,45 @@ export default function AdminContributions() {
     },
   })
 
+  // Info request mutation
+  const infoRequestMutation = useMutation({
+    mutationFn: async ({ id, message }: { id: string; message: string }) => {
+      return await energyApi.requestContributionInfo(id, message)
+    },
+    onSuccess: () => {
+      setNotification({ type: 'success', message: 'Demande d\'information envoyée au contributeur.' })
+      setTimeout(() => setNotification(null), 5000)
+      // Reload messages for this contribution
+      if (selectedContribution) {
+        loadMessages(selectedContribution.id)
+      }
+      setSelectedContribution(null)
+      setInfoRequestMessage('')
+      setShowInfoRequestModal(false)
+    },
+    onError: (error: any) => {
+      setNotification({ type: 'error', message: `Erreur: ${error.message || 'Une erreur est survenue'}` })
+      setTimeout(() => setNotification(null), 5000)
+      setShowInfoRequestModal(false)
+    },
+  })
+
+  // Load messages for a contribution
+  const loadMessages = async (contributionId: string) => {
+    if (loadingMessages[contributionId]) return
+    setLoadingMessages(prev => ({ ...prev, [contributionId]: true }))
+    try {
+      const response = await energyApi.getContributionMessages(contributionId)
+      if (Array.isArray(response.data)) {
+        setContributionMessages(prev => ({ ...prev, [contributionId]: response.data as Array<{id: string, message_type: string, content: string, is_from_admin: boolean, sender_email: string, created_at: string}> }))
+      }
+    } catch (error) {
+      console.error('Failed to load messages:', error)
+    } finally {
+      setLoadingMessages(prev => ({ ...prev, [contributionId]: false }))
+    }
+  }
+
   const handleApprove = () => {
     setShowApproveModal(true)
   }
@@ -149,6 +192,16 @@ export default function AdminContributions() {
   const confirmReject = () => {
     if (selectedContribution) {
       rejectMutation.mutate({ id: selectedContribution.id, reason: rejectReason || undefined })
+    }
+  }
+
+  const handleInfoRequest = () => {
+    setShowInfoRequestModal(true)
+  }
+
+  const confirmInfoRequest = () => {
+    if (selectedContribution && infoRequestMessage.trim()) {
+      infoRequestMutation.mutate({ id: selectedContribution.id, message: infoRequestMessage })
     }
   }
 
@@ -338,6 +391,84 @@ export default function AdminContributions() {
                 disabled={rejectMutation.isPending || !rejectReason.trim()}
               >
                 {rejectMutation.isPending ? 'Rejet...' : 'Confirmer le rejet'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Info Request Modal */}
+      {showInfoRequestModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6">
+            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <MessageCircle className="text-blue-600 dark:text-blue-400" size={24} />
+              Demander des informations
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              Envoyez un message au contributeur pour demander des précisions. Un email lui sera envoyé.
+            </p>
+
+            {/* Quick info request messages */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">
+                Messages rapides
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: 'Lien introuvable', text: 'Je ne retrouve pas l\'offre mentionnée à partir du lien fourni. Pourriez-vous me fournir un lien direct vers la fiche tarifaire officielle sur le site du fournisseur ?' },
+                  { label: 'Prix manquants', text: 'Certains prix semblent manquants dans votre contribution. Pourriez-vous vérifier et compléter les informations tarifaires ?' },
+                  { label: 'Confirmer la puissance', text: 'Pourriez-vous confirmer la puissance (kVA) concernée par cette offre ?' },
+                  { label: 'Date de validité', text: 'Quelle est la date de validité de ces tarifs ? Sont-ils actuellement en vigueur ?' },
+                ].map((msg) => (
+                  <button
+                    key={msg.label}
+                    type="button"
+                    onClick={() => setInfoRequestMessage(msg.text)}
+                    className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                      infoRequestMessage === msg.text
+                        ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+                        : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {msg.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">
+                Votre message
+              </label>
+              <textarea
+                value={infoRequestMessage}
+                onChange={(e) => setInfoRequestMessage(e.target.value)}
+                className="input w-full"
+                rows={4}
+                placeholder="Décrivez les informations dont vous avez besoin..."
+              />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Ce message sera envoyé par email au contributeur et conservé dans l'historique.
+              </p>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowInfoRequestModal(false)
+                  setInfoRequestMessage('')
+                }}
+                className="btn"
+                disabled={infoRequestMutation.isPending}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmInfoRequest}
+                className="btn bg-blue-600 hover:bg-blue-700 text-white"
+                disabled={infoRequestMutation.isPending || !infoRequestMessage.trim()}
+              >
+                {infoRequestMutation.isPending ? 'Envoi...' : 'Envoyer la demande'}
               </button>
             </div>
           </div>
@@ -736,9 +867,41 @@ export default function AdminContributions() {
                 </div>
               </div>
 
+              {/* Message History */}
+              {contributionMessages[contribution.id] && contributionMessages[contribution.id].length > 0 && (
+                <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                  <h3 className="font-semibold mb-3 flex items-center gap-2">
+                    <MessageCircle size={18} />
+                    Historique des échanges
+                  </h3>
+                  <div className="space-y-3">
+                    {contributionMessages[contribution.id].map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`p-3 rounded-lg ${
+                          msg.is_from_admin
+                            ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500'
+                            : 'bg-gray-50 dark:bg-gray-900/50 border-l-4 border-gray-400'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mb-1">
+                          <Clock size={12} />
+                          {new Date(msg.created_at).toLocaleString('fr-FR')}
+                          <span className="mx-1">•</span>
+                          <span className={msg.is_from_admin ? 'text-blue-600 dark:text-blue-400' : ''}>
+                            {msg.is_from_admin ? 'Admin' : 'Contributeur'}
+                          </span>
+                        </div>
+                        <p className="text-sm">{msg.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Actions */}
               <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex gap-4">
+                <div className="flex flex-wrap gap-4">
                   <button
                     onClick={() => {
                       setSelectedContribution(contribution)
@@ -753,6 +916,17 @@ export default function AdminContributions() {
                   <button
                     onClick={() => {
                       setSelectedContribution(contribution)
+                      handleInfoRequest()
+                    }}
+                    className="btn bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+                    disabled={infoRequestMutation.isPending}
+                  >
+                    <MessageCircle size={18} />
+                    Demander des infos
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedContribution(contribution)
                       handleReject()
                     }}
                     className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
@@ -761,6 +935,16 @@ export default function AdminContributions() {
                     <XCircle size={18} />
                     Rejeter
                   </button>
+                  {!contributionMessages[contribution.id] && (
+                    <button
+                      onClick={() => loadMessages(contribution.id)}
+                      className="btn flex items-center gap-2 text-sm"
+                      disabled={loadingMessages[contribution.id]}
+                    >
+                      <MessageCircle size={16} />
+                      {loadingMessages[contribution.id] ? 'Chargement...' : 'Voir les échanges'}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

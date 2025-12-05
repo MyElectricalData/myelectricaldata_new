@@ -177,6 +177,14 @@ export const energyApi = {
     return apiClient.post(`energy/contributions/${contributionId}/reject`, { reason })
   },
 
+  requestContributionInfo: async (contributionId: string, message: string) => {
+    return apiClient.post(`energy/contributions/${contributionId}/request-info`, { message })
+  },
+
+  getContributionMessages: async (contributionId: string) => {
+    return apiClient.get(`energy/contributions/${contributionId}/messages`)
+  },
+
   // Admin - Manage offers
   updateOffer: async (offerId: string, data: Partial<EnergyOffer>) => {
     return apiClient.put(`energy/offers/${offerId}`, data)
