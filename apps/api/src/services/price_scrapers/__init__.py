@@ -7,6 +7,7 @@ from .engie_scraper import EngieScraper
 from .alpiq_scraper import AlpiqScraper
 from .alterna_scraper import AlternaScraper
 from .ekwateur_scraper import EkwateurScraper
+from .octopus_scraper import OctopusScraper
 from .vattenfall_scraper import VattenfallScraper
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "AlpiqScraper",
     "AlternaScraper",
     "EkwateurScraper",
+    "OctopusScraper",
     "VattenfallScraper",
 ]
