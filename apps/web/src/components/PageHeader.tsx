@@ -112,6 +112,14 @@ export default function PageHeader() {
   // Check if on a consumption page
   const isConsumptionPage = location.pathname.startsWith('/consumption')
 
+  // Get the set of production PDL IDs that are linked to consumption PDLs
+  // These should be hidden from the selector (the consumption PDL will show instead)
+  const linkedProductionIds = new Set(
+    pdls
+      .filter((pdl: PDL) => pdl.has_consumption && pdl.linked_production_pdl_id)
+      .map((pdl: PDL) => pdl.linked_production_pdl_id)
+  )
+
   // Filter PDLs based on page
   const displayedPdls = location.pathname === '/production'
     ? (() => {
@@ -122,22 +130,16 @@ export default function PageHeader() {
           pdl.linked_production_pdl_id
         )
 
-        const linkedProductionIds = new Set(
-          pdls
-            .filter((pdl: PDL) => pdl.has_consumption && pdl.linked_production_pdl_id)
-            .map((pdl: PDL) => pdl.linked_production_pdl_id)
-        )
-
         const standaloneProduction = activePdls.filter((pdl: PDL) =>
           pdl.has_production &&
-          !linkedProductionIds.has(pdl.usage_point_id)
+          !linkedProductionIds.has(pdl.id) // Use pdl.id (UUID) not usage_point_id
         )
 
         return [...consumptionWithProduction, ...standaloneProduction]
       })()
     : isConsumptionPage
     ? activePdls.filter((pdl: PDL) => pdl.has_consumption)
-    : activePdls
+    : activePdls.filter((pdl: PDL) => !linkedProductionIds.has(pdl.id)) // Hide linked production PDLs globally
 
   return (
     <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
