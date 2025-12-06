@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Calculator, AlertCircle, Loader2, ChevronDown, ChevronUp, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info, ArrowRight } from 'lucide-react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useIsRestoring } from '@tanstack/react-query'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
 import { AnimatedSection } from '@/components/AnimatedSection'
@@ -123,6 +123,7 @@ function calcPrice(quantity: number | undefined, price: string | number | undefi
 export default function Simulator() {
   // const { user } = useAuth() // Unused for now
   const queryClient = useQueryClient()
+  const isRestoring = useIsRestoring()
   const isDemo = useIsDemo()
 
   // Fetch user's PDLs
@@ -141,7 +142,7 @@ export default function Simulator() {
   })
 
   // Fetch energy providers and offers
-  const { data: providersData, isLoading: providersLoading } = useQuery({
+  const { data: providersDataRaw, isLoading: providersLoading } = useQuery({
     queryKey: ['energy-providers'],
     queryFn: async () => {
       const response = await energyApi.getProviders()
@@ -150,9 +151,13 @@ export default function Simulator() {
       }
       return []
     },
+    staleTime: 0,
   })
 
-  const { data: offersData, isLoading: offersLoading } = useQuery({
+  // Ensure providersData is always an array
+  const providersData = Array.isArray(providersDataRaw) ? providersDataRaw : []
+
+  const { data: offersDataRaw, isLoading: offersLoading } = useQuery({
     queryKey: ['energy-offers'],
     queryFn: async () => {
       const response = await energyApi.getOffers()
@@ -161,7 +166,11 @@ export default function Simulator() {
       }
       return []
     },
+    staleTime: 0, // Always refetch to ensure fresh data
   })
+
+  // Ensure offersData is always an array
+  const offersData = Array.isArray(offersDataRaw) ? offersDataRaw : []
 
   // Selected PDL from global store
   const { selectedPdl, setSelectedPdl } = usePdlStore()
@@ -187,34 +196,40 @@ export default function Simulator() {
   // Read consumptionDetail data via direct cache access + subscription
   const [cachedConsumptionData, setCachedConsumptionData] = useState<any>(null)
 
+  // Subscribe to cache updates IMMEDIATELY (don't wait for hydration)
+  // This ensures we capture setQueryData events even while hydrating
   useEffect(() => {
     if (!selectedPdl) {
       setCachedConsumptionData(null)
       return
     }
 
-    // Read current data from cache (includes persisted data after hydration)
-    const initialData = queryClient.getQueryData(['consumptionDetail', selectedPdl])
-    if (initialData) {
-      logger.log('[Simulator] Initial cache data found:', !!initialData)
-      setCachedConsumptionData(initialData)
-    }
-
-    // Subscribe to future changes (when setQueryData is called or cache hydrates)
+    // Subscribe to future changes (when setQueryData is called)
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      // Listen to 'updated' events for this query (setQueryData triggers 'updated')
       if (
         event?.type === 'updated' &&
         event?.query?.queryKey?.[0] === 'consumptionDetail' &&
         event?.query?.queryKey?.[1] === selectedPdl
       ) {
         const updatedData = queryClient.getQueryData(['consumptionDetail', selectedPdl])
-        logger.log('[Simulator] Cache updated:', !!updatedData)
         setCachedConsumptionData(updatedData)
       }
     })
 
     return () => unsubscribe()
   }, [selectedPdl, queryClient])
+
+  // Read initial data from cache AFTER hydration completes
+  useEffect(() => {
+    if (!selectedPdl || isRestoring) return
+
+    // Hydration complete - read current data from cache
+    const initialData = queryClient.getQueryData(['consumptionDetail', selectedPdl])
+    if (initialData) {
+      setCachedConsumptionData(initialData)
+    }
+  }, [selectedPdl, queryClient, isRestoring])
 
   // Simulation state
   const [isSimulating, setIsSimulating] = useState(false)
@@ -819,60 +834,25 @@ export default function Simulator() {
   // Auto-launch simulation if cache data exists
   // IMPORTANT: This hook must be before any early returns to respect React's rules of hooks
   useEffect(() => {
-    logger.log('[Auto-launch] useEffect triggered', {
-      selectedPdl,
-      isSimulating,
-      hasSimulationResult: !!simulationResult,
-      hasAutoLaunched,
-      isDemo,
-      pdlsDataLoaded: !!pdlsData,
-      offersDataLoaded: !!offersData,
-      providersDataLoaded: !!providersData,
-      offersLoading,
-      providersLoading,
-      isConsumptionCacheLoading,
-      hasCachedData: !!cachedConsumptionData,
-    })
-
     // Don't auto-launch if already launched, simulating, or have results
-    if (!selectedPdl || isSimulating || simulationResult || hasAutoLaunched) {
-      logger.log('[Auto-launch] Skipping auto-launch due to conditions')
-      return
-    }
+    if (!selectedPdl || isSimulating || simulationResult || hasAutoLaunched) return
 
     // Don't auto-launch while data is still loading (including cache hydration)
-    if (offersLoading || providersLoading || isConsumptionCacheLoading) {
-      logger.log('[Auto-launch] Skipping auto-launch - still loading data')
-      return
-    }
+    if (offersLoading || providersLoading || isConsumptionCacheLoading) return
 
     // Don't auto-launch if PDL data, offers, or providers are not loaded yet
-    if (!pdlsData || !Array.isArray(offersData) || offersData.length === 0 || !providersData) {
-      logger.log('[Auto-launch] Skipping auto-launch - data not loaded yet', {
-        pdlsData: !!pdlsData,
-        offersData: Array.isArray(offersData) ? offersData.length : 'not array',
-        providersData: !!providersData
-      })
-      return
-    }
+    if (!pdlsData || offersData.length === 0 || providersData.length === 0) return
 
     // Use cachedConsumptionData from state (populated via subscription, handles IndexedDB hydration)
-    if (!cachedConsumptionData?.data?.meter_reading?.interval_reading?.length) {
-      logger.log('[Auto-launch] ❌ No cached data found for PDL:', selectedPdl)
-      return
-    }
+    if (!cachedConsumptionData?.data?.meter_reading?.interval_reading?.length) return
 
     const readings = cachedConsumptionData.data.meter_reading.interval_reading
     const totalPoints = readings.length
 
     // Check if we have enough data (at least 30 days worth = ~1440 points at 30min intervals)
     const minRequiredPoints = 30 * 48 // 30 days * 48 half-hours
-    const hasEnoughData = totalPoints >= minRequiredPoints
 
-    logger.log(`[Auto-launch] Cache check: ${totalPoints} points (need ${minRequiredPoints} minimum)`)
-
-    if (hasEnoughData) {
-      logger.log(`✅ Auto-launching simulation with ${totalPoints} cached points`)
+    if (totalPoints >= minRequiredPoints) {
       setHasAutoLaunched(true)
       // Show loading overlay while preparing simulation
       setIsInitialLoadingFromCache(true)
@@ -881,8 +861,6 @@ export default function Simulator() {
       setTimeout(() => {
         handleSimulation()
       }, 100)
-    } else {
-      logger.log(`❌ Not enough cached data (${totalPoints} points), skipping auto-launch`)
     }
   }, [selectedPdl, isSimulating, simulationResult, hasAutoLaunched, isDemo, pdlsData, offersData, providersData, offersLoading, providersLoading, isConsumptionCacheLoading, cachedConsumptionData, handleSimulation])
 

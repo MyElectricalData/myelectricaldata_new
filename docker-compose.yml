@@ -57,6 +57,8 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile
     restart: unless-stopped
+    ports:
+      - "8081:8000"
     env_file:
       - ./.env.api
     environment:
@@ -100,7 +102,8 @@ services:
       - ./apps/web/tailwind.config.js:/app/tailwind.config.js
       - ./apps/web/postcss.config.js:/app/postcss.config.js
       - /app/node_modules
-    # ports définis dans docker-compose.override.yml pour support multi-instances
+    ports:
+      - "8000:5173"
     networks:
       - myelectricaldata
     depends_on:
