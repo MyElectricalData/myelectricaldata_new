@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle, Clock, XCircle, List, Zap, Upload, FileJson } from 'lucide-react'
-import { energyApi, type EnergyProvider, type ContributionData, type EnergyOffer } from '@/api/energy'
+import { CheckCircle, Clock, XCircle, List, Zap, FileJson, ChevronDown, ChevronRight, MessageCircle, ExternalLink, Copy } from 'lucide-react'
+import { energyApi, type EnergyProvider, type ContributionData, type EnergyOffer, type Contribution } from '@/api/energy'
+import ChatWhatsApp, { type ChatMessage } from '@/components/ChatWhatsApp'
 
 export default function Contribute() {
   const queryClient = useQueryClient()
@@ -9,15 +10,26 @@ export default function Contribute() {
   const [showJsonImport, setShowJsonImport] = useState(false)
   const [jsonImportData, setJsonImportData] = useState('')
   const [importProgress, setImportProgress] = useState<{current: number, total: number, errors: string[]} | null>(null)
-  const [showAllContributions, setShowAllContributions] = useState(false)
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({})
+  // Accordéons par statut : pending déplié par défaut, approved et rejected pliés
+  const [expandedStatusSections, setExpandedStatusSections] = useState<Record<string, boolean>>({
+    pending: true,
+    approved: false,
+    rejected: false,
+  })
+  // State pour les réponses aux messages par contribution
+  const [replyMessages, setReplyMessages] = useState<Record<string, string>>({})
+  const [sendingReply, setSendingReply] = useState<string | null>(null)
+  // State pour afficher les échanges d'une contribution
+  const [expandedMessages, setExpandedMessages] = useState<Record<string, boolean>>({})
+  // State pour suivre la contribution en cours d'édition
+  const [editingContributionId, setEditingContributionId] = useState<string | null>(null)
 
   // Fetch providers
-  const { data: providersData, isLoading: isLoadingProviders, error: providersError } = useQuery({
+  const { data: providersData } = useQuery({
     queryKey: ['energy-providers'],
     queryFn: async () => {
       const response = await energyApi.getProviders()
-      console.log('[Contribute] Providers API response:', response)
       if (response.success && Array.isArray(response.data)) {
         return response.data as EnergyProvider[]
       }
@@ -25,19 +37,17 @@ export default function Contribute() {
     },
   })
 
-  // Debug: Log providers state
-  console.log('[Contribute] providersData:', providersData, 'isLoading:', isLoadingProviders, 'error:', providersError)
-
-  // Fetch user's contributions
+  // Fetch user's contributions (with auto-refresh every 10 seconds for pending ones)
   const { data: myContributions } = useQuery({
     queryKey: ['my-contributions'],
     queryFn: async () => {
       const response = await energyApi.getMyContributions()
       if (response.success && Array.isArray(response.data)) {
-        return response.data
+        return response.data as Contribution[]
       }
       return []
     },
+    refetchInterval: 10000, // Rafraîchit toutes les 10 secondes
   })
 
   // Fetch all offers
@@ -51,6 +61,273 @@ export default function Contribute() {
       return []
     },
   })
+
+  // Group contributions by status
+  const contributionsByStatus = useMemo(() => {
+    if (!Array.isArray(myContributions)) return { pending: [] as Contribution[], approved: [] as Contribution[], rejected: [] as Contribution[] }
+
+    const grouped: { pending: Contribution[], approved: Contribution[], rejected: Contribution[] } = {
+      pending: [],
+      approved: [],
+      rejected: [],
+    }
+
+    myContributions.forEach((contribution: Contribution) => {
+      if (contribution.status === 'approved') {
+        grouped.approved.push(contribution)
+      } else if (contribution.status === 'rejected') {
+        grouped.rejected.push(contribution)
+      } else {
+        grouped.pending.push(contribution)
+      }
+    })
+
+    // Trier par date décroissante dans chaque groupe
+    const sortByDate = (a: Contribution, b: Contribution) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    grouped.pending.sort(sortByDate)
+    grouped.approved.sort(sortByDate)
+    grouped.rejected.sort(sortByDate)
+
+    return grouped
+  }, [myContributions])
+
+  // Helper to get offer type label
+  const getOfferTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      'BASE': 'Base',
+      'HC_HP': 'Heures Creuses / Heures Pleines',
+      'TEMPO': 'Tempo',
+      'EJP': 'EJP',
+      'BASE_WEEKEND': 'Base + Weekend',
+      'HC_WEEKEND': 'HC/HP + Weekend',
+      'HC_NUIT_WEEKEND': 'HC Nuit + Weekend',
+      'SEASONAL': 'Saisonnier',
+    }
+    return labels[type] || type
+  }
+
+  // Helper to format price
+  const formatPrice = (price: number | undefined) => {
+    if (price === undefined || price === null) return '-'
+    return `${Number(price).toFixed(4)} €/kWh`
+  }
+
+  // Render contribution card with messages
+  const renderContributionCard = (contribution: Contribution) => {
+    // Check if last message is from admin (unread)
+    const lastMessage = contribution.messages?.[contribution.messages.length - 1]
+    const hasUnreadMessage = lastMessage?.is_from_admin ?? false
+    // Keep expanded if user is writing or sending a message
+    const isWritingMessage = !!replyMessages[contribution.id]?.trim()
+    const isSendingMessage = sendingReply === contribution.id
+    const isMessagesExpanded = expandedMessages[contribution.id] ?? hasUnreadMessage ?? isWritingMessage ?? isSendingMessage
+    // Show messages section for pending contributions (can send messages) or if there are existing messages
+    const showMessagesSection = contribution.status === 'pending' || (contribution.messages && contribution.messages.length > 0)
+    const messageCount = contribution.messages?.length ?? 0
+
+    return (
+    <div
+      key={contribution.id}
+      className="border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 overflow-hidden"
+    >
+      {/* Compact Header with all key info */}
+      <div className="p-3 bg-gray-50 dark:bg-gray-900/50">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="font-semibold text-base truncate">{contribution.offer_name}</h3>
+              <span className="text-xs px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded shrink-0">
+                {getOfferTypeLabel(contribution.offer_type)}
+              </span>
+              {contribution.power_kva && (
+                <span className="text-xs px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded shrink-0">
+                  {contribution.power_kva} kVA
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 flex-wrap">
+              <span>
+                {contribution.contribution_type === 'NEW_PROVIDER'
+                  ? contribution.provider_name
+                  : contribution.existing_provider_name || 'Fournisseur existant'}
+              </span>
+              <span>•</span>
+              <span>{new Date(contribution.created_at).toLocaleDateString('fr-FR')}</span>
+              {contribution.description && (
+                <>
+                  <span>•</span>
+                  <span className="truncate max-w-[200px]">{contribution.description}</span>
+                </>
+              )}
+            </div>
+          </div>
+          {/* Documentation links */}
+          <div className="flex gap-1 shrink-0">
+            {contribution.price_sheet_url && (
+              <a
+                href={contribution.price_sheet_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1.5 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded"
+                title="Fiche des prix"
+              >
+                <ExternalLink size={14} />
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Compact Pricing - inline */}
+      {contribution.pricing_data && (
+        <div className="px-3 py-2 border-t border-gray-100 dark:border-gray-700 text-xs">
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            {contribution.pricing_data.subscription_price !== undefined && (
+              <span><span className="text-gray-500">Abo:</span> <span className="font-medium">{contribution.pricing_data.subscription_price}€</span></span>
+            )}
+            {contribution.pricing_data.base_price !== undefined && (
+              <span><span className="text-gray-500">Base:</span> <span className="font-medium">{formatPrice(contribution.pricing_data.base_price)}</span></span>
+            )}
+            {contribution.pricing_data.hc_price !== undefined && (
+              <span><span className="text-gray-500">HC:</span> <span className="font-medium">{formatPrice(contribution.pricing_data.hc_price)}</span></span>
+            )}
+            {contribution.pricing_data.hp_price !== undefined && (
+              <span><span className="text-gray-500">HP:</span> <span className="font-medium">{formatPrice(contribution.pricing_data.hp_price)}</span></span>
+            )}
+            {/* Tempo prices - compact */}
+            {contribution.pricing_data.tempo_blue_hc !== undefined && (
+              <>
+                <span className="text-blue-600 dark:text-blue-400">
+                  <span className="font-medium">Bleu</span> {formatPrice(contribution.pricing_data.tempo_blue_hc)}/{formatPrice(contribution.pricing_data.tempo_blue_hp)}
+                </span>
+                <span>
+                  <span className="font-medium">Blanc</span> {formatPrice(contribution.pricing_data.tempo_white_hc)}/{formatPrice(contribution.pricing_data.tempo_white_hp)}
+                </span>
+                <span className="text-red-600 dark:text-red-400">
+                  <span className="font-medium">Rouge</span> {formatPrice(contribution.pricing_data.tempo_red_hc)}/{formatPrice(contribution.pricing_data.tempo_red_hp)}
+                </span>
+              </>
+            )}
+            {/* EJP prices */}
+            {contribution.pricing_data.ejp_normal !== undefined && (
+              <>
+                <span><span className="text-gray-500">Normal:</span> <span className="font-medium">{formatPrice(contribution.pricing_data.ejp_normal)}</span></span>
+                <span className="text-orange-600 dark:text-orange-400"><span className="font-medium">Pointe:</span> {formatPrice(contribution.pricing_data.ejp_peak)}</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit button - compact, for rejected and pending contributions */}
+      {(contribution.status === 'rejected' || contribution.status === 'pending') && (
+        <div className="px-3 py-2 border-t border-gray-100 dark:border-gray-700">
+          <button
+            onClick={() => {
+              setEditingContributionId(contribution.id)
+              setContributionType(contribution.contribution_type === 'NEW_PROVIDER' ? 'NEW_PROVIDER' : 'NEW_OFFER')
+              if (contribution.provider_name) setProviderName(contribution.provider_name)
+              if (contribution.provider_website) setProviderWebsite(contribution.provider_website)
+              if (contribution.existing_provider_id) setSelectedProviderId(contribution.existing_provider_id)
+              setOfferName(contribution.offer_name)
+              setOfferType(contribution.offer_type)
+              if (contribution.description) setDescription(contribution.description)
+              if (contribution.power_kva) setPowerKva(String(contribution.power_kva))
+              if (contribution.price_sheet_url) setPriceSheetUrl(contribution.price_sheet_url)
+              if (contribution.screenshot_url) setScreenshotUrl(contribution.screenshot_url)
+              if (contribution.pricing_data) {
+                const p = contribution.pricing_data
+                if (p.subscription_price !== undefined) setSubscriptionPrice(String(p.subscription_price))
+                if (p.base_price !== undefined) setBasePrice(String(p.base_price))
+                if (p.hc_price !== undefined) setHcPrice(String(p.hc_price))
+                if (p.hp_price !== undefined) setHpPrice(String(p.hp_price))
+                if (p.tempo_blue_hc !== undefined) setTempoBlueHc(String(p.tempo_blue_hc))
+                if (p.tempo_blue_hp !== undefined) setTempoBlueHp(String(p.tempo_blue_hp))
+                if (p.tempo_white_hc !== undefined) setTempoWhiteHc(String(p.tempo_white_hc))
+                if (p.tempo_white_hp !== undefined) setTempoWhiteHp(String(p.tempo_white_hp))
+                if (p.tempo_red_hc !== undefined) setTempoRedHc(String(p.tempo_red_hc))
+                if (p.tempo_red_hp !== undefined) setTempoRedHp(String(p.tempo_red_hp))
+                if (p.ejp_normal !== undefined) setEjpNormal(String(p.ejp_normal))
+                if (p.ejp_peak !== undefined) setEjpPeak(String(p.ejp_peak))
+              }
+              document.getElementById('contribution-form')?.scrollIntoView({ behavior: 'smooth' })
+              setNotification({ type: 'success', message: 'Mode édition activé.' })
+              setTimeout(() => setNotification(null), 3000)
+            }}
+            className={`w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+              contribution.status === 'rejected'
+                ? 'bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/50 dark:text-orange-300'
+                : 'bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300'
+            }`}
+          >
+            <Copy size={12} />
+            Modifier
+          </button>
+        </div>
+      )}
+
+      {/* Messages / Conversation - WhatsApp Style */}
+      {showMessagesSection && (
+        <div className="border-t border-gray-100 dark:border-gray-700">
+          <button
+            onClick={() => {
+              if (isWritingMessage || isSendingMessage) return
+              setExpandedMessages(prev => ({ ...prev, [contribution.id]: !isMessagesExpanded }))
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2 transition-colors ${
+              isWritingMessage || isSendingMessage
+                ? 'cursor-default'
+                : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <MessageCircle className={hasUnreadMessage ? "text-red-500" : "text-gray-400"} size={14} />
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                Échanges {messageCount > 0 && `(${messageCount})`}
+              </span>
+              {hasUnreadMessage && (
+                <span className="text-[10px] px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full animate-pulse">
+                  Nouveau
+                </span>
+              )}
+            </div>
+            {!(isWritingMessage || isSendingMessage) && (
+              isMessagesExpanded ? (
+                <ChevronDown className="text-gray-400" size={14} />
+              ) : (
+                <ChevronRight className="text-gray-400" size={14} />
+              )
+            )}
+          </button>
+          {(isMessagesExpanded || isWritingMessage || isSendingMessage) && (
+            <div className="px-2 pb-2">
+              <ChatWhatsApp
+                messages={(contribution.messages || []) as ChatMessage[]}
+                isAdminView={false}
+                inputValue={replyMessages[contribution.id] || ''}
+                onInputChange={(value) => setReplyMessages(prev => ({ ...prev, [contribution.id]: value }))}
+                onSend={() => handleSendReply(contribution.id)}
+                isSending={sendingReply === contribution.id}
+                showInput={contribution.status === 'pending'}
+                minHeight="120px"
+                maxHeight="250px"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Review comment for rejected - compact */}
+      {contribution.status === 'rejected' && contribution.review_comment && (
+        <div className="px-3 py-2 border-t border-gray-100 dark:border-gray-700 bg-red-50 dark:bg-red-900/20">
+          <p className="text-xs text-red-600 dark:text-red-400">
+            <span className="font-medium">Rejet :</span> {contribution.review_comment}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+  }
 
   // Form state
   const [contributionType, setContributionType] = useState<'NEW_PROVIDER' | 'NEW_OFFER'>('NEW_OFFER')
@@ -97,7 +374,7 @@ export default function Contribute() {
   const [priceSheetUrl, setPriceSheetUrl] = useState('')
   const [screenshotUrl, setScreenshotUrl] = useState('')
 
-  // Submit mutation
+  // Submit mutation (create new contribution)
   const submitMutation = useMutation({
     mutationFn: async (data: ContributionData) => {
       return await energyApi.submitContribution(data)
@@ -119,6 +396,62 @@ export default function Contribute() {
       setTimeout(() => setNotification(null), 5000)
     },
   })
+
+  // Update mutation (edit existing contribution)
+  const updateMutation = useMutation({
+    mutationFn: async ({ contributionId, data }: { contributionId: string; data: ContributionData }) => {
+      return await energyApi.updateContribution(contributionId, data)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
+      setNotification({
+        type: 'success',
+        message: 'Contribution mise à jour avec succès !'
+      })
+      setTimeout(() => setNotification(null), 5000)
+      resetForm()
+      setEditingContributionId(null)
+    },
+    onError: (error: any) => {
+      setNotification({
+        type: 'error',
+        message: `Erreur: ${error.message || 'Une erreur est survenue'}`
+      })
+      setTimeout(() => setNotification(null), 5000)
+    },
+  })
+
+  // Reply mutation
+  const replyMutation = useMutation({
+    mutationFn: async ({ contributionId, message }: { contributionId: string; message: string }) => {
+      return await energyApi.replyToContribution(contributionId, message)
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
+      setReplyMessages(prev => ({ ...prev, [variables.contributionId]: '' }))
+      setSendingReply(null)
+      setNotification({
+        type: 'success',
+        message: 'Réponse envoyée avec succès !'
+      })
+      setTimeout(() => setNotification(null), 3000)
+    },
+    onError: (error: any) => {
+      setSendingReply(null)
+      setNotification({
+        type: 'error',
+        message: `Erreur: ${error.message || 'Impossible d\'envoyer la réponse'}`
+      })
+      setTimeout(() => setNotification(null), 5000)
+    },
+  })
+
+  const handleSendReply = (contributionId: string) => {
+    const message = replyMessages[contributionId]?.trim()
+    if (!message) return
+    setSendingReply(contributionId)
+    replyMutation.mutate({ contributionId, message })
+  }
 
   const resetForm = () => {
     setOfferName('')
@@ -147,6 +480,7 @@ export default function Contribute() {
     setProviderName('')
     setProviderWebsite('')
     setSelectedProviderId('')
+    setEditingContributionId(null)
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -212,7 +546,12 @@ export default function Contribute() {
       contributionData.existing_provider_id = selectedProviderId
     }
 
-    submitMutation.mutate(contributionData)
+    // If editing an existing contribution, update it. Otherwise, create a new one.
+    if (editingContributionId) {
+      updateMutation.mutate({ contributionId: editingContributionId, data: contributionData })
+    } else {
+      submitMutation.mutate(contributionData)
+    }
   }
 
   const handleJsonImport = async () => {
@@ -262,28 +601,6 @@ export default function Contribute() {
     }
   }
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return <CheckCircle className="text-green-600" size={20} />
-      case 'rejected':
-        return <XCircle className="text-red-600" size={20} />
-      default:
-        return <Clock className="text-yellow-600" size={20} />
-    }
-  }
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return 'Approuvée'
-      case 'rejected':
-        return 'Rejetée'
-      default:
-        return 'En attente'
-    }
-  }
-
   return (
     <div className="pt-6 w-full">
       {/* Notification Toast */}
@@ -314,117 +631,132 @@ export default function Contribute() {
         </div>
       )}
 
-      <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-end gap-4">
-        <button
-          onClick={() => setShowJsonImport(!showJsonImport)}
-          className="btn btn-secondary flex items-center gap-2 whitespace-nowrap"
-        >
-          <FileJson size={20} />
-          Import JSON
-        </button>
-      </div>
-
-      {/* My Contributions - Compact at top */}
+      {/* My Contributions - Grouped by status */}
       {Array.isArray(myContributions) && myContributions.length > 0 && (
         <div className="card mt-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <List className="text-primary-600 dark:text-primary-400" size={20} />
-              Mes contributions ({myContributions.length})
-            </h2>
-            {myContributions.length > 1 && (
-              <button
-                onClick={() => setShowAllContributions(!showAllContributions)}
-                className="text-sm text-primary-600 dark:text-primary-400 hover:underline"
-              >
-                {showAllContributions ? 'Réduire' : `Voir toutes (${myContributions.length})`}
-              </button>
-            )}
-          </div>
+          <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
+            <List className="text-primary-600 dark:text-primary-400" size={20} />
+            Mes contributions ({myContributions.length})
+          </h2>
 
-          {/* Latest contribution always visible */}
-          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-900/50">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  {getStatusIcon(myContributions[0].status)}
-                  <h3 className="font-semibold">{myContributions[0].offer_name}</h3>
-                  <span className="text-sm text-gray-500">({myContributions[0].offer_type})</span>
-                </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Soumise le {new Date(myContributions[0].created_at).toLocaleDateString('fr-FR')}
-                </p>
-                {myContributions[0].review_comment && (
-                  <p className="text-sm mt-2 text-red-600 dark:text-red-400">
-                    Commentaire : {myContributions[0].review_comment}
-                  </p>
-                )}
-              </div>
-              <span
-                className={`px-3 py-1 rounded-full text-sm font-medium ${
-                  myContributions[0].status === 'approved'
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                    : myContributions[0].status === 'rejected'
-                    ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                    : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
-                }`}
-              >
-                {getStatusText(myContributions[0].status)}
-              </span>
-            </div>
-          </div>
-
-          {/* Other contributions - collapsible */}
-          {showAllContributions && myContributions.length > 1 && (
-            <div className="mt-4 space-y-3">
-              {myContributions.slice(1).map((contribution: any) => (
-                <div
-                  key={contribution.id}
-                  className="border border-gray-200 dark:border-gray-700 rounded-lg p-4"
+          <div className="space-y-4">
+            {/* En attente - déplié par défaut */}
+            {contributionsByStatus.pending.length > 0 && (
+              <div className="border border-yellow-200 dark:border-yellow-800 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setExpandedStatusSections(prev => ({ ...prev, pending: !prev.pending }))}
+                  className="w-full flex items-center justify-between p-4 bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 dark:hover:bg-yellow-900/30 transition-colors"
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        {getStatusIcon(contribution.status)}
-                        <h3 className="font-semibold">{contribution.offer_name}</h3>
-                        <span className="text-sm text-gray-500">({contribution.offer_type})</span>
-                      </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        Soumise le {new Date(contribution.created_at).toLocaleDateString('fr-FR')}
-                      </p>
-                      {contribution.review_comment && (
-                        <p className="text-sm mt-2 text-red-600 dark:text-red-400">
-                          Commentaire : {contribution.review_comment}
-                        </p>
-                      )}
-                    </div>
-                    <span
-                      className={`px-3 py-1 rounded-full text-sm font-medium ${
-                        contribution.status === 'approved'
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                          : contribution.status === 'rejected'
-                          ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                          : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
-                      }`}
-                    >
-                      {getStatusText(contribution.status)}
+                  <div className="flex items-center gap-3">
+                    <Clock className="text-yellow-600 dark:text-yellow-400" size={20} />
+                    <span className="font-semibold text-yellow-800 dark:text-yellow-200">
+                      En attente ({contributionsByStatus.pending.length})
                     </span>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                  {expandedStatusSections.pending ? (
+                    <ChevronDown className="text-yellow-600 dark:text-yellow-400" size={20} />
+                  ) : (
+                    <ChevronRight className="text-yellow-600 dark:text-yellow-400" size={20} />
+                  )}
+                </button>
+                {expandedStatusSections.pending && (
+                  <div className="p-4 space-y-3 bg-white dark:bg-gray-800">
+                    {contributionsByStatus.pending.map(renderContributionCard)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Approuvées - plié par défaut */}
+            {contributionsByStatus.approved.length > 0 && (
+              <div className="border border-green-200 dark:border-green-800 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setExpandedStatusSections(prev => ({ ...prev, approved: !prev.approved }))}
+                  className="w-full flex items-center justify-between p-4 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <CheckCircle className="text-green-600 dark:text-green-400" size={20} />
+                    <span className="font-semibold text-green-800 dark:text-green-200">
+                      Approuvées ({contributionsByStatus.approved.length})
+                    </span>
+                  </div>
+                  {expandedStatusSections.approved ? (
+                    <ChevronDown className="text-green-600 dark:text-green-400" size={20} />
+                  ) : (
+                    <ChevronRight className="text-green-600 dark:text-green-400" size={20} />
+                  )}
+                </button>
+                {expandedStatusSections.approved && (
+                  <div className="p-4 space-y-3 bg-white dark:bg-gray-800">
+                    {contributionsByStatus.approved.map(renderContributionCard)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Rejetées - plié par défaut */}
+            {contributionsByStatus.rejected.length > 0 && (
+              <div className="border border-red-200 dark:border-red-800 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setExpandedStatusSections(prev => ({ ...prev, rejected: !prev.rejected }))}
+                  className="w-full flex items-center justify-between p-4 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <XCircle className="text-red-600 dark:text-red-400" size={20} />
+                    <span className="font-semibold text-red-800 dark:text-red-200">
+                      Rejetées ({contributionsByStatus.rejected.length})
+                    </span>
+                  </div>
+                  {expandedStatusSections.rejected ? (
+                    <ChevronDown className="text-red-600 dark:text-red-400" size={20} />
+                  ) : (
+                    <ChevronRight className="text-red-600 dark:text-red-400" size={20} />
+                  )}
+                </button>
+                {expandedStatusSections.rejected && (
+                  <div className="p-4 space-y-3 bg-white dark:bg-gray-800">
+                    {contributionsByStatus.rejected.map(renderContributionCard)}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* JSON Import Section */}
-      {showJsonImport && (
-        <div className="card mt-6">
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Upload size={20} />
-            Import JSON - Plusieurs offres
+      {/* Contribution Form */}
+      <div id="contribution-form" className="card mt-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Zap className="text-primary-600 dark:text-primary-400" size={20} />
+            {editingContributionId ? 'Modifier la contribution' : 'Nouvelle contribution'}
           </h2>
+          <div className="flex items-center gap-4">
+            {editingContributionId && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingContributionId(null)
+                  resetForm()
+                }}
+                className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                Annuler l'édition
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowJsonImport(!showJsonImport)}
+              className={`btn flex items-center gap-2 text-sm ${showJsonImport ? 'btn-primary' : 'btn-secondary'}`}
+            >
+              <FileJson size={16} />
+              {showJsonImport ? 'Formulaire' : 'Import JSON'}
+            </button>
+          </div>
+        </div>
 
+        {/* JSON Import Section */}
+        {showJsonImport ? (
           <div className="space-y-4">
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-lg">
               <h3 className="font-semibold mb-2 text-blue-900 dark:text-blue-100">📋 Structure du fichier JSON</h3>
@@ -682,27 +1014,10 @@ RÈGLES IMPORTANTES :
               >
                 Importer les offres
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowJsonImport(false)
-                  setJsonImportData('')
-                  setImportProgress(null)
-                }}
-                className="btn"
-              >
-                Annuler
-              </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Contribution Form */}
-      <div className="card mt-6">
-        <h2 className="text-lg font-semibold mb-6">Nouvelle contribution</h2>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-6">
           {/* Contribution Type */}
           <div>
             <label className="block text-sm font-medium mb-2">Type de contribution</label>
@@ -1311,12 +1626,18 @@ RÈGLES IMPORTANTES :
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={submitMutation.isPending}
+              disabled={submitMutation.isPending || updateMutation.isPending}
             >
-              {submitMutation.isPending ? 'Envoi en cours...' : 'Soumettre la contribution'}
+              {(submitMutation.isPending || updateMutation.isPending)
+                ? 'Envoi en cours...'
+                : editingContributionId
+                  ? 'Mettre à jour la contribution'
+                  : 'Soumettre la contribution'
+              }
             </button>
           </div>
-        </form>
+          </form>
+        )}
       </div>
 
       {/* Available Offers */}
@@ -1531,53 +1852,6 @@ RÈGLES IMPORTANTES :
           <p className="text-gray-500 text-center py-8">Aucune offre disponible pour le moment.</p>
         )}
       </div>
-
-      {/* My Contributions */}
-      {Array.isArray(myContributions) && myContributions.length > 0 && (
-        <div className="card mt-6">
-          <h2 className="text-lg font-semibold mb-6 flex items-center gap-2">
-            <List className="text-primary-600 dark:text-primary-400" size={20} />
-            Mes contributions
-          </h2>
-          <div className="space-y-4">
-            {myContributions.map((contribution: any) => (
-              <div
-                key={contribution.id}
-                className="border border-gray-200 dark:border-gray-700 rounded-lg p-4"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      {getStatusIcon(contribution.status)}
-                      <h3 className="font-semibold">{contribution.offer_name}</h3>
-                      <span className="text-sm text-gray-500">({contribution.offer_type})</span>
-                    </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      Soumise le {new Date(contribution.created_at).toLocaleDateString('fr-FR')}
-                    </p>
-                    {contribution.review_comment && (
-                      <p className="text-sm mt-2 text-red-600 dark:text-red-400">
-                        Commentaire : {contribution.review_comment}
-                      </p>
-                    )}
-                  </div>
-                  <span
-                    className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      contribution.status === 'approved'
-                        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                        : contribution.status === 'rejected'
-                        ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                        : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
-                    }`}
-                  >
-                    {getStatusText(contribution.status)}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

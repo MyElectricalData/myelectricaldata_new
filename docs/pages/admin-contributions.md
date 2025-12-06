@@ -1,6 +1,6 @@
 # Page Administration - Gestion des contributions
 
-## 🎯 Directives d'agent
+## Directives d'agent
 
 - **Pour l'UX/UI** (interface, composants, design) : Utiliser l'agent **frontend-specialist**
 - **Pour le backend** (API, base de données, logique métier) : Utiliser l'agent **backend-specialist**
@@ -11,116 +11,122 @@ Tu travailles sur la page `/admin/contributions` de l'application MyElectricalDa
 
 Cette page permet aux **administrateurs de modérer les contributions d'offres d'énergie** soumises par les utilisateurs.
 
-## Fonctionnalités principales
+## Fonctionnalités implémentées
 
-1. **Liste des contributions**
+### 1. Statistiques (en haut de page)
 
-   - Tableau avec toutes les contributions
-   - Colonnes affichées :
-     - Date de soumission
-     - Utilisateur contributeur
-     - Fournisseur
-     - Nom de l'offre
-     - Type (BASE, HP/HC, TEMPO)
-     - Statut (En attente, Validée, Rejetée)
-     - Actions
+Cards affichant :
+- **En attente** : Nombre de contributions à traiter (icône Clock, bleu)
+- **Validées ce mois** : Contributions approuvées ce mois (icône CheckCircle, vert)
+- **Rejetées** : Total des contributions rejetées (icône XCircle, rouge)
+- **Total validées** : Nombre total de contributions approuvées (icône Users, violet)
 
-2. **Filtrage et tri**
+**Top contributeurs** : Section dédiée affichant les 5 meilleurs contributeurs avec :
+- Avatar avec initiales
+- Email du contributeur
+- Badge avec nombre de contributions validées
 
-   - Filtre par statut (en attente, validées, rejetées)
-   - Filtre par fournisseur
-   - Filtre par type d'offre
-   - Tri par date de soumission
-   - Recherche par nom d'offre ou utilisateur
+### 2. Filtrage et recherche
 
-3. **Détails d'une contribution**
+- **Recherche** : Par nom d'offre ou email du contributeur
+- **Filtre par type d'offre** : Tous, BASE, HC/HP, TEMPO, EJP
+- **Tri par date** : Plus récent / Plus ancien (bouton toggle)
 
-   - Vue complète de l'offre proposée
-   - Informations du contributeur
-   - Tarifs détaillés selon le type
-   - Puissances compatibles
-   - Commentaires de l'utilisateur (si fournis)
+### 3. Liste des contributions
 
-4. **Validation d'une contribution**
+Chaque contribution affiche :
+- Checkbox de sélection (pour actions en masse)
+- Nom de l'offre et badge type (Nouvelle offre, Nouveau fournisseur, Mise à jour)
+- Email du contributeur et date de soumission
+- Informations du fournisseur (existant ou nouveau)
+- Tarification proposée (abonnement, prix kWh selon le type)
+- Documentation (lien vers fiche des prix, screenshot)
 
-   - Vérification des tarifs
-   - Comparaison avec les offres existantes
-   - Détection des doublons
-   - Bouton "Valider et publier"
-   - Possibilité de modifier avant validation
-   - Notification envoyée au contributeur
+### 4. Système de messagerie
 
-5. **Rejet d'une contribution**
+- **Bouton "Voir les échanges"** : Toggle pour afficher/masquer l'historique
+- **Indicateur de message non lu** : Point orange clignotant si le contributeur a répondu
+- **Persistance** : Les contributions lues sont mémorisées dans localStorage
+- **Réponse rapide** : Champ de texte inline pour répondre directement au contributeur
+- **Historique des échanges** : Messages affichés avec distinction admin/contributeur
 
-   - Raisons de rejet prédéfinies :
-     - Tarifs incorrects
-     - Offre déjà existante
-     - Informations incomplètes
-     - Source non vérifiable
-     - Autre (avec commentaire libre)
-   - Message personnalisé au contributeur
-   - Notification envoyée au contributeur
+### 5. Actions individuelles
 
-6. **Modification avant validation**
+- **Approuver** (bouton vert) : Ouvre modal de confirmation
+- **Demander des infos** (bouton bleu) : Ouvre modal avec champ de message
+- **Rejeter** (bouton rouge) : Ouvre modal avec raisons prédéfinies :
+  - Tarifs incorrects ou obsolètes
+  - Offre déjà existante dans la base
+  - Informations incomplètes
+  - Source non vérifiable
+  - Fournisseur non reconnu
+  - Autre (commentaire libre)
 
-   - Correction des erreurs mineures
-   - Ajustement des tarifs
-   - Ajout d'informations manquantes
-   - Conservation du crédit pour le contributeur
+### 6. Actions en masse
 
-7. **Statistiques**
+- **Sélection multiple** : Checkboxes sur chaque contribution
+- **Sélectionner tout** : Checkbox en entête
+- **Barre d'actions flottante** (apparaît quand items sélectionnés) :
+  - Compteur de sélection
+  - Bouton "Approuver" (vert)
+  - Bouton "Rejeter" (rouge) avec modal pour raison
+  - Bouton "Annuler"
 
-   - Nombre de contributions en attente
-   - Nombre de contributions validées ce mois
-   - Nombre de contributions rejetées
-   - Top contributeurs
-   - Temps moyen de traitement
+### 7. Auto-refresh
 
-8. **Actions en masse**
-   - Sélection multiple de contributions
-   - Validation/rejet en masse
-   - Export des contributions
+- Rafraîchissement automatique toutes les 30 secondes
+- Rafraîchissement au focus de la fenêtre
+- Invalidation du cache après chaque action
+
+## Endpoints API utilisés
+
+| Endpoint | Méthode | Description |
+|----------|---------|-------------|
+| `/energy/contributions/pending` | GET | Liste des contributions en attente |
+| `/energy/contributions/stats` | GET | Statistiques des contributions |
+| `/energy/contributions/{id}/approve` | POST | Approuver une contribution |
+| `/energy/contributions/{id}/reject` | POST | Rejeter une contribution |
+| `/energy/contributions/{id}/request-info` | POST | Demander des infos au contributeur |
+| `/energy/contributions/{id}/messages` | GET | Historique des messages |
+| `/energy/contributions/bulk-approve` | POST | Approbation en masse |
+| `/energy/contributions/bulk-reject` | POST | Rejet en masse |
 
 ## Workflow de modération
 
 1. Utilisateur soumet une contribution via `/contribute`
 2. Contribution apparaît avec statut "En attente"
-3. Administrateur examine la contribution
-4. Administrateur valide, modifie ou rejette
-5. Utilisateur reçoit une notification du résultat
-6. Si validée, l'offre est ajoutée à la base de données
+3. Si le contributeur répond à une demande d'info, un indicateur clignote
+4. Administrateur examine la contribution
+5. Administrateur peut dialoguer via la réponse rapide
+6. Administrateur valide ou rejette
+7. Utilisateur reçoit une notification par email
+8. Si validée, l'offre est ajoutée à la base de données
 
 ## Permissions requises
 
-- **Rôle** : Administrateur
-- **Permission** : `contributions:manage`
+- **Permission** : `contributions` (vérifiée par `require_permission('contributions')`)
 
 ## Technologies utilisées
 
 - React avec TypeScript
-- React Query pour les mutations et le cache
+- React Query pour les mutations, cache et auto-refresh
 - Tailwind CSS pour le style
-- Support du mode sombre
+- localStorage pour persister les contributions lues
+- Support complet du mode sombre
 
 ## Fichiers liés
 
 - **Frontend** : `apps/web/src/pages/AdminContributions.tsx`
-- **API** : `apps/web/src/api/contributions.ts`, `apps/web/src/api/admin.ts`
-- **Types** : `apps/web/src/types/api.ts`
-- **Backend** : `apps/api/src/routers/contributions.py`
+- **API Client** : `apps/web/src/api/energy.ts`
+- **Backend** : `apps/api/src/routers/energy_offers.py`
 
 ## Navigation
 
-Cette page est accessible via le **menu de navigation supérieur** : **Admin → Contributions**
+Cette page est accessible via le **menu de navigation** : **Admin > Contributions**
 
-Le menu Admin regroupe toutes les pages d'administration :
+## Notes techniques
 
-- Tableau de bord, Utilisateurs, Offres, TEMPO, EcoWatt, Contributions, Rôles, Logs, Ajouter PDL
-
-## Notes importantes
-
-- Les contributions permettent d'enrichir la base de données collaborativement
-- Les tarifs doivent être vérifiés avant validation (site du fournisseur)
-- Les contributeurs réguliers peuvent obtenir des badges
-- Un historique des modifications est conservé
-- Les rejets doivent être justifiés pour aider le contributeur
+- Les messages non lus sont détectés côté backend (`has_unread_messages`)
+- Le dernier message du contributeur (non admin) déclenche l'indicateur
+- Les contributions lues sont stockées dans `localStorage['admin-read-contributions']`
+- Le cache React Query est invalidé après chaque action pour synchroniser l'affichage

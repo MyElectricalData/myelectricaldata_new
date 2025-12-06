@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, UTC
 from ..models import User, EnergyProvider, EnergyOffer, OfferContribution, ContributionMessage
@@ -164,31 +164,253 @@ async def create_contribution(
     )
 
 
-@router.get("/contributions", response_model=APIResponse)
-async def list_my_contributions(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> APIResponse:
-    """List current user's contributions"""
-    result = await db.execute(select(OfferContribution).where(OfferContribution.contributor_user_id == current_user.id))
-    contributions = result.scalars().all()
+@router.put("/contributions/{contribution_id}", response_model=APIResponse)
+async def update_contribution(
+    contribution_id: str = Path(..., description="Contribution ID"),
+    contribution_data: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Update an existing contribution (only pending or rejected ones owned by the user)"""
+    # Find the contribution
+    result = await db.execute(
+        select(OfferContribution).where(OfferContribution.id == contribution_id)
+    )
+    contribution = result.scalar_one_or_none()
+
+    if not contribution:
+        raise HTTPException(status_code=404, detail="Contribution non trouvée")
+
+    # Check ownership
+    if contribution.contributor_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Vous ne pouvez modifier que vos propres contributions")
+
+    # Check status - can only modify pending or rejected contributions
+    if contribution.status not in ("pending", "rejected"):
+        raise HTTPException(status_code=400, detail="Seules les contributions en attente ou rejetées peuvent être modifiées")
+
+    # Validate required fields
+    if not contribution_data.get("price_sheet_url"):
+        return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="Le lien vers la fiche des prix est obligatoire"))
+
+    if not contribution_data.get("power_kva"):
+        return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="La puissance (kVA) est obligatoire"))
+
+    logger.info(f"[CONTRIBUTION] Updating contribution {contribution_id} from user: {current_user.email}")
+
+    # Update fields
+    contribution.contribution_type = contribution_data.get("contribution_type", contribution.contribution_type)
+    contribution.provider_name = contribution_data.get("provider_name")
+    contribution.provider_website = contribution_data.get("provider_website")
+    contribution.existing_provider_id = contribution_data.get("existing_provider_id")
+    contribution.existing_offer_id = contribution_data.get("existing_offer_id")
+    contribution.offer_name = contribution_data["offer_name"]
+    contribution.offer_type = contribution_data["offer_type"]
+    contribution.description = contribution_data.get("description")
+    contribution.pricing_data = contribution_data.get("pricing_data", {})
+    contribution.hc_schedules = contribution_data.get("hc_schedules")
+    contribution.power_kva = contribution_data.get("power_kva")
+    contribution.price_sheet_url = contribution_data["price_sheet_url"]
+    contribution.screenshot_url = contribution_data.get("screenshot_url")
+
+    # Reset status to pending if it was rejected
+    if contribution.status == "rejected":
+        contribution.status = "pending"
+        contribution.reviewed_at = None
+        contribution.reviewed_by = None
+        contribution.review_comment = None
+
+    await db.commit()
+    await db.refresh(contribution)
 
     return APIResponse(
         success=True,
-        data=[
-            {
-                "id": c.id,
-                "contribution_type": c.contribution_type,
-                "status": c.status,
-                "offer_name": c.offer_name,
-                "offer_type": c.offer_type,
-                "created_at": c.created_at.isoformat(),
-                "reviewed_at": c.reviewed_at.isoformat() if c.reviewed_at else None,
-                "review_comment": c.review_comment,
-            }
-            for c in contributions
-        ],
+        data={
+            "id": contribution.id,
+            "message": "Contribution mise à jour avec succès.",
+        },
+    )
+
+
+@router.get("/contributions", response_model=APIResponse)
+async def list_my_contributions(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> APIResponse:
+    """List current user's contributions with messages"""
+    result = await db.execute(select(OfferContribution).where(OfferContribution.contributor_user_id == current_user.id))
+    contributions = result.scalars().all()
+
+    data = []
+    for c in contributions:
+        # Get messages for this contribution
+        messages_result = await db.execute(
+            select(ContributionMessage)
+            .where(ContributionMessage.contribution_id == c.id)
+            .order_by(ContributionMessage.created_at.asc())
+        )
+        messages = messages_result.scalars().all()
+
+        messages_data = []
+        for msg in messages:
+            sender_result = await db.execute(select(User).where(User.id == msg.sender_user_id))
+            sender = sender_result.scalar_one_or_none()
+            messages_data.append({
+                "id": msg.id,
+                "message_type": msg.message_type,
+                "content": msg.content,
+                "is_from_admin": msg.is_from_admin,
+                "sender_email": sender.email if sender else "Unknown",
+                "created_at": msg.created_at.isoformat(),
+            })
+
+        # Get existing provider name if exists
+        existing_provider_name = None
+        if c.existing_provider_id:
+            provider_result = await db.execute(select(EnergyProvider).where(EnergyProvider.id == c.existing_provider_id))
+            existing_provider = provider_result.scalar_one_or_none()
+            if existing_provider:
+                existing_provider_name = existing_provider.name
+
+        data.append({
+            "id": c.id,
+            "contribution_type": c.contribution_type,
+            "status": c.status,
+            # Provider info
+            "provider_name": c.provider_name,
+            "provider_website": c.provider_website,
+            "existing_provider_id": c.existing_provider_id,
+            "existing_provider_name": existing_provider_name,
+            # Offer info
+            "offer_name": c.offer_name,
+            "offer_type": c.offer_type,
+            "description": c.description,
+            "power_kva": c.power_kva,
+            # Pricing
+            "pricing_data": c.pricing_data,
+            "hc_schedules": c.hc_schedules,
+            # Documentation
+            "price_sheet_url": c.price_sheet_url,
+            "screenshot_url": c.screenshot_url,
+            # Timestamps
+            "created_at": c.created_at.isoformat(),
+            "reviewed_at": c.reviewed_at.isoformat() if c.reviewed_at else None,
+            "review_comment": c.review_comment,
+            "messages": messages_data,
+        })
+
+    return APIResponse(success=True, data=data)
+
+
+@router.post("/contributions/{contribution_id}/reply", response_model=APIResponse)
+async def reply_to_contribution(
+    contribution_id: str,
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Allow contributor to reply to admin messages on their own contribution"""
+    message = body.get("message")
+    if not message:
+        return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="Le message est obligatoire"))
+
+    # Check contribution exists and belongs to user
+    result = await db.execute(select(OfferContribution).where(OfferContribution.id == contribution_id))
+    contribution = result.scalar_one_or_none()
+
+    if not contribution:
+        return APIResponse(success=False, error=ErrorDetail(code="NOT_FOUND", message="Contribution not found"))
+
+    if contribution.contributor_user_id != current_user.id:
+        return APIResponse(success=False, error=ErrorDetail(code="FORBIDDEN", message="You can only reply to your own contributions"))
+
+    if contribution.status != "pending":
+        return APIResponse(success=False, error=ErrorDetail(code="INVALID_STATUS", message="Cannot reply to a reviewed contribution"))
+
+    # Create the message record
+    contribution_message = ContributionMessage(
+        contribution_id=contribution_id,
+        sender_user_id=current_user.id,
+        message_type="contributor_response",
+        content=message,
+        is_from_admin=False,
+    )
+    db.add(contribution_message)
+    await db.commit()
+    await db.refresh(contribution_message)
+
+    logger.info(f"[CONTRIBUTION] User {current_user.email} replied to contribution {contribution_id}")
+
+    return APIResponse(
+        success=True,
+        data={
+            "id": contribution_message.id,
+            "message": "Reply sent successfully",
+            "created_at": contribution_message.created_at.isoformat(),
+        },
     )
 
 
 # Admin endpoints
+@router.get("/contributions/stats", response_model=APIResponse)
+async def get_contribution_stats(current_user: User = Depends(require_permission('contributions')), db: AsyncSession = Depends(get_db)) -> APIResponse:
+    """Get statistics about contributions (requires contributions permission)"""
+
+    # Count pending contributions
+    pending_result = await db.execute(
+        select(func.count(OfferContribution.id)).where(OfferContribution.status == "pending")
+    )
+    pending_count = pending_result.scalar() or 0
+
+    # Count approved contributions this month
+    now = datetime.now(UTC)
+    first_day_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    approved_this_month_result = await db.execute(
+        select(func.count(OfferContribution.id)).where(
+            OfferContribution.status == "approved",
+            OfferContribution.reviewed_at >= first_day_of_month
+        )
+    )
+    approved_this_month = approved_this_month_result.scalar() or 0
+
+    # Count rejected contributions
+    rejected_result = await db.execute(
+        select(func.count(OfferContribution.id)).where(OfferContribution.status == "rejected")
+    )
+    rejected_count = rejected_result.scalar() or 0
+
+    # Count total approved contributions
+    total_approved_result = await db.execute(
+        select(func.count(OfferContribution.id)).where(OfferContribution.status == "approved")
+    )
+    total_approved = total_approved_result.scalar() or 0
+
+    # Get top 5 contributors with most approved contributions
+    top_contributors_result = await db.execute(
+        select(
+            User.email,
+            func.count(OfferContribution.id).label("count")
+        )
+        .join(OfferContribution, User.id == OfferContribution.contributor_user_id)
+        .where(OfferContribution.status == "approved")
+        .group_by(User.id, User.email)
+        .order_by(func.count(OfferContribution.id).desc())
+        .limit(5)
+    )
+    top_contributors = [
+        {"email": row.email, "count": row.count}
+        for row in top_contributors_result.all()
+    ]
+
+    return APIResponse(
+        success=True,
+        data={
+            "pending_count": pending_count,
+            "approved_count": total_approved,
+            "approved_this_month": approved_this_month,
+            "rejected_count": rejected_count,
+            "top_contributors": top_contributors,
+        }
+    )
+
+
 @router.get("/contributions/pending", response_model=APIResponse)
 async def list_pending_contributions(current_user: User = Depends(require_permission('contributions')), db: AsyncSession = Depends(get_db)) -> APIResponse:
     """List all pending contributions (requires contributions permission)"""
@@ -214,9 +436,22 @@ async def list_pending_contributions(current_user: User = Depends(require_permis
             offer_result = await db.execute(select(EnergyOffer).where(EnergyOffer.id == c.existing_offer_id))
             existing_offer = offer_result.scalar_one_or_none()
 
+        # Check for unread messages (last message is from contributor, not admin)
+        has_unread = False
+        messages_result = await db.execute(
+            select(ContributionMessage)
+            .where(ContributionMessage.contribution_id == c.id)
+            .order_by(ContributionMessage.created_at.desc())
+            .limit(1)
+        )
+        last_message = messages_result.scalar_one_or_none()
+        if last_message and not last_message.is_from_admin:
+            has_unread = True
+
         data.append(
             {
                 "id": c.id,
+                "has_unread_messages": has_unread,
                 "contributor_email": contributor.email if contributor else "Unknown",
                 "contribution_type": c.contribution_type,
                 "status": c.status,
@@ -265,6 +500,71 @@ async def list_pending_contributions(current_user: User = Depends(require_permis
         )
 
     return APIResponse(success=True, data=data)
+
+
+@router.get("/contributions/stats", response_model=APIResponse)
+async def get_contributions_stats(
+    current_user: User = Depends(require_permission('contributions')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Get contribution statistics (requires contributions permission)"""
+
+    # Count pending contributions
+    pending_result = await db.execute(
+        select(func.count(OfferContribution.id)).where(OfferContribution.status == "pending")
+    )
+    pending_count = pending_result.scalar() or 0
+
+    # Count approved contributions (total)
+    approved_result = await db.execute(
+        select(func.count(OfferContribution.id)).where(OfferContribution.status == "approved")
+    )
+    approved_count = approved_result.scalar() or 0
+
+    # Count approved contributions this month
+    now = datetime.now(UTC)
+    first_day_of_month = datetime(now.year, now.month, 1, tzinfo=UTC)
+    approved_this_month_result = await db.execute(
+        select(func.count(OfferContribution.id)).where(
+            OfferContribution.status == "approved",
+            OfferContribution.reviewed_at >= first_day_of_month
+        )
+    )
+    approved_this_month = approved_this_month_result.scalar() or 0
+
+    # Count rejected contributions
+    rejected_result = await db.execute(
+        select(func.count(OfferContribution.id)).where(OfferContribution.status == "rejected")
+    )
+    rejected_count = rejected_result.scalar() or 0
+
+    # Get top 5 contributors with most approved contributions
+    top_contributors_result = await db.execute(
+        select(
+            User.email,
+            func.count(OfferContribution.id).label("count")
+        )
+        .join(OfferContribution, User.id == OfferContribution.contributor_user_id)
+        .where(OfferContribution.status == "approved")
+        .group_by(User.id, User.email)
+        .order_by(func.count(OfferContribution.id).desc())
+        .limit(5)
+    )
+    top_contributors = [
+        {"email": row.email, "count": row.count}
+        for row in top_contributors_result.all()
+    ]
+
+    return APIResponse(
+        success=True,
+        data={
+            "pending_count": pending_count,
+            "approved_count": approved_count,
+            "approved_this_month": approved_this_month,
+            "rejected_count": rejected_count,
+            "top_contributors": top_contributors,
+        }
+    )
 
 
 @router.post("/contributions/{contribution_id}/approve", response_model=APIResponse)
@@ -403,6 +703,230 @@ async def reject_contribution(
             # Don't fail the rejection if email fails
 
     return APIResponse(success=True, data={"message": "Contribution rejected"})
+
+
+@router.post("/contributions/bulk-approve", response_model=APIResponse)
+async def bulk_approve_contributions(
+    body: dict = Body(...),
+    current_user: User = Depends(require_permission('contributions')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Approve multiple contributions in bulk (requires contributions permission)"""
+    contribution_ids = body.get("contribution_ids", [])
+
+    if not contribution_ids:
+        return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="contribution_ids is required"))
+
+    if not isinstance(contribution_ids, list):
+        return APIResponse(success=False, error=ErrorDetail(code="INVALID_TYPE", message="contribution_ids must be an array"))
+
+    processed = 0
+    skipped = 0
+    errors = []
+
+    for contribution_id in contribution_ids:
+        try:
+            result = await db.execute(select(OfferContribution).where(OfferContribution.id == contribution_id))
+            contribution = result.scalar_one_or_none()
+
+            if not contribution:
+                skipped += 1
+                logger.warning(f"[BULK APPROVE] Contribution {contribution_id} not found")
+                continue
+
+            if contribution.status != "pending":
+                skipped += 1
+                logger.info(f"[BULK APPROVE] Contribution {contribution_id} already reviewed (status: {contribution.status})")
+                continue
+
+            # Handle provider creation if needed
+            provider_id = contribution.existing_provider_id
+
+            if contribution.contribution_type == "NEW_PROVIDER" and contribution.provider_name:
+                # Create new provider
+                provider = EnergyProvider(name=contribution.provider_name, website=contribution.provider_website)
+                db.add(provider)
+                await db.flush()
+                provider_id = provider.id
+
+            if not provider_id:
+                skipped += 1
+                logger.warning(f"[BULK APPROVE] Contribution {contribution_id} has no provider_id")
+                continue
+
+            # Create or update offer
+            pricing = contribution.pricing_data
+
+            if contribution.contribution_type in ["NEW_OFFER", "NEW_PROVIDER"]:
+                # Create new offer
+                offer = EnergyOffer(
+                    provider_id=provider_id,
+                    name=contribution.offer_name,
+                    offer_type=contribution.offer_type,
+                    description=contribution.description,
+                    subscription_price=pricing.get("subscription_price", 0),
+                    base_price=pricing.get("base_price"),
+                    hc_price=pricing.get("hc_price"),
+                    hp_price=pricing.get("hp_price"),
+                    tempo_blue_hc=pricing.get("tempo_blue_hc"),
+                    tempo_blue_hp=pricing.get("tempo_blue_hp"),
+                    tempo_white_hc=pricing.get("tempo_white_hc"),
+                    tempo_white_hp=pricing.get("tempo_white_hp"),
+                    tempo_red_hc=pricing.get("tempo_red_hc"),
+                    tempo_red_hp=pricing.get("tempo_red_hp"),
+                    ejp_normal=pricing.get("ejp_normal"),
+                    ejp_peak=pricing.get("ejp_peak"),
+                    hc_schedules=contribution.hc_schedules,
+                )
+                db.add(offer)
+
+            elif contribution.contribution_type == "UPDATE_OFFER" and contribution.existing_offer_id:
+                # Update existing offer
+                offer_result = await db.execute(select(EnergyOffer).where(EnergyOffer.id == contribution.existing_offer_id))
+                offer = offer_result.scalar_one_or_none()
+
+                if offer:
+                    offer.name = contribution.offer_name
+                    offer.offer_type = contribution.offer_type
+                    offer.description = contribution.description
+                    offer.subscription_price = pricing.get("subscription_price", 0)
+                    offer.base_price = pricing.get("base_price")
+                    offer.hc_price = pricing.get("hc_price")
+                    offer.hp_price = pricing.get("hp_price")
+                    offer.tempo_blue_hc = pricing.get("tempo_blue_hc")
+                    offer.tempo_blue_hp = pricing.get("tempo_blue_hp")
+                    offer.tempo_white_hc = pricing.get("tempo_white_hc")
+                    offer.tempo_white_hp = pricing.get("tempo_white_hp")
+                    offer.tempo_red_hc = pricing.get("tempo_red_hc")
+                    offer.tempo_red_hp = pricing.get("tempo_red_hp")
+                    offer.ejp_normal = pricing.get("ejp_normal")
+                    offer.ejp_peak = pricing.get("ejp_peak")
+                    offer.hc_schedules = contribution.hc_schedules
+                    offer.updated_at = datetime.now(UTC)
+
+            # Mark contribution as approved
+            contribution.status = "approved"
+            contribution.reviewed_by = current_user.id
+            contribution.reviewed_at = datetime.now(UTC)
+
+            processed += 1
+
+        except Exception as e:
+            logger.error(f"[BULK APPROVE] Error processing contribution {contribution_id}: {str(e)}")
+            errors.append({"contribution_id": contribution_id, "error": str(e)})
+            skipped += 1
+            continue
+
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"[BULK APPROVE] Commit failed: {str(e)}")
+        return APIResponse(success=False, error=ErrorDetail(code="DATABASE_ERROR", message=f"Failed to commit changes: {str(e)}"))
+
+    message = f"{processed} contributions traitées"
+    if skipped > 0:
+        message += f", {skipped} ignorée{'s' if skipped > 1 else ''} (déjà traitée{'s' if skipped > 1 else ''} ou invalide{'s' if skipped > 1 else ''})"
+
+    logger.info(f"[BULK APPROVE] {message} by admin {current_user.email}")
+
+    return APIResponse(
+        success=True,
+        data={
+            "processed": processed,
+            "skipped": skipped,
+            "message": message,
+            "errors": errors if errors else None,
+        }
+    )
+
+
+@router.post("/contributions/bulk-reject", response_model=APIResponse)
+async def bulk_reject_contributions(
+    body: dict = Body(...),
+    current_user: User = Depends(require_permission('contributions')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Reject multiple contributions in bulk (requires contributions permission)"""
+    contribution_ids = body.get("contribution_ids", [])
+    reason = body.get("reason", "")
+
+    if not contribution_ids:
+        return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="contribution_ids is required"))
+
+    if not isinstance(contribution_ids, list):
+        return APIResponse(success=False, error=ErrorDetail(code="INVALID_TYPE", message="contribution_ids must be an array"))
+
+    if not reason:
+        return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="reason is required"))
+
+    processed = 0
+    skipped = 0
+    email_errors = []
+
+    for contribution_id in contribution_ids:
+        try:
+            result = await db.execute(select(OfferContribution).where(OfferContribution.id == contribution_id))
+            contribution = result.scalar_one_or_none()
+
+            if not contribution:
+                skipped += 1
+                logger.warning(f"[BULK REJECT] Contribution {contribution_id} not found")
+                continue
+
+            if contribution.status != "pending":
+                skipped += 1
+                logger.info(f"[BULK REJECT] Contribution {contribution_id} already reviewed (status: {contribution.status})")
+                continue
+
+            # Get the contributor to send them an email
+            contributor_result = await db.execute(select(User).where(User.id == contribution.contributor_user_id))
+            contributor = contributor_result.scalar_one_or_none()
+
+            # Mark contribution as rejected
+            contribution.status = "rejected"
+            contribution.reviewed_by = current_user.id
+            contribution.reviewed_at = datetime.now(UTC)
+            contribution.review_comment = reason
+
+            processed += 1
+
+            # Send rejection notification email to contributor
+            if contributor:
+                try:
+                    await send_rejection_notification(contribution, contributor, reason)
+                except Exception as e:
+                    logger.error(f"[BULK REJECT] Failed to send rejection notification for {contribution_id}: {str(e)}")
+                    email_errors.append({"contribution_id": contribution_id, "email": contributor.email, "error": str(e)})
+                    # Don't fail the rejection if email fails
+
+        except Exception as e:
+            logger.error(f"[BULK REJECT] Error processing contribution {contribution_id}: {str(e)}")
+            skipped += 1
+            continue
+
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"[BULK REJECT] Commit failed: {str(e)}")
+        return APIResponse(success=False, error=ErrorDetail(code="DATABASE_ERROR", message=f"Failed to commit changes: {str(e)}"))
+
+    message = f"{processed} contributions traitées"
+    if skipped > 0:
+        message += f", {skipped} ignorée{'s' if skipped > 1 else ''} (déjà traitée{'s' if skipped > 1 else ''})"
+
+    logger.info(f"[BULK REJECT] {message} by admin {current_user.email}")
+
+    return APIResponse(
+        success=True,
+        data={
+            "processed": processed,
+            "skipped": skipped,
+            "message": message,
+            "email_errors": email_errors if email_errors else None,
+        }
+    )
 
 
 @router.post("/contributions/{contribution_id}/request-info", response_model=APIResponse)

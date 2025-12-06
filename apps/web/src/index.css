@@ -23,12 +23,13 @@
 
   /* ===== SCROLLBAR DESIGN ===== */
 
-  /* Firefox */
+  /* Firefox - Light Mode */
   * {
     scrollbar-width: thin;
-    scrollbar-color: #0ea5e9 #1e293b;
+    scrollbar-color: #0ea5e9 #e2e8f0;
   }
 
+  /* Firefox - Dark Mode */
   .dark * {
     scrollbar-color: #38bdf8 #0f172a;
   }
@@ -39,21 +40,22 @@
     height: 10px;
   }
 
-  /* Track - fond sombre de la scrollbar */
+  /* Track - Light Mode */
   *::-webkit-scrollbar-track {
-    background: #1e293b;
+    background: #e2e8f0;
     border-radius: 5px;
   }
 
+  /* Track - Dark Mode */
   .dark *::-webkit-scrollbar-track {
     background: #0f172a;
   }
 
-  /* Thumb - partie mobile */
+  /* Thumb - Light Mode */
   *::-webkit-scrollbar-thumb {
     background: linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%);
     border-radius: 5px;
-    border: 2px solid #1e293b;
+    border: 2px solid #e2e8f0;
     transition: background 0.2s ease;
   }
 
@@ -65,7 +67,7 @@
     background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
   }
 
-  /* Dark Mode Scrollbar */
+  /* Thumb - Dark Mode */
   .dark *::-webkit-scrollbar-thumb {
     background: linear-gradient(180deg, #38bdf8 0%, #0ea5e9 100%);
     border: 2px solid #0f172a;
@@ -79,11 +81,12 @@
     background: linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%);
   }
 
-  /* Corner where scrollbars meet */
+  /* Corner - Light Mode */
   *::-webkit-scrollbar-corner {
-    background: #1e293b;
+    background: #e2e8f0;
   }
 
+  /* Corner - Dark Mode */
   .dark *::-webkit-scrollbar-corner {
     background: #0f172a;
   }
@@ -103,6 +106,7 @@
   .btn {
     @apply px-4 py-2 rounded-xl font-medium transition-all duration-200;
     @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none;
   }
 
   .btn-primary {

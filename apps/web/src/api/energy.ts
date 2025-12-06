@@ -94,15 +94,61 @@ export interface ContributionData {
   screenshot_url?: string // OPTIONAL: Screenshot de la fiche des prix
 }
 
+export interface ContributionMessage {
+  id: string
+  message_type: 'info_request' | 'contributor_response'
+  content: string
+  is_from_admin: boolean
+  sender_email: string
+  created_at: string
+}
+
 export interface Contribution {
   id: string
-  contribution_type: string
+  contribution_type: 'NEW_PROVIDER' | 'NEW_OFFER' | 'UPDATE_OFFER'
   status: 'pending' | 'approved' | 'rejected'
+  // Provider info
+  provider_name?: string
+  provider_website?: string
+  existing_provider_id?: string
+  existing_provider_name?: string
+  // Offer info
   offer_name: string
   offer_type: string
+  description?: string
+  power_kva?: number
+  // Pricing
+  pricing_data?: {
+    subscription_price?: number
+    base_price?: number
+    hc_price?: number
+    hp_price?: number
+    base_price_weekend?: number
+    hc_price_weekend?: number
+    hp_price_weekend?: number
+    tempo_blue_hc?: number
+    tempo_blue_hp?: number
+    tempo_white_hc?: number
+    tempo_white_hp?: number
+    tempo_red_hc?: number
+    tempo_red_hp?: number
+    ejp_normal?: number
+    ejp_peak?: number
+    hc_price_winter?: number
+    hp_price_winter?: number
+    hc_price_summer?: number
+    hp_price_summer?: number
+    peak_day_price?: number
+  }
+  hc_schedules?: Record<string, string>
+  // Documentation
+  price_sheet_url?: string
+  screenshot_url?: string
+  // Timestamps
   created_at: string
   reviewed_at?: string
   review_comment?: string
+  messages?: ContributionMessage[]
 }
 
 export interface OfferChange {
@@ -160,11 +206,23 @@ export const energyApi = {
     return apiClient.post('energy/contribute', data)
   },
 
+  updateContribution: async (contributionId: string, data: ContributionData) => {
+    return apiClient.put(`energy/contributions/${contributionId}`, data)
+  },
+
   getMyContributions: async () => {
     return apiClient.get<Contribution[]>('energy/contributions')
   },
 
+  replyToContribution: async (contributionId: string, message: string) => {
+    return apiClient.post(`energy/contributions/${contributionId}/reply`, { message })
+  },
+
   // Admin endpoints
+  getContributionStats: async () => {
+    return apiClient.get('energy/contributions/stats')
+  },
+
   getPendingContributions: async () => {
     return apiClient.get('energy/contributions/pending')
   },
@@ -183,6 +241,14 @@ export const energyApi = {
 
   getContributionMessages: async (contributionId: string) => {
     return apiClient.get(`energy/contributions/${contributionId}/messages`)
+  },
+
+  bulkApproveContributions: async (ids: string[]) => {
+    return apiClient.post('energy/contributions/bulk-approve', { contribution_ids: ids })
+  },
+
+  bulkRejectContributions: async (ids: string[], reason: string) => {
+    return apiClient.post('energy/contributions/bulk-reject', { contribution_ids: ids, reason })
   },
 
   // Admin - Manage offers
