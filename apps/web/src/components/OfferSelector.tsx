@@ -165,47 +165,6 @@ export default function OfferSelector({
     return `${numPrice.toFixed(2)} €/mois`
   }
 
-  // Get main price to display (short version for dropdown)
-  const getMainPrice = (offer: EnergyOffer): string => {
-    // Base offers
-    if (offer.offer_type === 'BASE' && offer.base_price !== undefined && offer.base_price !== null) {
-      return formatPrice(offer.base_price)
-    }
-    // HP/HC offers
-    if (offer.offer_type === 'HC_HP' && offer.hp_price !== undefined && offer.hp_price !== null) {
-      return `HP: ${formatPrice(offer.hp_price)}`
-    }
-    // Tempo offers - show blue HC as reference (most common)
-    if (offer.offer_type === 'TEMPO' && offer.tempo_blue_hc !== undefined && offer.tempo_blue_hc !== null) {
-      return `Bleu HC: ${formatPrice(offer.tempo_blue_hc)}`
-    }
-    // EJP offers
-    if (offer.offer_type === 'EJP' && offer.ejp_normal !== undefined && offer.ejp_normal !== null) {
-      return `Normal: ${formatPrice(offer.ejp_normal)}`
-    }
-    // Weekend offers
-    if (offer.offer_type === 'WEEKEND') {
-      if (offer.base_price !== undefined && offer.base_price !== null) {
-        return formatPrice(offer.base_price)
-      }
-      if (offer.hp_price !== undefined && offer.hp_price !== null) {
-        return `Semaine: ${formatPrice(offer.hp_price)}`
-      }
-    }
-    // Seasonal offers
-    if (offer.offer_type === 'SEASONAL' && offer.hp_price_winter !== undefined && offer.hp_price_winter !== null) {
-      return `Hiver HP: ${formatPrice(offer.hp_price_winter)}`
-    }
-    // Fallback to base_price or hp_price
-    if (offer.base_price !== undefined && offer.base_price !== null) {
-      return formatPrice(offer.base_price)
-    }
-    if (offer.hp_price !== undefined && offer.hp_price !== null) {
-      return `HP: ${formatPrice(offer.hp_price)}`
-    }
-    return '-'
-  }
-
   // Get detailed prices for selected offer summary
   const getDetailedPrices = (offer: EnergyOffer): React.ReactNode => {
     const priceRows: React.ReactNode[] = []
