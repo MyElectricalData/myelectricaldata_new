@@ -51,17 +51,14 @@ Section affichant les contributions de l'utilisateur, organisée par statut :
 - **Approuvées** (vert) : plié par défaut
 - **Rejetées** (rouge) : plié par défaut
 
-#### Détails affichés pour chaque contribution
-- En-tête : nom de l'offre, type, puissance, date de soumission
-- **Section dépliable "Voir les détails"** :
-  - Informations fournisseur (nom, site web)
-  - Description de l'offre
-  - Tarification complète selon le type
-  - Liens vers la documentation (fiche tarifaire, screenshot)
-- Motif de rejet (pour les contributions rejetées)
+#### Affichage compact des contributions
+- **En-tête** : nom de l'offre, badges (type, puissance), fournisseur, date, description tronquée
+- **Tarification inline** : prix affichés sur une ligne (Abo, Base, HC/HP, Tempo, EJP...)
+- **Lien documentation** : icône cliquable vers la fiche tarifaire
+- **Motif de rejet** : affiché en bas pour les contributions rejetées
 
 #### Actions disponibles
-- **Bouton "Modifier cette contribution"** (bleu/orange) : pour les contributions en attente ou rejetées
+- **Bouton "Modifier"** (compact, bleu/orange) : pour les contributions en attente ou rejetées
 - Active le **mode édition** du formulaire :
   - Le titre du formulaire devient "Modifier la contribution"
   - Le bouton de soumission devient "Mettre à jour la contribution"
@@ -73,15 +70,24 @@ Section affichant les contributions de l'utilisateur, organisée par statut :
 
 Communication bidirectionnelle entre l'administrateur et le contributeur :
 
-- **Historique des échanges** visible dans chaque carte de contribution
+#### Section "Échanges" dépliable
+- **Visible pour** : contributions en attente (avec ou sans messages) ou avec messages existants
+- **Auto-déploiement** : s'ouvre automatiquement si le dernier message est de l'admin (non lu)
+- **Badge "Nouveau"** : affiché quand il y a un message non lu
+- **Protection anti-perte** : impossible de replier si l'utilisateur est en train d'écrire ou d'envoyer
+
+#### Affichage des messages (compact)
 - Messages différenciés visuellement :
-  - Messages admin : fond violet avec icône bouclier
-  - Messages contributeur : fond bleu avec icône utilisateur
-- **Formulaire de réponse** pour les contributions en attente :
-  - Envoi avec Entrée (Shift+Entrée pour nouvelle ligne)
-  - Bouton d'envoi sur toute la hauteur du champ
-- **Auto-scroll** vers le dernier message dans la conversation
-- **Rafraîchissement automatique** toutes les 10 secondes pour recevoir les nouveaux messages
+  - Messages admin (Modo) : fond bleu avec icône bouclier
+  - Messages contributeur (Vous) : fond vert avec icône utilisateur
+- Horodatage compact (JJ/MM HH:MM)
+- **Auto-scroll** vers le dernier message
+
+#### Formulaire de réponse intégré
+- Champ de saisie compact (1 ligne) directement dans la section Échanges
+- Envoi avec Entrée (Shift+Entrée pour nouvelle ligne)
+- Bouton d'envoi icône uniquement
+- **Rafraîchissement automatique** toutes les 10 secondes
 
 ### 6. Import JSON (fonctionnalité avancée)
 

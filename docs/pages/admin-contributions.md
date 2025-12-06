@@ -42,25 +42,38 @@ Chaque contribution affiche :
 - Tarification proposée (abonnement, prix kWh selon le type)
 - Documentation (lien vers fiche des prix, screenshot)
 
-### 4. Système de messagerie
+### 4. Système de messagerie (style WhatsApp)
 
+Interface de chat en temps réel utilisant le composant partagé `ChatWhatsApp` :
+
+#### Affichage
 - **Bouton "Voir les échanges"** : Toggle pour afficher/masquer l'historique
 - **Indicateur de message non lu** : Point orange clignotant si le contributeur a répondu
 - **Persistance** : Les contributions lues sont mémorisées dans localStorage
-- **Réponse rapide** : Champ de texte inline pour répondre directement au contributeur
-- **Historique des échanges** : Messages affichés avec distinction admin/contributeur
+
+#### Design style WhatsApp
+- **Bulles de messages** avec queues (triangles) orientées selon l'expéditeur
+- **Messages admin** : Alignés à droite, fond vert/bleu primaire (dark: émeraude foncé)
+- **Messages contributeur** : Alignés à gauche, fond blanc (dark: gris foncé), icône bouclier
+- **Horodatage** : Format "JJ/MM HH:MM" en bas de chaque bulle
+- **Double checkmark** : Indicateur de lecture sur les messages admin
+- **Fond neutre** : Gris clair (`bg-gray-50`) en mode light, gris foncé en mode dark
+
+#### Communication en temps réel
+- **Auto-refresh silencieux** : Rechargement des messages toutes les **5 secondes**
+- **Réponse rapide** : Champ de texte inline avec envoi via Entrée
+- **Scroll automatique** : Défilement vers le dernier message
 
 ### 5. Actions individuelles
 
 - **Approuver** (bouton vert) : Ouvre modal de confirmation
 - **Demander des infos** (bouton bleu) : Ouvre modal avec champ de message
+  - Bouton "Envoyer la demande" **grisé** tant qu'aucun message n'est saisi
+  - Messages rapides cliquables pour pré-remplir le champ
 - **Rejeter** (bouton rouge) : Ouvre modal avec raisons prédéfinies :
-  - Tarifs incorrects ou obsolètes
-  - Offre déjà existante dans la base
-  - Informations incomplètes
-  - Source non vérifiable
-  - Fournisseur non reconnu
-  - Autre (commentaire libre)
+  - Bouton "Confirmer le rejet" **grisé** tant qu'aucune raison n'est sélectionnée/saisie
+  - Raisons rapides : Offre non valide, Lien invalide, Offre introuvable, Offre expirée, Doublon, Données incomplètes
+  - Champ texte libre pour personnaliser le motif
 
 ### 6. Actions en masse
 
@@ -69,7 +82,7 @@ Chaque contribution affiche :
 - **Barre d'actions flottante** (apparaît quand items sélectionnés) :
   - Compteur de sélection
   - Bouton "Approuver" (vert)
-  - Bouton "Rejeter" (rouge) avec modal pour raison
+  - Bouton "Rejeter" (rouge) : ouvre modal avec raison obligatoire (bouton **grisé** sinon)
   - Bouton "Annuler"
 
 ### 7. Auto-refresh
