@@ -35,7 +35,7 @@ export default function ConsumptionKwh() {
   const demoAutoFetchDone = useRef(false)
   const lastAutoFetchPDL = useRef<string | null>(null)
 
-  // Get PDL list for unified fetch
+  // Get PDL list for unified fetch - with short staleTime to ensure provider changes are reflected
   const { data: pdlsResponse } = useQuery({
     queryKey: ['pdls'],
     queryFn: async () => {
@@ -45,6 +45,7 @@ export default function ConsumptionKwh() {
       }
       return []
     },
+    staleTime: 30 * 1000, // 30 seconds - same as Dashboard for consistency
   })
   const allPDLs: PDL[] = Array.isArray(pdlsResponse) ? pdlsResponse : []
   const selectedPDLForFetch = allPDLs.find(p => p.usage_point_id === selectedPDL)

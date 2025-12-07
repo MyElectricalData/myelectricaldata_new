@@ -130,7 +130,7 @@ export default function Simulator() {
   const { setIsLoading } = useDataFetchStore()
   const demoAutoFetchDone = useRef(false)
 
-  // Fetch user's PDLs
+  // Fetch user's PDLs - with short staleTime to ensure provider changes are reflected
   const { data: pdlsData, isLoading: pdlsLoading, error: pdlsError } = useQuery({
     queryKey: ['pdls'],
     queryFn: async () => {
@@ -143,6 +143,7 @@ export default function Simulator() {
       logger.warn('[Simulator] Returning empty array, response was:', response)
       return []
     },
+    staleTime: 30 * 1000, // 30 seconds - same as Dashboard for consistency
   })
 
   // Fetch energy providers and offers

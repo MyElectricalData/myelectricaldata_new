@@ -68,7 +68,7 @@ export default function ConsumptionEuro() {
     return () => clearTimeout(timer)
   }, [selectedPDL])
 
-  // Fetch PDLs
+  // Fetch PDLs - with short staleTime to ensure provider changes are reflected
   const { data: pdlsData } = useQuery({
     queryKey: ['pdls'],
     queryFn: async () => {
@@ -78,6 +78,7 @@ export default function ConsumptionEuro() {
       }
       return []
     },
+    staleTime: 30 * 1000, // 30 seconds - same as Dashboard for consistency
   })
 
   const pdls = Array.isArray(pdlsData) ? pdlsData : []
