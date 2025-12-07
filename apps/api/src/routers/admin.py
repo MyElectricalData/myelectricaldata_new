@@ -602,7 +602,6 @@ async def get_global_stats(
     all_endpoints = [
         "/ping",
         "/",
-        "/consent",
         "/accounts/signup",
         "/accounts/login",
         "/accounts/verify-email",

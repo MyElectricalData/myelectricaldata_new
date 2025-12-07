@@ -61,6 +61,12 @@ export default function OAuthCallback() {
         friendlyMessage = pdl
           ? `Le point de livraison ${pdl} est déjà associé à un compte. Contactez l'administrateur si vous pensez qu'il s'agit d'une erreur.`
           : 'Ce point de livraison est déjà associé à un compte.'
+      } else if (errorMsg === 'invalid_pdl_format') {
+        friendlyMessage = pdl
+          ? `Le numéro PDL "${pdl}" n'est pas valide. Enedis a transmis un identifiant incorrect. Veuillez réessayer ou contacter le support.`
+          : 'Le numéro PDL reçu d\'Enedis n\'est pas valide. Veuillez réessayer ou contacter le support.'
+      } else if (errorMsg === 'no_usage_point_id') {
+        friendlyMessage = 'Aucun point de livraison fourni par Enedis. Veuillez réessayer le consentement.'
       } else if (errorMsg) {
         friendlyMessage = errorMsg
       }
@@ -82,7 +88,7 @@ export default function OAuthCallback() {
       const baseUrl = API_BASE_URL.startsWith('/')
         ? `${window.location.origin}${API_BASE_URL}`
         : API_BASE_URL
-      const backendUrl = new URL(`${baseUrl}/consent`)
+      const backendUrl = new URL(`${baseUrl}/oauth/callback`)
       backendUrl.searchParams.set('code', code)
       if (state) backendUrl.searchParams.set('state', state)
       if (usagePointId) backendUrl.searchParams.set('usage_point_id', usagePointId)

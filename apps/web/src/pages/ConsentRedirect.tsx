@@ -33,7 +33,7 @@ export default function ConsentRedirect() {
     const baseUrl = API_BASE_URL.startsWith('/')
       ? `${window.location.origin}${API_BASE_URL}`
       : API_BASE_URL
-    const backendUrl = new URL(`${baseUrl}/consent`)
+    const backendUrl = new URL(`${baseUrl}/oauth/callback`)
     if (code) backendUrl.searchParams.set('code', code)
     if (state) backendUrl.searchParams.set('state', state)
     if (usagePointId) backendUrl.searchParams.set('usage_point_id', usagePointId)

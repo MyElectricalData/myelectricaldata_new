@@ -207,6 +207,9 @@ export default function Dashboard() {
       } else if (consentError === 'no_usage_point_id') {
         errorTitle = 'Aucun PDL détecté'
         errorMessage = 'Aucun point de livraison n\'a été retourné par Enedis.'
+      } else if (consentError === 'invalid_pdl_format') {
+        errorTitle = 'Numéro PDL invalide'
+        errorMessage = 'Enedis a transmis un identifiant incorrect. Veuillez réessayer ou contacter le support.'
       }
 
       // Store error in sessionStorage to survive component remount (as JSON for rich data)
