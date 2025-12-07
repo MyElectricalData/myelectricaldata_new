@@ -70,13 +70,13 @@ Ces identifiants sont obtenus sur le [portail développeur Enedis](https://datah
 |----------|-------------|---------|
 | `ENEDIS_CLIENT_ID` | Identifiant de votre application Enedis | `abc123def456` |
 | `ENEDIS_CLIENT_SECRET` | Secret de votre application Enedis | `secret789xyz` |
-| `ENEDIS_REDIRECT_URI` | URL de callback OAuth2 (doit correspondre à celle déclarée sur Enedis) | `https://myelectricaldata.fr/consent` |
+| `ENEDIS_REDIRECT_URI` | URL de callback OAuth2 (doit correspondre à celle déclarée sur Enedis) | `https://myelectricaldata.fr/oauth/callback` |
 | `ENEDIS_ENVIRONMENT` | Environnement API : `sandbox` (données fictives) ou `production` (données réelles) | `production` |
 
 ```bash
 ENEDIS_CLIENT_ID=votre-client-id
 ENEDIS_CLIENT_SECRET=votre-client-secret
-ENEDIS_REDIRECT_URI=https://myelectricaldata.fr/consent
+ENEDIS_REDIRECT_URI=https://myelectricaldata.fr/oauth/callback
 ENEDIS_ENVIRONMENT=production
 ```
 

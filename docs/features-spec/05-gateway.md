@@ -20,7 +20,7 @@ Mettre à disposition une API passerelle entre les utilisateurs finaux et Enedis
 2. L'utilisateur crée un compte sur la passerelle (email, mot de passe).
 3. Depuis son tableau de bord, l'utilisateur clique sur **"Consentement Enedis"** (pas besoin de saisir de PDL).
 4. La passerelle génère l'URL d'autorisation Enedis avec `state=user_id` :<br>`https://mon-compte-particulier.enedis.fr/dataconnect/v1/oauth2/authorize?client_id=XXXXXXXX&duration=P36M&response_type=code&state={user_id}`
-5. Après validation du consentement sur le portail Enedis, celui-ci redirige vers `http://localhost:8000/consent?code=XXX&state={user_id}`.
+5. Après validation du consentement sur le portail Enedis, celui-ci redirige vers `http://localhost:8000/oauth/callback?code=XXX&state={user_id}&usage_point_id={pdl}`.
 6. La passerelle :
    - Échange le code contre un token OAuth
    - Appelle l'API Enedis `/customers_upc/v5/usage_points` pour récupérer **tous les PDL** du compte

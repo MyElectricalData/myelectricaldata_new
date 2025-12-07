@@ -77,10 +77,10 @@ Cette fonction :
 **Localisation** : `src/routers/oauth.py` et `src/main.py`
 
 - ✅ **Autorisation** (`/oauth/authorize`) : génère URL Enedis avec `state=user_id` uniquement
-- ✅ **Consentement** (`/consent`) :
-  - Récupère tous les PDL via `/customers_upc/v5/usage_points`
+- ✅ **Callback** (`/oauth/callback`) :
+  - Valide le format du PDL (14 chiffres exactement)
   - Crée automatiquement les PDL détectés
-  - Crée les tokens OAuth pour chaque PDL (même token partagé pour tous les PDL)
+  - Récupère les infos du contrat (puissance souscrite, heures creuses)
 - ✅ **Refresh** : vérifie propriété PDL avant refresh
 - ✅ **Cascade delete** : suppression compte → suppression tokens
 
@@ -108,7 +108,7 @@ Tous les endpoints suivants vérifient l'authentification ET la propriété des 
 
 #### OAuth
 - `GET /oauth/authorize` - Génère URL Enedis (pas de PDL requis)
-- `GET /consent` - Callback Enedis, récupère tous les PDL automatiquement
+- `GET /oauth/callback` - Callback Enedis, valide et crée les PDL automatiquement
 - `POST /oauth/refresh/{usage_point_id}` - **Vérifie propriété PDL**
 
 #### Données Enedis
