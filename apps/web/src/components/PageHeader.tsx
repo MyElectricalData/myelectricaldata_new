@@ -206,7 +206,7 @@ export default function PageHeader() {
                     id="pdl-selector"
                     value={selectedPdl}
                     onChange={(e) => setSelectedPdl(e.target.value)}
-                    className="px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors text-sm w-full sm:w-auto"
+                    className="px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors text-sm w-full sm:w-auto min-w-[20ch]"
                   >
                     {displayedPdls.map((pdl: PDL) => (
                       <option key={pdl.usage_point_id} value={pdl.usage_point_id}>

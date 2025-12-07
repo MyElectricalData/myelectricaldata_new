@@ -1060,11 +1060,11 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
 
         {/* Production Section */}
         {!hasConsentError && (
-          <div className="border-2 border-green-200 dark:border-green-700 rounded-lg overflow-hidden shadow-md">
+          <div className="border-2 border-yellow-400 dark:border-yellow-500 rounded-lg overflow-hidden shadow-md">
             {/* Production Header */}
-            <label className="flex items-center gap-3 py-2 px-3 bg-green-100/70 dark:bg-green-900/30 cursor-pointer hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors" data-tour="pdl-production">
-              <div className="flex items-center gap-2 text-green-700 dark:text-green-300 font-semibold">
-                <Factory size={18} className="text-green-600 dark:text-green-400" />
+            <label className="flex items-center gap-3 py-2 px-3 bg-yellow-100 dark:bg-yellow-900/50 cursor-pointer hover:bg-yellow-200 dark:hover:bg-yellow-800/50 transition-colors" data-tour="pdl-production">
+              <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200 font-semibold">
+                <Factory size={18} className="text-yellow-600 dark:text-yellow-400" />
                 <span>Production</span>
               </div>
               <div className="flex-1"></div>
@@ -1078,7 +1078,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                   })
                 }
                 disabled={updateTypeMutation.isPending}
-                className="w-5 h-5 flex-shrink-0 rounded-md border-2 border-green-300 dark:border-green-600 bg-white dark:bg-gray-800 checked:bg-green-500 dark:checked:bg-green-600 checked:border-green-500 dark:checked:border-green-600 focus:ring-2 focus:ring-green-400 focus:ring-offset-2 dark:focus:ring-offset-gray-900 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-5 h-5 flex-shrink-0 rounded-md border-2 border-yellow-400 dark:border-yellow-500 bg-white dark:bg-gray-800 checked:bg-yellow-500 dark:checked:bg-yellow-500 checked:border-yellow-500 dark:checked:border-yellow-500 focus:ring-2 focus:ring-yellow-400 focus:ring-offset-2 dark:focus:ring-offset-gray-900 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </label>
 
@@ -1087,7 +1087,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
               const productionPdls = allPdls.filter(p => p.has_production && p.id !== pdl.id && (p.is_active ?? true))
 
               return productionPdls.length > 0 ? (
-                <div className="px-3 py-2 bg-green-50/20 dark:bg-gray-800/50">
+                <div className="px-3 py-2 bg-yellow-50 dark:bg-gray-800">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                       <Factory size={16} />
@@ -1097,7 +1097,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                       value={pdl.linked_production_pdl_id || ''}
                       onChange={(e) => linkProductionMutation.mutate(e.target.value || null)}
                       disabled={linkProductionMutation.isPending}
-                      className="w-48 px-3 py-1.5 text-sm font-medium bg-white dark:bg-gray-800 border-2 border-green-300 dark:border-green-700 rounded-lg text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 dark:focus:ring-green-400 focus:border-green-500 dark:focus:border-green-400 cursor-pointer transition-all shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-48 px-3 py-1.5 text-sm font-medium bg-white dark:bg-gray-800 border-2 border-yellow-400 dark:border-yellow-500 rounded-lg text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-yellow-500 dark:focus:ring-yellow-400 focus:border-yellow-500 dark:focus:border-yellow-400 cursor-pointer transition-all shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <option value="">Aucun</option>
                       {productionPdls.map(p => (
