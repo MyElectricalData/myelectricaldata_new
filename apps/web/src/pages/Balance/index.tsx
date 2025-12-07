@@ -1,9 +1,16 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Database, ArrowRight, AlertTriangle, Info } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { usePdlStore } from '@/stores/pdlStore'
+import { useDataFetchStore } from '@/stores/dataFetchStore'
 import { useBalanceData } from './hooks/useBalanceData'
 import { useBalanceCalcs } from './hooks/useBalanceCalcs'
+import { useIsDemo } from '@/hooks/useIsDemo'
+import { useUnifiedDataFetch } from '@/hooks/useUnifiedDataFetch'
+import { useQuery } from '@tanstack/react-query'
+import { pdlApi } from '@/api/pdl'
+import type { PDL } from '@/types/api'
+import { logger } from '@/utils/logger'
 import { BalanceSummaryCards } from './components/BalanceSummaryCards'
 import { MonthlyComparison } from './components/MonthlyComparison'
 import { NetBalanceCurve } from './components/NetBalanceCurve'
@@ -17,6 +24,9 @@ import type { DateRange } from './types/balance.types'
 export default function Balance() {
   const { isDark } = useThemeStore()
   const { selectedPdl } = usePdlStore()
+  const { setIsLoading } = useDataFetchStore()
+  const isDemo = useIsDemo()
+  const demoAutoFetchDone = useRef(false)
 
   // Default date range: 3 years back
   const defaultDateRange = useMemo((): DateRange => {
@@ -59,6 +69,30 @@ export default function Balance() {
     productionDetailData
   )
 
+  // Get PDL list for unified fetch
+  const { data: pdlsResponse } = useQuery({
+    queryKey: ['pdls'],
+    queryFn: async () => {
+      const response = await pdlApi.list()
+      if (response.success && Array.isArray(response.data)) {
+        return response.data as PDL[]
+      }
+      return []
+    },
+  })
+  const allPDLs: PDL[] = Array.isArray(pdlsResponse) ? pdlsResponse : []
+
+  // Hook for demo auto-fetch
+  const { fetchAllData } = useUnifiedDataFetch({
+    selectedPDL: selectedPdl,
+    selectedPDLDetails,
+    allPDLs,
+    pageContext: 'all',
+  })
+
+  // Check if data is in cache
+  const hasDataInCache = hasConsumptionData && hasProductionData
+
   // Reset loading states when PDL changes
   useEffect(() => {
     setIsInitialLoadingFromCache(false)
@@ -73,6 +107,22 @@ export default function Balance() {
     }, 100) // Short delay for cache hydration
     return () => clearTimeout(timer)
   }, [selectedPdl])
+
+  // Auto-fetch data for demo account
+  useEffect(() => {
+    if (isDemo && selectedPdl && selectedPDLDetails && !demoAutoFetchDone.current && !hasDataInCache && !isInitializing) {
+      logger.log('[DEMO] Auto-fetching data for demo account on Balance')
+      demoAutoFetchDone.current = true
+      setTimeout(async () => {
+        setIsLoading(true)
+        try {
+          await fetchAllData()
+        } finally {
+          setIsLoading(false)
+        }
+      }, 300)
+    }
+  }, [isDemo, selectedPdl, selectedPDLDetails, hasDataInCache, isInitializing, setIsLoading, fetchAllData])
 
   // Initialize selected years when chartData becomes available
   useEffect(() => {

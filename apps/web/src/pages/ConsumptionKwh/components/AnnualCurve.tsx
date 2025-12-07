@@ -24,6 +24,17 @@ interface AnnualCurveProps {
   isDarkMode: boolean
 }
 
+// Graph colors - same as used in the chart lines
+const graphColors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4']
+
+// Convert hex to rgba for tab backgrounds
+const hexToRgba = (hex: string, alpha: number) => {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 export function AnnualCurve({ chartData, isDarkMode }: AnnualCurveProps) {
   // If we have yearsByPeriod array from chartData, use it, otherwise create a single year
   const yearsData: YearData[] = chartData.yearsByPeriod || [{
@@ -160,17 +171,24 @@ export function AnnualCurve({ chartData, isDarkMode }: AnnualCurveProps) {
           {[...yearsData].reverse().map((yearData, idx) => {
             const originalIndex = yearsData.length - 1 - idx
             const isSelected = selectedYears.has(originalIndex)
+            const color = graphColors[idx % graphColors.length]
             return (
-              <ModernButton
+              <button
                 key={yearData.label}
-                variant="tab"
-                size="md"
-                isActive={isSelected}
                 onClick={() => toggleYearSelection(originalIndex)}
-                className="flex-1 min-w-[100px]"
+                className={`flex-1 min-w-[100px] px-4 py-2 text-base font-semibold rounded-lg border-2 transition-all duration-200 ${
+                  isSelected
+                    ? 'shadow-md'
+                    : 'text-gray-400 hover:text-gray-200 border-gray-700 hover:border-gray-600'
+                }`}
+                style={isSelected ? {
+                  backgroundColor: hexToRgba(color, 0.125),
+                  borderColor: color,
+                  color: color,
+                } : undefined}
               >
                 {yearData.label}
-              </ModernButton>
+              </button>
             )
           })}
         </div>
@@ -203,7 +221,7 @@ export function AnnualCurve({ chartData, isDarkMode }: AnnualCurveProps) {
       </div>
 
       {/* Display selected years chart */}
-      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+      <div className="bg-gradient-to-br from-teal-50 to-emerald-100 dark:from-teal-900/20 dark:to-emerald-900/20 rounded-xl p-4 border border-teal-200 dark:border-teal-800">
         <ResponsiveContainer width="100%" height={350}>
           <LineChart
             data={displayData}

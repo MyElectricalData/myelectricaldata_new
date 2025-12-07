@@ -1,12 +1,18 @@
-import { useState, useEffect, useMemo } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Euro, BarChart3, Database, ArrowRight, AlertCircle } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { Euro, BarChart3, Database, ArrowRight, AlertCircle, Tag } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { usePdlStore } from '@/stores/pdlStore'
+import { useDataFetchStore } from '@/stores/dataFetchStore'
 import { pdlApi } from '@/api/pdl'
 import { energyApi } from '@/api/energy'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
 import { AnimatedSection } from '@/components/AnimatedSection'
+import { useIsDemo } from '@/hooks/useIsDemo'
+import { useUnifiedDataFetch } from '@/hooks/useUnifiedDataFetch'
+import { logger } from '@/utils/logger'
+import OfferSelector from '@/components/OfferSelector'
 import type { PDL } from '@/types/api'
 
 // Import hooks and components
@@ -20,7 +26,11 @@ import type { SelectedOfferWithProvider } from './types/euro.types'
 
 export default function ConsumptionEuro() {
   const { selectedPdl: selectedPDL } = usePdlStore()
+  const { setIsLoading } = useDataFetchStore()
   const queryClient = useQueryClient()
+  const isDemo = useIsDemo()
+  const demoAutoFetchDone = useRef(false)
+  const lastAutoFetchPDL = useRef<string | null>(null)
 
   // States
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null)
@@ -34,6 +44,7 @@ export default function ConsumptionEuro() {
   const [isLoadingExiting, setIsLoadingExiting] = useState(false)
   const [isInitializing, setIsInitializing] = useState(true)
   const [hasDataInCache, setHasDataInCache] = useState(false)
+  const [comparisonOfferId, setComparisonOfferId] = useState<string | null>(null)
 
   // Detect dark mode
   useEffect(() => {
@@ -72,6 +83,14 @@ export default function ConsumptionEuro() {
   const pdls = Array.isArray(pdlsData) ? pdlsData : []
   const selectedPDLDetails = pdls.find(p => p.usage_point_id === selectedPDL)
 
+  // Hook for demo auto-fetch - uses the same unified fetch as the header
+  const { fetchAllData } = useUnifiedDataFetch({
+    selectedPDL,
+    selectedPDLDetails,
+    allPDLs: pdls,
+    pageContext: 'consumption',
+  })
+
   // Fetch providers
   const { data: providersResponse } = useQuery({
     queryKey: ['energy-providers'],
@@ -103,6 +122,30 @@ export default function ConsumptionEuro() {
       providerName: provider?.name || 'Fournisseur inconnu'
     }
   }, [selectedPDLDetails?.selected_offer_id, allOffers, providers])
+
+  // Get comparison offer (for display only, doesn't change PDL's main offer)
+  const comparisonOfferWithProvider = useMemo((): SelectedOfferWithProvider | null => {
+    if (!comparisonOfferId) return null
+
+    const offer = allOffers.find(o => o.id === comparisonOfferId)
+    if (!offer) return null
+
+    const provider = providers.find(p => p.id === offer.provider_id)
+
+    return {
+      ...offer,
+      providerName: provider?.name || 'Fournisseur inconnu'
+    }
+  }, [comparisonOfferId, allOffers, providers])
+
+  // The offer used for calculations (comparison if selected, otherwise the PDL's main offer)
+  const displayOffer = comparisonOfferWithProvider || selectedOfferWithProvider
+
+  // Filter compatible offers for comparison (same power_kva as selected offer)
+  const compatibleOffers = useMemo(() => {
+    if (!selectedOfferWithProvider?.power_kva) return allOffers
+    return allOffers.filter(o => o.power_kva === selectedOfferWithProvider.power_kva)
+  }, [allOffers, selectedOfferWithProvider?.power_kva])
 
   // Check for cached detail data
   // Type for cache data
@@ -200,16 +243,59 @@ export default function ConsumptionEuro() {
     return () => clearInterval(interval)
   }, [selectedPDL, queryClient])
 
-  // Use euro calculation hook
+  // Auto-fetch data for demo account
+  useEffect(() => {
+    // Reset demoAutoFetchDone when PDL changes
+    if (selectedPDL && selectedPDL !== lastAutoFetchPDL.current) {
+      demoAutoFetchDone.current = false
+    }
+
+    if (isDemo && selectedPDL && selectedPDLDetails && !demoAutoFetchDone.current && !hasDataInCache && !isInitializing) {
+      logger.log('[DEMO] Auto-fetching consumption data for ConsumptionEuro')
+      demoAutoFetchDone.current = true
+      lastAutoFetchPDL.current = selectedPDL
+      // Small delay to ensure everything is mounted
+      setTimeout(async () => {
+        setIsLoading(true)
+        try {
+          await fetchAllData()
+        } finally {
+          setIsLoading(false)
+        }
+      }, 300)
+    }
+  }, [isDemo, selectedPDL, selectedPDLDetails, hasDataInCache, isInitializing, setIsLoading, fetchAllData])
+
+  // Use euro calculation hook - uses displayOffer for comparison feature
   const { yearlyCosts } = useConsumptionEuroCalcs({
     selectedPDL,
     selectedPDLDetails,
-    selectedOffer: selectedOfferWithProvider,
+    selectedOffer: displayOffer,
     hcHpCalculationTrigger
   })
 
   const hasOffer = !!selectedOfferWithProvider
   const hasCostData = yearlyCosts.length > 0
+
+  // Mutation to update selected offer
+  const updateSelectedOfferMutation = useMutation({
+    mutationFn: (selected_offer_id: string | null) => {
+      if (isDemo) {
+        return Promise.reject(new Error('Modifications désactivées en mode démo'))
+      }
+      if (!selectedPDLDetails) {
+        return Promise.reject(new Error('Aucun PDL sélectionné'))
+      }
+      return pdlApi.updateSelectedOffer(selectedPDLDetails.id, selected_offer_id)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pdls'] })
+      toast.success('Offre tarifaire mise à jour')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Erreur lors de la mise à jour de l\'offre')
+    },
+  })
 
   // Block rendering during initialization
   if (isInitializing) {
@@ -229,25 +315,35 @@ export default function ConsumptionEuro() {
 
   return (
     <div className="w-full">
-      {/* Warning if no offer selected */}
+      {/* Offer selector when no offer selected */}
       {!hasOffer && hasDataInCache && (
-        <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+        <div className="mb-6 p-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700">
+          <div className="flex items-start gap-4 mb-4">
+            <div className="p-3 rounded-lg bg-amber-100 dark:bg-amber-900/40">
+              <Tag className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+            </div>
             <div>
-              <p className="text-sm text-amber-800 dark:text-amber-200 font-medium mb-2">
-                Aucune offre tarifaire sélectionnée
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                Sélectionnez votre offre tarifaire
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Pour calculer vos coûts en euros, choisissez votre offre d'électricité actuelle.
               </p>
-              <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
-                Pour calculer vos coûts en euros, vous devez d'abord sélectionner une offre tarifaire
-                dans le tableau de bord pour ce PDL.
-              </p>
-              <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
-                <ArrowRight size={14} />
-                <span>Allez dans le Dashboard et sélectionnez votre offre dans la carte du PDL</span>
-              </div>
             </div>
           </div>
+          <OfferSelector
+            selectedOfferId={selectedPDLDetails?.selected_offer_id || null}
+            subscribedPower={selectedPDLDetails?.subscribed_power}
+            onChange={(offerId) => {
+              updateSelectedOfferMutation.mutate(offerId)
+            }}
+            disabled={updateSelectedOfferMutation.isPending || isDemo}
+          />
+          {isDemo && (
+            <p className="mt-3 text-xs text-gray-500 dark:text-gray-400 italic">
+              La sélection d'offre est désactivée en mode démo.
+            </p>
+          )}
         </div>
       )}
 
@@ -278,15 +374,6 @@ export default function ConsumptionEuro() {
         </div>
       )}
 
-      {/* Current offer info with pricing details */}
-      {hasDataInCache && hasOffer && selectedOfferWithProvider && (
-        <AnimatedSection isVisible={true} delay={0}>
-          <div className="mb-6">
-            <OfferPricingCard selectedOffer={selectedOfferWithProvider} />
-          </div>
-        </AnimatedSection>
-      )}
-
       {/* Statistics Section */}
       <AnimatedSection isVisible={hasDataInCache && hasOffer} delay={0}>
         <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
@@ -301,7 +388,7 @@ export default function ConsumptionEuro() {
             }}
           >
             <div className="flex items-center gap-2">
-              <Euro className="text-primary-600 dark:text-primary-400" size={20} />
+              <Euro className="text-emerald-500 dark:text-emerald-400" size={20} />
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Statistiques de coûts
               </h2>
@@ -329,7 +416,7 @@ export default function ConsumptionEuro() {
             <div className="px-6 pb-6">
               <EuroCostCards
                 yearlyCosts={yearlyCosts}
-                selectedOffer={selectedOfferWithProvider}
+                selectedOffer={displayOffer}
                 isLoading={isLoadingOffers}
               />
             </div>
@@ -346,9 +433,26 @@ export default function ConsumptionEuro() {
         </div>
       </AnimatedSection>
 
+      {/* Current offer info with pricing details - now below statistics with comparison selector */}
+      {hasDataInCache && hasOffer && displayOffer && (
+        <AnimatedSection isVisible={true} delay={50}>
+          <div className="mt-6 relative z-20">
+            <OfferPricingCard
+              selectedOffer={displayOffer}
+              isComparison={!!comparisonOfferId}
+              originalOffer={selectedOfferWithProvider}
+              compatibleOffers={compatibleOffers}
+              providers={providers}
+              onComparisonChange={setComparisonOfferId}
+              comparisonOfferId={comparisonOfferId}
+            />
+          </div>
+        </AnimatedSection>
+      )}
+
       {/* Charts Section */}
       <AnimatedSection isVisible={hasDataInCache && hasOffer && hasCostData} delay={100}>
-        <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+        <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200 relative z-10">
           <div
             className="flex items-center justify-between p-6 cursor-pointer"
             onClick={() => setIsChartSectionExpanded(!isChartSectionExpanded)}

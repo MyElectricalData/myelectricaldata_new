@@ -4,6 +4,17 @@ import { Download, ZoomOut } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ModernButton } from './ModernButton'
 
+// Graph colors for production (green-themed to match production)
+const graphColors = ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4']
+
+// Helper function to convert hex to rgba
+const hexToRgba = (hex: string, alpha: number) => {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 interface MonthData {
   month: string
   monthLabel: string
@@ -139,7 +150,7 @@ export function AnnualProductionCurve({ chartData, isDarkMode }: AnnualProductio
     .filter((yearData): yearData is YearData => yearData !== undefined && yearData.byMonth !== undefined)
     .sort((a, b) => b.label.localeCompare(a.label))
 
-  const colors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4']
+  const colors = graphColors
 
   // Get display data based on zoom
   const displayData = zoomDomain
@@ -159,17 +170,24 @@ export function AnnualProductionCurve({ chartData, isDarkMode }: AnnualProductio
           {[...yearsData].reverse().map((yearData, idx) => {
             const originalIndex = yearsData.length - 1 - idx
             const isSelected = selectedYears.has(originalIndex)
+            const color = graphColors[idx % graphColors.length]
             return (
-              <ModernButton
+              <button
                 key={yearData.label}
-                variant="tab"
-                size="md"
-                isActive={isSelected}
                 onClick={() => toggleYearSelection(originalIndex)}
-                className="flex-1 min-w-[100px]"
+                className={`flex-1 min-w-[100px] px-4 py-2.5 text-sm font-medium rounded-lg border-2 transition-all duration-200 ${
+                  isSelected
+                    ? 'shadow-md'
+                    : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                }`}
+                style={isSelected ? {
+                  backgroundColor: hexToRgba(color, 0.125),
+                  borderColor: color,
+                  color: color,
+                } : undefined}
               >
                 {yearData.label}
-              </ModernButton>
+              </button>
             )
           })}
         </div>
@@ -202,7 +220,7 @@ export function AnnualProductionCurve({ chartData, isDarkMode }: AnnualProductio
       </div>
 
       {/* Display selected years chart */}
-      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+      <div className="bg-gradient-to-br from-teal-50 to-emerald-100 dark:from-teal-900/20 dark:to-emerald-900/20 rounded-xl p-4 border border-teal-200 dark:border-teal-800">
         <ResponsiveContainer width="100%" height={350}>
           <LineChart
             data={displayData}
@@ -228,7 +246,7 @@ export function AnnualProductionCurve({ chartData, isDarkMode }: AnnualProductio
               }}
             />
             <Tooltip
-              cursor={{ stroke: colors[0], strokeWidth: 2 }}
+              cursor={{ stroke: graphColors[0], strokeWidth: 2 }}
               contentStyle={{
                 backgroundColor: '#1F2937',
                 border: '1px solid #374151',

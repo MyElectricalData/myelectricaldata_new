@@ -406,3 +406,107 @@ Cette fonctionnalité pose les bases pour :
 - Un PDL de production peut être lié à plusieurs PDL de consommation
 - Compatible SQLite et PostgreSQL
 - Aucune donnée n'est copiée, seul le lien (UUID) est stocké
+
+---
+
+## 💰 Fonctionnalité : Sélection de l'offre tarifaire
+
+### Description
+
+Cette fonctionnalité permet aux utilisateurs de **sélectionner leur offre tarifaire actuelle** pour chaque PDL. L'offre sélectionnée est utilisée dans le simulateur pour comparer avec d'autres offres disponibles.
+
+### Interface utilisateur
+
+#### 1. Sélecteur d'offre dans PDLCard
+
+Le composant `OfferSelector` affiche 3 sélecteurs sur une seule ligne :
+
+| Sélecteur | Description |
+|-----------|-------------|
+| **Fournisseur** | Liste des fournisseurs d'énergie (EDF, Enercoop, TotalEnergies, etc.) |
+| **Type** | Type d'offre (Base, Heures Creuses, Tempo, EJP, Weekend, Saisonnier) |
+| **Offre** | Nom de l'offre spécifique |
+
+#### 2. Affichage des prix détaillés
+
+Une fois l'offre sélectionnée, un bloc récapitulatif s'affiche avec :
+
+- **En-tête** : Fournisseur - Nom de l'offre + badge du type
+- **Abonnement** : Prix mensuel en €/mois
+- **Puissance** : Si spécifiée dans l'offre (kVA)
+- **Prix détaillés** : Tous les prix selon le type d'offre (en €/kWh)
+- **Date de mise à jour** : Dernière actualisation des tarifs
+
+#### 3. Types d'offres et prix affichés
+
+| Type | Prix affichés |
+|------|---------------|
+| **BASE** | Prix kWh unique |
+| **HC_HP** | Heures Pleines, Heures Creuses |
+| **TEMPO** | Bleu HP/HC, Blanc HP/HC, Rouge HP/HC (6 prix) |
+| **EJP** | Jours normaux, Jours de pointe |
+| **WEEKEND** | Semaine HP/HC, Week-end HP/HC |
+| **SEASONAL** | Hiver HP/HC, Été HP/HC, Jours de pointe |
+
+#### 4. Codes couleur des prix
+
+- 🔵 **Bleu** : Jours Tempo Bleus
+- ⚪ **Gris** : Jours Tempo Blancs
+- 🔴 **Rouge** : Jours Tempo Rouges / Jours de pointe
+- 🟣 **Violet** : Week-end
+- 🔷 **Cyan** : Hiver (offres saisonnières)
+- 🟠 **Ambre** : Été (offres saisonnières)
+
+### API Backend
+
+**Endpoint :**
+
+```http
+PATCH /api/pdl/{pdl_id}/offer
+Content-Type: application/json
+
+{
+  "selected_offer_id": "uuid-de-l-offre" | null
+}
+```
+
+### Fichiers impactés
+
+**Frontend :**
+- [apps/web/src/components/OfferSelector.tsx](../../apps/web/src/components/OfferSelector.tsx) : Composant de sélection
+- [apps/web/src/components/PDLCard.tsx](../../apps/web/src/components/PDLCard.tsx) : Intégration du sélecteur
+- [apps/web/src/api/energy.ts](../../apps/web/src/api/energy.ts) : Types EnergyOffer, EnergyProvider
+- [apps/web/src/api/pdl.ts](../../apps/web/src/api/pdl.ts) : Méthode `updateSelectedOffer`
+
+**Backend :**
+- [apps/api/src/models/pdl.py](../../apps/api/src/models/pdl.py) : Champ `selected_offer_id`
+- [apps/api/src/routers/pdl.py](../../apps/api/src/routers/pdl.py) : Endpoint de mise à jour
+
+### Utilisation
+
+**Pour l'utilisateur :**
+
+1. Dans la carte PDL, section "Offre tarifaire"
+2. Sélectionner le fournisseur
+3. Sélectionner le type d'offre
+4. Sélectionner l'offre spécifique
+5. Le récapitulatif des prix s'affiche automatiquement
+6. Cliquer sur ✕ pour effacer la sélection
+
+### Design
+
+- 3 sélecteurs alignés sur une ligne (`grid-cols-3`)
+- Labels compacts avec icônes (Building2, Zap, Tag)
+- Bloc récapitulatif en fond bleu clair
+- Prix en €/kWh avec 4 décimales
+- Abonnement en €/mois avec 2 décimales
+- Support du mode sombre
+- Responsive (s'adapte aux petits écrans)
+
+### Notes techniques
+
+- Les offres sont filtrées par puissance souscrite du PDL
+- Seules les offres actives (`is_active = true`) sont affichées
+- Les sélecteurs sont en cascade : Type dépend du Fournisseur, Offre dépend du Type
+- La sélection est persistée immédiatement via mutation React Query
+- Le cache des offres est conservé 5 minutes (`staleTime`)

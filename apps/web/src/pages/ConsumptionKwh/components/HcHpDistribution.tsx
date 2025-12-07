@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { PieChart, Pie, Cell, Tooltip } from 'recharts'
-import { Download, Info } from 'lucide-react'
+import { Download, Info, Moon, Sun } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ModernButton } from './ModernButton'
 
@@ -14,6 +14,17 @@ interface HcHpData {
 interface HcHpDistributionProps {
   hcHpByYear: HcHpData[]
   selectedPDLDetails: any
+}
+
+// Graph colors for tabs - blue shades matching HC theme
+const graphColors = ['#60A5FA', '#3B82F6', '#93C5FD', '#2563EB']
+
+// Convert hex to rgba for tab backgrounds
+const hexToRgba = (hex: string, alpha: number) => {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
 export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistributionProps) {
@@ -55,18 +66,26 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
           {hcHpByYear.map((yearData, index) => {
             // Extract the year from the end date
             const endYear = yearData.year.split(' - ')[1]?.split(' ').pop() || yearData.year
+            const color = graphColors[index % graphColors.length]
+            const isActive = selectedHcHpPeriod === index
 
             return (
-              <ModernButton
+              <button
                 key={yearData.year}
-                variant="tab"
-                size="md"
-                isActive={selectedHcHpPeriod === index}
                 onClick={() => setSelectedHcHpPeriod(index)}
-                className="flex-1 min-w-[80px]"
+                className={`flex-1 min-w-[80px] px-4 py-2 text-base font-semibold rounded-lg border-2 transition-all duration-200 ${
+                  isActive
+                    ? 'shadow-md'
+                    : 'text-gray-400 hover:text-gray-200 border-gray-700 hover:border-gray-600'
+                }`}
+                style={isActive ? {
+                  backgroundColor: hexToRgba(color, 0.125),
+                  borderColor: color,
+                  color: color,
+                } : undefined}
               >
                 {endYear}
-              </ModernButton>
+              </button>
             )
           })}
         </div>
@@ -90,16 +109,22 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
         const hpPercentage = yearData.totalKwh > 0 ? (yearData.hpKwh / yearData.totalKwh) * 100 : 0
 
         const pieData = [
-          { name: 'Heures Creuses (HC)', value: yearData.hcKwh, color: '#3b82f6' },
-          { name: 'Heures Pleines (HP)', value: yearData.hpKwh, color: '#f97316' },
+          { name: 'Heures Creuses (HC)', value: yearData.hcKwh, color: 'rgba(96, 165, 250, 0.6)' },  // blue-400 with transparency
+          { name: 'Heures Pleines (HP)', value: yearData.hpKwh, color: 'rgba(251, 146, 60, 0.6)' },  // orange-400 with transparency
         ]
 
         return (
-          <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-6 border border-gray-200 dark:border-gray-600">
+          <div className="rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
-              <h4 className="text-base font-semibold text-gray-900 dark:text-white">
-                {yearData.year}
-              </h4>
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1">
+                  <Moon className="text-blue-600 dark:text-blue-400" size={18} />
+                  <Sun className="text-orange-600 dark:text-orange-400" size={18} />
+                </div>
+                <h4 className="text-base font-semibold text-gray-900 dark:text-white">
+                  {yearData.year}
+                </h4>
+              </div>
               <ModernButton
                 variant="gradient"
                 size="sm"
@@ -146,45 +171,35 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
               {/* Statistics */}
               <div className="flex flex-col justify-center gap-4">
                 {/* Heures Creuses */}
-                <div>
+                <div className="bg-blue-50/50 dark:bg-blue-900/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
                   <div className="flex items-center justify-between mb-1">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Heures Creuses (HC)</p>
+                    <div className="flex items-center gap-1.5">
+                      <Moon size={14} className="text-blue-600 dark:text-blue-400" />
+                      <p className="text-sm text-blue-700 dark:text-blue-300">Heures Creuses (HC)</p>
+                    </div>
                     <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
                       {hcPercentage.toFixed(1)}%
                     </span>
                   </div>
-                  <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                  <p className="text-xl font-bold text-blue-700 dark:text-blue-300">
                     {yearData.hcKwh.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} kWh
                   </p>
                 </div>
 
                 {/* Heures Pleines */}
-                <div>
+                <div className="bg-orange-50/50 dark:bg-orange-900/20 rounded-lg p-3 border border-orange-200 dark:border-orange-800">
                   <div className="flex items-center justify-between mb-1">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Heures Pleines (HP)</p>
+                    <div className="flex items-center gap-1.5">
+                      <Sun size={14} className="text-orange-600 dark:text-orange-400" />
+                      <p className="text-sm text-orange-700 dark:text-orange-300">Heures Pleines (HP)</p>
+                    </div>
                     <span className="text-sm font-medium text-orange-600 dark:text-orange-400">
                       {hpPercentage.toFixed(1)}%
                     </span>
                   </div>
-                  <p className="text-xl font-bold text-orange-600 dark:text-orange-400">
+                  <p className="text-xl font-bold text-orange-700 dark:text-orange-300">
                     {yearData.hpKwh.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} kWh
                   </p>
-                </div>
-
-                {/* Visual bar */}
-                <div className="mt-2">
-                  <div className="w-full h-4 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden flex">
-                    <div
-                      className="bg-blue-500 dark:bg-blue-400 h-full transition-all"
-                      style={{ width: `${hcPercentage}%` }}
-                      title={`HC: ${hcPercentage.toFixed(1)}%`}
-                    />
-                    <div
-                      className="bg-orange-500 dark:bg-orange-400 h-full transition-all"
-                      style={{ width: `${hpPercentage}%` }}
-                      title={`HP: ${hpPercentage.toFixed(1)}%`}
-                    />
-                  </div>
                 </div>
               </div>
             </div>

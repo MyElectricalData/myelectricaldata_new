@@ -37,7 +37,7 @@ export function YearlyProduction({ chartData, isDarkMode }: YearlyProductionProp
           Export JSON
         </ModernButton>
       </div>
-      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+      <div className="bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-xl p-4 border border-emerald-200 dark:border-emerald-800">
         <ResponsiveContainer width="100%" height={350}>
           <BarChart data={chartData.byMonthComparison}>
             <CartesianGrid strokeDasharray="3 3" stroke="#9CA3AF" opacity={0.3} />
@@ -52,7 +52,7 @@ export function YearlyProduction({ chartData, isDarkMode }: YearlyProductionProp
               tickFormatter={(value) => `${(value / 1000).toFixed(0)} kWh`}
             />
             <Tooltip
-              cursor={{ fill: 'rgba(59, 130, 246, 0.1)' }}
+              cursor={{ fill: 'rgba(16, 185, 129, 0.1)' }}
               contentStyle={{
                 backgroundColor: '#1F2937',
                 border: '1px solid #374151',
@@ -63,7 +63,7 @@ export function YearlyProduction({ chartData, isDarkMode }: YearlyProductionProp
             />
             <Legend />
             {chartData.years.map((year, index) => {
-              const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899']
+              const colors = ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4']
               return (
                 <Bar
                   key={year}

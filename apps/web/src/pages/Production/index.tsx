@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
-import { BarChart3, Database, ArrowRight, Info } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { Zap, BarChart3, Database, ArrowRight, Info, LineChart } from 'lucide-react'
 import { usePdlStore } from '@/stores/pdlStore'
+import { useDataFetchStore } from '@/stores/dataFetchStore'
 import type { PDL } from '@/types/api'
 import { logger } from '@/utils/logger'
 import { useQuery } from '@tanstack/react-query'
@@ -8,6 +9,8 @@ import { pdlApi } from '@/api/pdl'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
 import { AnimatedSection } from '@/components/AnimatedSection'
+import { useIsDemo } from '@/hooks/useIsDemo'
+import { useUnifiedDataFetch } from '@/hooks/useUnifiedDataFetch'
 
 // Import custom hooks
 import { useProductionData } from './hooks/useProductionData'
@@ -22,6 +25,10 @@ import { DetailedCurve } from '@/components/DetailedCurve'
 
 export default function Production() {
   const { selectedPdl: selectedPDL, setSelectedPdl: setSelectedPDL } = usePdlStore()
+  const { setIsLoading } = useDataFetchStore()
+  const isDemo = useIsDemo()
+  const demoAutoFetchDone = useRef(false)
+  const lastAutoFetchPDL = useRef<string | null>(null)
 
   // States
   const [, setIsClearingCache] = useState(false)
@@ -56,6 +63,8 @@ export default function Production() {
     setIsLoadingExiting(false)
     setIsInfoSectionExpanded(true)
     setIsInitializing(true)
+    setDataLimitWarning(null) // Reset warning while loading new PDL
+    setHasDataInCache(false) // Reset cache state for new PDL
   }, [selectedPDL])
 
   // End initialization after cache has time to hydrate
@@ -225,28 +234,112 @@ export default function Production() {
     setIsClearingCache,
   })
 
+  // Hook for demo auto-fetch
+  const { fetchAllData } = useUnifiedDataFetch({
+    selectedPDL,
+    selectedPDLDetails,
+    allPDLs: pdls,
+    pageContext: 'production',
+  })
+
   // Check if ANY production data is in cache
-  // Now uses single cache key format: ['productionDetail', pdl]
-  const hasDataInCache = useMemo(() => {
+  // Use state instead of useMemo for proper reactivity to cache updates
+  const [hasDataInCache, setHasDataInCache] = useState(false)
+
+  // Check cache on mount and when PDL changes
+  // IMPORTANT: Wait for pdls to be loaded so actualProductionPDL is correct
+  useEffect(() => {
+    // Don't check cache until PDLs are loaded
+    if (!pdls.length) {
+      logger.log('[Cache Detection] Waiting for PDLs to load...')
+      return
+    }
+
     const pdlToCheck = actualProductionPDL || selectedPDL
     if (!pdlToCheck) {
-      logger.log('[Cache Detection] No PDL selected')
+      setHasDataInCache(false)
+      return
+    }
+
+    logger.log('[Cache Detection] Checking cache for PDL:', pdlToCheck, '(actualProductionPDL:', actualProductionPDL, ', selectedPDL:', selectedPDL, ')')
+
+    const checkCache = () => {
+      const cachedData = queryClient.getQueryData(['productionDetail', pdlToCheck]) as any
+      if (cachedData?.data?.meter_reading?.interval_reading?.length > 0) {
+        const readings = cachedData.data.meter_reading.interval_reading
+        logger.log('[Cache Detection] ✓ Production cache found!', readings.length, 'points')
+        setHasDataInCache(true)
+        return true
+      }
       return false
     }
 
-    logger.log('[Cache Detection] Checking production cache for PDL:', pdlToCheck)
+    // Initial check
+    if (!checkCache()) {
+      logger.log('[Cache Detection] ✗ No production cache found for PDL:', pdlToCheck)
+      setHasDataInCache(false)
+    }
+  }, [actualProductionPDL, selectedPDL, queryClient, pdls.length])
 
-    // Check the single cache entry for this PDL
-    const cachedData = queryClient.getQueryData(['productionDetail', pdlToCheck]) as any
-    if (cachedData?.data?.meter_reading?.interval_reading?.length > 0) {
-      const readings = cachedData.data.meter_reading.interval_reading
-      logger.log('[Cache Detection] ✓ Production cache found!', readings.length, 'points')
-      return true
+  // Poll for cache updates (catches data fetched by header or demo auto-fetch)
+  // IMPORTANT: Wait for pdls to be loaded so actualProductionPDL is correct
+  useEffect(() => {
+    // Don't poll until PDLs are loaded
+    if (!pdls.length) return
+
+    const pdlToCheck = actualProductionPDL || selectedPDL
+    if (!pdlToCheck || hasDataInCache) return
+
+    logger.log('[Cache Poll] Starting poll for PDL:', pdlToCheck)
+
+    let pollCount = 0
+    const maxPolls = 20 // 10 seconds total
+
+    const interval = setInterval(() => {
+      pollCount++
+
+      const cachedData = queryClient.getQueryData(['productionDetail', pdlToCheck]) as any
+      if (cachedData?.data?.meter_reading?.interval_reading?.length > 0) {
+        logger.log('[Cache Poll] ✓ Production cache now available!')
+        setHasDataInCache(true)
+        clearInterval(interval)
+        return
+      }
+
+      if (pollCount >= maxPolls) {
+        logger.log('[Cache Poll] Max polls reached, stopping')
+        clearInterval(interval)
+      }
+    }, 500)
+
+    return () => clearInterval(interval)
+  }, [actualProductionPDL, selectedPDL, queryClient, hasDataInCache, pdls.length])
+
+  // Auto-fetch data for demo account
+  useEffect(() => {
+    // Reset demoAutoFetchDone when PDL changes
+    if (selectedPDL && selectedPDL !== lastAutoFetchPDL.current) {
+      demoAutoFetchDone.current = false
     }
 
-    logger.log('[Cache Detection] ✗ No production cache found')
-    return false
-  }, [actualProductionPDL, selectedPDL, queryClient])
+    // Wait for PDLs to be loaded before auto-fetching
+    if (!pdls.length) return
+
+    if (isDemo && selectedPDL && selectedPDLDetails && !demoAutoFetchDone.current && !hasDataInCache && !isInitializing) {
+      logger.log('[DEMO] Auto-fetching production data for demo account, PDL:', selectedPDL, 'actualProductionPDL:', actualProductionPDL)
+      demoAutoFetchDone.current = true
+      lastAutoFetchPDL.current = selectedPDL
+      // Small delay to ensure everything is mounted
+      setTimeout(async () => {
+        setIsLoading(true)
+        try {
+          await fetchAllData()
+        } finally {
+          setIsLoading(false)
+        }
+      }, 300)
+    }
+  }, [isDemo, selectedPDL, selectedPDLDetails, hasDataInCache, isInitializing, setIsLoading, fetchAllData, pdls.length, actualProductionPDL])
 
   // Auto-set selectedPDL when there's only one available (non-linked) PDL
   useEffect(() => {
@@ -255,19 +348,33 @@ export default function Production() {
     }
   }, [availableProductionPdls, selectedPDL, setSelectedPDL])
 
-  // Check data limits
+  // Check data limits - only after PDLs are loaded
   useEffect(() => {
+    // Wait for PDLs to be loaded before checking
+    if (!pdls.length) return
+
     if (selectedPDLDetails) {
       // Don't show warning if PDL has linked production
       const hasLinkedProduction = selectedPDLDetails.has_consumption && selectedPDLDetails.linked_production_pdl_id
+
+      logger.log('[Production] Data limits check:', {
+        pdl: selectedPDL,
+        has_production: selectedPDLDetails.has_production,
+        has_consumption: selectedPDLDetails.has_consumption,
+        linked_production_pdl_id: selectedPDLDetails.linked_production_pdl_id,
+        hasLinkedProduction,
+      })
 
       if (!selectedPDLDetails.has_production && !hasLinkedProduction) {
         setDataLimitWarning("Ce PDL n'a pas l'option production activée.")
       } else {
         setDataLimitWarning(null)
       }
+    } else if (selectedPDL) {
+      // PDL selected but details not found yet - clear warning while loading
+      setDataLimitWarning(null)
     }
-  }, [selectedPDLDetails])
+  }, [selectedPDLDetails, pdls.length, selectedPDL])
 
   // Track loading completion
   useEffect(() => {
@@ -442,7 +549,7 @@ export default function Production() {
             }}
           >
             <div className="flex items-center gap-2">
-              <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+              <Zap className="text-amber-500 dark:text-amber-400" size={20} />
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Statistiques de production
               </h2>
@@ -488,7 +595,7 @@ export default function Production() {
             }}
           >
             <div className="flex items-center gap-2">
-              <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+              <BarChart3 className="text-emerald-500 dark:text-emerald-400" size={20} />
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Graphiques de production
               </h2>
@@ -535,7 +642,7 @@ export default function Production() {
             }}
           >
             <div className="flex items-center gap-2">
-              <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+              <LineChart className="text-indigo-500 dark:text-indigo-400" size={20} />
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Courbe de production détaillée
               </h2>
@@ -584,7 +691,7 @@ export default function Production() {
           onClick={() => setIsInfoSectionExpanded(!isInfoSectionExpanded)}
         >
           <div className="flex items-center gap-2">
-            <Info className="text-primary-600 dark:text-primary-400" size={20} />
+            <Info className="text-blue-500 dark:text-blue-400" size={20} />
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Informations importantes
             </h3>

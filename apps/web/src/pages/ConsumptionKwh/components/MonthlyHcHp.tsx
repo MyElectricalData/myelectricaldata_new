@@ -24,6 +24,17 @@ interface MonthlyHcHpProps {
   isDarkMode: boolean
 }
 
+// Graph colors for tabs - matching the HC bars in the chart
+const graphColors = ['#3B82F6', '#93C5FD', '#60A5FA', '#2563EB']
+
+// Convert hex to rgba for tab backgrounds
+const hexToRgba = (hex: string, alpha: number) => {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 export function MonthlyHcHp({ monthlyHcHpByYear, selectedPDLDetails, isDarkMode }: MonthlyHcHpProps) {
   // Track selected years with a Set (allows multiple selections)
   // Default to the most recent year (find the highest year value)
@@ -156,19 +167,26 @@ export function MonthlyHcHp({ monthlyHcHpByYear, selectedPDLDetails, isDarkMode 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         {/* Tabs on the left - Allow multiple selection */}
         <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-hidden py-3 px-2 no-scrollbar">
-          {monthlyHcHpByYear.map((yearData, _idx) => {
-            const isSelected = selectedYears.has(_idx)
+          {monthlyHcHpByYear.map((yearData, idx) => {
+            const isSelected = selectedYears.has(idx)
+            const color = graphColors[idx % graphColors.length]
             return (
-              <ModernButton
+              <button
                 key={yearData.year}
-                variant="tab"
-                size="md"
-                isActive={isSelected}
-                onClick={() => toggleYearSelection(_idx)}
-                className="flex-1 min-w-[80px]"
+                onClick={() => toggleYearSelection(idx)}
+                className={`flex-1 min-w-[80px] px-4 py-2 text-base font-semibold rounded-lg border-2 transition-all duration-200 ${
+                  isSelected
+                    ? 'shadow-md'
+                    : 'text-gray-400 hover:text-gray-200 border-gray-700 hover:border-gray-600'
+                }`}
+                style={isSelected ? {
+                  backgroundColor: hexToRgba(color, 0.125),
+                  borderColor: color,
+                  color: color,
+                } : undefined}
               >
                 {yearData.year}
-              </ModernButton>
+              </button>
             )
           })}
         </div>
@@ -201,7 +219,7 @@ export function MonthlyHcHp({ monthlyHcHpByYear, selectedPDLDetails, isDarkMode 
       </div>
 
       {/* Display selected years chart */}
-      <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-6 border border-gray-200 dark:border-gray-600">
+      <div className="bg-gradient-to-br from-indigo-50 to-cyan-100 dark:from-indigo-900/20 dark:to-cyan-900/20 rounded-xl p-6 border border-indigo-200 dark:border-indigo-800">
         {/* Show data availability warnings for selected years */}
         {selectedYearsData.some(year => year.dataAvailable !== undefined && year.dataAvailable < 350) && (
           <div className="mb-4 space-y-2">
