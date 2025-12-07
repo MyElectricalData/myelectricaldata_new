@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Calculator, AlertCircle, Loader2, ChevronDown, ChevronUp, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info, ArrowRight } from 'lucide-react'
 import { useQuery, useQueryClient, useIsRestoring } from '@tanstack/react-query'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
@@ -13,6 +13,8 @@ import { logger } from '@/utils/logger'
 import { ModernButton } from './Simulator/components/ModernButton'
 import { useIsDemo } from '@/hooks/useIsDemo'
 import { usePdlStore } from '@/stores/pdlStore'
+import { useDataFetchStore } from '@/stores/dataFetchStore'
+import { useUnifiedDataFetch } from '@/hooks/useUnifiedDataFetch'
 
 // Helper function to check if a date is weekend (Saturday or Sunday)
 function isWeekend(dateString: string): boolean {
@@ -125,8 +127,10 @@ export default function Simulator() {
   const queryClient = useQueryClient()
   const isRestoring = useIsRestoring()
   const isDemo = useIsDemo()
+  const { setIsLoading } = useDataFetchStore()
+  const demoAutoFetchDone = useRef(false)
 
-  // Fetch user's PDLs
+  // Fetch user's PDLs - with short staleTime to ensure provider changes are reflected
   const { data: pdlsData, isLoading: pdlsLoading, error: pdlsError } = useQuery({
     queryKey: ['pdls'],
     queryFn: async () => {
@@ -139,6 +143,7 @@ export default function Simulator() {
       logger.warn('[Simulator] Returning empty array, response was:', response)
       return []
     },
+    staleTime: 30 * 1000, // 30 seconds - same as Dashboard for consistency
   })
 
   // Fetch energy providers and offers
@@ -255,6 +260,25 @@ export default function Simulator() {
   const [sortBy, setSortBy] = useState<'total' | 'subscription' | 'energy'>('total')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
 
+  // Get PDL details for demo auto-fetch
+  const allPDLs: PDL[] = Array.isArray(pdlsData) ? pdlsData : []
+  const selectedPDLDetails = allPDLs.find(p => p.usage_point_id === selectedPdl)
+
+  // Hook for demo auto-fetch
+  const { fetchAllData } = useUnifiedDataFetch({
+    selectedPDL: selectedPdl,
+    selectedPDLDetails,
+    allPDLs,
+    pageContext: 'consumption',
+  })
+
+  // Check if data is in cache for auto-fetch logic
+  const hasDataInCache = useMemo(() => {
+    if (!selectedPdl) return false
+    const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPdl]) as any
+    return cachedData?.data?.meter_reading?.interval_reading?.length > 0
+  }, [selectedPdl, queryClient, cachedConsumptionData])
+
   // Set first active PDL as selected by default
   useEffect(() => {
     logger.log('[Simulator] pdlsData in useEffect:', pdlsData, 'isArray:', Array.isArray(pdlsData))
@@ -290,6 +314,22 @@ export default function Simulator() {
       return () => clearTimeout(timer)
     }
   }, [selectedPdl, offersLoading, providersLoading, isConsumptionCacheLoading])
+
+  // Auto-fetch data for demo account
+  useEffect(() => {
+    if (isDemo && selectedPdl && selectedPDLDetails && !demoAutoFetchDone.current && !hasDataInCache && !isInitializing) {
+      logger.log('[DEMO] Auto-fetching data for demo account on Simulator')
+      demoAutoFetchDone.current = true
+      setTimeout(async () => {
+        setIsLoading(true)
+        try {
+          await fetchAllData()
+        } finally {
+          setIsLoading(false)
+        }
+      }, 300)
+    }
+  }, [isDemo, selectedPdl, selectedPDLDetails, hasDataInCache, isInitializing, setIsLoading, fetchAllData])
 
   // Auto-collapse info section when simulation results are available
   useEffect(() => {

@@ -202,6 +202,78 @@ Page permettant aux utilisateurs de **visualiser et analyser leur consommation �
 - lucide-react pour les icônes
 - react-hot-toast pour les notifications
 
+## Design visuel
+
+### Couleurs des sections
+
+Chaque section utilise une icône colorée distinctive :
+
+| Section | Icône | Couleur |
+|---------|-------|---------|
+| Statistiques de consommation | ⚡ Zap | Ambre (`amber-500`) |
+| Graphiques de consommation | 📊 BarChart3 | Émeraude (`emerald-500`) |
+| Courbe de charge détaillée | 📈 LineChart | Indigo (`indigo-500`) |
+| Pics de puissance maximale | 📉 TrendingUp | Rouge (`red-500`) |
+
+### Cartes statistiques annuelles
+
+Les cartes `YearlyStatCards` utilisent des gradients colorés rotatifs :
+
+1. **Bleu → Indigo** : `from-blue-50 to-indigo-100`
+2. **Émeraude → Teal** : `from-emerald-50 to-teal-100`
+3. **Violet → Violet** : `from-purple-50 to-violet-100`
+4. **Ambre → Orange** : `from-amber-50 to-orange-100`
+
+Chaque carte affiche :
+- Icône Zap colorée
+- Année et période (dates)
+- Consommation en kWh
+- Comparaison année précédente (tendance haut/bas)
+
+### Sélecteurs d'années (tabs)
+
+Les sélecteurs d'années utilisent les mêmes couleurs que les graphiques associés :
+
+**Style actif :**
+```css
+background-color: rgba(couleur, 0.125);
+border-color: couleur;
+color: couleur;
+```
+
+**Style inactif :**
+```css
+text-gray-400 border-gray-700
+hover:text-gray-200 hover:border-gray-600
+```
+
+**Couleurs par composant :**
+
+| Composant | Couleurs des tabs |
+|-----------|-------------------|
+| AnnualCurve | `#3B82F6` (bleu), `#10B981` (émeraude), `#F59E0B` (ambre), `#8B5CF6` (violet) |
+| PowerPeaks | `#EF4444` (rouge), `#F59E0B` (ambre), `#10B981` (émeraude), `#8B5CF6` (violet) |
+| MonthlyHcHp | Nuances de bleu (`#3B82F6`, `#93C5FD`, `#60A5FA`, `#2563EB`) |
+| HcHpDistribution | Nuances de bleu (`#60A5FA`, `#3B82F6`, `#93C5FD`, `#2563EB`) |
+
+### Camembert HC/HP
+
+Le camembert de répartition HC/HP utilise des couleurs semi-transparentes :
+
+- **Heures Creuses (HC)** : `rgba(96, 165, 250, 0.6)` (bleu-400 avec 60% opacité)
+- **Heures Pleines (HP)** : `rgba(251, 146, 60, 0.6)` (orange-400 avec 60% opacité)
+
+### Graphiques avec gradients
+
+Les conteneurs de graphiques utilisent des gradients subtils :
+
+| Composant | Gradient |
+|-----------|----------|
+| YearlyConsumption | `from-sky-50 to-blue-100` |
+| AnnualCurve | `from-teal-50 to-emerald-100` |
+| MonthlyHcHp | `from-indigo-50 to-cyan-100` |
+| PowerPeaks | `from-red-50 to-orange-100` |
+
 ## Fichiers lies
 
 - **Frontend** : `apps/web/src/pages/ConsumptionKwh/` (dossier avec composants)
@@ -259,8 +331,7 @@ Page permettant aux utilisateurs de **visualiser et analyser leur consommation �
 apps/web/src/pages/ConsumptionKwh/
 ├── index.tsx                           # Page principale
 ├── components/
-│   ├── AnnualCurve.tsx                # Courbe annuelle
-│   ├── ConfirmModal.tsx               # Modal de confirmation
+│   ├── AnnualCurve.tsx                # Courbe annuelle avec sélecteurs colorés
 │   ├── DataFetchSection.tsx           # Section recuperation donnees
 │   ├── HcHpDistribution.tsx           # Repartition HC/HP (camemberts)
 │   ├── InfoBlock.tsx                  # Bloc d'information
@@ -268,9 +339,9 @@ apps/web/src/pages/ConsumptionKwh/
 │   ├── ModernButton.tsx               # Bouton moderne
 │   ├── MonthlyHcHp.tsx                # HC/HP mensuel (barres)
 │   ├── PDLSelector.tsx                # Selecteur PDL
-│   ├── PowerPeaks.tsx                 # Pics de puissance
-│   ├── YearlyConsumption.tsx          # Comparaison mensuelle
-│   └── YearlyStatCards.tsx            # Cartes annuelles
+│   ├── PowerPeaks.tsx                 # Pics de puissance avec sélecteurs colorés
+│   ├── YearlyConsumption.tsx          # Comparaison mensuelle avec gradient
+│   └── YearlyStatCards.tsx            # Cartes annuelles avec gradients colorés
 ├── hooks/
 │   ├── useConsumptionCalcs.ts         # Calculs consommation
 │   ├── useConsumptionData.ts          # Gestion donnees

@@ -1,10 +1,16 @@
-import { useState, useEffect, useMemo } from 'react'
-import { TrendingUp, BarChart3, Database, ArrowRight } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { Zap, TrendingUp, BarChart3, Database, ArrowRight, LineChart } from 'lucide-react'
 import { usePdlStore } from '@/stores/pdlStore'
+import { useDataFetchStore } from '@/stores/dataFetchStore'
 import { logger } from '@/utils/logger'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
 import { AnimatedSection } from '@/components/AnimatedSection'
+import { useIsDemo } from '@/hooks/useIsDemo'
+import { useUnifiedDataFetch } from '@/hooks/useUnifiedDataFetch'
+import { useQuery } from '@tanstack/react-query'
+import { pdlApi } from '@/api/pdl'
+import type { PDL } from '@/types/api'
 
 // Import custom hooks
 import { useConsumptionData } from './hooks/useConsumptionData'
@@ -13,7 +19,6 @@ import { useConsumptionCalcs } from './hooks/useConsumptionCalcs'
 
 // Import components
 import { InfoBlock } from './components/InfoBlock'
-import { ConfirmModal } from './components/ConfirmModal'
 import { YearlyConsumption } from './components/YearlyConsumption'
 import { HcHpDistribution } from './components/HcHpDistribution'
 import { YearlyStatCards } from './components/YearlyStatCards'
@@ -25,11 +30,28 @@ import { PowerPeaks } from './components/PowerPeaks'
 // Renamed from Consumption to ConsumptionKwh
 export default function ConsumptionKwh() {
   const { selectedPdl: selectedPDL, setSelectedPdl: setSelectedPDL } = usePdlStore()
+  const { setIsLoading } = useDataFetchStore()
+  const isDemo = useIsDemo()
+  const demoAutoFetchDone = useRef(false)
+  const lastAutoFetchPDL = useRef<string | null>(null)
+
+  // Get PDL list for unified fetch - with short staleTime to ensure provider changes are reflected
+  const { data: pdlsResponse } = useQuery({
+    queryKey: ['pdls'],
+    queryFn: async () => {
+      const response = await pdlApi.list()
+      if (response.success && Array.isArray(response.data)) {
+        return response.data as PDL[]
+      }
+      return []
+    },
+    staleTime: 30 * 1000, // 30 seconds - same as Dashboard for consistency
+  })
+  const allPDLs: PDL[] = Array.isArray(pdlsResponse) ? pdlsResponse : []
+  const selectedPDLForFetch = allPDLs.find(p => p.usage_point_id === selectedPDL)
 
   // States
-  const [, setIsClearingCache] = useState(false)
-  const [showConfirmModal, setShowConfirmModal] = useState(false)
-  const [isChartsExpanded, setIsChartsExpanded] = useState(false)
+  const [isChartSectionExpanded, setIsChartSectionExpanded] = useState(false)
   const [dateRange, setDateRange] = useState<{start: string, end: string} | null>(null)
   const [isPowerSectionExpanded, setIsPowerSectionExpanded] = useState(true)
   const [isStatsSectionExpanded, setIsStatsSectionExpanded] = useState(true)
@@ -37,7 +59,6 @@ export default function ConsumptionKwh() {
   const [detailWeekOffset, setDetailWeekOffset] = useState<number>(0)
   const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0, currentRange: '' })
   const [isLoadingDetailed, setIsLoadingDetailed] = useState(false)
-  const [, setIsLoadingDaily] = useState(false)
   const [dailyLoadingComplete, setDailyLoadingComplete] = useState(false)
   const [powerLoadingComplete, setPowerLoadingComplete] = useState(false)
   const [allLoadingComplete, setAllLoadingComplete] = useState(false)
@@ -47,13 +68,13 @@ export default function ConsumptionKwh() {
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [isInitialLoadingFromCache, setIsInitialLoadingFromCache] = useState(false)
   const [isLoadingExiting, setIsLoadingExiting] = useState(false)
-  const [isInfoSectionExpanded, setIsInfoSectionExpanded] = useState(true)
+  const [isInfoExpanded, setIsInfoExpanded] = useState(true)
   const [isInitializing, setIsInitializing] = useState(true)
 
   // Reset all display states when PDL changes
   useEffect(() => {
     logger.log('[Consumption] PDL changed, resetting display states')
-    setIsChartsExpanded(false)
+    setIsChartSectionExpanded(false)
     setIsStatsSectionExpanded(false)
     setIsDetailSectionExpanded(false)
     setIsPowerSectionExpanded(false)
@@ -65,7 +86,7 @@ export default function ConsumptionKwh() {
     setLoadingProgress({ current: 0, total: 0, currentRange: '' })
     setIsInitialLoadingFromCache(false)
     setIsLoadingExiting(false)
-    setIsInfoSectionExpanded(true)
+    setIsInfoExpanded(true)
     setIsInitializing(true)
   }, [selectedPDL])
 
@@ -168,11 +189,11 @@ export default function ConsumptionKwh() {
     detailDateRange
   })
 
-  const { clearCache } = useConsumptionFetch({
+  useConsumptionFetch({
     selectedPDL,
     selectedPDLDetails,
     setDateRange,
-    setIsChartsExpanded,
+    setIsChartSectionExpanded,
     setIsDetailSectionExpanded,
     setIsStatsSectionExpanded,
     setIsPowerSectionExpanded,
@@ -183,7 +204,14 @@ export default function ConsumptionKwh() {
     setIsLoadingDetailed,
     setLoadingProgress,
     setHcHpCalculationTrigger,
-    setIsClearingCache,
+  })
+
+  // Hook for demo auto-fetch - uses the same unified fetch as the header
+  const { fetchAllData } = useUnifiedDataFetch({
+    selectedPDL,
+    selectedPDLDetails: selectedPDLForFetch,
+    allPDLs,
+    pageContext: 'consumption',
   })
 
   // NOTE: Fetch function registration is now handled by the unified hook in PageHeader
@@ -249,6 +277,29 @@ export default function ConsumptionKwh() {
     return () => clearInterval(interval)
   }, [selectedPDL]) // Re-run when PDL changes
 
+  // Auto-fetch data for demo account
+  useEffect(() => {
+    // Reset demoAutoFetchDone when PDL changes
+    if (selectedPDL && selectedPDL !== lastAutoFetchPDL.current) {
+      demoAutoFetchDone.current = false
+    }
+
+    if (isDemo && selectedPDL && selectedPDLForFetch && !demoAutoFetchDone.current && !hasDataInCache && !isInitializing) {
+      logger.log('[DEMO] Auto-fetching consumption data for demo account')
+      demoAutoFetchDone.current = true
+      lastAutoFetchPDL.current = selectedPDL
+      // Small delay to ensure everything is mounted
+      setTimeout(async () => {
+        setIsLoading(true)
+        try {
+          await fetchAllData()
+        } finally {
+          setIsLoading(false)
+        }
+      }, 300)
+    }
+  }, [isDemo, selectedPDL, selectedPDLForFetch, hasDataInCache, isInitializing, setIsLoading, fetchAllData])
+
   // Auto-set selectedPDL when there's only one active PDL
   useEffect(() => {
     if (activePdls.length > 0 && !selectedPDL) {
@@ -270,7 +321,6 @@ export default function ConsumptionKwh() {
   // Track loading completion
   useEffect(() => {
     if (consumptionData && !isLoadingConsumption) {
-      setIsLoadingDaily(false)
       setDailyLoadingComplete(true)
     }
   }, [consumptionData, isLoadingConsumption])
@@ -284,7 +334,7 @@ export default function ConsumptionKwh() {
   useEffect(() => {
     if (dailyLoadingComplete && powerLoadingComplete && !isLoadingDetailed) {
       setAllLoadingComplete(true)
-      setIsChartsExpanded(true)
+      setIsChartSectionExpanded(true)
       setIsStatsSectionExpanded(true)
       setIsDetailSectionExpanded(true)
       setIsPowerSectionExpanded(true)
@@ -341,7 +391,7 @@ export default function ConsumptionKwh() {
         setDailyLoadingComplete(true)
         setPowerLoadingComplete(true)
         setAllLoadingComplete(true)
-        setIsChartsExpanded(true)
+        setIsChartSectionExpanded(true)
         setIsStatsSectionExpanded(true)
         setIsDetailSectionExpanded(true)
         setIsPowerSectionExpanded(true)
@@ -413,10 +463,10 @@ export default function ConsumptionKwh() {
     if (allLoadingComplete) {
       logger.log('[Loading] ✓ All loading complete - expanding sections, collapsing info')
       setIsStatsSectionExpanded(true)
-      setIsChartsExpanded(true)
+      setIsChartSectionExpanded(true)
       setIsDetailSectionExpanded(true)
       setIsPowerSectionExpanded(true)
-      setIsInfoSectionExpanded(false) // Collapse info section when data is loaded
+      setIsInfoExpanded(false) // Collapse info section when data is loaded
     }
   }, [allLoadingComplete])
 
@@ -432,14 +482,6 @@ export default function ConsumptionKwh() {
       setHcHpCalculationComplete(false)
     }
   }, [isLoadingDetailed, hcHpByYear.length])
-
-  const confirmClearCache = async () => {
-    setShowConfirmModal(false)
-    await clearCache()
-  }
-
-  // For now, return the simplified version with working components
-  // The rest of the components will be added incrementally
 
   // Block rendering during initialization to prevent flash of content
   if (isInitializing) {
@@ -511,7 +553,7 @@ export default function ConsumptionKwh() {
             }}
           >
             <div className="flex items-center gap-2">
-              <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+              <Zap className="text-amber-500 dark:text-amber-400" size={20} />
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Statistiques de consommation
               </h2>
@@ -562,25 +604,25 @@ export default function ConsumptionKwh() {
             }`}
             onClick={() => {
               if (allLoadingComplete) {
-                setIsChartsExpanded(!isChartsExpanded)
+                setIsChartSectionExpanded(!isChartSectionExpanded)
               }
             }}
           >
             <div className="flex items-center gap-2">
-              <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+              <BarChart3 className="text-emerald-500 dark:text-emerald-400" size={20} />
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Graphiques de consommation
               </h2>
             </div>
             <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              {isChartsExpanded ? (
+              {isChartSectionExpanded ? (
                 <span className="text-sm">Réduire</span>
               ) : (
                 <span className="text-sm">Développer</span>
               )}
               <svg
                 className={`w-5 h-5 transition-transform duration-200 ${
-                  isChartsExpanded ? 'rotate-180' : ''
+                  isChartSectionExpanded ? 'rotate-180' : ''
                 }`}
                 fill="none"
                 stroke="currentColor"
@@ -591,7 +633,7 @@ export default function ConsumptionKwh() {
             </div>
           </div>
 
-          {isChartsExpanded && allLoadingComplete && (
+          {isChartSectionExpanded && allLoadingComplete && (
             <div className="px-6 pb-6 space-y-8">
               {/* Yearly Consumption by Month */}
               <YearlyConsumption
@@ -624,7 +666,7 @@ export default function ConsumptionKwh() {
             }}
           >
             <div className="flex items-center gap-2">
-              <BarChart3 className="text-primary-600 dark:text-primary-400" size={20} />
+              <LineChart className="text-indigo-500 dark:text-indigo-400" size={20} />
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Courbe de charge détaillée
               </h2>
@@ -707,7 +749,7 @@ export default function ConsumptionKwh() {
             }}
           >
             <div className="flex items-center gap-2">
-              <TrendingUp className="text-primary-600 dark:text-primary-400" size={20} />
+              <TrendingUp className="text-red-500 dark:text-red-400" size={20} />
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Pics de puissance maximale</h2>
             </div>
             <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
@@ -744,15 +786,8 @@ export default function ConsumptionKwh() {
 
       {/* Info Block Component - Always visible, collapsible */}
       <InfoBlock
-        isExpanded={isInfoSectionExpanded}
-        onToggle={() => setIsInfoSectionExpanded(!isInfoSectionExpanded)}
-      />
-
-      {/* Confirm Modal Component */}
-      <ConfirmModal
-        showConfirmModal={showConfirmModal}
-        setShowConfirmModal={setShowConfirmModal}
-        confirmClearCache={confirmClearCache}
+        isExpanded={isInfoExpanded}
+        onToggle={() => setIsInfoExpanded(!isInfoExpanded)}
       />
     </div>
   )

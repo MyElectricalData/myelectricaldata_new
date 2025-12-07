@@ -11,7 +11,7 @@ type EnedisApiResponse = APIResponse<EnedisData>
 export function useConsumptionData(selectedPDL: string, dateRange: DateRange | null, _detailDateRange: DateRange | null) {
   const queryClient = useQueryClient()
 
-  // Fetch PDLs
+  // Fetch PDLs - with short staleTime to ensure provider changes are reflected
   const { data: pdlsData } = useQuery({
     queryKey: ['pdls'],
     queryFn: async () => {
@@ -21,6 +21,7 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
       }
       return []
     },
+    staleTime: 30 * 1000, // 30 seconds - same as Dashboard for consistency
   })
 
   const pdls = Array.isArray(pdlsData) ? pdlsData : []

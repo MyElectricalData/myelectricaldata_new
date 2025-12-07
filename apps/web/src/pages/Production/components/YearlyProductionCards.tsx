@@ -1,4 +1,4 @@
-import { Download } from 'lucide-react'
+import { Download, TrendingUp, TrendingDown, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface YearlyProductionCardsProps {
@@ -8,6 +8,38 @@ interface YearlyProductionCardsProps {
   }
   productionData: any
 }
+
+// Card colors - dark background with colored borders (matching screenshot style)
+const cardColors = [
+  {
+    border: 'border-emerald-500',
+    title: 'text-emerald-400',
+    value: 'text-white',
+    subtitle: 'text-gray-400',
+    icon: 'text-emerald-400',
+  },
+  {
+    border: 'border-blue-500',
+    title: 'text-blue-400',
+    value: 'text-white',
+    subtitle: 'text-gray-400',
+    icon: 'text-blue-400',
+  },
+  {
+    border: 'border-purple-500',
+    title: 'text-purple-400',
+    value: 'text-white',
+    subtitle: 'text-gray-400',
+    icon: 'text-purple-400',
+  },
+  {
+    border: 'border-amber-500',
+    title: 'text-amber-400',
+    value: 'text-white',
+    subtitle: 'text-gray-400',
+    icon: 'text-amber-400',
+  },
+]
 
 export function YearlyProductionCards({ chartData, productionData }: YearlyProductionCardsProps) {
   const handleExportYear = (yearData: any) => {
@@ -106,7 +138,8 @@ export function YearlyProductionCards({ chartData, productionData }: YearlyProdu
               ? 'lg:grid-cols-3 xl:grid-cols-4'
               : 'lg:grid-cols-2'
         }`}>
-          {chartData.byYear.map((yearData) => {
+          {chartData.byYear.map((yearData, index) => {
+            const colors = cardColors[index % cardColors.length]
             const startDateFormatted = yearData.startDate.toLocaleDateString('fr-FR', {
               day: '2-digit',
               month: '2-digit',
@@ -118,36 +151,65 @@ export function YearlyProductionCards({ chartData, productionData }: YearlyProdu
               year: 'numeric'
             })
 
+            // Calculate year-over-year change
+            const previousYearData = chartData.byYear.find((y: any) =>
+              parseInt(y.year) === parseInt(yearData.year) - 1
+            )
+            const yoyChange = previousYearData
+              ? ((yearData.production - previousYearData.production) / previousYearData.production) * 100
+              : null
+
             return (
               <div
                 key={yearData.year}
-                className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4 border border-gray-200 dark:border-gray-600"
+                className={`bg-gray-50 dark:bg-gray-800/80 rounded-xl p-4 border-2 ${colors.border} shadow-sm hover:shadow-md transition-all duration-200`}
               >
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-lg font-bold text-gray-900 dark:text-white">
-                      {yearData.year}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <Zap size={18} className={colors.icon} />
+                      <p className={`text-lg font-bold text-gray-900 dark:${colors.title}`}>
+                        {yearData.year}
+                      </p>
+                    </div>
                     <button
                       onClick={() => handleExportYear(yearData)}
-                      className="p-1.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded shadow-sm hover:shadow-md transition-all duration-200"
+                      className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     >
                       <Download size={14} />
                     </button>
                   </div>
 
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {startDateFormatted} - {endDateFormatted}
+                  <p className={`text-xs flex items-center gap-1 text-gray-500 dark:${colors.subtitle}`}>
+                    <span>📅</span> {startDateFormatted} → {endDateFormatted}
                   </p>
 
                   <div className="mt-2">
-                    <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
-                      {(yearData.production / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} kWh
-                    </p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      {yearData.production.toLocaleString('fr-FR')} {chartData.unit === 'W' ? 'W' : 'Wh'}
+                    <p className={`text-2xl font-bold text-gray-900 dark:${colors.value}`}>
+                      {(yearData.production / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} kWh
                     </p>
                   </div>
+
+                  {/* Year-over-year comparison */}
+                  {yoyChange !== null && (
+                    <div className="flex items-center gap-1.5 text-sm">
+                      {yoyChange >= 0 ? (
+                        <TrendingUp size={14} className="text-emerald-500" />
+                      ) : (
+                        <TrendingDown size={14} className="text-red-500" />
+                      )}
+                      <span className={`font-medium ${
+                        yoyChange >= 0
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-red-600 dark:text-red-400'
+                      }`}>
+                        {yoyChange >= 0 ? '+' : ''}{yoyChange.toFixed(1)}%
+                      </span>
+                      <span className="text-gray-500 dark:text-gray-400">
+                        vs année précédente
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             )

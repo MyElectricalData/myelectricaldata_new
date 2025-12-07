@@ -37,7 +37,7 @@ export function YearlyConsumption({ chartData, isDarkMode }: YearlyConsumptionPr
           Export JSON
         </ModernButton>
       </div>
-      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+      <div className="bg-gradient-to-br from-sky-50 to-blue-100 dark:from-sky-900/20 dark:to-blue-900/20 rounded-xl p-4 border border-sky-200 dark:border-sky-800">
         <ResponsiveContainer width="100%" height={350}>
           <BarChart data={chartData.byMonthComparison}>
             <CartesianGrid strokeDasharray="3 3" stroke="#9CA3AF" opacity={0.3} />

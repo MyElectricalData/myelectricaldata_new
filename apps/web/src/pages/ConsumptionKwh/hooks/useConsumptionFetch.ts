@@ -8,11 +8,11 @@ import toast from 'react-hot-toast'
 import type { PDL } from '@/types/api'
 import type { DateRange, LoadingProgress } from '../types/consumption.types'
 
-interface UseConsumptionFetchParams {
+export interface UseConsumptionFetchParams {
   selectedPDL: string
   selectedPDLDetails: PDL | undefined
   setDateRange: (value: DateRange | null) => void
-  setIsChartsExpanded: (value: boolean) => void
+  setIsChartSectionExpanded: (value: boolean) => void
   setIsDetailSectionExpanded: (value: boolean) => void
   setIsStatsSectionExpanded: (value: boolean) => void
   setIsPowerSectionExpanded: (value: boolean) => void
@@ -23,14 +23,13 @@ interface UseConsumptionFetchParams {
   setIsLoadingDetailed: (value: boolean) => void
   setLoadingProgress: (value: LoadingProgress) => void
   setHcHpCalculationTrigger: (updater: (prev: number) => number) => void
-  setIsClearingCache: (value: boolean) => void
 }
 
 export function useConsumptionFetch({
   selectedPDL,
   selectedPDLDetails,
   setDateRange,
-  setIsChartsExpanded,
+  setIsChartSectionExpanded,
   setIsDetailSectionExpanded,
   setIsStatsSectionExpanded,
   setIsPowerSectionExpanded,
@@ -41,7 +40,6 @@ export function useConsumptionFetch({
   setIsLoadingDetailed,
   setLoadingProgress,
   setHcHpCalculationTrigger,
-  setIsClearingCache,
 }: UseConsumptionFetchParams) {
   const queryClient = useQueryClient()
 
@@ -63,7 +61,7 @@ export function useConsumptionFetch({
     queryClient.invalidateQueries({ queryKey: ['maxPower', selectedPDL] })
 
     // Collapse all sections before fetching new data
-    setIsChartsExpanded(false)
+    setIsChartSectionExpanded(false)
     setIsDetailSectionExpanded(false)
     setIsStatsSectionExpanded(false)
     setIsPowerSectionExpanded(false)
@@ -212,7 +210,7 @@ export function useConsumptionFetch({
             setLoadingProgress({ current: 1, total: 1, currentRange: 'Terminé !' })
 
             // Expand all sections to show the data
-            setIsChartsExpanded(true)
+            setIsChartSectionExpanded(true)
             setIsDetailSectionExpanded(true)
             setIsStatsSectionExpanded(true)
             setIsPowerSectionExpanded(true)
@@ -378,7 +376,7 @@ export function useConsumptionFetch({
     selectedPDLDetails,
     allPDLs,
     setDateRange,
-    setIsChartsExpanded,
+    setIsChartSectionExpanded,
     setIsDetailSectionExpanded,
     setIsStatsSectionExpanded,
     setIsPowerSectionExpanded,
@@ -393,7 +391,6 @@ export function useConsumptionFetch({
   ])
 
   const clearCache = useCallback(async () => {
-    setIsClearingCache(true)
     try {
       // Clear server-side cache for all consumption data FIRST
       await adminApi.clearAllConsumptionCache()
@@ -422,10 +419,8 @@ export function useConsumptionFetch({
       }, 1000)
     } catch (error: any) {
       toast.error(`Erreur lors de la suppression du cache: ${error.message}`)
-    } finally {
-      setIsClearingCache(false)
     }
-  }, [setIsClearingCache, queryClient])
+  }, [queryClient])
 
   return {
     fetchConsumptionData,
