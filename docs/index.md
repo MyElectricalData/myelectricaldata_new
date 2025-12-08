@@ -53,6 +53,7 @@ npm run dev
 | Section | Description |
 |---------|-------------|
 | [**Installation**](/setup/docker) | Guides d'installation et de configuration |
+| [**Client Local**](/local-client) | Client domotique pour Home Assistant, MQTT, Jeedom, etc. |
 | [**Fonctionnalités**](/features-spec/simulator) | Spécifications des fonctionnalités |
 | [**Architecture**](/architecture/summary) | Vue d'ensemble technique et [chiffrement](/architecture/encryption) |
 | [**Design System**](/design) | Règles de design et composants UI |
@@ -101,10 +102,22 @@ npm run dev
 - **OAuth2** : Flux de consentement Enedis sécurisé
 - **Rate limiting** : Protection contre les abus
 
+## 🏠 Client Local (domotique)
+
+Installez le **Client Local** chez vous pour intégrer vos données Linky dans votre système domotique :
+
+- **Home Assistant** : Energy Dashboard, entités automatiques
+- **MQTT** : Compatible avec tout broker MQTT
+- **VictoriaMetrics** : Métriques Prometheus pour Grafana
+- **Jeedom** : Plugin et widgets dédiés
+
+➡️ [Documentation du Client Local](/local-client)
+
 ## 📖 Ressources
 
 - [Guide d'installation Docker](/setup/docker)
 - [Configuration de la base de données](/setup/database)
+- [Client Local domotique](/local-client)
 - [Création d'un compte démo](/demo)
 - [FAQ](/pages/faq)
 
