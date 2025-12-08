@@ -19,6 +19,21 @@ const sidebars: SidebarsConfig = {
       label: "Configuration",
     },
     {
+      type: "doc",
+      id: "local-client/interface",
+      label: "Interface Web",
+    },
+    {
+      type: "doc",
+      id: "local-client/exporters",
+      label: "Exporteurs",
+    },
+    {
+      type: "doc",
+      id: "local-client/architecture",
+      label: "Architecture",
+    },
+    {
       type: "category",
       label: "Intégrations",
       collapsed: false,
