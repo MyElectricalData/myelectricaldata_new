@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..config import settings
-from ..middleware import get_current_user
+from ..middleware import get_current_user, require_not_demo
 from ..models import User, PDL, Token, EmailVerificationToken, PasswordResetToken, Role
 from ..models.database import get_db
 from ..schemas import (
@@ -314,7 +314,7 @@ async def get_credentials(current_user: User = Depends(get_current_user)) -> API
 
 @router.delete("/me", response_model=APIResponse)
 async def delete_account(
-    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(require_not_demo), db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Delete user account and all associated data"""
     # Delete cache for all user's PDLs
@@ -436,7 +436,7 @@ async def resend_verification(
 
 @router.post("/regenerate-secret", response_model=APIResponse)
 async def regenerate_secret(
-    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(require_not_demo), db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Regenerate client_secret and clear all cache"""
     # Generate new client_secret
@@ -589,7 +589,7 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)) -
 @router.post("/update-password", response_model=APIResponse)
 async def update_password(
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Update password for authenticated user (requires old password verification)"""
