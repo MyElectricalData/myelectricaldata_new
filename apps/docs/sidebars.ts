@@ -1,6 +1,38 @@
 import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 
 const sidebars: SidebarsConfig = {
+  // Sidebar Client Local (Domotique)
+  localClientSidebar: [
+    {
+      type: "doc",
+      id: "local-client/index",
+      label: "Introduction",
+    },
+    {
+      type: "doc",
+      id: "local-client/installation",
+      label: "Installation",
+    },
+    {
+      type: "doc",
+      id: "local-client/configuration",
+      label: "Configuration",
+    },
+    {
+      type: "category",
+      label: "Intégrations",
+      collapsed: false,
+      items: [
+        "local-client/integrations/index",
+        "local-client/integrations/home-assistant",
+        "local-client/integrations/mqtt",
+        "local-client/integrations/victoriametrics",
+        "local-client/integrations/jeedom",
+        "local-client/integrations/autres",
+      ],
+    },
+  ],
+
   // Sidebar Installation
   setupSidebar: [
     {

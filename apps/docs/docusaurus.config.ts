@@ -72,6 +72,12 @@ const config: Config = {
       items: [
         {
           type: "docSidebar",
+          sidebarId: "localClientSidebar",
+          position: "left",
+          label: "Client Local",
+        },
+        {
+          type: "docSidebar",
           sidebarId: "setupSidebar",
           position: "left",
           label: "Installation",
@@ -107,6 +113,10 @@ const config: Config = {
         {
           title: "Documentation",
           items: [
+            {
+              label: "Client Local",
+              to: "/local-client",
+            },
             {
               label: "Installation",
               to: "/setup/docker",
