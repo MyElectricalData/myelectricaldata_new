@@ -15,6 +15,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Demo account email constant
+DEMO_EMAIL = "demo@myelectricaldata.fr"
+
 oauth2_scheme = OAuth2(
     flows=OAuthFlowsModel(
         clientCredentials={
@@ -133,3 +136,21 @@ async def get_current_user_optional(
         return user
 
     return None
+
+
+def is_demo_user(user: User) -> bool:
+    """Check if the user is a demo account"""
+    return user.email == DEMO_EMAIL
+
+
+async def require_not_demo(current_user: User = Depends(get_current_user)) -> User:
+    """
+    Middleware that blocks demo accounts from performing write operations.
+    Use this dependency on any endpoint that modifies data.
+    """
+    if is_demo_user(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Le compte de démonstration est en lecture seule"
+        )
+    return current_user

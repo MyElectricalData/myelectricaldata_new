@@ -5,7 +5,7 @@ from datetime import datetime, UTC
 from ..models import User, EnergyProvider, EnergyOffer, OfferContribution, ContributionMessage
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
-from ..middleware import get_current_user, require_permission, require_action
+from ..middleware import get_current_user, require_permission, require_action, require_not_demo
 from ..services.email import email_service
 from ..config import settings
 import logging
@@ -112,7 +112,7 @@ async def list_offers(
 # Contribution endpoints
 @router.post("/contribute", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
 async def create_contribution(
-    contribution_data: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    contribution_data: dict, current_user: User = Depends(require_not_demo), db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Submit a new contribution for review"""
     logger.info(f"[CONTRIBUTION] New contribution from user: {current_user.email}")
@@ -168,7 +168,7 @@ async def create_contribution(
 async def update_contribution(
     contribution_id: str = Path(..., description="Contribution ID"),
     contribution_data: dict = Body(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Update an existing contribution (only pending or rejected ones owned by the user)"""
@@ -303,7 +303,7 @@ async def list_my_contributions(current_user: User = Depends(get_current_user), 
 async def reply_to_contribution(
     contribution_id: str,
     body: dict = Body(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Allow contributor to reply to admin messages on their own contribution"""

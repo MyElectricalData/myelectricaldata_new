@@ -7,7 +7,7 @@ from ..models.energy_provider import EnergyOffer
 from ..models.database import get_db
 from ..schemas import PDLCreate, PDLResponse, APIResponse, ErrorDetail
 from ..schemas.requests import AdminPDLCreate
-from ..middleware import get_current_user, require_admin, require_permission
+from ..middleware import get_current_user, require_admin, require_permission, require_not_demo
 from ..routers.enedis import get_valid_token
 from ..adapters import enedis_adapter
 import logging
@@ -129,7 +129,7 @@ async def create_pdl(
             }
         }
     ),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Add a new PDL to current user"""
@@ -364,7 +364,7 @@ async def get_pdl(
 @router.delete("/{pdl_id}", response_model=APIResponse)
 async def delete_pdl(
     pdl_id: str = Path(..., description="PDL ID (UUID)", openapi_examples={"example_uuid": {"summary": "Example UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
     """Delete a PDL"""
@@ -384,7 +384,7 @@ async def delete_pdl(
 async def update_pdl_name(
     pdl_id: str = Path(..., description="PDL ID (UUID)", openapi_examples={"example_uuid": {"summary": "Example UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
     name_data: PDLUpdateName = Body(..., openapi_examples={"update_name": {"summary": "Update name", "value": {"name": "Nouveau nom de compteur"}}}),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Update PDL custom name"""
@@ -417,7 +417,7 @@ async def update_pdl_type(
         "production_only": {"summary": "Production only", "value": {"has_consumption": False, "has_production": True}},
         "both": {"summary": "Both consumption and production", "value": {"has_consumption": True, "has_production": True}}
     }),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Update PDL type (consumption and/or production)"""
@@ -451,7 +451,7 @@ async def toggle_pdl_active(
         "activate": {"summary": "Activate PDL", "value": {"is_active": True}},
         "deactivate": {"summary": "Deactivate PDL", "value": {"is_active": False}}
     }),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Toggle PDL active/inactive status"""
@@ -487,7 +487,7 @@ async def update_pdl_pricing_option(
         "hc_weekend": {"summary": "HC Nuit & Week-end", "value": {"pricing_option": "HC_WEEKEND"}},
         "clear": {"summary": "Remove pricing option", "value": {"pricing_option": None}}
     }),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """
@@ -539,7 +539,7 @@ async def update_pdl_selected_offer(
         "select_offer": {"summary": "Select an energy offer", "value": {"selected_offer_id": "550e8400-e29b-41d4-a716-446655440001"}},
         "clear": {"summary": "Remove selected offer", "value": {"selected_offer_id": None}}
     }),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """
@@ -608,7 +608,7 @@ async def link_production_pdl(
         "link": {"summary": "Link to production PDL", "value": {"linked_production_pdl_id": "550e8400-e29b-41d4-a716-446655440001"}},
         "unlink": {"summary": "Unlink production PDL", "value": {"linked_production_pdl_id": None}}
     }),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """
@@ -723,7 +723,7 @@ async def update_pdl_contract(
             }
         }
     ),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Update PDL contract information (subscribed power and offpeak hours)"""
@@ -770,7 +770,7 @@ async def reorder_pdls(
             }
         }
     ),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_not_demo),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Update display order for multiple PDLs"""
