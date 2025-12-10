@@ -23,7 +23,7 @@ class PDL(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # PDL is active/enabled
     oldest_available_data_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # Oldest date where Enedis has data (meter activation date)
     activation_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # Contract activation date (from Enedis)
-    linked_production_pdl_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("pdls.id"), nullable=True)  # Link to production PDL for combined graphs
+    linked_production_pdl_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("pdls.id", ondelete="SET NULL"), nullable=True)  # Link to production PDL for combined graphs
     selected_offer_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("energy_offers.id", ondelete="SET NULL"), nullable=True)  # Selected energy offer
 
     # Relations
