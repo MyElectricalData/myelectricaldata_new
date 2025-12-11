@@ -197,7 +197,7 @@ export default function Tempo() {
   const currentSeasonStats = getCurrentSeasonStats()
 
   return (
-    <div className="pt-6 w-full">
+    <div className="w-full">
 
       {/* Current Season Summary */}
       {currentSeasonStats && (

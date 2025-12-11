@@ -454,14 +454,14 @@ export default function Production() {
 
   // Block rendering during initialization to prevent flash of content
   if (isInitializing) {
-    return <div className="pt-6 w-full" />
+    return <div className="w-full" />
   }
 
   // Show loading overlay when loading cached data
   // Display blurred placeholder content behind the loading spinner
   if (isInitialLoadingFromCache) {
     return (
-      <div className="pt-6 w-full">
+      <div className="w-full">
         <LoadingOverlay dataType="production" isExiting={isLoadingExiting}>
           <LoadingPlaceholder type="production" />
         </LoadingOverlay>
@@ -470,7 +470,7 @@ export default function Production() {
   }
 
   return (
-    <div className="pt-6 w-full">
+    <div className="w-full">
       {/* Warning if PDL has limited data */}
       {dataLimitWarning && (
         <div className="mb-6 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center gap-2">

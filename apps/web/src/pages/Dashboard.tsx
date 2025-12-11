@@ -717,7 +717,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="pt-6 space-y-4">
+    <div className="space-y-4">
       {/* Notification Toast */}
       {notification && (
         <div

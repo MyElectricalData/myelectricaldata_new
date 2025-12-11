@@ -602,7 +602,7 @@ export default function Contribute() {
   }
 
   return (
-    <div className="pt-6 w-full">
+    <div className="w-full">
       {/* Notification Toast */}
       {notification && (
         <div className={`mb-6 p-4 rounded-lg flex items-center gap-3 ${
@@ -633,7 +633,7 @@ export default function Contribute() {
 
       {/* My Contributions - Grouped by status */}
       {Array.isArray(myContributions) && myContributions.length > 0 && (
-        <div className="card mt-6">
+        <div className="card">
           <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
             <List className="text-primary-600 dark:text-primary-400" size={20} />
             Mes contributions ({myContributions.length})

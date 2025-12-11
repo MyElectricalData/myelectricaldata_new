@@ -117,7 +117,7 @@ export default function FAQ() {
   }
 
   return (
-    <div className="pt-6 w-full">
+    <div className="w-full">
       <div className="card">
         <div className="space-y-2">
           {faqItems.map((item, index) => (

@@ -712,7 +712,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Main Content */}
         <main className={`flex-1 bg-gray-50 dark:bg-gray-900 ${isAdminLogsPage ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-          <div className={`container mx-auto px-3 sm:px-4 lg:px-6 max-w-[1920px] ${isAdminLogsPage ? 'h-full pb-0' : 'pb-6'} ${(location.pathname.startsWith('/admin') || location.pathname.startsWith('/api-docs') || isConsumptionPage) ? 'pt-4' : ''}`}>
+          <div className={`container mx-auto px-3 sm:px-4 lg:px-6 max-w-[1920px] ${isAdminLogsPage ? 'h-full pb-0' : 'pb-6'} pt-4`}>
             <PageTransition key={location.pathname}>
               {children}
             </PageTransition>

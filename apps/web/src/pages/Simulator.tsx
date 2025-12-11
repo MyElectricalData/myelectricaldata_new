@@ -992,7 +992,7 @@ export default function Simulator() {
 
   if (!pdlsData || pdlsData.length === 0) {
     return (
-      <div className="space-y-6 pt-6">
+      <div className="space-y-6">
         <div className="card p-8 text-center">
           <p className="text-gray-600 dark:text-gray-400">
             Aucun PDL disponible.{' '}
@@ -1520,14 +1520,14 @@ export default function Simulator() {
 
   // Block rendering during initialization to prevent flash of content
   if (isInitializing) {
-    return <div className="pt-6 w-full" />
+    return <div className="w-full" />
   }
 
   // Show loading overlay when loading cached data (integrated in JSX to avoid hook ordering issues)
   // Display blurred placeholder content behind the loading spinner
   if (isInitialLoadingFromCache) {
     return (
-      <div className="pt-6 w-full">
+      <div className="w-full">
         <LoadingOverlay dataType="simulation" isExiting={isLoadingExiting}>
           <LoadingPlaceholder type="simulation" />
         </LoadingOverlay>
@@ -1536,7 +1536,7 @@ export default function Simulator() {
   }
 
   return (
-    <div className="pt-6 w-full">
+    <div className="w-full">
       {/* Error Banner */}
       {simulationError && (
         <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
@@ -1583,7 +1583,7 @@ export default function Simulator() {
 
       {/* Empty State - No simulation yet */}
       {!(simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0) && !isSimulating && (
-        <div className="mt-2 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+        <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
           <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
             <div className="w-20 h-20 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mb-6">
               <Calculator className="w-10 h-10 text-purple-600 dark:text-purple-400" />
@@ -1610,7 +1610,7 @@ export default function Simulator() {
 
       {/* Simulation Results */}
       <AnimatedSection isVisible={simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0} delay={0}>
-        <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+        <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
           <div className="flex items-center justify-between p-6">
             <div className="flex items-center gap-2">
               <Calculator className="text-primary-600 dark:text-primary-400" size={20} />

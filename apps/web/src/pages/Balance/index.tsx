@@ -161,13 +161,13 @@ export default function Balance() {
 
   // Block rendering during initialization to prevent flash of content
   if (isInitializing) {
-    return <div className="pt-6 w-full" />
+    return <div className="w-full" />
   }
 
   // Show loading overlay when loading cached data
   if (isInitialLoadingFromCache) {
     return (
-      <div className="pt-6 w-full">
+      <div className="w-full">
         <LoadingOverlay dataType="balance" isExiting={isLoadingExiting}>
           <LoadingPlaceholder type="balance" />
         </LoadingOverlay>
@@ -178,7 +178,7 @@ export default function Balance() {
   // No PDLs with production
   if (balancePdls.length === 0) {
     return (
-      <div className="pt-6 w-full">
+      <div className="w-full">
         <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
           <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
             <div className="w-20 h-20 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center mb-6">
@@ -200,7 +200,7 @@ export default function Balance() {
   // Selected PDL is not valid for balance
   if (!isValidForBalance) {
     return (
-      <div className="pt-6 w-full">
+      <div className="w-full">
         <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
           <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
             <div className="w-20 h-20 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mb-6">
@@ -222,7 +222,7 @@ export default function Balance() {
   // No data in cache - Empty state similar to ConsumptionKwh
   if (!hasConsumptionData || !hasProductionData) {
     return (
-      <div className="pt-6 w-full">
+      <div className="w-full">
         <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
           <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
             <div className="w-20 h-20 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center mb-6">
@@ -267,7 +267,7 @@ export default function Balance() {
   // No chart data (calculation error)
   if (!chartData) {
     return (
-      <div className="pt-6 w-full">
+      <div className="w-full">
         <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
           <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
             <div className="w-20 h-20 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-6">
@@ -288,7 +288,7 @@ export default function Balance() {
 
   // Main content with data
   return (
-    <div className="pt-6 w-full space-y-6">
+    <div className="w-full space-y-6">
       {/* Info banner when viewing consumption PDL with linked production */}
       {productionPDL !== selectedPdl && productionPDLDetails && (
         <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-2 border-green-300 dark:border-green-700 rounded-xl shadow-sm transition-colors duration-200">

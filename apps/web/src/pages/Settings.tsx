@@ -164,7 +164,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="pt-6 space-y-8 w-full">
+    <div className="space-y-8 w-full">
       {/* Usage Stats */}
       <div className="card border-blue-200 dark:border-blue-800">
         <div className="flex items-center gap-2 mb-4">

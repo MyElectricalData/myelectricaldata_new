@@ -410,7 +410,7 @@ const AdminLogs: React.FC = () => {
     });
 
   return (
-    <div className="pt-6 flex flex-col h-[calc(100vh-64px)] overflow-hidden pb-6">
+    <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden pb-6">
       <div className="flex justify-end items-start mb-6 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">

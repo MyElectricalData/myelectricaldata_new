@@ -9,7 +9,7 @@ import { CacheExplorer } from '@/components/CacheExplorer'
  */
 export default function Diagnostic() {
   return (
-    <div className="space-y-6 pt-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
           <Activity className="text-primary-600 dark:text-primary-400" size={32} />

@@ -134,7 +134,7 @@ export default function EcoWatt() {
   const currentInfo = currentSignal ? getSignalInfo(currentSignal.dvalue) : getSignalInfo(0)
 
   return (
-    <div className="pt-6 space-y-6">
+    <div className="space-y-6">
 
       {/* Current Signal */}
       <div className={`card p-6 border-l-4 ${currentInfo.borderColor}`}>
