@@ -1890,44 +1890,44 @@ export default function Simulator() {
                       <React.Fragment key={result.offerId}>
                         <tr
                           onClick={() => toggleRowExpansion(result.offerId)}
-                          className={`border-t border-gray-200 dark:border-gray-700 cursor-pointer transition-all duration-200 ${
+                          className={`border-t border-gray-200 dark:border-gray-700 cursor-pointer transition-all duration-200 group ${
                             index === 0
-                              ? 'bg-green-50 dark:bg-green-900/20 font-semibold hover:bg-green-100 dark:hover:bg-green-900/30'
+                              ? 'bg-gradient-to-r from-green-50 to-emerald-50/50 dark:from-green-900/20 dark:to-emerald-900/10 hover:from-green-100 hover:to-emerald-100/50 dark:hover:from-green-900/30 dark:hover:to-emerald-900/20'
                               : index % 2 === 1
                                 ? 'bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50'
-                                : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700/50'
+                                : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50'
                           }`}
                         >
-                          <td className="p-3">
-                            <div className="flex items-center justify-center">
-                              {isExpanded ? (
-                                <ChevronUp size={16} className="text-gray-600 dark:text-gray-400" />
-                              ) : (
-                                <ChevronDown size={16} className="text-gray-600 dark:text-gray-400" />
-                              )}
+                          <td className="p-2 w-8">
+                            <div className={`flex items-center justify-center transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                              <ChevronDown size={16} className="text-gray-400 group-hover:text-gray-600 dark:text-gray-500 dark:group-hover:text-gray-300" />
                             </div>
                           </td>
-                          <td className="p-3">
+                          <td className="p-2 w-12">
                             {index === 0 ? (
-                              <span className="flex items-center gap-2">
-                                🏆 {index + 1}
+                              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 text-white text-xs font-bold shadow-sm">
+                                1
+                              </span>
+                            ) : index < 3 ? (
+                              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-semibold">
+                                {index + 1}
                               </span>
                             ) : (
-                              <span>{index + 1}</span>
+                              <span className="text-gray-500 dark:text-gray-400 text-sm pl-2">{index + 1}</span>
                             )}
                           </td>
-                          <td className="p-3">{result.providerName}</td>
-                          <td className="p-3 text-center">
-                            <span className={`px-2 py-1 text-xs rounded-md font-medium ${getTypeColor(result.offerType)}`}>
+                          <td className="p-2 text-sm font-medium text-gray-700 dark:text-gray-300">{result.providerName}</td>
+                          <td className="p-2 text-center">
+                            <span className={`px-2 py-0.5 text-xs rounded font-medium ${getTypeColor(result.offerType)}`}>
                               {getTypeLabel(result.offerType)}
                             </span>
                           </td>
-                          <td className="p-3">
+                          <td className="p-2">
                             <div className="flex items-center gap-2">
-                              <span>{result.offerName}</span>
+                              <span className="text-sm text-gray-800 dark:text-gray-200">{result.offerName}</span>
                               {result.offer?.description?.startsWith('⚠️') && (
                                 <span
-                                  className="px-2 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded font-semibold"
+                                  className="px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded"
                                   title={result.offer.description.split('.')[0]}
                                 >
                                   ⚠️
@@ -1935,27 +1935,28 @@ export default function Simulator() {
                               )}
                               {isOldTariff(result.validFrom) && (
                                 <span
-                                  className="px-2 py-0.5 text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded font-semibold"
+                                  className="px-1.5 py-0.5 text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded"
                                   title="Tarif ancien (> 6 mois) - Potentiellement non à jour"
                                 >
-                                  ⚠️ Ancien
+                                  Ancien
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td className="p-3 text-right">{result.subscriptionCost.toFixed(2)} €</td>
-                          <td className="p-3 text-right">{result.energyCost.toFixed(2)} €</td>
-                          <td className="p-3 text-right font-bold text-primary-600 dark:text-primary-400">
-                            {result.totalCost.toFixed(2)} €
+                          <td className="p-2 text-right text-sm text-gray-600 dark:text-gray-400">{result.subscriptionCost.toFixed(0)} €</td>
+                          <td className="p-2 text-right text-sm text-gray-600 dark:text-gray-400">{result.energyCost.toFixed(0)} €</td>
+                          <td className="p-2 text-right">
+                            <span className={`text-base font-bold ${index === 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-800 dark:text-gray-200'}`}>
+                              {result.totalCost.toFixed(0)} €
+                            </span>
                           </td>
-                          <td className="p-3 text-right">
+                          <td className="p-2 text-right w-24">
                             {index === 0 ? (
-                              <span className="text-gray-400 dark:text-gray-500">-</span>
+                              <span className="text-xs text-green-600 dark:text-green-400 font-medium">Meilleur</span>
                             ) : (
-                              <div className="flex flex-col items-end text-sm">
-                                <span className="font-medium">+{costDifferenceFromFirst.toFixed(0)} €</span>
-                                <span className="text-gray-500 dark:text-gray-400 text-xs">+{percentDifferenceFromFirst.toFixed(1)}%</span>
-                              </div>
+                              <span className="text-sm text-red-500 dark:text-red-400 font-medium">
+                                +{costDifferenceFromFirst.toFixed(0)} €
+                              </span>
                             )}
                           </td>
                         </tr>
@@ -1967,217 +1968,316 @@ export default function Simulator() {
                                 ? 'bg-gray-100 dark:bg-gray-700/30'
                                 : 'bg-gray-50 dark:bg-gray-800/30'
                           }`}>
-                            <td colSpan={9} className="p-4">
+                            <td colSpan={9} className="p-4 bg-gradient-to-b from-gray-50 to-white dark:from-gray-800/50 dark:to-gray-900/50">
                               {/* Warning message if present */}
                               {result.offer?.description?.startsWith('⚠️') && (
-                                <div className="mb-4 bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-3 rounded">
+                                <div className="mb-4 bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-3 rounded-lg shadow-sm">
                                   <p className="text-sm text-amber-800 dark:text-amber-200 font-medium">
                                     {result.offer.description.split('.')[0]}
                                   </p>
                                 </div>
                               )}
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 {/* Breakdown by tariff */}
                                 {result.breakdown && (result.offerType === 'BASE' || result.offerType === 'BASE_WEEKEND') && result.offer && (
-                                  <div className="space-y-2">
-                                    <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">
-                                      Détail de consommation ({result.offerType === 'BASE_WEEKEND' ? 'Base Week-end' : 'Base'})
-                                    </h4>
-                                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                    <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2">
+                                      <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                                        <span className="text-lg">⚡</span>
+                                        Détail de consommation
+                                      </h4>
+                                    </div>
+                                    <div className="p-4 space-y-3">
                                       {result.offer.base_price_weekend ? (
                                         <>
-                                          <div className="flex justify-between">
-                                            <span>Semaine :</span>
-                                            <span className="font-medium text-xs">{result.breakdown.baseWeekdayKwh?.toFixed(0)} kWh × {formatPrice(result.offer.base_price, 5)} € = {calcPrice(result.breakdown.baseWeekdayKwh, result.offer.base_price)} €</span>
+                                          <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                                            <span className="text-sm text-gray-600 dark:text-gray-300 flex items-center gap-2">
+                                              <span className="w-2 h-2 rounded-full bg-gray-500"></span>
+                                              Semaine
+                                            </span>
+                                            <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">{result.breakdown.baseWeekdayKwh?.toFixed(0)} kWh → {calcPrice(result.breakdown.baseWeekdayKwh, result.offer.base_price)} €</span>
                                           </div>
-                                          <div className="flex justify-between">
-                                            <span>Week-end :</span>
-                                            <span className="font-medium text-xs">{result.breakdown.baseWeekendKwh?.toFixed(0)} kWh × {formatPrice(result.offer.base_price_weekend, 5)} € = {calcPrice(result.breakdown.baseWeekendKwh, result.offer.base_price_weekend)} €</span>
+                                          <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20">
+                                            <span className="text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
+                                              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                                              Week-end
+                                            </span>
+                                            <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">{result.breakdown.baseWeekendKwh?.toFixed(0)} kWh → {calcPrice(result.breakdown.baseWeekendKwh, result.offer.base_price_weekend)} €</span>
                                           </div>
                                         </>
                                       ) : (
-                                        <div className="flex justify-between">
-                                          <span>Consommation :</span>
-                                          <span className="font-medium">{result.totalKwh?.toFixed(0)} kWh × {formatPrice(result.offer.base_price, 5)} € = {result.energyCost.toFixed(2)} €</span>
+                                        <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20">
+                                          <span className="text-sm text-emerald-700 dark:text-emerald-300">Consommation totale</span>
+                                          <span className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">{result.totalKwh?.toFixed(0)} kWh → {result.energyCost.toFixed(2)} €</span>
                                         </div>
                                       )}
-                                      <div className="flex justify-between border-t border-gray-300 dark:border-gray-600 pt-1 mt-1 font-semibold">
-                                        <span>Total énergie :</span>
-                                        <span>{result.energyCost.toFixed(2)} €</span>
+                                      <div className="flex justify-between pt-3 border-t border-gray-200 dark:border-gray-600">
+                                        <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Total énergie</span>
+                                        <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{result.energyCost.toFixed(2)} €</span>
                                       </div>
                                     </div>
                                   </div>
                                 )}
                                 {result.breakdown && (result.offerType === 'HC_HP' || result.offerType === 'WEEKEND' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') && result.offer && (
-                                  <div className="space-y-2">
-                                    <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">
-                                      Détail de consommation ({(result.offerType === 'WEEKEND' || result.offerType === 'HC_NUIT_WEEKEND') ? 'HC Nuit & Week-end' : result.offerType === 'HC_WEEKEND' ? 'HC Week-end' : 'HC/HP'})
-                                    </h4>
-                                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                    <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2">
+                                      <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                                        <span className="text-lg">⚡</span>
+                                        Détail de consommation
+                                      </h4>
+                                    </div>
+                                    <div className="p-4 space-y-3">
                                       {result.breakdown.hcWeekendKwh > 0 ? (
                                         <>
-                                          <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Semaine</div>
-                                          <div className="flex justify-between ml-2">
-                                            <span className="text-sky-600 dark:text-sky-400">HC :</span>
-                                            <span className="font-medium text-xs text-sky-700 dark:text-sky-300">{result.breakdown.hcKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hc_price, 5)} € = {calcPrice(result.breakdown.hcKwh, result.offer.hc_price)} €</span>
-                                          </div>
-                                          <div className="flex justify-between ml-2">
-                                            <span className="text-orange-600 dark:text-orange-400">HP :</span>
-                                            <span className="font-medium text-xs text-orange-700 dark:text-orange-300">{result.breakdown.hpKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hp_price, 5)} € = {calcPrice(result.breakdown.hpKwh, result.offer.hp_price)} €</span>
-                                          </div>
-                                          <div className="font-semibold text-gray-700 dark:text-gray-300 mt-2 mb-1">Week-end (tout HC)</div>
-                                          <div className="flex justify-between ml-2">
-                                            <span className="text-sky-600 dark:text-sky-400">Consommation :</span>
-                                            <span className="font-medium text-xs text-sky-700 dark:text-sky-300">{result.breakdown.hcWeekendKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hc_price_weekend || result.offer.hc_price, 5)} € = {calcPrice(result.breakdown.hcWeekendKwh, result.offer.hc_price_weekend || result.offer.hc_price)} €</span>
-                                          </div>
-                                          {result.breakdown.hpWeekendKwh > 0 && (
-                                            <div className="flex justify-between ml-2">
-                                              <span className="text-orange-600 dark:text-orange-400">HP :</span>
-                                              <span className="font-medium text-xs text-orange-700 dark:text-orange-300">{result.breakdown.hpWeekendKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hp_price_weekend || result.offer.hp_price, 5)} € = {calcPrice(result.breakdown.hpWeekendKwh, result.offer.hp_price_weekend || result.offer.hp_price)} €</span>
+                                          {/* Semaine */}
+                                          <div className="space-y-2">
+                                            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">📅 Semaine</div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                              <div className="p-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800">
+                                                <div className="text-xs text-sky-600 dark:text-sky-400 font-medium">Heures Creuses</div>
+                                                <div className="text-sm font-bold text-sky-800 dark:text-sky-200">{result.breakdown.hcKwh?.toFixed(0)} kWh</div>
+                                                <div className="text-xs text-sky-600 dark:text-sky-400">{calcPrice(result.breakdown.hcKwh, result.offer.hc_price)} €</div>
+                                              </div>
+                                              <div className="p-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
+                                                <div className="text-xs text-orange-600 dark:text-orange-400 font-medium">Heures Pleines</div>
+                                                <div className="text-sm font-bold text-orange-800 dark:text-orange-200">{result.breakdown.hpKwh?.toFixed(0)} kWh</div>
+                                                <div className="text-xs text-orange-600 dark:text-orange-400">{calcPrice(result.breakdown.hpKwh, result.offer.hp_price)} €</div>
+                                              </div>
                                             </div>
-                                          )}
+                                          </div>
+                                          {/* Week-end */}
+                                          <div className="space-y-2">
+                                            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">🌴 Week-end (tout HC)</div>
+                                            <div className="p-2 rounded-lg bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20 border border-amber-200 dark:border-amber-800">
+                                              <div className="flex justify-between items-center">
+                                                <div>
+                                                  <div className="text-xs text-amber-600 dark:text-amber-400 font-medium">Consommation</div>
+                                                  <div className="text-sm font-bold text-amber-800 dark:text-amber-200">{result.breakdown.hcWeekendKwh?.toFixed(0)} kWh</div>
+                                                </div>
+                                                <div className="text-lg font-bold text-amber-700 dark:text-amber-300">{calcPrice(result.breakdown.hcWeekendKwh, result.offer.hc_price_weekend || result.offer.hc_price)} €</div>
+                                              </div>
+                                            </div>
+                                          </div>
                                         </>
                                       ) : (
-                                        <>
-                                          <div className="flex justify-between">
-                                            <span className="text-sky-600 dark:text-sky-400 font-medium">Heures Creuses :</span>
-                                            <span className="font-medium text-xs text-sky-700 dark:text-sky-300">{result.breakdown.hcKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hc_price, 5)} € = {calcPrice(result.breakdown.hcKwh, result.offer.hc_price)} €</span>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="p-3 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800">
+                                            <div className="text-xs text-sky-600 dark:text-sky-400 font-medium">Heures Creuses</div>
+                                            <div className="text-lg font-bold text-sky-800 dark:text-sky-200">{result.breakdown.hcKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-sm font-semibold text-sky-600 dark:text-sky-400">{calcPrice(result.breakdown.hcKwh, result.offer.hc_price)} €</div>
                                           </div>
-                                          <div className="flex justify-between">
-                                            <span className="text-orange-600 dark:text-orange-400 font-medium">Heures Pleines :</span>
-                                            <span className="font-medium text-xs text-orange-700 dark:text-orange-300">{result.breakdown.hpKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hp_price, 5)} € = {calcPrice(result.breakdown.hpKwh, result.offer.hp_price)} €</span>
+                                          <div className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
+                                            <div className="text-xs text-orange-600 dark:text-orange-400 font-medium">Heures Pleines</div>
+                                            <div className="text-lg font-bold text-orange-800 dark:text-orange-200">{result.breakdown.hpKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-sm font-semibold text-orange-600 dark:text-orange-400">{calcPrice(result.breakdown.hpKwh, result.offer.hp_price)} €</div>
                                           </div>
-                                        </>
+                                        </div>
                                       )}
-                                      <div className="flex justify-between border-t border-gray-300 dark:border-gray-600 pt-1 mt-1 font-semibold">
-                                        <span>Total énergie :</span>
-                                        <span>{result.energyCost.toFixed(2)} €</span>
+                                      <div className="flex justify-between pt-3 border-t border-gray-200 dark:border-gray-600">
+                                        <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Total énergie</span>
+                                        <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{result.energyCost.toFixed(2)} €</span>
                                       </div>
                                     </div>
                                   </div>
                                 )}
                                 {result.breakdown && result.offerType === 'SEASONAL' && result.offer && (
-                                  <div className="space-y-2">
-                                    <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">Détail de consommation (Saisonnier)</h4>
-                                    <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                                      <div className="font-semibold text-blue-700 dark:text-blue-300">❄️ Hiver (nov-mars)</div>
-                                      <div className="flex justify-between ml-2">
-                                        <span className="text-sky-600 dark:text-sky-400">HC :</span>
-                                        <span className="font-medium text-xs text-sky-700 dark:text-sky-300">{result.breakdown.hcWinterKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hc_price_winter, 5)} € = {calcPrice(result.breakdown.hcWinterKwh, result.offer.hc_price_winter)} €</span>
+                                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                    <div className="bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2">
+                                      <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                                        <span className="text-lg">🌡️</span>
+                                        Détail de consommation
+                                      </h4>
+                                    </div>
+                                    <div className="p-4 space-y-3">
+                                      {/* Hiver */}
+                                      <div className="space-y-2">
+                                        <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide flex items-center gap-1">
+                                          <span>❄️</span> Hiver (nov-mars)
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="p-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800">
+                                            <div className="text-xs text-sky-600 dark:text-sky-400 font-medium">HC</div>
+                                            <div className="text-sm font-bold text-sky-800 dark:text-sky-200">{result.breakdown.hcWinterKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-sky-600 dark:text-sky-400">{calcPrice(result.breakdown.hcWinterKwh, result.offer.hc_price_winter)} €</div>
+                                          </div>
+                                          <div className="p-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
+                                            <div className="text-xs text-orange-600 dark:text-orange-400 font-medium">HP</div>
+                                            <div className="text-sm font-bold text-orange-800 dark:text-orange-200">{result.breakdown.hpWinterKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-orange-600 dark:text-orange-400">{calcPrice(result.breakdown.hpWinterKwh, result.offer.hp_price_winter)} €</div>
+                                          </div>
+                                        </div>
                                       </div>
-                                      <div className="flex justify-between ml-2">
-                                        <span className="text-orange-600 dark:text-orange-400">HP :</span>
-                                        <span className="font-medium text-xs text-orange-700 dark:text-orange-300">{result.breakdown.hpWinterKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hp_price_winter, 5)} € = {calcPrice(result.breakdown.hpWinterKwh, result.offer.hp_price_winter)} €</span>
-                                      </div>
-                                      <div className="font-semibold text-amber-700 dark:text-amber-300 mt-2">☀️ Été (avr-oct)</div>
-                                      <div className="flex justify-between ml-2">
-                                        <span className="text-sky-600 dark:text-sky-400">HC :</span>
-                                        <span className="font-medium text-xs text-sky-700 dark:text-sky-300">{result.breakdown.hcSummerKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hc_price_summer, 5)} € = {calcPrice(result.breakdown.hcSummerKwh, result.offer.hc_price_summer)} €</span>
-                                      </div>
-                                      <div className="flex justify-between ml-2">
-                                        <span className="text-orange-600 dark:text-orange-400">HP :</span>
-                                        <span className="font-medium text-xs text-orange-700 dark:text-orange-300">{result.breakdown.hpSummerKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hp_price_summer, 5)} € = {calcPrice(result.breakdown.hpSummerKwh, result.offer.hp_price_summer)} €</span>
+                                      {/* Été */}
+                                      <div className="space-y-2">
+                                        <div className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1">
+                                          <span>☀️</span> Été (avr-oct)
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="p-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800">
+                                            <div className="text-xs text-sky-600 dark:text-sky-400 font-medium">HC</div>
+                                            <div className="text-sm font-bold text-sky-800 dark:text-sky-200">{result.breakdown.hcSummerKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-sky-600 dark:text-sky-400">{calcPrice(result.breakdown.hcSummerKwh, result.offer.hc_price_summer)} €</div>
+                                          </div>
+                                          <div className="p-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
+                                            <div className="text-xs text-orange-600 dark:text-orange-400 font-medium">HP</div>
+                                            <div className="text-sm font-bold text-orange-800 dark:text-orange-200">{result.breakdown.hpSummerKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-orange-600 dark:text-orange-400">{calcPrice(result.breakdown.hpSummerKwh, result.offer.hp_price_summer)} €</div>
+                                          </div>
+                                        </div>
                                       </div>
                                       {result.breakdown.peakDayKwh > 0 && (
-                                        <>
-                                          <div className="font-semibold text-red-700 dark:text-red-300 mt-2">⚡ Jours de pointe</div>
-                                          <div className="flex justify-between ml-2">
-                                            <span>Consommation :</span>
-                                            <span className="font-medium text-xs">{result.breakdown.peakDayKwh?.toFixed(0)} kWh × {formatPrice(result.offer.peak_day_price, 5)} € = {calcPrice(result.breakdown.peakDayKwh, result.offer.peak_day_price)} €</span>
+                                        <div className="space-y-2">
+                                          <div className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide flex items-center gap-1">
+                                            <span>⚡</span> Jours de pointe
                                           </div>
-                                          <div className="bg-orange-50 dark:bg-orange-900/20 border-l-2 border-orange-400 p-2 mt-2 text-xs text-orange-700 dark:text-orange-300">
-                                            <div className="flex items-start gap-2">
-                                              <span className="flex-shrink-0">⚠️</span>
+                                          <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                                            <div className="flex justify-between items-center">
                                               <div>
-                                                <strong>Information sur les jours de pointe :</strong>
-                                                <br />
-                                                Les jours de pointe réels ne sont pas disponibles. La simulation utilise les <strong>jours rouges Tempo</strong> comme approximation.
-                                                Le coût réel peut varier selon les jours de pointe effectivement déclarés par le fournisseur.
+                                                <div className="text-xs text-red-600 dark:text-red-400 font-medium">Consommation</div>
+                                                <div className="text-sm font-bold text-red-800 dark:text-red-200">{result.breakdown.peakDayKwh?.toFixed(0)} kWh</div>
                                               </div>
+                                              <div className="text-lg font-bold text-red-700 dark:text-red-300">{calcPrice(result.breakdown.peakDayKwh, result.offer.peak_day_price)} €</div>
                                             </div>
                                           </div>
-                                        </>
+                                          <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-400 text-xs text-amber-700 dark:text-amber-300">
+                                            <strong>⚠️ Note :</strong> Simulation basée sur les jours rouges Tempo.
+                                          </div>
+                                        </div>
                                       )}
-                                      <div className="flex justify-between border-t border-gray-300 dark:border-gray-600 pt-1 mt-2 font-semibold">
-                                        <span>Total énergie :</span>
-                                        <span>{result.energyCost.toFixed(2)} €</span>
+                                      <div className="flex justify-between pt-3 border-t border-gray-200 dark:border-gray-600">
+                                        <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Total énergie</span>
+                                        <span className="text-lg font-bold text-cyan-600 dark:text-cyan-400">{result.energyCost.toFixed(2)} €</span>
                                       </div>
                                     </div>
                                   </div>
                                 )}
                                 {result.breakdown && result.offerType === 'TEMPO' && result.offer && (
-                                  <div className="space-y-2">
-                                    <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">Détail de consommation (Tempo)</h4>
-                                    <div className="text-sm space-y-2">
-                                      <div className="text-blue-600 dark:text-blue-400">
-                                        <div className="font-semibold">Jours Bleus</div>
-                                        <div className="flex justify-between ml-2">
-                                          <span>HC :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.blueHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer.tempo_blue_hc, 5)} € = {calcPrice(result.breakdown.blueHcKwh, result.offer.tempo_blue_hc)} €</span>
+                                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                    <div className="bg-gradient-to-r from-violet-500 to-purple-600 px-4 py-2">
+                                      <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                                        <span className="text-lg">🎨</span>
+                                        Détail de consommation
+                                      </h4>
+                                    </div>
+                                    <div className="p-4 space-y-3">
+                                      {/* Jours Bleus */}
+                                      <div className="space-y-2">
+                                        <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide flex items-center gap-1">
+                                          <span className="w-3 h-3 rounded-full bg-blue-500"></span> Jours Bleus (300j)
                                         </div>
-                                        <div className="flex justify-between ml-2">
-                                          <span>HP :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.blueHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer.tempo_blue_hp, 5)} € = {calcPrice(result.breakdown.blueHpKwh, result.offer.tempo_blue_hp)} €</span>
-                                        </div>
-                                      </div>
-                                      <div className="text-gray-600 dark:text-gray-400">
-                                        <div className="font-semibold">Jours Blancs</div>
-                                        <div className="flex justify-between ml-2">
-                                          <span>HC :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.whiteHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer.tempo_white_hc, 5)} € = {calcPrice(result.breakdown.whiteHcKwh, result.offer.tempo_white_hc)} €</span>
-                                        </div>
-                                        <div className="flex justify-between ml-2">
-                                          <span>HP :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.whiteHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer.tempo_white_hp, 5)} € = {calcPrice(result.breakdown.whiteHpKwh, result.offer.tempo_white_hp)} €</span>
-                                        </div>
-                                      </div>
-                                      <div className="text-red-600 dark:text-red-400">
-                                        <div className="font-semibold">Jours Rouges</div>
-                                        <div className="flex justify-between ml-2">
-                                          <span>HC :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.redHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer.tempo_red_hc, 5)} € = {calcPrice(result.breakdown.redHcKwh, result.offer.tempo_red_hc)} €</span>
-                                        </div>
-                                        <div className="flex justify-between ml-2">
-                                          <span>HP :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.redHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer.tempo_red_hp, 5)} € = {calcPrice(result.breakdown.redHpKwh, result.offer.tempo_red_hp)} €</span>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                                            <div className="text-xs text-blue-600 dark:text-blue-400 font-medium">HC</div>
+                                            <div className="text-sm font-bold text-blue-800 dark:text-blue-200">{result.breakdown.blueHcKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-blue-600 dark:text-blue-400">{calcPrice(result.breakdown.blueHcKwh, result.offer.tempo_blue_hc)} €</div>
+                                          </div>
+                                          <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                                            <div className="text-xs text-blue-600 dark:text-blue-400 font-medium">HP</div>
+                                            <div className="text-sm font-bold text-blue-800 dark:text-blue-200">{result.breakdown.blueHpKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-blue-600 dark:text-blue-400">{calcPrice(result.breakdown.blueHpKwh, result.offer.tempo_blue_hp)} €</div>
+                                          </div>
                                         </div>
                                       </div>
-                                      <div className="flex justify-between border-t border-gray-300 dark:border-gray-600 pt-1 mt-2 font-semibold text-gray-700 dark:text-gray-300">
-                                        <span>Total énergie :</span>
-                                        <span>{result.energyCost.toFixed(2)} €</span>
+                                      {/* Jours Blancs */}
+                                      <div className="space-y-2">
+                                        <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-1">
+                                          <span className="w-3 h-3 rounded-full bg-gray-300 dark:bg-gray-500"></span> Jours Blancs (43j)
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600">
+                                            <div className="text-xs text-gray-500 dark:text-gray-400 font-medium">HC</div>
+                                            <div className="text-sm font-bold text-gray-700 dark:text-gray-200">{result.breakdown.whiteHcKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-gray-500 dark:text-gray-400">{calcPrice(result.breakdown.whiteHcKwh, result.offer.tempo_white_hc)} €</div>
+                                          </div>
+                                          <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600">
+                                            <div className="text-xs text-gray-500 dark:text-gray-400 font-medium">HP</div>
+                                            <div className="text-sm font-bold text-gray-700 dark:text-gray-200">{result.breakdown.whiteHpKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-gray-500 dark:text-gray-400">{calcPrice(result.breakdown.whiteHpKwh, result.offer.tempo_white_hp)} €</div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      {/* Jours Rouges */}
+                                      <div className="space-y-2">
+                                        <div className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide flex items-center gap-1">
+                                          <span className="w-3 h-3 rounded-full bg-red-500"></span> Jours Rouges (22j)
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                                            <div className="text-xs text-red-600 dark:text-red-400 font-medium">HC</div>
+                                            <div className="text-sm font-bold text-red-800 dark:text-red-200">{result.breakdown.redHcKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-red-600 dark:text-red-400">{calcPrice(result.breakdown.redHcKwh, result.offer.tempo_red_hc)} €</div>
+                                          </div>
+                                          <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                                            <div className="text-xs text-red-600 dark:text-red-400 font-medium">HP</div>
+                                            <div className="text-sm font-bold text-red-800 dark:text-red-200">{result.breakdown.redHpKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-red-600 dark:text-red-400">{calcPrice(result.breakdown.redHpKwh, result.offer.tempo_red_hp)} €</div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="flex justify-between pt-3 border-t border-gray-200 dark:border-gray-600">
+                                        <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Total énergie</span>
+                                        <span className="text-lg font-bold text-violet-600 dark:text-violet-400">{result.energyCost.toFixed(2)} €</span>
                                       </div>
                                     </div>
                                   </div>
                                 )}
                                 {result.breakdown && result.offerType === 'ZEN_FLEX' && result.offer && (
-                                  <div className="space-y-2">
-                                    <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">Détail de consommation (Zen Flex)</h4>
-                                    <div className="text-sm space-y-2">
-                                      <div className="text-green-600 dark:text-green-400">
-                                        <div className="font-semibold">🌿 Jours Éco (345j/an)</div>
-                                        <div className="flex justify-between ml-2">
-                                          <span className="text-sky-600 dark:text-sky-400">HC :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.zenFlexEcoHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hc_price_winter, 5)} € = {calcPrice(result.breakdown.zenFlexEcoHcKwh, result.offer.hc_price_winter)} €</span>
+                                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                    <div className="bg-gradient-to-r from-teal-500 to-emerald-600 px-4 py-2">
+                                      <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                                        <span className="text-lg">🌿</span>
+                                        Détail de consommation
+                                      </h4>
+                                    </div>
+                                    <div className="p-4 space-y-3">
+                                      {/* Jours Éco */}
+                                      <div className="space-y-2">
+                                        <div className="text-xs font-semibold text-green-600 dark:text-green-400 uppercase tracking-wide flex items-center gap-1">
+                                          <span className="w-3 h-3 rounded-full bg-green-500"></span> Jours Éco (345j/an)
                                         </div>
-                                        <div className="flex justify-between ml-2">
-                                          <span className="text-orange-600 dark:text-orange-400">HP :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.zenFlexEcoHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hp_price_winter, 5)} € = {calcPrice(result.breakdown.zenFlexEcoHpKwh, result.offer.hp_price_winter)} €</span>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="p-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                                            <div className="text-xs text-green-600 dark:text-green-400 font-medium">HC</div>
+                                            <div className="text-sm font-bold text-green-800 dark:text-green-200">{result.breakdown.zenFlexEcoHcKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-green-600 dark:text-green-400">{calcPrice(result.breakdown.zenFlexEcoHcKwh, result.offer.hc_price_winter)} €</div>
+                                          </div>
+                                          <div className="p-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                                            <div className="text-xs text-green-600 dark:text-green-400 font-medium">HP</div>
+                                            <div className="text-sm font-bold text-green-800 dark:text-green-200">{result.breakdown.zenFlexEcoHpKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-green-600 dark:text-green-400">{calcPrice(result.breakdown.zenFlexEcoHpKwh, result.offer.hp_price_winter)} €</div>
+                                          </div>
                                         </div>
                                       </div>
-                                      <div className="text-red-600 dark:text-red-400">
-                                        <div className="font-semibold">⚡ Jours Sobriété (20j/an)</div>
-                                        <div className="flex justify-between ml-2">
-                                          <span className="text-sky-600 dark:text-sky-400">HC :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.zenFlexSobrietyHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hc_price_summer, 5)} € = {calcPrice(result.breakdown.zenFlexSobrietyHcKwh, result.offer.hc_price_summer)} €</span>
+                                      {/* Jours Sobriété */}
+                                      <div className="space-y-2">
+                                        <div className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide flex items-center gap-1">
+                                          <span className="w-3 h-3 rounded-full bg-red-500"></span> Jours Sobriété (20j/an)
                                         </div>
-                                        <div className="flex justify-between ml-2">
-                                          <span className="text-orange-600 dark:text-orange-400">HP :</span>
-                                          <span className="font-medium text-xs">{result.breakdown.zenFlexSobrietyHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer.hp_price_summer, 5)} € = {calcPrice(result.breakdown.zenFlexSobrietyHpKwh, result.offer.hp_price_summer)} €</span>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                                            <div className="text-xs text-red-600 dark:text-red-400 font-medium">HC</div>
+                                            <div className="text-sm font-bold text-red-800 dark:text-red-200">{result.breakdown.zenFlexSobrietyHcKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-red-600 dark:text-red-400">{calcPrice(result.breakdown.zenFlexSobrietyHcKwh, result.offer.hc_price_summer)} €</div>
+                                          </div>
+                                          <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                                            <div className="text-xs text-red-600 dark:text-red-400 font-medium">HP</div>
+                                            <div className="text-sm font-bold text-red-800 dark:text-red-200">{result.breakdown.zenFlexSobrietyHpKwh?.toFixed(0)} kWh</div>
+                                            <div className="text-xs text-red-600 dark:text-red-400">{calcPrice(result.breakdown.zenFlexSobrietyHpKwh, result.offer.hp_price_summer)} €</div>
+                                          </div>
                                         </div>
                                       </div>
-                                      <div className="flex justify-between border-t border-gray-300 dark:border-gray-600 pt-1 mt-2 font-semibold text-gray-700 dark:text-gray-300">
-                                        <span>Total énergie :</span>
-                                        <span>{result.energyCost.toFixed(2)} €</span>
+                                      {/* Warning about Sobriété days estimation */}
+                                      <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-400">
+                                        <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
+                                          <span className="flex-shrink-0 text-base">⚠️</span>
+                                          <div>
+                                            <strong>Estimation des jours Sobriété :</strong> Les 20 jours de sobriété sont estimés à partir des jours Tempo Rouge les plus fréquents (statistiquement les plus froids). Les jours réels sont définis par EDF et ne sont pas récupérables automatiquement.
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="flex justify-between pt-3 border-t border-gray-200 dark:border-gray-600">
+                                        <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Total énergie</span>
+                                        <span className="text-lg font-bold text-teal-600 dark:text-teal-400">{result.energyCost.toFixed(2)} €</span>
                                       </div>
                                     </div>
                                   </div>
@@ -2185,104 +2285,129 @@ export default function Simulator() {
 
                                 {/* Pricing details */}
                                 {result.offer && (
-                                  <div className="space-y-2">
-                                    <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">Tarifs de l'offre</h4>
-                                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                                      <div className="flex justify-between">
-                                        <span className="text-purple-600 dark:text-purple-400 font-medium">Abonnement :</span>
-                                        <span className="font-medium text-purple-700 dark:text-purple-300">{formatPrice(result.offer.subscription_price, 2)} €/mois</span>
-                                      </div>
-                                      {result.offer.base_price && (
-                                      <div className="flex justify-between">
-                                        <span className="text-emerald-600 dark:text-emerald-400 font-medium">Prix Base :</span>
-                                        <span className="font-medium text-emerald-700 dark:text-emerald-300">{formatPrice(result.offer.base_price, 5)} €/kWh</span>
-                                      </div>
-                                    )}
-                                    {result.offer.hc_price && result.offer.hp_price && (result.offerType === 'HC_HP' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'WEEKEND' || result.offerType === 'HC_WEEKEND') && (
-                                      <>
-                                        <div className="flex justify-between">
-                                          <span className="text-sky-600 dark:text-sky-400 font-medium">Prix HC :</span>
-                                          <span className="font-medium text-sky-700 dark:text-sky-300">{formatPrice(result.offer.hc_price, 5)} €/kWh</span>
+                                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                    <div className="bg-gradient-to-r from-gray-600 to-gray-700 px-4 py-2">
+                                      <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                                        <span className="text-lg">💰</span>
+                                        Tarifs de l'offre
+                                      </h4>
+                                    </div>
+                                    <div className="p-4 space-y-3">
+                                      {/* Abonnement & Puissance */}
+                                      <div className="flex gap-2">
+                                        <div className="flex-1 p-2 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 text-center">
+                                          <div className="text-xs text-purple-600 dark:text-purple-400 font-medium">Abonnement</div>
+                                          <div className="text-lg font-bold text-purple-800 dark:text-purple-200">{formatPrice(result.offer.subscription_price, 2)} €</div>
+                                          <div className="text-xs text-purple-500 dark:text-purple-400">/mois</div>
                                         </div>
-                                        <div className="flex justify-between">
-                                          <span className="text-orange-600 dark:text-orange-400 font-medium">Prix HP :</span>
-                                          <span className="font-medium text-orange-700 dark:text-orange-300">{formatPrice(result.offer.hp_price, 5)} €/kWh</span>
-                                        </div>
-                                      </>
-                                    )}
-                                    {result.offerType === 'SEASONAL' && (
-                                      <>
-                                        <div className="font-semibold text-blue-700 dark:text-blue-300 mt-2">❄️ Hiver</div>
-                                        <div className="flex justify-between ml-2">
-                                          <span className="text-sky-600 dark:text-sky-400">HC :</span>
-                                          <span className="font-medium text-sky-700 dark:text-sky-300">{formatPrice(result.offer.hc_price_winter, 5)} €/kWh</span>
-                                        </div>
-                                        <div className="flex justify-between ml-2">
-                                          <span className="text-orange-600 dark:text-orange-400">HP :</span>
-                                          <span className="font-medium text-orange-700 dark:text-orange-300">{formatPrice(result.offer.hp_price_winter, 5)} €/kWh</span>
-                                        </div>
-                                        <div className="font-semibold text-amber-700 dark:text-amber-300 mt-2">☀️ Été</div>
-                                        <div className="flex justify-between ml-2">
-                                          <span className="text-sky-600 dark:text-sky-400">HC :</span>
-                                          <span className="font-medium text-sky-700 dark:text-sky-300">{formatPrice(result.offer.hc_price_summer, 5)} €/kWh</span>
-                                        </div>
-                                        <div className="flex justify-between ml-2">
-                                          <span className="text-orange-600 dark:text-orange-400">HP :</span>
-                                          <span className="font-medium text-orange-700 dark:text-orange-300">{formatPrice(result.offer.hp_price_summer, 5)} €/kWh</span>
-                                        </div>
-                                        {result.offer.peak_day_price && (
-                                          <>
-                                            <div className="font-semibold text-red-700 dark:text-red-300 mt-2">⚡ Jours de pointe</div>
-                                            <div className="flex justify-between ml-2">
-                                              <span>Prix :</span>
-                                              <span className="font-medium">{formatPrice(result.offer.peak_day_price, 5)} €/kWh</span>
-                                            </div>
-                                          </>
+                                        {result.offer.power_kva && (
+                                          <div className="flex-1 p-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 text-center">
+                                            <div className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">Puissance</div>
+                                            <div className="text-lg font-bold text-indigo-800 dark:text-indigo-200">{result.offer.power_kva}</div>
+                                            <div className="text-xs text-indigo-500 dark:text-indigo-400">kVA</div>
+                                          </div>
                                         )}
-                                      </>
-                                    )}
-                                    {result.offerType === 'ZEN_FLEX' && (
-                                      <>
-                                        <div className="font-semibold text-green-700 dark:text-green-300 mt-2">🌿 Jours Éco (345j/an)</div>
-                                        <div className="flex justify-between ml-2">
-                                          <span className="text-sky-600 dark:text-sky-400">HC :</span>
-                                          <span className="font-medium text-sky-700 dark:text-sky-300">{formatPrice(result.offer.hc_price_winter, 5)} €/kWh</span>
-                                        </div>
-                                        <div className="flex justify-between ml-2">
-                                          <span className="text-orange-600 dark:text-orange-400">HP :</span>
-                                          <span className="font-medium text-orange-700 dark:text-orange-300">{formatPrice(result.offer.hp_price_winter, 5)} €/kWh</span>
-                                        </div>
-                                        <div className="font-semibold text-red-700 dark:text-red-300 mt-2">⚡ Jours Sobriété (20j/an)</div>
-                                        <div className="flex justify-between ml-2">
-                                          <span className="text-sky-600 dark:text-sky-400">HC :</span>
-                                          <span className="font-medium text-sky-700 dark:text-sky-300">{formatPrice(result.offer.hc_price_summer, 5)} €/kWh</span>
-                                        </div>
-                                        <div className="flex justify-between ml-2">
-                                          <span className="text-orange-600 dark:text-orange-400">HP :</span>
-                                          <span className="font-medium text-orange-700 dark:text-orange-300">{formatPrice(result.offer.hp_price_summer, 5)} €/kWh</span>
-                                        </div>
-                                      </>
-                                    )}
-                                      {result.offer.power_kva && (
-                                        <div className="flex justify-between mt-2">
-                                          <span className="text-indigo-600 dark:text-indigo-400 font-medium">Puissance :</span>
-                                          <span className="font-medium text-indigo-700 dark:text-indigo-300">{result.offer.power_kva} kVA</span>
+                                      </div>
+
+                                      {/* BASE price */}
+                                      {result.offer.base_price && (
+                                        <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+                                          <div className="flex justify-between items-center">
+                                            <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Prix Base</span>
+                                            <span className="text-sm font-bold text-emerald-800 dark:text-emerald-200">{formatPrice(result.offer.base_price, 5)} €/kWh</span>
+                                          </div>
                                         </div>
                                       )}
-                                      {/* Link to view offer */}
-                                      {result.offer.offer_url && (
-                                        <div className="flex justify-between mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
-                                          <span className="text-gray-600 dark:text-gray-400">Source :</span>
-                                          <a
-                                            href={result.offer.offer_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-1 font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 hover:underline"
-                                          >
-                                            <span>Voir l'offre</span>
-                                            <ExternalLink size={14} />
-                                          </a>
+
+                                      {/* HC/HP prices */}
+                                      {result.offer.hc_price && result.offer.hp_price && (result.offerType === 'HC_HP' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'WEEKEND' || result.offerType === 'HC_WEEKEND') && (
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="p-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 text-center">
+                                            <div className="text-xs text-sky-600 dark:text-sky-400 font-medium">Heures Creuses</div>
+                                            <div className="text-sm font-bold text-sky-800 dark:text-sky-200">{formatPrice(result.offer.hc_price, 5)} €</div>
+                                          </div>
+                                          <div className="p-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 text-center">
+                                            <div className="text-xs text-orange-600 dark:text-orange-400 font-medium">Heures Pleines</div>
+                                            <div className="text-sm font-bold text-orange-800 dark:text-orange-200">{formatPrice(result.offer.hp_price, 5)} €</div>
+                                          </div>
                                         </div>
+                                      )}
+
+                                      {/* SEASONAL prices */}
+                                      {result.offerType === 'SEASONAL' && (
+                                        <div className="space-y-2">
+                                          <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">❄️ Hiver</div>
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <div className="p-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 text-center">
+                                              <div className="text-xs text-sky-600 dark:text-sky-400">HC</div>
+                                              <div className="text-sm font-bold text-sky-800 dark:text-sky-200">{formatPrice(result.offer.hc_price_winter, 5)} €</div>
+                                            </div>
+                                            <div className="p-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 text-center">
+                                              <div className="text-xs text-orange-600 dark:text-orange-400">HP</div>
+                                              <div className="text-sm font-bold text-orange-800 dark:text-orange-200">{formatPrice(result.offer.hp_price_winter, 5)} €</div>
+                                            </div>
+                                          </div>
+                                          <div className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wide">☀️ Été</div>
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <div className="p-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 text-center">
+                                              <div className="text-xs text-sky-600 dark:text-sky-400">HC</div>
+                                              <div className="text-sm font-bold text-sky-800 dark:text-sky-200">{formatPrice(result.offer.hc_price_summer, 5)} €</div>
+                                            </div>
+                                            <div className="p-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 text-center">
+                                              <div className="text-xs text-orange-600 dark:text-orange-400">HP</div>
+                                              <div className="text-sm font-bold text-orange-800 dark:text-orange-200">{formatPrice(result.offer.hp_price_summer, 5)} €</div>
+                                            </div>
+                                          </div>
+                                          {result.offer.peak_day_price && (
+                                            <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                                              <div className="flex justify-between items-center">
+                                                <span className="text-sm text-red-600 dark:text-red-400 font-medium">⚡ Jours de pointe</span>
+                                                <span className="text-sm font-bold text-red-800 dark:text-red-200">{formatPrice(result.offer.peak_day_price, 5)} €/kWh</span>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* ZEN_FLEX prices */}
+                                      {result.offerType === 'ZEN_FLEX' && (
+                                        <div className="space-y-2">
+                                          <div className="text-xs font-semibold text-green-600 dark:text-green-400 uppercase tracking-wide">🌿 Jours Éco (345j)</div>
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <div className="p-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-center">
+                                              <div className="text-xs text-green-600 dark:text-green-400">HC</div>
+                                              <div className="text-sm font-bold text-green-800 dark:text-green-200">{formatPrice(result.offer.hc_price_winter, 5)} €</div>
+                                            </div>
+                                            <div className="p-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-center">
+                                              <div className="text-xs text-green-600 dark:text-green-400">HP</div>
+                                              <div className="text-sm font-bold text-green-800 dark:text-green-200">{formatPrice(result.offer.hp_price_winter, 5)} €</div>
+                                            </div>
+                                          </div>
+                                          <div className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide">⚡ Jours Sobriété (20j)</div>
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-center">
+                                              <div className="text-xs text-red-600 dark:text-red-400">HC</div>
+                                              <div className="text-sm font-bold text-red-800 dark:text-red-200">{formatPrice(result.offer.hc_price_summer, 5)} €</div>
+                                            </div>
+                                            <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-center">
+                                              <div className="text-xs text-red-600 dark:text-red-400">HP</div>
+                                              <div className="text-sm font-bold text-red-800 dark:text-red-200">{formatPrice(result.offer.hp_price_summer, 5)} €</div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Link to offer */}
+                                      {result.offer.offer_url && (
+                                        <a
+                                          href={result.offer.offer_url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center justify-center gap-2 w-full py-2 px-4 mt-2 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors font-medium text-sm"
+                                        >
+                                          <ExternalLink size={16} />
+                                          Voir l'offre officielle
+                                        </a>
                                       )}
                                     </div>
                                   </div>
