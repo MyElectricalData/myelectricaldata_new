@@ -44,6 +44,7 @@ export default function ChatWhatsApp({
   maxHeight = '400px',
 }: ChatWhatsAppProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -52,10 +53,37 @@ export default function ChatWhatsApp({
     }
   }, [messages])
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey && inputValue.trim()) {
-      e.preventDefault()
-      onSend()
+  // Reset textarea height when input is cleared and keep focus
+  useEffect(() => {
+    if (!inputValue && textareaRef.current) {
+      textareaRef.current.style.height = '42px'
+      textareaRef.current.focus()
+    }
+  }, [inputValue])
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      // Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux) = new line
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault()
+        const target = e.currentTarget
+        const start = target.selectionStart
+        const end = target.selectionEnd
+        const newValue = inputValue.substring(0, start) + '\n' + inputValue.substring(end)
+        onInputChange(newValue)
+        // Set cursor position after the newline
+        setTimeout(() => {
+          target.selectionStart = target.selectionEnd = start + 1
+          // Trigger resize
+          target.style.height = 'auto'
+          target.style.height = `${Math.min(target.scrollHeight, 120)}px`
+        }, 0)
+      }
+      // Enter alone = send message
+      else if (!e.shiftKey && inputValue.trim()) {
+        e.preventDefault()
+        onSend()
+      }
     }
   }
 
@@ -164,19 +192,29 @@ export default function ChatWhatsApp({
       {/* Input area */}
       {showInput && (
         <div className="flex items-center gap-2 p-3 bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-          <input
-            type="text"
+          <textarea
+            ref={textareaRef}
             value={inputValue}
             onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             disabled={isSending}
-            className="flex-1 px-4 py-2.5 bg-white dark:bg-gray-900 border-0 rounded-full text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none placeholder-gray-400 dark:placeholder-gray-500 dark:text-white"
+            rows={1}
+            className="flex-1 px-4 py-2.5 bg-white dark:bg-gray-900 border-0 rounded-2xl text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none placeholder-gray-400 dark:placeholder-gray-500 dark:text-white resize-none overflow-hidden"
+            style={{
+              minHeight: '42px',
+              maxHeight: '120px',
+            }}
+            onInput={(e) => {
+              const target = e.target as HTMLTextAreaElement
+              target.style.height = 'auto'
+              target.style.height = `${Math.min(target.scrollHeight, 120)}px`
+            }}
           />
           <button
             onClick={onSend}
             disabled={!inputValue.trim() || isSending}
-            className="p-2.5 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-full transition-colors disabled:cursor-not-allowed"
+            className="p-2.5 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-full transition-colors disabled:cursor-not-allowed flex-shrink-0"
           >
             {isSending ? (
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
