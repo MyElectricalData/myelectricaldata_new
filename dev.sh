@@ -70,5 +70,7 @@ export FORCE_COLOR=1
 export DOCKER_CLI_HINTS=false
 export COMPOSE_ANSI=always
 
-# Lancer docker compose avec TTY forcé
-exec docker compose up
+# Lancer docker compose avec local-client
+echo -e "${GREEN}🏠 Starting all services including Local Client...${NC}"
+echo -e "${GREEN}📊 Local Client: http://localhost:8083${NC}"
+exec docker compose --profile local-client up

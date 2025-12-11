@@ -124,6 +124,67 @@ services:
     profiles:
       - docs
 
+  # Local Client - Synchronisation et export des données Linky (Backend API)
+  local-client:
+    build:
+      context: ./apps/local-client
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8084:8080"
+      - "9090:9090"
+    env_file:
+      - ./.env.local-client
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WATCHFILES_FORCE_POLLING=true
+      - WATCHFILES_POLL_INTERVAL=1000
+      - TZ=Europe/Paris
+      - GATEWAY_URL=http://backend:8000
+    volumes:
+      - ./apps/local-client/src:/app/src
+      - ./apps/local-client/data:/data
+      - ./apps/local-client/config:/config
+    entrypoint: []
+    command: ["python", "-m", "uvicorn", "src.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--reload", "--reload-dir", "/app/src"]
+    networks:
+      - myelectricaldata
+    depends_on:
+      - backend
+    profiles:
+      - local-client
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Local Client Frontend - React/Vite avec hot-reload
+  local-client-frontend:
+    build:
+      context: ./apps/local-client/frontend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    volumes:
+      - ./apps/local-client/frontend/src:/app/src
+      - ./apps/local-client/frontend/public:/app/public
+      - ./apps/local-client/frontend/index.html:/app/index.html
+      - ./apps/local-client/frontend/vite.config.ts:/app/vite.config.ts
+      - ./apps/local-client/frontend/tsconfig.json:/app/tsconfig.json
+      - ./apps/local-client/frontend/tsconfig.node.json:/app/tsconfig.node.json
+      - ./apps/local-client/frontend/tailwind.config.js:/app/tailwind.config.js
+      - ./apps/local-client/frontend/postcss.config.js:/app/postcss.config.js
+      - /app/node_modules
+    ports:
+      - "8083:5173"
+    networks:
+      - myelectricaldata
+    depends_on:
+      - local-client
+    profiles:
+      - local-client
+
 volumes:
   redis_data:
     driver: local

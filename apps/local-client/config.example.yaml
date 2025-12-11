@@ -1,0 +1,168 @@
+# =============================================================================
+# MyElectricalData Local Client - Configuration
+# =============================================================================
+#
+# Ce fichier configure le client local MyElectricalData.
+# Copiez-le vers config.yaml et adaptez-le à votre installation.
+#
+# Variables d'environnement prioritaires:
+#   CLIENT_ID, CLIENT_SECRET, GATEWAY_URL, DATABASE_URL, etc.
+#   (voir documentation pour la liste complète)
+
+# -----------------------------------------------------------------------------
+# Identifiants API (obligatoires)
+# Obtenez-les sur https://myelectricaldata.fr dans Paramètres > API
+# -----------------------------------------------------------------------------
+gateway:
+  url: "https://api.myelectricaldata.fr"
+  client_id: "votre_client_id"
+  client_secret: "votre_client_secret"
+
+# -----------------------------------------------------------------------------
+# Base de données
+# SQLite par défaut, PostgreSQL ou MySQL recommandé en production
+# -----------------------------------------------------------------------------
+database:
+  # SQLite (par défaut)
+  url: "sqlite+aiosqlite:///data/myelectricaldata.db"
+
+  # PostgreSQL
+  # url: "postgresql+asyncpg://user:password@localhost:5432/myelectricaldata"
+
+  # MySQL/MariaDB
+  # url: "mysql+aiomysql://user:password@localhost:3306/myelectricaldata"
+
+# -----------------------------------------------------------------------------
+# Synchronisation
+# -----------------------------------------------------------------------------
+sync:
+  # Intervalle entre les synchronisations (en secondes)
+  interval: 3600  # 1 heure
+
+  # Nombre de jours à récupérer en arrière
+  days_back: 7
+
+  # Heure de synchronisation complète (format HH:MM)
+  full_sync_time: "04:00"
+
+  # Réessayer en cas d'échec
+  retry_count: 3
+  retry_delay: 300  # 5 minutes
+
+# -----------------------------------------------------------------------------
+# Données à récupérer
+# -----------------------------------------------------------------------------
+data:
+  consumption:
+    enabled: true
+    daily: true       # Consommation journalière
+    detailed: true    # Consommation par tranche de 30 min
+    max_power: true   # Puissance maximale quotidienne
+
+  production:
+    enabled: true
+    daily: true
+    detailed: true
+
+# -----------------------------------------------------------------------------
+# Home Assistant (via MQTT Discovery)
+# https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery
+# -----------------------------------------------------------------------------
+home_assistant:
+  enabled: true
+  discovery: true
+  discovery_prefix: "homeassistant"
+  entity_prefix: "myelectricaldata"
+  energy_dashboard: true   # Compatibilité Energy Dashboard
+  statistics: true         # Statistiques long terme
+
+# -----------------------------------------------------------------------------
+# MQTT
+# Pour l'intégration Home Assistant ou autres systèmes domotiques
+# -----------------------------------------------------------------------------
+mqtt:
+  enabled: false
+  host: "localhost"
+  port: 1883
+  username: ""
+  password: ""
+  tls: false
+  ca_cert: ""
+  topic_prefix: "myelectricaldata"
+  qos: 1
+  retain: true
+  format: "json"  # "json" ou "simple"
+
+# -----------------------------------------------------------------------------
+# VictoriaMetrics / Prometheus
+# Pour l'historisation longue durée et les dashboards Grafana
+# -----------------------------------------------------------------------------
+metrics:
+  enabled: false
+  port: 9090
+  path: "/metrics"
+  labels:
+    instance: "home"
+
+  # Mode push vers VictoriaMetrics
+  push:
+    enabled: false
+    url: "http://victoriametrics:8428/api/v1/import/prometheus"
+    interval: 60
+
+# -----------------------------------------------------------------------------
+# Jeedom
+# -----------------------------------------------------------------------------
+jeedom:
+  enabled: false
+  url: "http://jeedom.local"
+  api_key: ""
+  method: "virtual"  # "virtual", "api", ou "mqtt"
+  virtual_equipment_id: ""
+  commands:
+    consumption_daily: ""
+    consumption_hc: ""
+    consumption_hp: ""
+    production_daily: ""
+    max_power: ""
+
+# -----------------------------------------------------------------------------
+# API REST locale
+# -----------------------------------------------------------------------------
+api:
+  port: 8080
+  auth:
+    enabled: false
+    token: ""
+  cors:
+    enabled: true
+    origins:
+      - "http://localhost:*"
+      - "http://homeassistant.local:*"
+
+# -----------------------------------------------------------------------------
+# Logs
+# -----------------------------------------------------------------------------
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "text"  # "text" ou "json"
+  file: ""        # Laisser vide pour stdout uniquement
+  max_size: "10MB"
+  max_files: 5
+
+# -----------------------------------------------------------------------------
+# Notifications
+# -----------------------------------------------------------------------------
+notifications:
+  on_error: true
+  on_success: false
+  channels:
+    home_assistant:
+      enabled: true
+      service: "notify.notify"
+    mqtt:
+      enabled: false
+      topic: "myelectricaldata/notifications"
+    webhook:
+      enabled: false
+      url: ""

@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  myelectricaldata:
+    build: .
+    image: myelectricaldata/local-client:latest
+    container_name: myelectricaldata-client
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "9090:9090"  # Prometheus metrics
+    environment:
+      # Gateway credentials (required)
+      - CLIENT_ID=${CLIENT_ID:-}
+      - CLIENT_SECRET=${CLIENT_SECRET:-}
+      - GATEWAY_URL=${GATEWAY_URL:-https://api.myelectricaldata.fr}
+
+      # Database
+      - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:///data/myelectricaldata.db}
+
+      # Synchronization
+      - SYNC_INTERVAL=${SYNC_INTERVAL:-3600}
+      - SYNC_DAYS_BACK=${SYNC_DAYS_BACK:-7}
+
+      # Integrations
+      - HA_ENABLED=${HA_ENABLED:-true}
+      - HA_DISCOVERY=${HA_DISCOVERY:-true}
+      - MQTT_ENABLED=${MQTT_ENABLED:-false}
+      - MQTT_HOST=${MQTT_HOST:-localhost}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - METRICS_ENABLED=${METRICS_ENABLED:-false}
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/data
+      - ./config:/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: PostgreSQL database
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: myelectricaldata-postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     - POSTGRES_USER=medclient
+  #     - POSTGRES_PASSWORD=medclient
+  #     - POSTGRES_DB=myelectricaldata
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U medclient -d myelectricaldata"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+
+  # Optional: Mosquitto MQTT broker
+  # mosquitto:
+  #   image: eclipse-mosquitto:2
+  #   container_name: myelectricaldata-mosquitto
+  #   restart: unless-stopped
+  #   ports:
+  #     - "1883:1883"
+  #     - "9001:9001"
+  #   volumes:
+  #     - ./mosquitto/config:/mosquitto/config
+  #     - mosquitto_data:/mosquitto/data
+  #     - mosquitto_log:/mosquitto/log
+
+  # Optional: VictoriaMetrics for long-term metrics storage
+  # victoriametrics:
+  #   image: victoriametrics/victoria-metrics:latest
+  #   container_name: myelectricaldata-victoriametrics
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8428:8428"
+  #   volumes:
+  #     - vm_data:/storage
+  #   command:
+  #     - "-storageDataPath=/storage"
+  #     - "-retentionPeriod=5y"
+
+  # Optional: Grafana for visualization
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: myelectricaldata-grafana
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=admin
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+
+volumes:
+  data:
+  # postgres_data:
+  # mosquitto_data:
+  # mosquitto_log:
+  # vm_data:
+  # grafana_data:
+
+networks:
+  default:
+    name: myelectricaldata-network

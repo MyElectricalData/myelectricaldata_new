@@ -1,0 +1,16 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="32" height="32" rx="6" fill="#3B82F6"/>
+
+  <!-- Lightning bolt -->
+  <path d="M18 6L12 16H16L14 26L20 16H16L18 6Z" fill="white"/>
+
+  <!-- Small data bars -->
+  <rect x="7" y="22" width="2" height="4" rx="0.5" fill="#10B981"/>
+  <rect x="10" y="20" width="2" height="6" rx="0.5" fill="#10B981"/>
+  <rect x="13" y="18" width="2" height="8" rx="0.5" fill="#10B981"/>
+
+  <rect x="17" y="21" width="2" height="5" rx="0.5" fill="#10B981"/>
+  <rect x="20" y="19" width="2" height="7" rx="0.5" fill="#10B981"/>
+  <rect x="23" y="22" width="2" height="4" rx="0.5" fill="#10B981"/>
+</svg>

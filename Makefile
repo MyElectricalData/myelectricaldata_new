@@ -39,7 +39,7 @@ help:
 	@echo "$(GREEN)MyElectricalData - Makefile Commands$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Development:$(NC)"
-	@echo "  make dev          - Start development environment with hot reload watching"
+	@echo "  make dev          - Start dev environment with hot reload (includes local-client)"
 	@echo "  make up           - Start all services without hot reload"
 	@echo "  make down         - Stop all services"
 	@echo "  make restart      - Restart all services"
@@ -64,6 +64,11 @@ help:
 	@echo "  make docs         - Start documentation server via Docker (http://localhost:8002)"
 	@echo "  make docs-build   - Build documentation"
 	@echo "  make docs-dev     - Start documentation dev server with hot reload (http://localhost:8002)"
+	@echo ""
+	@echo "$(YELLOW)Local Client:$(NC)"
+	@echo "  make local-client      - Start local client only (http://localhost:8083)"
+	@echo "  make local-client-logs - Show local client logs"
+	@echo "  make local-client-down - Stop local client"
 	@echo ""
 	@echo "$(YELLOW)Maintenance:$(NC)"
 	@echo "  make logs         - Show all logs"
@@ -98,7 +103,7 @@ help:
 	@echo "  make k8s-logs-frontend - Show frontend logs"
 	@echo ""
 
-## Start development environment with hot reload
+## Start development environment with hot reload (includes local-client)
 dev: check-deps
 	@./dev.sh
 
@@ -293,6 +298,38 @@ docs-down:
 	@echo "$(YELLOW)Stopping documentation server...$(NC)"
 	$(COMPOSE) --profile docs down docs
 	@echo "$(GREEN)Documentation server stopped$(NC)"
+
+# =============================================================================
+# Local Client Commands
+# =============================================================================
+
+## Start Local Client only (with hot-reload)
+local-client:
+	@echo "$(GREEN)Starting Local Client...$(NC)"
+	$(COMPOSE) --profile local-client up -d local-client
+	@echo "$(GREEN)Local Client available at http://localhost:8083$(NC)"
+	@echo "$(GREEN)Prometheus metrics at http://localhost:9090/metrics$(NC)"
+	@echo "$(YELLOW)Hot-reload enabled - changes to src/ will auto-restart$(NC)"
+
+## Show Local Client logs
+local-client-logs:
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		script -q /dev/null $(COMPOSE) logs -f local-client; \
+	else \
+		script -q -c "$(COMPOSE) logs -f local-client" /dev/null; \
+	fi
+
+## Restart Local Client
+local-client-restart:
+	@echo "$(YELLOW)Restarting Local Client...$(NC)"
+	$(COMPOSE) --profile local-client restart local-client
+	@echo "$(GREEN)Local Client restarted$(NC)"
+
+## Stop Local Client
+local-client-down:
+	@echo "$(YELLOW)Stopping Local Client...$(NC)"
+	$(COMPOSE) --profile local-client stop local-client
+	@echo "$(GREEN)Local Client stopped$(NC)"
 
 # =============================================================================
 # Docker Registry Commands (ghcr.io)
@@ -515,4 +552,4 @@ k8s-logs-backend:
 k8s-logs-frontend:
 	@$(K8S_DEPLOY_SCRIPT) logs frontend
 
-.PHONY: help dev up up-fg down restart watch stop-watch stop-docs backend-logs backend-restart db-shell db-backup migrate migrate-downgrade migrate-history migrate-current migrate-revision migrate-stamp logs ps clean rebuild check-deps install-fswatch docs docs-build docs-dev docs-down docker-login docker-build docker-build-backend docker-build-frontend docker-push docker-push-backend docker-push-frontend docker-release docker-release-native docker-release-multiarch docker-release-amd64 docker-release-arm64 docker-release-ci docker-buildx-setup docker-info k8s-deploy k8s-deploy-prod k8s-delete k8s-status k8s-logs-backend k8s-logs-frontend
+.PHONY: help dev dev-full up up-fg down restart watch stop-watch stop-docs backend-logs backend-restart db-shell db-backup migrate migrate-downgrade migrate-history migrate-current migrate-revision migrate-stamp logs ps clean rebuild check-deps install-fswatch docs docs-build docs-dev docs-down local-client local-client-logs local-client-restart local-client-down docker-login docker-build docker-build-backend docker-build-frontend docker-push docker-push-backend docker-push-frontend docker-release docker-release-native docker-release-multiarch docker-release-amd64 docker-release-arm64 docker-release-ci docker-buildx-setup docker-info k8s-deploy k8s-deploy-prod k8s-delete k8s-status k8s-logs-backend k8s-logs-frontend
