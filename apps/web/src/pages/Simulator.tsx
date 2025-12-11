@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Calculator, AlertCircle, Loader2, ChevronDown, ChevronUp, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info, ArrowRight, ExternalLink } from 'lucide-react'
+import { Calculator, AlertCircle, Loader2, ChevronDown, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info, ArrowRight, ExternalLink } from 'lucide-react'
 import { useQuery, useQueryClient, useIsRestoring } from '@tanstack/react-query'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
@@ -1902,12 +1902,6 @@ export default function Simulator() {
                     // Calculate difference from first offer (best offer)
                     const firstResult = filteredAndSortedResults[0]
                     const costDifferenceFromFirst = index > 0 ? result.totalCost - firstResult.totalCost : 0
-                    const percentDifferenceFromFirst = index > 0 ? ((result.totalCost - firstResult.totalCost) / firstResult.totalCost) * 100 : 0
-
-                    // Calculate difference from previous offer
-                    const previousResult = index > 0 ? filteredAndSortedResults[index - 1] : null
-                    const costDifferenceFromPrevious = previousResult ? result.totalCost - previousResult.totalCost : 0
-                    const percentDifferenceFromPrevious = previousResult ? ((result.totalCost - previousResult.totalCost) / previousResult.totalCost) * 100 : 0
 
                     return (
                       <React.Fragment key={result.offerId}>
