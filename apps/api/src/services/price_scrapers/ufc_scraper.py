@@ -90,6 +90,9 @@ class UFCQueChoisirScraper(BasePriceScraper):
                         self.logger.warning(error_msg)
                         errors.append(error_msg)
                     else:
+                        # Set offer_url for each offer
+                        for offer in offers:
+                            offer.offer_url = pdf_url
                         self.logger.info(f"Successfully scraped {len(offers)} UFC Que Choisir offers from PDF")
                         return offers
         except Exception as e:
@@ -313,6 +316,7 @@ class UFCQueChoisirScraper(BasePriceScraper):
         """Generate offers from fallback pricing data"""
         offers = []
         valid_from = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        pdf_url = self.scraper_urls[0] if self.scraper_urls else self.TARIFF_PDF_URL
 
         # BASE offers (EMCE 2025)
         for power, prices in self.FALLBACK_PRICES["EMCE_BASE"].items():
@@ -325,6 +329,7 @@ class UFCQueChoisirScraper(BasePriceScraper):
                     base_price=prices["kwh"],
                     power_kva=power,
                     valid_from=valid_from,
+                    offer_url=pdf_url,
                 )
             )
 
@@ -340,6 +345,7 @@ class UFCQueChoisirScraper(BasePriceScraper):
                     hc_price=prices["hc"],
                     power_kva=power,
                     valid_from=valid_from,
+                    offer_url=pdf_url,
                 )
             )
 
