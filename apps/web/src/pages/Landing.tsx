@@ -402,16 +402,18 @@ export default function Landing() {
         </div>
 
         {/* Scroll indicator - EN BAS DE LA SECTION, bien centré */}
-        <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center gap-2 z-20">
-          <p className="text-white dark:text-gray-300 text-sm font-medium animate-pulse">
-            Découvrez plus bas
-          </p>
+        <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center gap-3 z-20">
+          <div className="px-6 py-3 bg-white/20 dark:bg-gray-800/40 backdrop-blur-sm rounded-full border border-white/30 dark:border-gray-600/30 shadow-lg">
+            <p className="text-white dark:text-gray-200 text-base font-semibold">
+              Découvrez plus bas
+            </p>
+          </div>
           <button
             onClick={scrollToNextSection}
             className="animate-bounce cursor-pointer hover:scale-110 transition-transform duration-300 focus:outline-none"
             aria-label="Défiler vers le bas"
           >
-            <ChevronDown className="text-white dark:text-gray-300" size={40} />
+            <ChevronDown className="text-white dark:text-gray-300" size={48} />
           </button>
         </div>
       </section>
@@ -453,17 +455,13 @@ export default function Landing() {
           <h2 className="text-3xl sm:text-4xl font-bold text-center mb-8 text-gray-900 dark:text-white">
             Pourquoi utiliser <span className="bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 bg-clip-text text-transparent">MyElectricalData</span> ?
           </h2>
-          <div className="space-y-6 text-lg text-gray-600 dark:text-gray-400">
-            <div className="p-6 bg-white dark:bg-gray-900 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-              <p>
-                Depuis le renforcement du système d'authentification de la société Enedis (passage à l'OAuth2.0), il n'est plus possible pour les particuliers d'accéder à leurs données de façon automatique (via API).
-              </p>
-            </div>
-            <div className="p-6 bg-white dark:bg-gray-900 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-              <p>
-                C'est pour cela que j'ai décidé de créer une passerelle qui va vous permettre de faire "passe-plat" entre vous et Enedis et qui prendra en charge toutes les différentes couches de sécurité.
-              </p>
-            </div>
+          <div className="p-6 bg-white dark:bg-gray-900 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+            <p className="text-lg text-gray-600 dark:text-gray-400 mb-4">
+              Depuis le renforcement du système d'authentification de la société Enedis (passage à l'OAuth2.0), il n'est plus possible pour les particuliers d'accéder à leurs données de façon automatique (via API).
+            </p>
+            <p className="text-lg text-gray-600 dark:text-gray-400">
+              C'est pour cela que j'ai décidé de créer une passerelle qui va vous permettre de faire "passe-plat" entre vous et Enedis et qui prendra en charge toutes les différentes couches de sécurité.
+            </p>
           </div>
         </div>
       </section>
@@ -479,48 +477,6 @@ export default function Landing() {
           <h2 className="text-3xl sm:text-4xl font-bold text-center mb-8 text-gray-900 dark:text-white">
             Comment ça marche ?
           </h2>
-
-          {/* Alerte importante : deux comptes distincts */}
-          <div className="max-w-4xl mx-auto mb-12 p-6 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-2xl border-2 border-amber-300 dark:border-amber-700 shadow-lg">
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0">
-                <AlertCircle className="text-amber-600 dark:text-amber-400" size={32} />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold mb-3 text-gray-900 dark:text-white flex items-center gap-2">
-                  <span>Deux comptes distincts</span>
-                </h3>
-                <div className="space-y-4 text-gray-700 dark:text-gray-300">
-                  <p className="text-lg leading-relaxed">
-                    Votre compte <strong className="text-primary-600 dark:text-primary-400">MyElectricalData</strong> est <strong className="text-amber-700 dark:text-amber-400">totalement indépendant</strong> de votre compte Enedis. Ce sont deux comptes séparés avec des identifiants différents.
-                  </p>
-                  <div className="grid md:grid-cols-2 gap-4 mt-4">
-                    <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-primary-200 dark:border-primary-700">
-                      <div className="flex items-center gap-2 mb-2">
-                        <UserPlus className="text-primary-600 dark:text-primary-400" size={20} />
-                        <span className="font-semibold text-primary-700 dark:text-primary-400">Compte MyElectricalData</span>
-                      </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        Créé sur cette plateforme avec votre email. Vous obtenez des identifiants API (client_id / client_secret) pour accéder à vos données.
-                      </p>
-                    </div>
-                    <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-green-200 dark:border-green-700">
-                      <div className="flex items-center gap-2 mb-2">
-                        <ExternalLink className="text-green-600 dark:text-green-400" size={20} />
-                        <span className="font-semibold text-green-700 dark:text-green-400">Compte Enedis</span>
-                      </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        Votre compte personnel sur le site Enedis. Utilisé lors du consentement pour autoriser l'accès à vos données Linky.
-                      </p>
-                    </div>
-                  </div>
-                  <p className="text-base mt-4 p-3 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
-                    <strong className="text-amber-700 dark:text-amber-400">📋 Processus :</strong> Créez d'abord votre compte MyElectricalData, puis lors du consentement vous serez redirigé vers le site officiel d'Enedis où vous vous connecterez avec <em>vos identifiants Enedis</em> pour autoriser l'accès.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
 
           <div className="relative">
             {/* Timeline line */}
@@ -554,44 +510,83 @@ export default function Landing() {
                 <div className="hidden md:block flex-1" />
               </div>
 
-              {/* Étape 2 */}
+              {/* Étape 2 - Création compte Enedis */}
               <div className="relative flex flex-col md:flex-row items-center gap-6 md:gap-8">
                 {/* Mobile: numéro en haut */}
-                <div className="md:hidden relative flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white font-bold text-xl shadow-lg z-10 animate-pulse" style={{ animationDelay: '0.3s' }}>
+                <div className="md:hidden relative flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white font-bold text-xl shadow-lg z-10 animate-pulse" style={{ animationDelay: '0.2s' }}>
                   2
                 </div>
                 {/* Desktop: espace à gauche */}
                 <div className="hidden md:block flex-1" />
                 {/* Desktop: numéro au centre */}
-                <div className="hidden md:flex relative items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white font-bold text-xl shadow-lg z-10 animate-pulse" style={{ animationDelay: '0.3s' }}>
+                <div className="hidden md:flex relative items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white font-bold text-xl shadow-lg z-10 animate-pulse" style={{ animationDelay: '0.2s' }}>
                   2
                 </div>
                 <div className="flex-1 w-full md:w-auto text-center md:text-left">
                   <div className="inline-block p-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 border border-gray-200 dark:border-gray-700">
                     <h3 className="text-2xl font-bold mb-3 text-gray-900 dark:text-white flex items-center justify-center md:justify-start gap-2">
-                      <Shield className="text-primary-600 dark:text-primary-400" size={28} />
-                      Consentement Enedis
+                      <ExternalLink className="text-primary-600 dark:text-primary-400" size={28} />
+                      Création de compte Enedis
                     </h3>
-                    <p className="text-gray-600 dark:text-gray-400 text-lg">
-                      Vous êtes redirigé vers le <strong>site officiel Enedis</strong> où vous vous connectez avec <strong>votre compte Enedis personnel</strong> pour autoriser l'accès à vos données.
+                    <p className="text-gray-600 dark:text-gray-400 text-lg mb-3">
+                      Pour donner votre autorisation, vous devez créer un <a href="https://mon-compte-particulier.enedis.fr" target="_blank" rel="noopener noreferrer" className="text-primary-600 dark:text-primary-400 hover:underline font-semibold">compte personnel Enedis</a>. Il vous permet également de suivre et gérer vos données de consommation et production d'électricité.
                     </p>
-                    <p className="text-sm text-green-600 dark:text-green-400 mt-2 flex items-center justify-center md:justify-start gap-1">
-                      <ExternalLink size={14} />
-                      Connexion sécurisée sur enedis.fr
+                    <p className="text-gray-600 dark:text-gray-400 text-lg">
+                      <strong>Munissez-vous de votre facture d'électricité</strong> pour créer votre espace.
+                    </p>
+                    <p className="text-gray-500 dark:text-gray-500 text-sm mt-3 italic">
+                      Enedis est le gestionnaire du réseau public de distribution d'électricité sur 95% du territoire français continental.
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Étape 3 */}
+              {/* Étape 3 - Consentement */}
               <div className="relative flex flex-col md:flex-row items-center gap-6 md:gap-8">
                 {/* Mobile: numéro en haut */}
-                <div className="md:hidden relative flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white font-bold text-xl shadow-lg z-10 animate-pulse" style={{ animationDelay: '0.6s' }}>
+                <div className="md:hidden relative flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white font-bold text-xl shadow-lg z-10 animate-pulse" style={{ animationDelay: '0.4s' }}>
                   3
                 </div>
                 <div className="flex-1 w-full md:w-auto text-center md:text-right">
                   <div className="inline-block p-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 border border-gray-200 dark:border-gray-700">
                     <h3 className="text-2xl font-bold mb-3 text-gray-900 dark:text-white flex items-center justify-center md:justify-end gap-2">
+                      <Shield className="text-primary-600 dark:text-primary-400" size={28} />
+                      Consentement Enedis
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 text-lg mb-3">
+                      Enedis gère le réseau d'électricité jusqu'au compteur d'électricité. Pour accéder à vos données de consommation et production via notre passerelle, autorisez Enedis à nous transmettre vos données Linky.
+                    </p>
+                    <p className="text-gray-600 dark:text-gray-400 text-lg">
+                      Vous êtes redirigé vers le <strong>site officiel Enedis</strong> où vous vous connectez avec <strong>votre compte Enedis personnel</strong> pour autoriser l'accès à vos données.
+                    </p>
+                    <p className="text-sm text-green-600 dark:text-green-400 mt-2 flex items-center justify-center md:justify-end gap-1">
+                      <ExternalLink size={14} />
+                      Connexion sécurisée sur enedis.fr
+                    </p>
+                  </div>
+                </div>
+                {/* Desktop: numéro au centre */}
+                <div className="hidden md:flex relative items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white font-bold text-xl shadow-lg z-10 animate-pulse" style={{ animationDelay: '0.4s' }}>
+                  3
+                </div>
+                <div className="hidden md:block flex-1" />
+              </div>
+
+              {/* Étape 4 - Accès aux données */}
+              <div className="relative flex flex-col md:flex-row items-center gap-6 md:gap-8">
+                {/* Mobile: numéro en haut */}
+                <div className="md:hidden relative flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white font-bold text-xl shadow-lg z-10 animate-pulse" style={{ animationDelay: '0.6s' }}>
+                  4
+                </div>
+                {/* Desktop: espace à gauche */}
+                <div className="hidden md:block flex-1" />
+                {/* Desktop: numéro au centre */}
+                <div className="hidden md:flex relative items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white font-bold text-xl shadow-lg z-10 animate-pulse" style={{ animationDelay: '0.6s' }}>
+                  4
+                </div>
+                <div className="flex-1 w-full md:w-auto text-center md:text-left">
+                  <div className="inline-block p-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 border border-gray-200 dark:border-gray-700">
+                    <h3 className="text-2xl font-bold mb-3 text-gray-900 dark:text-white flex items-center justify-center md:justify-start gap-2">
                       <Zap className="text-primary-600 dark:text-primary-400" size={28} />
                       Accès aux données
                     </h3>
@@ -600,11 +595,72 @@ export default function Landing() {
                     </p>
                   </div>
                 </div>
+              </div>
+
+              {/* Étape 5 - Profitez du service */}
+              <div className="relative flex flex-col md:flex-row items-center gap-6 md:gap-8">
+                {/* Mobile: numéro en haut */}
+                <div className="md:hidden relative flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white font-bold text-xl shadow-lg z-10 animate-pulse" style={{ animationDelay: '0.8s' }}>
+                  5
+                </div>
+                <div className="flex-1 w-full md:w-auto text-center md:text-right">
+                  <div className="inline-block p-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 border border-gray-200 dark:border-gray-700">
+                    <h3 className="text-2xl font-bold mb-3 text-gray-900 dark:text-white flex items-center justify-center md:justify-end gap-2">
+                      <BarChart3 className="text-primary-600 dark:text-primary-400" size={28} />
+                      Profitez du service
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 text-lg mb-3">
+                      Utilisez notre <strong>interface en ligne</strong> pour visualiser votre consommation et production sur les 2 dernières années.
+                    </p>
+                    <p className="text-gray-600 dark:text-gray-400 text-lg">
+                      Ou installez notre <a href="#client-local" className="text-primary-600 dark:text-primary-400 hover:underline font-semibold">client local</a> pour exporter vos données vers vos outils préférés (Home Assistant, MQTT, InfluxDB...).
+                    </p>
+                  </div>
+                </div>
                 {/* Desktop: numéro au centre */}
-                <div className="hidden md:flex relative items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white font-bold text-xl shadow-lg z-10 animate-pulse" style={{ animationDelay: '0.6s' }}>
-                  3
+                <div className="hidden md:flex relative items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white font-bold text-xl shadow-lg z-10 animate-pulse" style={{ animationDelay: '0.8s' }}>
+                  5
                 </div>
                 <div className="hidden md:block flex-1" />
+              </div>
+            </div>
+          </div>
+
+          {/* Alerte importante : deux comptes distincts */}
+          <div className="max-w-4xl mx-auto mt-12 p-6 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-2xl border-2 border-amber-300 dark:border-amber-700 shadow-lg">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <AlertCircle className="text-amber-600 dark:text-amber-400" size={32} />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold mb-3 text-gray-900 dark:text-white flex items-center gap-2">
+                  <span>Deux comptes distincts</span>
+                </h3>
+                <div className="space-y-4 text-gray-700 dark:text-gray-300">
+                  <p className="text-lg leading-relaxed">
+                    Votre compte <strong className="text-primary-600 dark:text-primary-400">MyElectricalData</strong> est <strong className="text-amber-700 dark:text-amber-400">totalement indépendant</strong> de votre compte Enedis. Ce sont deux comptes séparés avec des identifiants différents.
+                  </p>
+                  <div className="grid md:grid-cols-2 gap-4 mt-4">
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-primary-200 dark:border-primary-700">
+                      <div className="flex items-center gap-2 mb-2">
+                        <UserPlus className="text-primary-600 dark:text-primary-400" size={20} />
+                        <span className="font-semibold text-primary-700 dark:text-primary-400">Compte MyElectricalData</span>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Créé sur cette plateforme avec votre email. Vous obtenez des identifiants API (client_id / client_secret) pour accéder à vos données.
+                      </p>
+                    </div>
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-green-200 dark:border-green-700">
+                      <div className="flex items-center gap-2 mb-2">
+                        <ExternalLink className="text-green-600 dark:text-green-400" size={20} />
+                        <span className="font-semibold text-green-700 dark:text-green-400">Compte Enedis</span>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Votre compte personnel sur le site Enedis. Utilisé lors du consentement pour autoriser l'accès à vos données Linky.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -718,7 +774,7 @@ export default function Landing() {
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
+          <div id="client-local" className="text-center mb-16 scroll-mt-8">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 mb-6">
               <Server size={16} />
               <span className="text-sm font-medium">Auto-hébergement</span>

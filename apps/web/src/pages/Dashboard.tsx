@@ -4,7 +4,7 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { pdlApi } from '@/api/pdl'
 import { oauthApi } from '@/api/oauth'
 import { logger } from '@/utils/logger'
-import { ExternalLink, CheckCircle, XCircle, ArrowUpDown, GripVertical, UserPlus, Search, Keyboard, X as CloseIcon, AlertCircle, ChevronDown } from 'lucide-react'
+import { CheckCircle, XCircle, ArrowUpDown, GripVertical, UserPlus, Search, Keyboard, X as CloseIcon, AlertCircle, ChevronDown } from 'lucide-react'
 import PDLDetails from '@/components/PDLDetails'
 import PDLCard from '@/components/PDLCard'
 import { PDLCardSkeleton } from '@/components/Skeleton'
@@ -832,16 +832,30 @@ export default function Dashboard() {
                   Ajouter PDL (Admin)
                 </Link>
               )}
-              <button
-                onClick={handleStartConsent}
-                className="btn btn-primary text-sm flex items-center justify-center gap-1 w-full sm:w-auto whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={getOAuthUrlMutation.isPending || isDemo}
-                title={isDemo ? 'Consentement désactivé en mode démo' : ''}
-                data-tour="consent-button"
-              >
-                <ExternalLink size={16} />
-                Consentement Enedis
-              </button>
+              <div className="relative group" data-tour="consent-button">
+                <button
+                  onClick={handleStartConsent}
+                  className="p-0 border-0 bg-transparent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+                  disabled={getOAuthUrlMutation.isPending || isDemo}
+                  aria-describedby="consent-tooltip"
+                >
+                  <img
+                    src="/enedis_azure.png"
+                    alt="Consentement Enedis"
+                    className="h-14 w-auto"
+                  />
+                </button>
+                {!isDemo && (
+                  <div
+                    id="consent-tooltip"
+                    role="tooltip"
+                    className="absolute top-full right-0 mt-2 w-72 p-3 bg-gray-900 dark:bg-gray-700 text-white text-sm rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50"
+                  >
+                    <div className="absolute bottom-full right-4 border-8 border-transparent border-b-gray-900 dark:border-b-gray-700"></div>
+                    <p>En cliquant sur ce bouton, vous allez accéder à votre compte personnel Enedis où vous pourrez donner votre accord pour qu'Enedis nous transmette vos données.</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
