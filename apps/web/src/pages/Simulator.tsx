@@ -1748,6 +1748,29 @@ export default function Simulator() {
           {simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0 && (
             <>
 
+            {/* Information banner */}
+            <div className="mx-6 mb-4 p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-800 flex items-center justify-center">
+                  <span className="text-xl">💡</span>
+                </div>
+                <div className="flex-1 text-sm text-blue-800 dark:text-blue-200">
+                  <p className="font-semibold mb-1">À propos de cette simulation</p>
+                  <p className="text-blue-700 dark:text-blue-300 leading-relaxed">
+                    Cette simulation est basée sur <strong>votre consommation réelle de l'année écoulée</strong> (J-1 à J-365).
+                    Certaines offres comme <strong>Tempo</strong> ou <strong>Zen Flex</strong> appliquent des tarifs majorés sur quelques jours spécifiques
+                    (22 jours rouges pour Tempo, 20 jours de sobriété pour Zen Flex).
+                  </p>
+                  <p className="text-blue-600 dark:text-blue-400 mt-2 font-medium">
+                    🎯 En réduisant simplement votre consommation ces quelques jours dans l'année, vous pouvez significativement diminuer votre facture avec ces offres.
+                  </p>
+                  <p className="text-blue-600 dark:text-blue-400 mt-2">
+                    💬 Votre fournisseur n'est pas listé ? <a href="/contribute" className="font-semibold underline hover:text-blue-800 dark:hover:text-blue-200">Contribuez au simulateur</a> en demandant son ajout !
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Filters */}
             <div className="px-6 pb-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex flex-wrap gap-3 p-3 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -2214,6 +2237,15 @@ export default function Simulator() {
                                           </div>
                                         </div>
                                       </div>
+                                      {/* Info about Tempo optimization */}
+                                      <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-400">
+                                        <div className="flex items-start gap-2 text-xs text-blue-700 dark:text-blue-300">
+                                          <span className="flex-shrink-0 text-base">💡</span>
+                                          <div>
+                                            <strong>Simulation basée sur votre consommation actuelle.</strong> En réduisant votre consommation les 22 jours rouges (HP à {formatPrice(result.offer.tempo_red_hp, 4)} €/kWh), vous pouvez significativement diminuer votre facture avec cette offre.
+                                          </div>
+                                        </div>
+                                      </div>
                                       <div className="flex justify-between pt-3 border-t border-gray-200 dark:border-gray-600">
                                         <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Total énergie</span>
                                         <span className="text-lg font-bold text-violet-600 dark:text-violet-400">{result.energyCost.toFixed(2)} €</span>
@@ -2392,6 +2424,54 @@ export default function Simulator() {
                                             <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-center">
                                               <div className="text-xs text-red-600 dark:text-red-400">HP</div>
                                               <div className="text-sm font-bold text-red-800 dark:text-red-200">{formatPrice(result.offer.hp_price_summer, 5)} €</div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* TEMPO prices */}
+                                      {result.offerType === 'TEMPO' && result.offer.tempo_blue_hc && (
+                                        <div className="space-y-2">
+                                          {/* Jours Bleus */}
+                                          <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide flex items-center gap-1">
+                                            <span className="w-2 h-2 rounded-full bg-blue-500"></span> Jours Bleus (300j)
+                                          </div>
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-center">
+                                              <div className="text-xs text-blue-600 dark:text-blue-400">HC</div>
+                                              <div className="text-sm font-bold text-blue-800 dark:text-blue-200">{formatPrice(result.offer.tempo_blue_hc, 5)} €</div>
+                                            </div>
+                                            <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-center">
+                                              <div className="text-xs text-blue-600 dark:text-blue-400">HP</div>
+                                              <div className="text-sm font-bold text-blue-800 dark:text-blue-200">{formatPrice(result.offer.tempo_blue_hp, 5)} €</div>
+                                            </div>
+                                          </div>
+                                          {/* Jours Blancs */}
+                                          <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-1">
+                                            <span className="w-2 h-2 rounded-full bg-gray-400"></span> Jours Blancs (43j)
+                                          </div>
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 text-center">
+                                              <div className="text-xs text-gray-500 dark:text-gray-400">HC</div>
+                                              <div className="text-sm font-bold text-gray-700 dark:text-gray-200">{formatPrice(result.offer.tempo_white_hc, 5)} €</div>
+                                            </div>
+                                            <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 text-center">
+                                              <div className="text-xs text-gray-500 dark:text-gray-400">HP</div>
+                                              <div className="text-sm font-bold text-gray-700 dark:text-gray-200">{formatPrice(result.offer.tempo_white_hp, 5)} €</div>
+                                            </div>
+                                          </div>
+                                          {/* Jours Rouges */}
+                                          <div className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide flex items-center gap-1">
+                                            <span className="w-2 h-2 rounded-full bg-red-500"></span> Jours Rouges (22j)
+                                          </div>
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-center">
+                                              <div className="text-xs text-red-600 dark:text-red-400">HC</div>
+                                              <div className="text-sm font-bold text-red-800 dark:text-red-200">{formatPrice(result.offer.tempo_red_hc, 5)} €</div>
+                                            </div>
+                                            <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-center">
+                                              <div className="text-xs text-red-600 dark:text-red-400">HP</div>
+                                              <div className="text-sm font-bold text-red-800 dark:text-red-200">{formatPrice(result.offer.tempo_red_hp, 5)} €</div>
                                             </div>
                                           </div>
                                         </div>

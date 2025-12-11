@@ -102,6 +102,7 @@ export default function Contribute() {
       'HC_WEEKEND': 'HC/HP + Weekend',
       'HC_NUIT_WEEKEND': 'HC Nuit + Weekend',
       'SEASONAL': 'Saisonnier',
+      'ZEN_FLEX': 'Zen Flex',
     }
     return labels[type] || type
   }
@@ -519,9 +520,15 @@ export default function Contribute() {
     } else if (offerType === 'EJP') {
       pricingData.ejp_normal = ejpNormal ? parseFloat(ejpNormal) : undefined
       pricingData.ejp_peak = ejpPeak ? parseFloat(ejpPeak) : undefined
+    } else if (offerType === 'ZEN_FLEX') {
+      // ZEN_FLEX: Eco days use winter prices, Sobriété days use summer prices
+      pricingData.hc_price_winter = hcPriceWinter ? parseFloat(hcPriceWinter) : undefined
+      pricingData.hp_price_winter = hpPriceWinter ? parseFloat(hpPriceWinter) : undefined
+      pricingData.hc_price_summer = hcPriceSummer ? parseFloat(hcPriceSummer) : undefined
+      pricingData.hp_price_summer = hpPriceSummer ? parseFloat(hpPriceSummer) : undefined
     }
 
-    // Add seasonal pricing if provided
+    // Add seasonal pricing if provided (for non-ZEN_FLEX/SEASONAL types)
     if (hcPriceWinter) pricingData.hc_price_winter = parseFloat(hcPriceWinter)
     if (hpPriceWinter) pricingData.hp_price_winter = parseFloat(hpPriceWinter)
     if (hcPriceSummer) pricingData.hc_price_summer = parseFloat(hcPriceSummer)
@@ -1124,6 +1131,7 @@ RÈGLES IMPORTANTES :
                 <option value="HC_NUIT_WEEKEND">HC Nuit & Week-end (23h-6h + week-end)</option>
                 <option value="HC_WEEKEND">HC Week-end (HC PDL + week-end)</option>
                 <option value="SEASONAL">SEASONAL (Tarifs saisonniers hiver/été)</option>
+                <option value="ZEN_FLEX">ZEN FLEX (Éco + Sobriété)</option>
                 <option value="TEMPO">TEMPO</option>
                 <option value="EJP">EJP</option>
               </select>
@@ -1447,6 +1455,89 @@ RÈGLES IMPORTANTES :
                   <p className="text-xs text-gray-500 mt-1">
                     Si l'offre propose une option "jours de pointe" (max 15 jours/an)
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* ZEN_FLEX */}
+            {offerType === 'ZEN_FLEX' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-sm text-blue-800 dark:text-blue-200">
+                    💡 <strong>Zen Flex</strong> : Jours Éco (345j/an) avec tarifs réduits + Jours Sobriété (20j/an) avec tarifs majorés. HC de 22h à 6h.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-4">
+                    <h4 className="font-semibold text-green-700 dark:text-green-300 flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-green-500"></span> Jours Éco (345j/an)
+                    </h4>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        HC Éco (€/kWh TTC) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.00001"
+                        value={hcPriceWinter}
+                        onChange={(e) => setHcPriceWinter(e.target.value)}
+                        className="input"
+                        required
+                        placeholder="0.1546"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">22h-6h les jours Éco</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        HP Éco (€/kWh TTC) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.00001"
+                        value={hpPriceWinter}
+                        onChange={(e) => setHpPriceWinter(e.target.value)}
+                        className="input"
+                        required
+                        placeholder="0.2068"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">6h-22h les jours Éco</p>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <h4 className="font-semibold text-red-700 dark:text-red-300 flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-red-500"></span> Jours Sobriété (20j/an)
+                    </h4>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        HC Sobriété (€/kWh TTC) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.00001"
+                        value={hcPriceSummer}
+                        onChange={(e) => setHcPriceSummer(e.target.value)}
+                        className="input"
+                        required
+                        placeholder="0.1546"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">22h-6h les jours Sobriété</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        HP Sobriété (€/kWh TTC) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.00001"
+                        value={hpPriceSummer}
+                        onChange={(e) => setHpPriceSummer(e.target.value)}
+                        className="input"
+                        required
+                        placeholder="0.6712"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">6h-22h les jours Sobriété (prix majoré)</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
