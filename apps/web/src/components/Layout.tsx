@@ -175,7 +175,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="h-16 flex items-center justify-center border-b border-gray-300 dark:border-gray-700">
           <Link to="/" className="flex items-center">
             {!sidebarCollapsed ? (
-              <img src="/logo-full.png" alt="MyElectricalData" className="h-10 w-auto" />
+              <img src={isDark ? "/logo-full-white.png" : "/logo-full-black.png"} alt="MyElectricalData" className="h-10 w-auto" />
             ) : (
               <img src="/logo.png" alt="MyElectricalData" className="h-8 w-8" />
             )}
@@ -464,7 +464,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Logo */}
         <div className="h-16 flex items-center px-4 border-b border-gray-300 dark:border-gray-700">
           <Link to="/" onClick={() => setMobileMenuOpen(false)}>
-            <img src="/logo-full.png" alt="MyElectricalData" className="h-10 w-auto" />
+            <img src={isDark ? "/logo-full-white.png" : "/logo-full-black.png"} alt="MyElectricalData" className="h-10 w-auto" />
           </Link>
         </div>
 
