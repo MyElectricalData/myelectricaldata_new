@@ -214,6 +214,10 @@ export const energyApi = {
     return apiClient.get<Contribution[]>('energy/contributions')
   },
 
+  getUnreadContributionsCount: async () => {
+    return apiClient.get<{ unread_count: number }>('energy/contributions/unread-count')
+  },
+
   replyToContribution: async (contributionId: string, message: string) => {
     return apiClient.post(`energy/contributions/${contributionId}/reply`, { message })
   },

@@ -261,6 +261,11 @@ async def list_my_contributions(current_user: User = Depends(get_current_user), 
                 "created_at": msg.created_at.isoformat(),
             })
 
+        # Check for unread messages (for contributor: last message is from admin)
+        has_unread = False
+        if messages and messages[-1].is_from_admin:
+            has_unread = True
+
         # Get existing provider name if exists
         existing_provider_name = None
         if c.existing_provider_id:
@@ -271,6 +276,7 @@ async def list_my_contributions(current_user: User = Depends(get_current_user), 
 
         data.append({
             "id": c.id,
+            "has_unread_messages": has_unread,
             "contribution_type": c.contribution_type,
             "status": c.status,
             # Provider info
@@ -297,6 +303,34 @@ async def list_my_contributions(current_user: User = Depends(get_current_user), 
         })
 
     return APIResponse(success=True, data=data)
+
+
+@router.get("/contributions/unread-count", response_model=APIResponse)
+async def get_unread_contributions_count(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Get the count of contributions with unread admin messages for the current user"""
+    result = await db.execute(
+        select(OfferContribution).where(OfferContribution.contributor_user_id == current_user.id)
+    )
+    contributions = result.scalars().all()
+
+    unread_count = 0
+    for c in contributions:
+        # Get last message for this contribution
+        messages_result = await db.execute(
+            select(ContributionMessage)
+            .where(ContributionMessage.contribution_id == c.id)
+            .order_by(ContributionMessage.created_at.desc())
+            .limit(1)
+        )
+        last_message = messages_result.scalar_one_or_none()
+        # Unread for contributor = last message is from admin
+        if last_message and last_message.is_from_admin:
+            unread_count += 1
+
+    return APIResponse(success=True, data={"unread_count": unread_count})
 
 
 @router.post("/contributions/{contribution_id}/reply", response_model=APIResponse)

@@ -228,8 +228,6 @@ export default function AdminContributions() {
       return await energyApi.requestContributionInfo(id, message)
     },
     onSuccess: (_data, variables) => {
-      setNotification({ type: 'success', message: 'Message envoyé au contributeur.' })
-      setTimeout(() => setNotification(null), 5000)
       // Reload messages for this contribution
       loadMessages(variables.id)
       // Clear the input

@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Home, LogOut, Moon, Sun, Heart, Shield, BookOpen, Calculator, Users, Menu, X, Calendar, ChevronLeft, ChevronRight, HelpCircle, UserCircle, Zap, TrendingUp, Trash2, Scale, ChevronDown, Euro } from 'lucide-react'
+import { Home, LogOut, Moon, Sun, Heart, Shield, BookOpen, Calculator, Users, Menu, X, Calendar, ChevronLeft, ChevronRight, HelpCircle, UserCircle, Zap, TrendingUp, Trash2, Scale, ChevronDown, Euro, MessageCircle } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useThemeStore } from '@/stores/themeStore'
@@ -12,8 +12,9 @@ import PageHeader from './PageHeader'
 import { PageTransition } from './PageTransition'
 import { SEO } from './SEO'
 import { useSEO } from '@/hooks/useSEO'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/api/admin'
+import { energyApi } from '@/api/energy'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth()
@@ -31,6 +32,33 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [consumptionMenuOpen, setConsumptionMenuOpen] = useState(false)
   const [adminMenuOpen, setAdminMenuOpen] = useState(false)
   const queryClient = useQueryClient()
+
+  // Fetch unread contributions count for regular users
+  const { data: unreadContributionsData } = useQuery({
+    queryKey: ['unread-contributions-count'],
+    queryFn: async () => {
+      const response = await energyApi.getUnreadContributionsCount()
+      return response.data as { unread_count: number }
+    },
+    enabled: !!user,
+    refetchInterval: 30000, // Refresh every 30 seconds
+    staleTime: 0,
+  })
+
+  // Fetch pending contributions count for admins
+  const { data: adminStatsData } = useQuery({
+    queryKey: ['admin-contribution-stats'],
+    queryFn: async () => {
+      const response = await energyApi.getContributionStats()
+      return response.data as { pending_count: number, approved_this_month: number, rejected_count: number, approved_count: number }
+    },
+    enabled: !!user && canAccessAdmin(),
+    refetchInterval: 30000,
+    staleTime: 0,
+  })
+
+  const unreadContributionsCount = unreadContributionsData?.unread_count || 0
+  const pendingContributionsCount = adminStatsData?.pending_count || 0
 
   // Persist sidebar state to localStorage
   useEffect(() => {
@@ -53,7 +81,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/production', icon: Sun, label: 'Production' },
     { to: '/balance', icon: Scale, label: 'Bilan' },
     { to: '/simulator', icon: Calculator, label: 'Simulateur' },
-    { to: '/contribute', icon: Users, label: 'Contribuer' },
+    { to: '/contribute', icon: Users, label: 'Contribuer', badgeCount: unreadContributionsCount },
     { to: '/tempo', icon: Calendar, label: 'Tempo' },
     { to: '/ecowatt', icon: Zap, label: 'EcoWatt' },
   ]
@@ -70,7 +98,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/admin/users', label: 'Utilisateurs' },
     { to: '/admin/tempo', label: 'Tempo' },
     { to: '/admin/ecowatt', label: 'EcoWatt' },
-    { to: '/admin/contributions', label: 'Contributions' },
+    { to: '/admin/contributions', label: 'Contributions', badgeCount: pendingContributionsCount },
     { to: '/admin/offers', label: 'Offres' },
     { to: '/admin/roles', label: 'Rôles' },
     { to: '/admin/logs', label: 'Logs' },
@@ -263,11 +291,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {/* Other menu items */}
             {menuItems.filter(item => item.to !== '/dashboard').map((item) => {
               const isActive = location.pathname === item.to
+              const hasBadge = item.badgeCount !== undefined && item.badgeCount > 0
               return (
                 <Link
                   key={item.to}
                   to={item.to}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors relative ${
                     isActive
                       ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
                       : 'hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -276,9 +305,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   data-tour={item.to === '/simulator' ? 'nav-simulator' :
                             item.to === '/contribute' ? 'nav-contribute' : undefined}
                 >
-                  <item.icon size={20} className="flex-shrink-0" />
+                  <div className="relative">
+                    <item.icon size={20} className="flex-shrink-0" />
+                    {hasBadge && sidebarCollapsed && (
+                      <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white">
+                        {item.badgeCount > 9 ? '9+' : item.badgeCount}
+                      </span>
+                    )}
+                  </div>
                   {!sidebarCollapsed && (
-                    <span className="font-medium">{item.label}</span>
+                    <>
+                      <span className="font-medium">{item.label}</span>
+                      {hasBadge && (
+                        <span className="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-orange-500 px-1.5 text-xs font-bold text-white">
+                          {item.badgeCount > 99 ? '99+' : item.badgeCount}
+                        </span>
+                      )}
+                    </>
                   )}
                 </Link>
               )
@@ -324,13 +367,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         <Link
                           key={subItem.to}
                           to={subItem.to}
-                          className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
+                          className={`flex items-center justify-between px-3 py-2 rounded-md transition-colors ${
                             location.pathname === subItem.to
                               ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
                               : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                           }`}
                         >
                           <span className="font-medium text-sm">{subItem.label}</span>
+                          {subItem.badgeCount && subItem.badgeCount > 0 && (
+                            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-orange-500 px-1.5 text-xs font-bold text-white">
+                              {subItem.badgeCount > 99 ? '99+' : subItem.badgeCount}
+                            </span>
+                          )}
                         </Link>
                       ))}
                     </div>
@@ -538,6 +586,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {/* Other menu items */}
             {menuItems.filter(item => item.to !== '/dashboard').map((item) => {
               const isActive = location.pathname === item.to
+              const hasBadge = item.badgeCount !== undefined && item.badgeCount > 0
               return (
                 <Link
                   key={item.to}
@@ -549,8 +598,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
                 >
-                  <item.icon size={20} />
+                  {hasBadge ? (
+                    <MessageCircle size={20} className="text-orange-500" />
+                  ) : (
+                    <item.icon size={20} />
+                  )}
                   <span className="font-medium">{item.label}</span>
+                  {hasBadge && (
+                    <span className="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-orange-500 px-1.5 text-xs font-bold text-white">
+                      {item.badgeCount > 99 ? '99+' : item.badgeCount}
+                    </span>
+                  )}
                 </Link>
               )
             })}
@@ -593,13 +651,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           key={subItem.to}
                           to={subItem.to}
                           onClick={() => setMobileMenuOpen(false)}
-                          className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
+                          className={`flex items-center justify-between px-3 py-2 rounded-md transition-colors ${
                             location.pathname === subItem.to
                               ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
                               : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                           }`}
                         >
                           <span className="font-medium text-sm">{subItem.label}</span>
+                          {subItem.badgeCount && subItem.badgeCount > 0 && (
+                            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-orange-500 px-1.5 text-xs font-bold text-white">
+                              {subItem.badgeCount > 99 ? '99+' : subItem.badgeCount}
+                            </span>
+                          )}
                         </Link>
                       ))}
                     </div>
