@@ -2433,7 +2433,7 @@ export default function AdminOffers() {
                     'TotalEnergies': ['Offre Essentielle (Eco Electricité)', 'Offre Verte Fixe'],
                     'Priméo Énergie': ['Offre Fixe -20% (PDF)'],
                     'Engie': ['Tarifs Engie (HelloWatt)'],
-                    'ALPIQ': ['Électricité Stable (PDF officiel)'],
+                    'ALPIQ': ['Électricité Stable -21,5% (PDF)', 'Stable -8% + Référence -4% (PDF)'],
                     'Alterna': ['Électricité verte 100% locale', 'Électricité verte 100% française', 'Électricité verte 100% VE'],
                     'Ekwateur': ['Prix kwh électricité et abonnement']
                   }
