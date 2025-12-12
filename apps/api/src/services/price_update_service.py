@@ -7,7 +7,7 @@ import uuid
 import logging
 
 from ..models import EnergyProvider, EnergyOffer
-from .price_scrapers import EDFPriceScraper, EnercoopPriceScraper, TotalEnergiesPriceScraper, PrimeoEnergiePriceScraper, EngieScraper, AlpiqScraper, AlternaScraper, EkwateurScraper, OctopusScraper, VattenfallScraper, UFCQueChoisirScraper
+from .price_scrapers import EDFPriceScraper, EnercoopPriceScraper, TotalEnergiesPriceScraper, PrimeoEnergiePriceScraper, EngieScraper, AlpiqScraper, AlternaScraper, EkwateurScraper, OctopusScraper, VattenfallScraper, UFCQueChoisirScraper, MintEnergieScraper
 from .price_scrapers.base import OfferData
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ class PriceUpdateService:
         "Octopus": OctopusScraper,
         "Vattenfall": VattenfallScraper,
         "UFC Que Choisir": UFCQueChoisirScraper,
+        "Mint Énergie": MintEnergieScraper,
     }
 
     # Default provider info (website URLs)
@@ -44,6 +45,7 @@ class PriceUpdateService:
         "Octopus": {"website": "https://octopusenergy.fr"},
         "Vattenfall": {"website": "https://www.vattenfall.fr"},
         "UFC Que Choisir": {"website": "https://www.quechoisir.org"},
+        "Mint Énergie": {"website": "https://www.mint-energie.com"},
     }
 
     def __init__(self, db: AsyncSession):

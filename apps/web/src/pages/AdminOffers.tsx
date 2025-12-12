@@ -885,7 +885,8 @@ export default function AdminOffers() {
                                 'Engie': ['Tarifs Engie (HelloWatt)'],
                                 'ALPIQ': ['Électricité Stable -21,5% (PDF)', 'Stable -8% + Référence -4% (PDF)'],
                                 'Alterna': ['Électricité verte 100% locale', 'Électricité verte 100% française', 'Électricité verte 100% VE'],
-                                'Ekwateur': ['Prix kwh électricité et abonnement']
+                                'Ekwateur': ['Prix kwh électricité et abonnement'],
+                                'Mint Énergie': ['Online & Green (PDF)', 'Classic & Green (PDF)', 'Smart & Green (PDF)']
                               }
                               const labels = urlLabels[provider.name] || []
 
@@ -2435,7 +2436,8 @@ export default function AdminOffers() {
                     'Engie': ['Tarifs Engie (HelloWatt)'],
                     'ALPIQ': ['Électricité Stable -21,5% (PDF)', 'Stable -8% + Référence -4% (PDF)'],
                     'Alterna': ['Électricité verte 100% locale', 'Électricité verte 100% française', 'Électricité verte 100% VE'],
-                    'Ekwateur': ['Prix kwh électricité et abonnement']
+                    'Ekwateur': ['Prix kwh électricité et abonnement'],
+                    'Mint Énergie': ['Online & Green (PDF)', 'Classic & Green (PDF)', 'Smart & Green (PDF)']
                   }
                   const labels = urlLabels[editingScraperUrls?.name || ''] || []
 

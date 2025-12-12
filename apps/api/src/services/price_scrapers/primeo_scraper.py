@@ -21,15 +21,16 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
     # Priméo Énergie pricing PDF URL
     TARIFF_PDF_URL = "https://particuliers.primeo-energie.fr/wp-content/uploads/GT-Offre-Fixe-20_.pdf"
 
-    # Fallback: Manual pricing data TTC (updated 2025-12-05 from PDF)
+    # Fallback: Manual pricing data TTC (updated 2025-12-12 from PDF)
     # Source: https://particuliers.primeo-energie.fr/wp-content/uploads/GT-Offre-Fixe-20_.pdf
     # Prices valid from 04/08/2025 - Prix bloqué jusqu'au 31/12/2026
-    # Note: Tarifs TTC (toutes taxes comprises)
+    # Note: Tarifs TTC (toutes taxes comprises) - Section "Tarif TTC" du PDF
+    # CTA = 21,93% de la part acheminement, TVA = 20%, accise = 0,02998 €/kWh
     FALLBACK_PRICES = {
         "FIXE_BASE": {
-            3: {"subscription": 11.73, "kwh": 0.1634},
+            3: {"subscription": 11.74, "kwh": 0.1634},
             6: {"subscription": 15.47, "kwh": 0.1634},
-            9: {"subscription": 19.43, "kwh": 0.1634},
+            9: {"subscription": 19.39, "kwh": 0.1634},
             12: {"subscription": 23.32, "kwh": 0.1634},
             15: {"subscription": 27.06, "kwh": 0.1634},
             18: {"subscription": 30.76, "kwh": 0.1634},
@@ -166,14 +167,12 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
         """
         Extract BASE tariff TTC prices from PDF text.
 
-        The PDF structure concatenates values like: "8,516 kVA" where 8,51 is for 3 kVA.
-        For BASE, there's only the Primeo price (no TRV column visible in data).
+        The PDF has TWO subscription tables:
+        1. First table (HT): "3 kVA8,51..." - prices excluding taxes
+        2. Second table (TTC): "3 kVA11,74..." - prices including taxes
 
-        The BASE subscriptions in the PDF are actually HT values.
-        We need to look at the "Tarif TTC" section for kWh prices.
-
-        TTC BASE kWh price: 0,1634 €/kWh (found in Tarif TTC section)
-        BASE subscriptions: We use the values from the table (HT basis, same as display)
+        We need to find the SECOND "Abonnement" table which contains TTC prices.
+        The TTC table starts around position 2155 and contains values like "3 kVA11,74".
         """
         prices = {}
 
@@ -183,38 +182,48 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
         if kwh_match:
             kwh_price = float(kwh_match.group(0).replace(",", "."))
 
-        # Split by 'kVA' and parse each part
-        parts = text.split("kVA")
-
-        # Power sequence for BASE
-        base_powers = [3, 6, 9, 12, 15, 18, 24, 30, 36]
+        # Find the TTC subscription table (second occurrence of "Abonnement")
+        # The TTC table has values starting with "3 kVA11,74" (not "3 kVA8,51" which is HT)
         subscription_mapping = {}
 
-        # Find the starting index for BASE section (first "3 " pattern)
-        start_idx = None
-        for i, part in enumerate(parts):
-            if part.strip().endswith("3 ") or part.strip().endswith("3") or "3 " in part[-5:]:
-                start_idx = i + 1
-                break
+        # Look for the TTC table by finding "3 kVA11" pattern (TTC starts at 11.74)
+        ttc_match = re.search(r"3 kVA11[,\.](\d{2})", text)
+        if ttc_match:
+            # Found TTC table, extract from this position
+            ttc_start = ttc_match.start()
+            ttc_section = text[ttc_start:]
 
-        if start_idx is not None:
+            # Parse the TTC section
+            # Format: "3 kVA11,746 kVA15,4715,749 kVA19,39..."
+            # After split by "kVA":
+            #   [0] = "3 " (power prefix)
+            #   [1] = "11,746 " (price for 3 kVA, then "6 " prefix)
+            #   [2] = "15,4715,749 " (price for 6 kVA = 15,47, TRV = 15,74, then "9 ")
+            #   etc.
+            base_powers = [3, 6, 9, 12, 15, 18, 24, 30, 36]
+
+            # Split by 'kVA' and parse
+            parts = ttc_section.split("kVA")
+
             for i, power in enumerate(base_powers):
-                part_idx = start_idx + i
+                # Price for power at index i is in parts[i + 1]
+                part_idx = i + 1
                 if part_idx < len(parts):
                     part = parts[part_idx]
-                    # Extract the first price (Primeo price - these are the displayed values)
+                    # Extract the first price (Primeo TTC price)
                     price_match = re.match(r"(\d+[,\.]\d{2})", part)
                     if price_match:
                         price = float(price_match.group(1).replace(",", "."))
-                        if 5 < price < 45:  # Valid subscription range
+                        # Valid TTC subscription range (higher than HT)
+                        if 10 < price < 60:
                             subscription_mapping[power] = price
 
-        # Fallback to hardcoded values if extraction failed
-        # Note: These are the values displayed in the PDF (effective prices)
+        # Fallback to hardcoded TTC values if extraction failed
+        # Note: These are the TTC values from the "Tarif TTC" section of the PDF
         fallback = {
-            3: 11.73,
+            3: 11.74,
             6: 15.47,
-            9: 19.43,
+            9: 19.39,
             12: 23.32,
             15: 27.06,
             18: 30.76,
