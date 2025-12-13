@@ -381,7 +381,7 @@ export function PeriodSelector({
                       onSelect={handleEndSelect}
                       locale={frCapitalized}
                       disabled={[
-                        { before: startDate ? new Date(startDate) : (minDate ? new Date(minDate) : undefined) },
+                        ...(startDate ? [{ before: new Date(startDate) }] : minDate ? [{ before: new Date(minDate) }] : []),
                         { after: yesterday },
                         ...(availableDates && availableDates.size > 0 ? [isDateUnavailable] : [])
                       ]}

@@ -384,26 +384,6 @@ export default function Contribute({ initialTab = 'new' }: ContributeProps) {
     })
   }, [filterProvider, offersData])
 
-  // Extraire les puissances disponibles dynamiquement
-  const availablePowers = useMemo(() => {
-    if (!filterProvider || !Array.isArray(offersData)) return []
-    let filteredOffers = offersData.filter(o => o.provider_id === filterProvider)
-    // Filtrer aussi par type d'offre si sélectionné
-    if (filterOfferType !== 'all') {
-      filteredOffers = filteredOffers.filter(o => o.offer_type === filterOfferType)
-    }
-    // Extraire les puissances des noms d'offres
-    const powers = new Set<number>()
-    filteredOffers.forEach(offer => {
-      const match = offer.name.match(/(\d+)\s*kVA/i)
-      if (match) {
-        powers.add(parseInt(match[1]))
-      }
-    })
-    // Trier les puissances
-    return Array.from(powers).sort((a, b) => a - b)
-  }, [filterProvider, filterOfferType, offersData])
-
   // Initialiser avec EDF par défaut quand les providers sont chargés
   useEffect(() => {
     if (sortedProviders.length > 0 && !filterProvider) {
@@ -2009,14 +1989,6 @@ RÈGLES IMPORTANTES :
                 )
               }
 
-              // Helper pour obtenir la valeur d'un champ (éditée ou originale)
-              const getFieldValue = (offer: EnergyOffer, fieldKey: string): string => {
-                const edited = editedOffers[offer.id]?.[fieldKey]
-                if (edited !== undefined) return edited
-                const originalValue = (offer as unknown as Record<string, unknown>)[fieldKey]
-                return String(originalValue ?? '')
-              }
-
               // Helper pour vérifier si une offre a été modifiée
               const isOfferModified = (offer: EnergyOffer): boolean => {
                 const edited = editedOffers[offer.id]
@@ -2126,19 +2098,12 @@ RÈGLES IMPORTANTES :
                 return 'text-gray-600 dark:text-gray-400'
               }
 
-              // Helper pour vérifier si un champ est modifié
-              const isFieldModified = (offer: EnergyOffer, fieldKey: string) => {
-                const currentValue = getFieldValue(offer, fieldKey)
-                const originalValue = (offer as unknown as Record<string, unknown>)[fieldKey]
-                return currentValue !== String(originalValue ?? '')
-              }
-
               // Render un champ éditable inline (pas un composant pour éviter perte de focus)
               const renderEditableField = (label: string, fieldKey: string, unit: string, offer: EnergyOffer) => {
                 const editedValue = editedOffers[offer.id]?.[fieldKey]
                 const originalValue = (offer as unknown as Record<string, unknown>)[fieldKey]
                 // Si édité, utiliser la valeur éditée telle quelle, sinon formater l'originale
-                const displayValue = editedValue !== undefined ? editedValue : formatValue(originalValue)
+                const displayValue = editedValue !== undefined ? editedValue : formatValue(originalValue as string | number | undefined)
                 const isModified = editedValue !== undefined && editedValue !== String(originalValue ?? '')
 
                 return (

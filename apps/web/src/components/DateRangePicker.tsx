@@ -209,7 +209,7 @@ export function DateRangePicker({ startDate, endDate, onRangeChange, disabled, m
                 onSelect={handleEndSelect}
                 locale={fr}
                 disabled={[
-                  { before: startDate ? new Date(startDate) : (minDate ? new Date(minDate) : undefined) },
+                  ...(startDate ? [{ before: new Date(startDate) }] : minDate ? [{ before: new Date(minDate) }] : []),
                   { after: yesterday }
                 ]}
                 defaultMonth={endDate ? new Date(endDate) : new Date()}
