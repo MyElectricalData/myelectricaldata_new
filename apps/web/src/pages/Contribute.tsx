@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle, Clock, XCircle, List, Zap, FileJson, ChevronDown, ChevronRight, MessageCircle, ExternalLink, Copy, Plus, Package } from 'lucide-react'
+import { CheckCircle, Clock, XCircle, List, FileJson, ChevronDown, ChevronRight, MessageCircle, ExternalLink, Copy, Plus, Package, Send, X } from 'lucide-react'
 import { energyApi, type EnergyProvider, type ContributionData, type EnergyOffer, type Contribution } from '@/api/energy'
 import ChatWhatsApp, { type ChatMessage } from '@/components/ChatWhatsApp'
 
@@ -18,7 +18,6 @@ export default function Contribute({ initialTab = 'new' }: ContributeProps) {
   const [showJsonImport, setShowJsonImport] = useState(false)
   const [jsonImportData, setJsonImportData] = useState('')
   const [importProgress, setImportProgress] = useState<{current: number, total: number, errors: string[]} | null>(null)
-  const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({})
   // Accordéons par statut : pending déplié par défaut, approved et rejected pliés
   const [expandedStatusSections, setExpandedStatusSections] = useState<Record<string, boolean>>({
     pending: true,
@@ -32,6 +31,11 @@ export default function Contribute({ initialTab = 'new' }: ContributeProps) {
   const [expandedMessages, setExpandedMessages] = useState<Record<string, boolean>>({})
   // State pour suivre la contribution en cours d'édition
   const [editingContributionId, setEditingContributionId] = useState<string | null>(null)
+  // State pour l'édition inline des offres (toutes les offres sont éditables)
+  // Structure: { offerId: { fieldKey: value } }
+  const [editedOffers, setEditedOffers] = useState<Record<string, Record<string, string>>>({})
+  const [submittingOffers, setSubmittingOffers] = useState(false)
+  const [showSubmitRecap, setShowSubmitRecap] = useState(false)
 
   // Fetch providers
   const { data: providersData } = useQuery({
@@ -348,9 +352,101 @@ export default function Contribute({ initialTab = 'new' }: ContributeProps) {
   const [offerType, setOfferType] = useState('BASE')
   const [description, setDescription] = useState('')
 
-  // Filter state
-  const [filterProvider, setFilterProvider] = useState<string>('all')
+  // Filter state - initialisé vide, sera mis à EDF par défaut
+  const [filterProvider, setFilterProvider] = useState<string>('')
   const [filterPower, setFilterPower] = useState<string>('all')
+  const [filterOfferType, setFilterOfferType] = useState<string>('all')
+
+  // Trier les fournisseurs avec EDF en premier
+  const sortedProviders = useMemo(() => {
+    if (!Array.isArray(providersData)) return []
+    return [...providersData].sort((a, b) => {
+      if (a.name.toUpperCase() === 'EDF') return -1
+      if (b.name.toUpperCase() === 'EDF') return 1
+      return a.name.localeCompare(b.name)
+    })
+  }, [providersData])
+
+  // Types d'offres disponibles pour le fournisseur sélectionné
+  const availableOfferTypes = useMemo(() => {
+    if (!filterProvider || !Array.isArray(offersData)) return []
+    const providerOffers = offersData.filter(o => o.provider_id === filterProvider)
+    const types = [...new Set(providerOffers.map(o => o.offer_type))]
+    // Trier les types dans un ordre logique
+    const typeOrder = ['BASE', 'HC_HP', 'TEMPO', 'EJP', 'ZEN_FLEX', 'ZEN_WEEK_END', 'ZEN_WEEK_END_HP_HC']
+    return types.sort((a, b) => {
+      const indexA = typeOrder.indexOf(a)
+      const indexB = typeOrder.indexOf(b)
+      if (indexA === -1 && indexB === -1) return a.localeCompare(b)
+      if (indexA === -1) return 1
+      if (indexB === -1) return -1
+      return indexA - indexB
+    })
+  }, [filterProvider, offersData])
+
+  // Extraire les puissances disponibles dynamiquement
+  const availablePowers = useMemo(() => {
+    if (!filterProvider || !Array.isArray(offersData)) return []
+    let filteredOffers = offersData.filter(o => o.provider_id === filterProvider)
+    // Filtrer aussi par type d'offre si sélectionné
+    if (filterOfferType !== 'all') {
+      filteredOffers = filteredOffers.filter(o => o.offer_type === filterOfferType)
+    }
+    // Extraire les puissances des noms d'offres
+    const powers = new Set<number>()
+    filteredOffers.forEach(offer => {
+      const match = offer.name.match(/(\d+)\s*kVA/i)
+      if (match) {
+        powers.add(parseInt(match[1]))
+      }
+    })
+    // Trier les puissances
+    return Array.from(powers).sort((a, b) => a - b)
+  }, [filterProvider, filterOfferType, offersData])
+
+  // Initialiser avec EDF par défaut quand les providers sont chargés
+  useEffect(() => {
+    if (sortedProviders.length > 0 && !filterProvider) {
+      const edf = sortedProviders.find(p => p.name.toUpperCase() === 'EDF')
+      if (edf) {
+        setFilterProvider(edf.id)
+      } else {
+        setFilterProvider(sortedProviders[0].id)
+      }
+    }
+  }, [sortedProviders, filterProvider])
+
+  // Reset le filtre de type d'offre quand on change de fournisseur
+  useEffect(() => {
+    // Calculer les types disponibles pour ce fournisseur
+    if (!filterProvider || !Array.isArray(offersData)) {
+      setFilterOfferType('all')
+      setFilterPower('all')
+      return
+    }
+    const providerOffers = offersData.filter(o => o.provider_id === filterProvider)
+    const types = [...new Set(providerOffers.map(o => o.offer_type))]
+    const typeOrder = ['BASE', 'HC_HP', 'TEMPO', 'EJP', 'ZEN_FLEX', 'ZEN_WEEK_END', 'ZEN_WEEK_END_HP_HC']
+    const sortedTypes = types.sort((a, b) => {
+      const indexA = typeOrder.indexOf(a)
+      const indexB = typeOrder.indexOf(b)
+      if (indexA === -1 && indexB === -1) return a.localeCompare(b)
+      if (indexA === -1) return 1
+      if (indexB === -1) return -1
+      return indexA - indexB
+    })
+    if (sortedTypes.length > 0) {
+      setFilterOfferType(sortedTypes[0])
+    } else {
+      setFilterOfferType('all')
+    }
+    setFilterPower('all')
+  }, [filterProvider, offersData])
+
+  // Reset le filtre de puissance quand on change de type d'offre
+  useEffect(() => {
+    setFilterPower('all')
+  }, [filterOfferType])
 
   // Pricing
   const [subscriptionPrice, setSubscriptionPrice] = useState('')
@@ -1760,80 +1856,140 @@ RÈGLES IMPORTANTES :
         <p className="text-gray-600 dark:text-gray-400 mb-6">
           {(() => {
             if (!offersData) return '0 offre'
-            let filteredCount = offersData.length
-
-            // Count filtered offers
-            if (filterProvider !== 'all' || filterPower !== 'all') {
-              filteredCount = offersData.filter((offer) => {
-                if (filterProvider !== 'all' && offer.provider_id !== filterProvider) return false
-                if (filterPower !== 'all') {
-                  const match = offer.name.match(/(\d+)\s*kVA/i)
-                  if (match) {
-                    const offerPower = parseInt(match[1])
-                    if (offerPower !== parseInt(filterPower)) return false
-                  } else {
-                    return false
-                  }
+            // Count filtered offers for selected provider
+            const filteredCount = offersData.filter((offer) => {
+              if (filterProvider && offer.provider_id !== filterProvider) return false
+              if (filterOfferType !== 'all' && offer.offer_type !== filterOfferType) return false
+              if (filterPower !== 'all') {
+                const match = offer.name.match(/(\d+)\s*kVA/i)
+                if (match) {
+                  const offerPower = parseInt(match[1])
+                  if (offerPower !== parseInt(filterPower)) return false
+                } else {
+                  return false
                 }
-                return true
-              }).length
-            }
+              }
+              return true
+            }).length
 
-            return `${filteredCount} offre(s) ${filterProvider !== 'all' || filterPower !== 'all' ? 'filtrée(s)' : 'actuellement dans la base de données'}`
+            const selectedProvider = sortedProviders.find(p => p.id === filterProvider)
+            const typeLabels: Record<string, string> = {
+              'BASE': 'Base',
+              'HC_HP': 'HC/HP',
+              'TEMPO': 'Tempo',
+              'EJP': 'EJP',
+              'ZEN_FLEX': 'Zen Flex',
+              'ZEN_WEEK_END': 'Zen Week-end',
+              'ZEN_WEEK_END_HP_HC': 'Zen Week-end HC/HP',
+            }
+            const typeLabel = filterOfferType !== 'all' ? typeLabels[filterOfferType] || filterOfferType : ''
+            return `${filteredCount} offre(s) ${selectedProvider ? `pour ${selectedProvider.name}` : ''}${typeLabel ? ` - ${typeLabel}` : ''}${filterPower !== 'all' ? ` en ${filterPower} kVA` : ''}`
           })()}
         </p>
 
         {/* Filters */}
-        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="mb-6 space-y-4">
+          {/* Fournisseurs - Boutons */}
           <div>
-            <label className="block text-sm font-medium mb-2">Filtrer par fournisseur</label>
-            <select
-              value={filterProvider}
-              onChange={(e) => setFilterProvider(e.target.value)}
-              className="input"
-            >
-              <option value="all">Tous les fournisseurs</option>
-              {Array.isArray(providersData) && providersData.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.name}
-                </option>
-              ))}
-            </select>
+            <label className="block text-sm font-medium mb-3">Sélectionner un fournisseur</label>
+            <div className="flex flex-wrap gap-2">
+              {sortedProviders.map((provider) => {
+                const isSelected = filterProvider === provider.id
+                const providerOffersCount = (offersData || []).filter(o => o.provider_id === provider.id).length
+                return (
+                  <button
+                    key={provider.id}
+                    onClick={() => setFilterProvider(provider.id)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                      isSelected
+                        ? 'bg-primary-600 text-white shadow-md'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {provider.name}
+                    <span className={`px-1.5 py-0.5 text-xs rounded-full ${
+                      isSelected
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400'
+                    }`}>
+                      {providerOffersCount}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-2">Filtrer par puissance</label>
-            <select
-              value={filterPower}
-              onChange={(e) => setFilterPower(e.target.value)}
-              className="input"
-            >
-              <option value="all">Toutes les puissances</option>
-              <option value="3">3 kVA</option>
-              <option value="6">6 kVA</option>
-              <option value="9">9 kVA</option>
-              <option value="12">12 kVA</option>
-              <option value="15">15 kVA</option>
-              <option value="18">18 kVA</option>
-              <option value="24">24 kVA</option>
-              <option value="30">30 kVA</option>
-              <option value="36">36 kVA</option>
-            </select>
-          </div>
+          {/* Type d'offre - Boutons dynamiques */}
+          {availableOfferTypes.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium mb-3">Type d'offre</label>
+              <div className="flex flex-wrap gap-2">
+                {availableOfferTypes.map((type) => {
+                  const isSelected = filterOfferType === type
+                  const typeCount = (offersData || []).filter(o => o.provider_id === filterProvider && o.offer_type === type).length
+                  // Labels lisibles pour les types
+                  const typeLabels: Record<string, string> = {
+                    'BASE': 'Base',
+                    'HC_HP': 'HC/HP',
+                    'TEMPO': 'Tempo',
+                    'EJP': 'EJP',
+                    'ZEN_FLEX': 'Zen Flex',
+                    'ZEN_WEEK_END': 'Zen Week-end',
+                    'ZEN_WEEK_END_HP_HC': 'Zen Week-end HC/HP',
+                  }
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => setFilterOfferType(type)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
+                        isSelected
+                          ? 'bg-primary-600 text-white shadow-md'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      {typeLabels[type] || type}
+                      <span className={`px-1.5 py-0.5 text-xs rounded-full ${
+                        isSelected
+                          ? 'bg-primary-500 text-white'
+                          : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400'
+                      }`}>
+                        {typeCount}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
         </div>
 
-        {Array.isArray(offersData) && offersData.length > 0 ? (
+        {/* Message si pas de fournisseur ou type sélectionné */}
+        {(!filterProvider || filterOfferType === 'all') ? (
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900 rounded-lg border border-dashed border-gray-300 dark:border-gray-700">
+            <p className="text-lg mb-2">
+              {!filterProvider
+                ? 'Sélectionnez un fournisseur pour voir les offres disponibles'
+                : 'Sélectionnez un type d\'offre pour afficher les tarifs'}
+            </p>
+            <p className="text-sm">
+              Vous pourrez ensuite modifier les tarifs et soumettre vos contributions.
+            </p>
+          </div>
+        ) : Array.isArray(offersData) && offersData.length > 0 ? (
           <div className="space-y-6">
-            {Array.isArray(providersData) && providersData.map((provider) => {
-              // Filter by provider
-              if (filterProvider !== 'all' && provider.id !== filterProvider) {
-                return null
-              }
+            {(() => {
+              // Get selected provider
+              const provider = sortedProviders.find(p => p.id === filterProvider)
+              if (!provider) return null
 
-              // Get provider offers and filter by power
-              let providerOffers = (offersData || []).filter((offer) => offer.provider_id === provider.id)
+              // Get provider offers filtered by type (required)
+              let providerOffers = (offersData || []).filter((offer) =>
+                offer.provider_id === provider.id && offer.offer_type === filterOfferType
+              )
 
-              // Filter by power
+              // Filter by power (optional)
               if (filterPower !== 'all') {
                 providerOffers = providerOffers.filter((offer) => {
                   const match = offer.name.match(/(\d+)\s*kVA/i)
@@ -1845,123 +2001,430 @@ RÈGLES IMPORTANTES :
                 })
               }
 
-              if (providerOffers.length === 0) return null
+              if (providerOffers.length === 0) {
+                return (
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    Aucune offre ne correspond aux filtres sélectionnés.
+                  </div>
+                )
+              }
 
-              const isExpanded = expandedProviders[provider.id] ?? false
-              const displayedOffers = isExpanded ? providerOffers : providerOffers.slice(0, 3)
+              // Helper pour obtenir la valeur d'un champ (éditée ou originale)
+              const getFieldValue = (offer: EnergyOffer, fieldKey: string): string => {
+                const edited = editedOffers[offer.id]?.[fieldKey]
+                if (edited !== undefined) return edited
+                const originalValue = (offer as unknown as Record<string, unknown>)[fieldKey]
+                return String(originalValue ?? '')
+              }
+
+              // Helper pour vérifier si une offre a été modifiée
+              const isOfferModified = (offer: EnergyOffer): boolean => {
+                const edited = editedOffers[offer.id]
+                if (!edited) return false
+                return Object.entries(edited).some(([key, value]) => {
+                  const originalValue = (offer as unknown as Record<string, unknown>)[key]
+                  return String(originalValue ?? '') !== value
+                })
+              }
+
+              // Helper pour mettre à jour un champ
+              const updateField = (offerId: string, fieldKey: string, value: string) => {
+                setEditedOffers(prev => ({
+                  ...prev,
+                  [offerId]: {
+                    ...prev[offerId],
+                    [fieldKey]: value
+                  }
+                }))
+              }
+
+              // Calculer les offres modifiées
+              const modifiedOffers = providerOffers.filter(offer => isOfferModified(offer))
+
+              // Labels pour les champs
+              const fieldLabels: Record<string, string> = {
+                subscription_price: 'Abonnement',
+                base_price: 'Prix Base',
+                hc_price: 'HC',
+                hp_price: 'HP',
+                tempo_blue_hc: 'Bleu HC',
+                tempo_blue_hp: 'Bleu HP',
+                tempo_white_hc: 'Blanc HC',
+                tempo_white_hp: 'Blanc HP',
+                tempo_red_hc: 'Rouge HC',
+                tempo_red_hp: 'Rouge HP',
+              }
+
+              // Helper pour soumettre toutes les modifications
+              const submitAllModifications = async () => {
+                if (modifiedOffers.length === 0) return
+
+                setSubmittingOffers(true)
+                setShowSubmitRecap(false)
+                let successCount = 0
+                let errorCount = 0
+
+                for (const offer of modifiedOffers) {
+                  try {
+                    const edited = editedOffers[offer.id] || {}
+                    const contributionData: ContributionData = {
+                      contribution_type: 'UPDATE_OFFER',
+                      existing_provider_id: offer.provider_id,
+                      existing_offer_id: offer.id,
+                      provider_name: provider?.name || '',
+                      offer_name: offer.name,
+                      offer_type: offer.offer_type,
+                      pricing_data: {
+                        subscription_price: edited.subscription_price ? parseFloat(edited.subscription_price) : offer.subscription_price,
+                        base_price: edited.base_price ? parseFloat(edited.base_price) : offer.base_price,
+                        hc_price: edited.hc_price ? parseFloat(edited.hc_price) : offer.hc_price,
+                        hp_price: edited.hp_price ? parseFloat(edited.hp_price) : offer.hp_price,
+                        tempo_blue_hc: edited.tempo_blue_hc ? parseFloat(edited.tempo_blue_hc) : offer.tempo_blue_hc,
+                        tempo_blue_hp: edited.tempo_blue_hp ? parseFloat(edited.tempo_blue_hp) : offer.tempo_blue_hp,
+                        tempo_white_hc: edited.tempo_white_hc ? parseFloat(edited.tempo_white_hc) : offer.tempo_white_hc,
+                        tempo_white_hp: edited.tempo_white_hp ? parseFloat(edited.tempo_white_hp) : offer.tempo_white_hp,
+                        tempo_red_hc: edited.tempo_red_hc ? parseFloat(edited.tempo_red_hc) : offer.tempo_red_hc,
+                        tempo_red_hp: edited.tempo_red_hp ? parseFloat(edited.tempo_red_hp) : offer.tempo_red_hp,
+                      },
+                      price_sheet_url: offer.offer_url || '',
+                    }
+                    const response = await energyApi.submitContribution(contributionData)
+                    if (response.success) {
+                      successCount++
+                    } else {
+                      errorCount++
+                    }
+                  } catch {
+                    errorCount++
+                  }
+                }
+
+                if (successCount > 0) {
+                  setNotification({ type: 'success', message: `${successCount} contribution(s) soumise(s) avec succès !` })
+                  setEditedOffers({})
+                  queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
+                }
+                if (errorCount > 0) {
+                  setNotification({ type: 'error', message: `${errorCount} erreur(s) lors de l'envoi` })
+                }
+                setSubmittingOffers(false)
+              }
+
+              // Helper pour formater la valeur (retirer les 0 en trop)
+              const formatValue = (value: string | number | undefined): string => {
+                if (value === undefined || value === null || value === '') return ''
+                const num = typeof value === 'string' ? parseFloat(value) : value
+                if (isNaN(num)) return ''
+                // Retirer les 0 inutiles à la fin
+                return num.toString()
+              }
+
+              // Helper pour obtenir la couleur du label
+              const getLabelColor = (label: string) => {
+                if (label === 'HC') return 'text-blue-600 dark:text-blue-400'
+                if (label === 'HP') return 'text-red-600 dark:text-red-400'
+                return 'text-gray-600 dark:text-gray-400'
+              }
+
+              // Helper pour vérifier si un champ est modifié
+              const isFieldModified = (offer: EnergyOffer, fieldKey: string) => {
+                const currentValue = getFieldValue(offer, fieldKey)
+                const originalValue = (offer as unknown as Record<string, unknown>)[fieldKey]
+                return currentValue !== String(originalValue ?? '')
+              }
+
+              // Render un champ éditable inline (pas un composant pour éviter perte de focus)
+              const renderEditableField = (label: string, fieldKey: string, unit: string, offer: EnergyOffer) => {
+                const editedValue = editedOffers[offer.id]?.[fieldKey]
+                const originalValue = (offer as unknown as Record<string, unknown>)[fieldKey]
+                // Si édité, utiliser la valeur éditée telle quelle, sinon formater l'originale
+                const displayValue = editedValue !== undefined ? editedValue : formatValue(originalValue)
+                const isModified = editedValue !== undefined && editedValue !== String(originalValue ?? '')
+
+                return (
+                  <div key={`${offer.id}-${fieldKey}`} className="flex items-center gap-2 w-[200px]">
+                    <span className={`text-sm font-semibold w-10 shrink-0 text-right ${getLabelColor(label)}`}>{label}</span>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={displayValue}
+                      onChange={(e) => updateField(offer.id, fieldKey, e.target.value)}
+                      className={`w-28 px-3 py-2 text-base font-bold border-2 rounded-lg bg-white dark:bg-gray-800 focus:ring-2 focus:ring-primary-500 focus:outline-none ${
+                        isModified
+                          ? 'border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20'
+                          : 'border-gray-300 dark:border-gray-600'
+                      }`}
+                    />
+                    <span className="text-gray-500 dark:text-gray-400 text-sm w-12 shrink-0">{unit}</span>
+                  </div>
+                )
+              }
+
+              // Helper pour extraire et nettoyer le nom de l'offre
+              const getCleanOfferName = (offerName: string): string => {
+                // Retirer la puissance (ex: "3 kVA", "12kVA")
+                let name = offerName.replace(/\s*\d+\s*kVA/gi, '')
+                // Retirer le type d'offre du nom s'il est présent
+                name = name.replace(/\s*-?\s*(BASE|HC[_\s]?HP|TEMPO|EJP)/gi, '')
+                // Nettoyer les tirets et espaces en trop
+                name = name.replace(/\s*-\s*-\s*/g, ' - ').replace(/\s+/g, ' ').trim()
+                // Retirer le tiret final si présent
+                name = name.replace(/\s*-\s*$/, '').trim()
+                return name || offerName
+              }
+
+              // Helper pour extraire la puissance
+              const getPower = (offerName: string): string | null => {
+                const match = offerName.match(/(\d+)\s*kVA/i)
+                return match ? `${match[1]} kVA` : null
+              }
 
               return (
-                <div key={provider.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold flex items-center gap-2">
-                      <Zap className="text-primary-600 dark:text-primary-400" size={20} />
-                      {provider.name}
-                      <span className="text-sm text-gray-500">({providerOffers.length} offre{providerOffers.length > 1 ? 's' : ''})</span>
-                    </h3>
-                    {providerOffers.length > 3 && (
-                      <button
-                        onClick={() => setExpandedProviders(prev => ({ ...prev, [provider.id]: !prev[provider.id] }))}
-                        className="text-sm text-primary-600 dark:text-primary-400 hover:underline"
-                      >
-                        {isExpanded ? 'Réduire' : `Voir toutes (${providerOffers.length})`}
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {displayedOffers.map((offer) => (
-                      <div
-                        key={offer.id}
-                        className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-700"
-                      >
-                        <div className="mb-2">
-                          <h4 className="font-medium text-sm mb-1">{offer.name}</h4>
-                          <span className="text-xs px-2 py-0.5 bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-300 rounded">
-                            {offer.offer_type}
-                          </span>
-                        </div>
-                        <div className="space-y-1 text-xs">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600 dark:text-gray-400">Abo. :</span>
-                            <span className="font-medium">{Number(offer.subscription_price ?? 0).toFixed(2)} €/mois</span>
+                <>
+                  {/* Liste des offres éditables */}
+                  <div className="space-y-2">
+                    {providerOffers.map((offer) => {
+                      const modified = isOfferModified(offer)
+                      const cleanName = getCleanOfferName(offer.name)
+                      const power = getPower(offer.name)
+
+                      return (
+                        <div
+                          key={offer.id}
+                          className={`bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border transition-all ${
+                            modified
+                              ? 'border-amber-400 dark:border-amber-600'
+                              : 'border-gray-200 dark:border-gray-700'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center gap-4">
+                            {/* Nom de l'offre (nettoyé) */}
+                            <div className="w-64 shrink-0">
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-medium text-sm truncate" title={cleanName}>{cleanName}</h4>
+                                {modified && (
+                                  <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded shrink-0">Modifié</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Puissance */}
+                            <div className="w-16 text-center shrink-0">
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">
+                                {power || '-'}
+                              </span>
+                            </div>
+
+                            {/* Abonnement */}
+                            <div className="shrink-0">
+                              {renderEditableField('Abo.', 'subscription_price', '€/mois', offer)}
+                            </div>
+
+                            {/* Tarifs selon le type */}
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 justify-end pr-4 flex-1">
+
+                              {offer.offer_type === 'BASE' && (
+                                renderEditableField('Base', 'base_price', '€/kWh', offer)
+                              )}
+
+                              {offer.offer_type === 'BASE_WEEKEND' && (
+                                <>
+                                  {renderEditableField('Base', 'base_price', '€/kWh', offer)}
+                                  <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
+                                    <span className="text-sm font-semibold text-green-600 dark:text-green-400 w-14">Week-end</span>
+                                    {renderEditableField('Base', 'base_price_weekend', '€', offer)}
+                                  </div>
+                                </>
+                              )}
+
+                              {offer.offer_type === 'HC_HP' && (
+                                <>
+                                  {renderEditableField('HC', 'hc_price', '€/kWh', offer)}
+                                  {renderEditableField('HP', 'hp_price', '€/kWh', offer)}
+                                </>
+                              )}
+
+                              {(offer.offer_type === 'HC_WEEKEND' || offer.offer_type === 'HC_NUIT_WEEKEND') && (
+                                <>
+                                  {renderEditableField('HC', 'hc_price', '€/kWh', offer)}
+                                  {renderEditableField('HP', 'hp_price', '€/kWh', offer)}
+                                  <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
+                                    <span className="text-sm font-semibold text-green-600 dark:text-green-400 w-14">Week-end</span>
+                                    {renderEditableField('HC', 'hc_price_weekend', '€', offer)}
+                                    {renderEditableField('HP', 'hp_price_weekend', '€', offer)}
+                                  </div>
+                                </>
+                              )}
+
+                              {offer.offer_type === 'TEMPO' && (
+                                <>
+                                  <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
+                                    <span className="text-sm font-semibold text-blue-600 dark:text-blue-400 w-14">Bleus</span>
+                                    {renderEditableField('HC', 'tempo_blue_hc', '€', offer)}
+                                    {renderEditableField('HP', 'tempo_blue_hp', '€', offer)}
+                                  </div>
+                                  <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
+                                    <span className="text-sm font-semibold text-gray-600 dark:text-gray-300 w-14">Blancs</span>
+                                    {renderEditableField('HC', 'tempo_white_hc', '€', offer)}
+                                    {renderEditableField('HP', 'tempo_white_hp', '€', offer)}
+                                  </div>
+                                  <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
+                                    <span className="text-sm font-semibold text-red-600 dark:text-red-400 w-14">Rouges</span>
+                                    {renderEditableField('HC', 'tempo_red_hc', '€', offer)}
+                                    {renderEditableField('HP', 'tempo_red_hp', '€', offer)}
+                                  </div>
+                                </>
+                              )}
+
+                              {offer.offer_type === 'ZEN_FLEX' && (
+                                <>
+                                  <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
+                                    <span className="text-sm font-semibold text-green-600 dark:text-green-400 w-20">Éco</span>
+                                    {renderEditableField('HC', 'hc_price_winter', '€', offer)}
+                                    {renderEditableField('HP', 'hp_price_winter', '€', offer)}
+                                  </div>
+                                  <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
+                                    <span className="text-sm font-semibold text-red-600 dark:text-red-400 w-20">Sobriété</span>
+                                    {renderEditableField('HC', 'hc_price_summer', '€', offer)}
+                                    {renderEditableField('HP', 'hp_price_summer', '€', offer)}
+                                  </div>
+                                </>
+                              )}
+
+                              {offer.offer_type === 'SEASONAL' && (
+                                <>
+                                  <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
+                                    <span className="text-sm font-semibold text-blue-600 dark:text-blue-400 w-14">Hiver</span>
+                                    {renderEditableField('HC', 'hc_price_winter', '€', offer)}
+                                    {renderEditableField('HP', 'hp_price_winter', '€', offer)}
+                                  </div>
+                                  <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
+                                    <span className="text-sm font-semibold text-orange-600 dark:text-orange-400 w-14">Été</span>
+                                    {renderEditableField('HC', 'hc_price_summer', '€', offer)}
+                                    {renderEditableField('HP', 'hp_price_summer', '€', offer)}
+                                  </div>
+                                </>
+                              )}
+
+                              {(offer.offer_type === 'ZEN_WEEK_END' || offer.offer_type === 'ZEN_WEEK_END_HP_HC') && (
+                                <>
+                                  {renderEditableField('HC', 'hc_price', '€/kWh', offer)}
+                                  {renderEditableField('HP', 'hp_price', '€/kWh', offer)}
+                                  <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
+                                    <span className="text-sm font-semibold text-green-600 dark:text-green-400 w-14">Week-end</span>
+                                    {renderEditableField('HC', 'hc_price_weekend', '€', offer)}
+                                    {renderEditableField('HP', 'hp_price_weekend', '€', offer)}
+                                  </div>
+                                </>
+                              )}
+
+                              {offer.offer_type === 'EJP' && (
+                                <>
+                                  {renderEditableField('Normal', 'ejp_normal', '€/kWh', offer)}
+                                  {renderEditableField('Pointe', 'ejp_peak', '€/kWh', offer)}
+                                </>
+                              )}
+                            </div>
                           </div>
-                          {offer.offer_type === 'BASE' && offer.base_price && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600 dark:text-gray-400">Prix BASE :</span>
-                              <span className="font-medium">{Number(offer.base_price ?? 0).toFixed(4)} €/kWh</span>
-                            </div>
-                          )}
-                          {offer.offer_type === 'HC_HP' && (
-                            <>
-                              <div className="flex justify-between">
-                                <span className="text-gray-600 dark:text-gray-400">HC :</span>
-                                <span className="font-medium">{Number(offer.hc_price ?? 0).toFixed(4)} €/kWh</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-600 dark:text-gray-400">HP :</span>
-                                <span className="font-medium">{Number(offer.hp_price ?? 0).toFixed(4)} €/kWh</span>
-                              </div>
-                            </>
-                          )}
-                          {offer.offer_type === 'TEMPO' && (
-                            <div className="space-y-1 text-xs">
-                              <div className="font-semibold text-blue-600 dark:text-blue-400 mt-2">Jours Bleus :</div>
-                              <div className="flex justify-between pl-2">
-                                <span className="text-gray-600 dark:text-gray-400">HC :</span>
-                                <span className="font-medium">{Number(offer.tempo_blue_hc ?? 0).toFixed(4)} €/kWh</span>
-                              </div>
-                              <div className="flex justify-between pl-2">
-                                <span className="text-gray-600 dark:text-gray-400">HP :</span>
-                                <span className="font-medium">{Number(offer.tempo_blue_hp ?? 0).toFixed(4)} €/kWh</span>
-                              </div>
-
-                              <div className="font-semibold text-white dark:text-gray-300 mt-2">Jours Blancs :</div>
-                              <div className="flex justify-between pl-2">
-                                <span className="text-gray-600 dark:text-gray-400">HC :</span>
-                                <span className="font-medium">{Number(offer.tempo_white_hc ?? 0).toFixed(4)} €/kWh</span>
-                              </div>
-                              <div className="flex justify-between pl-2">
-                                <span className="text-gray-600 dark:text-gray-400">HP :</span>
-                                <span className="font-medium">{Number(offer.tempo_white_hp ?? 0).toFixed(4)} €/kWh</span>
-                              </div>
-
-                              <div className="font-semibold text-red-600 dark:text-red-400 mt-2">Jours Rouges :</div>
-                              <div className="flex justify-between pl-2">
-                                <span className="text-gray-600 dark:text-gray-400">HC :</span>
-                                <span className="font-medium">{Number(offer.tempo_red_hc ?? 0).toFixed(4)} €/kWh</span>
-                              </div>
-                              <div className="flex justify-between pl-2">
-                                <span className="text-gray-600 dark:text-gray-400">HP :</span>
-                                <span className="font-medium">{Number(offer.tempo_red_hp ?? 0).toFixed(4)} €/kWh</span>
-                              </div>
-                            </div>
-                          )}
-                          {(offer.price_updated_at || offer.created_at) && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 space-y-1">
-                              {offer.price_updated_at && (
-                                <div className="flex justify-between">
-                                  <span>Tarifs du fournisseur :</span>
-                                  <span>{new Date(offer.price_updated_at).toLocaleDateString('fr-FR')}</span>
-                                </div>
-                              )}
-                              {offer.created_at && (
-                                <div className="flex justify-between">
-                                  <span>Ajouté le :</span>
-                                  <span>{new Date(offer.created_at).toLocaleDateString('fr-FR')}</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
-                </div>
+
+                  {/* Bouton de soumission et récapitulatif */}
+                  {modifiedOffers.length > 0 && (
+                    <div className="mt-6 sticky bottom-4">
+                      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-4">
+                        {showSubmitRecap ? (
+                          <>
+                            <h4 className="font-semibold mb-3 flex items-center gap-2">
+                              <Send size={16} className="text-primary-600" />
+                              Récapitulatif des modifications ({modifiedOffers.length} offre{modifiedOffers.length > 1 ? 's' : ''})
+                            </h4>
+                            <div className="max-h-60 overflow-y-auto space-y-2 mb-4">
+                              {modifiedOffers.map(offer => {
+                                const edited = editedOffers[offer.id] || {}
+                                const changes = Object.entries(edited).filter(([key, value]) => {
+                                  const originalValue = (offer as unknown as Record<string, unknown>)[key]
+                                  // Comparer en tant que nombres pour éviter les problèmes de formatage
+                                  const origNum = Number(originalValue)
+                                  const newNum = Number(value)
+                                  if (isNaN(origNum) && isNaN(newNum)) return false
+                                  if (isNaN(origNum) || isNaN(newNum)) return true
+                                  return Math.abs(origNum - newNum) > 0.00001
+                                })
+                                if (changes.length === 0) return null
+                                return (
+                                  <div key={offer.id} className="bg-gray-50 dark:bg-gray-900 rounded p-2 text-sm">
+                                    <div className="font-medium">{offer.name}</div>
+                                    <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 space-y-0.5">
+                                      {changes.map(([key, value]) => {
+                                        const originalValue = (offer as unknown as Record<string, unknown>)[key]
+                                        const origNum = Number(originalValue)
+                                        const newNum = Number(value)
+                                        return (
+                                          <div key={key} className="flex gap-2">
+                                            <span className="w-24">{fieldLabels[key] || key}:</span>
+                                            <span className="text-red-500 line-through">{isNaN(origNum) ? '-' : origNum.toFixed(key === 'subscription_price' ? 2 : 4)}</span>
+                                            <span className="text-green-600 dark:text-green-400">{isNaN(newNum) ? '-' : newNum.toFixed(key === 'subscription_price' ? 2 : 4)}</span>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setShowSubmitRecap(false)}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                              >
+                                <X size={16} />
+                                Annuler
+                              </button>
+                              <button
+                                onClick={submitAllModifications}
+                                disabled={submittingOffers}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:bg-primary-400 rounded-lg transition-colors"
+                              >
+                                <Send size={16} />
+                                {submittingOffers ? 'Envoi en cours...' : 'Confirmer l\'envoi'}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm">
+                              <span className="font-medium text-amber-600 dark:text-amber-400">{modifiedOffers.length}</span>
+                              <span className="text-gray-600 dark:text-gray-400"> offre{modifiedOffers.length > 1 ? 's' : ''} modifiée{modifiedOffers.length > 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setEditedOffers({})}
+                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg transition-colors"
+                              >
+                                <X size={16} />
+                                Annuler
+                              </button>
+                              <button
+                                onClick={() => setShowSubmitRecap(true)}
+                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors"
+                              >
+                                <Send size={16} />
+                                Soumettre les modifications
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
               )
-            })}
+            })()}
           </div>
-        ) : (
-          <p className="text-gray-500 text-center py-8">Aucune offre disponible pour le moment.</p>
-        )}
+        ) : null}
       </div>
       )}
     </div>

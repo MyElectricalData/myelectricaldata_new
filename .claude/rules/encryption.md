@@ -4,7 +4,7 @@
 
 MyElectricalData implémente un système de chiffrement **GDPR-compliant** pour protéger les données sensibles des utilisateurs (consommation, production, contrats). Chaque utilisateur possède une clé de chiffrement unique dérivée de son `client_secret`.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    FLUX DE CHIFFREMENT                      │
 ├─────────────────────────────────────────────────────────────┤
@@ -50,12 +50,12 @@ Le système utilise **Fernet** de la bibliothèque `cryptography` Python, qui fo
 
 ### Pourquoi Fernet ?
 
-| Avantage | Description |
-|----------|-------------|
+| Avantage                | Description                                                     |
+| ----------------------- | --------------------------------------------------------------- |
 | **Sécurisé par défaut** | Pas de configuration complexe, résistant aux attaques courantes |
-| **Authentifié** | HMAC garantit l'intégrité des données |
-| **Simple** | API minimaliste, moins de risques d'erreur |
-| **Standard** | Utilisé largement dans l'écosystème Python |
+| **Authentifié**         | HMAC garantit l'intégrité des données                           |
+| **Simple**              | API minimaliste, moins de risques d'erreur                      |
+| **Standard**            | Utilisé largement dans l'écosystème Python                      |
 
 ---
 
@@ -194,13 +194,13 @@ def make_cache_key(self, usage_point_id: str, endpoint: str, **kwargs) -> str:
 
 **Exemples de clés** :
 
-| Type de données | Clé de cache |
-|-----------------|--------------|
+| Type de données          | Clé de cache                                  |
+| ------------------------ | --------------------------------------------- |
 | Consommation journalière | `consumption:daily:12345678901234:2024-01-15` |
-| Production journalière | `production:daily:12345678901234:2024-01-15` |
-| Contrat | `contract:12345678901234` |
-| Adresse | `address:12345678901234` |
-| Type de compteur | `consumption:reading_type:12345678901234` |
+| Production journalière   | `production:daily:12345678901234:2024-01-15`  |
+| Contrat                  | `contract:12345678901234`                     |
+| Adresse                  | `address:12345678901234`                      |
+| Type de compteur         | `consumption:reading_type:12345678901234`     |
 
 ---
 
@@ -220,12 +220,12 @@ def generate_client_secret() -> str:
 
 ### Caractéristiques
 
-| Propriété | Valeur |
-|-----------|--------|
-| **Longueur** | 64 bytes → ~86 caractères encodés |
-| **Entropie** | 512 bits |
-| **Caractères** | URL-safe Base64 (A-Z, a-z, 0-9, -, _) |
-| **Générateur** | `secrets.token_urlsafe()` (CSPRNG) |
+| Propriété      | Valeur                                 |
+| -------------- | -------------------------------------- |
+| **Longueur**   | 64 bytes → ~86 caractères encodés      |
+| **Entropie**   | 512 bits                               |
+| **Caractères** | URL-safe Base64 (A-Z, a-z, 0-9, -, \_) |
+| **Générateur** | `secrets.token_urlsafe()` (CSPRNG)     |
 
 ### Stockage
 
@@ -237,6 +237,7 @@ class User(Base):
 ```
 
 Le `client_secret` est stocké en clair dans la base de données car :
+
 1. Il est nécessaire pour déchiffrer les données du cache
 2. Il sert aussi d'authentification API (OAuth2 Client Credentials)
 
@@ -268,14 +269,14 @@ Le `client_secret` est stocké en clair dans la base de données car :
 
 ### Tableau récapitulatif
 
-| Propriété | Description |
-|-----------|-------------|
-| **Isolation utilisateur** | Chaque cache est chiffré avec un secret unique |
-| **Confidentialité** | Impossible de déchiffrer sans le bon `client_secret` |
-| **Intégrité** | HMAC-SHA256 détecte toute modification |
-| **GDPR** | Données personnelles chiffrées au repos |
-| **Cascade delete** | Suppression compte → données inaccessibles |
-| **TTL automatique** | Expiration après 24h (configurable) |
+| Propriété                 | Description                                          |
+| ------------------------- | ---------------------------------------------------- |
+| **Isolation utilisateur** | Chaque cache est chiffré avec un secret unique       |
+| **Confidentialité**       | Impossible de déchiffrer sans le bon `client_secret` |
+| **Intégrité**             | HMAC-SHA256 détecte toute modification               |
+| **GDPR**                  | Données personnelles chiffrées au repos              |
+| **Cascade delete**        | Suppression compte → données inaccessibles           |
+| **TTL automatique**       | Expiration après 24h (configurable)                  |
 
 ---
 
@@ -284,6 +285,7 @@ Le `client_secret` est stocké en clair dans la base de données car :
 ### Redis compromis
 
 Si un attaquant accède à Redis :
+
 - ✅ Il ne voit que des bytes chiffrés
 - ✅ Sans le `client_secret`, déchiffrement impossible
 - ✅ Chaque utilisateur a une clé différente
@@ -291,6 +293,7 @@ Si un attaquant accède à Redis :
 ### Base de données compromise
 
 Si un attaquant accède à PostgreSQL/SQLite :
+
 - ⚠️ Il peut lire les `client_secret`
 - ⚠️ Il pourrait déchiffrer les caches Redis
 - 🔒 **Mitigation** : Chiffrer la base de données au niveau disque
@@ -298,6 +301,7 @@ Si un attaquant accède à PostgreSQL/SQLite :
 ### Rotation des clés
 
 Actuellement, le `client_secret` ne change jamais après la création du compte. Une rotation nécessiterait :
+
 1. Déchiffrer toutes les données avec l'ancienne clé
 2. Re-chiffrer avec la nouvelle clé
 3. Mettre à jour le `client_secret` en base
@@ -343,12 +347,12 @@ async def get(self, key: str, encryption_key: str) -> Any | None:
 
 ### Comportement en cas d'échec
 
-| Opération | Comportement |
-|-----------|--------------|
-| `get()` échoue | Retourne `None`, données récupérées depuis Enedis |
-| `set()` échoue | Retourne `False`, données non cachées |
-| Redis indisponible | Application continue, performances dégradées |
-| Clé invalide | Déchiffrement échoue silencieusement |
+| Opération          | Comportement                                      |
+| ------------------ | ------------------------------------------------- |
+| `get()` échoue     | Retourne `None`, données récupérées depuis Enedis |
+| `set()` échoue     | Retourne `False`, données non cachées             |
+| Redis indisponible | Application continue, performances dégradées      |
+| Clé invalide       | Déchiffrement échoue silencieusement              |
 
 ---
 
@@ -371,11 +375,11 @@ async def set_raw(self, key: str, value: str, ttl: int | None = None) -> bool:
 
 ### Utilisations
 
-| Clé | Description |
-|-----|-------------|
-| `rate_limit:{user_id}:*` | Compteurs de rate limiting |
+| Clé                        | Description                           |
+| -------------------------- | ------------------------------------- |
+| `rate_limit:{user_id}:*`   | Compteurs de rate limiting            |
 | `scraper_cache:{provider}` | Cache des offres scrapées (publiques) |
-| `sync_status` | Statut de synchronisation |
+| `sync_status`              | Statut de synchronisation             |
 
 ---
 
@@ -406,7 +410,7 @@ async def test_encryption_isolation():
 
 ## Références
 
-- **Fernet specification** : https://github.com/fernet/spec/
-- **Cryptography library** : https://cryptography.io/
+- **Fernet specification** : <https://github.com/fernet/spec/>
+- **Cryptography library** : <https://cryptography.io/>
 - **GDPR Article 32** : Mesures techniques de protection des données
 - **Code source** : `apps/api/src/services/cache.py`

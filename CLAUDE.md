@@ -235,16 +235,13 @@ See `docs/features-spec/energy-providers-scrapers.md` for detailed documentation
 
 ## Design System
 
-**Location**: `docs/design/` with component-based documentation
+**Regles critiques** : `.claude/rules/design.md` (injecte automatiquement pour `apps/web/**`)
 
-**Critical Rules**:
+**Documentation complete** : `docs/design/`
 
-- All pages must have `pt-6` on root container
-- H1 must include icon: `<Icon className="text-primary-600 dark:text-primary-400" size={32} />`
-- Always implement dark mode: `dark:` variants on all elements
-- Use Tailwind CSS utilities, icons from `lucide-react`
+**Pour toute modification UI** : Utiliser l'agent `frontend-specialist`
 
-**Before UI changes**: Check `/check_design` slash command or `docs/design/checklist.md`
+**Verification** : `/check_design` ou `docs/design/checklist.md`
 
 ## Agent System
 
@@ -252,6 +249,7 @@ Project uses specialized Claude Code agents defined in `.claude/agents/`:
 
 - **`frontend-specialist.md`**: React/TypeScript, must check `@docs/design` before UI work
 - **`backend-specialist.md`**: Python/FastAPI, must follow API design rules
+- **`enedis-specialist.md`**: Expert API Enedis Data Connect, must check `@docs/enedis-api` before any Enedis integration
 - **`devops-specialist.md`**: Kubernetes/Helm for deployment
 
 When agents generate code:

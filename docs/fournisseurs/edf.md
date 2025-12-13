@@ -1,88 +1,105 @@
-# EDF - Électricité de France
+# EDF - Electricite de France
+
+**Fichier scraper**: `apps/api/src/services/price_scrapers/edf_scraper.py`
+
+## Description
+
+EDF est le fournisseur historique d'electricite en France. Le scraper recupere les tarifs reglementes (Tarif Bleu) et les offres de marche (Zen Week-End).
 
 ## URLs Sources
 
-### Tarifs Réglementés (Tarif Bleu)
-- URL : https://particulier.edf.fr/content/dam/2-Actifs/Documents/Offres/Grille_prix_Tarif_Bleu.pdf
-- Type : Document PDF avec grille tarifaire
-- Mise à jour : 2 fois par an (généralement 1er février et 1er août)
-- Dernière baisse : 1er août 2025 (-3.17% sur le prix du kWh)
+| Offre | URL | Type |
+|-------|-----|------|
+| Tarif Bleu | `https://particulier.edf.fr/content/dam/2-Actifs/Documents/Offres/Grille_prix_Tarif_Bleu.pdf` | PDF |
+| Zen Week-End | `https://particulier.edf.fr/content/dam/2-Actifs/Documents/Offres/grille-prix-zen-week-end.pdf` | PDF |
 
-### API Données Publiques
-- URL : https://data.rte-france.com/ (via RTE)
-- Format : JSON
-- Authentification : API Key (si nécessaire)
+## Types d'offres
 
-## Types d'Offres
+### Tarif Bleu (Reglemente)
 
-### 1. Tarif Bleu (Réglementé)
-- **Base** : Prix unique toute la journée
-- **Heures Creuses** : 2 tarifs (HC/HP)
-- **Tempo** : 6 tarifs (Bleu/Blanc/Rouge × HC/HP)
-- **EJP** : Tarif historique (fermé aux nouveaux clients)
+| Type | Code | Description |
+|------|------|-------------|
+| Base | `BASE` | Prix unique toute la journee |
+| Heures Creuses | `HC_HP` | 2 tarifs selon les heures |
+| Tempo | `TEMPO` | 6 tarifs (Bleu/Blanc/Rouge x HC/HP) |
 
-### 2. Offres de Marché
-- Vert Électrique
-- Mes jours zen
-- Digiwatt
+### Zen Week-End (Marche)
 
-## Structure des Données
+| Type | Code | Description |
+|------|------|-------------|
+| Option Week-End | `BASE_WEEKEND` | Tarif reduit le week-end |
+| HC/HP + WE | `HC_WEEKEND` | HC/HP avec tarif week-end |
+| Flex | `ZEN_FLEX` | 345 jours Eco + 20 jours Sobriete |
 
-### Format Attendu
+## Methode de scraping
 
-```json
-{
-  "provider": "EDF",
-  "offers": [
-    {
-      "name": "Tarif Bleu - Base",
-      "type": "regulated",
-      "description": "Tarif réglementé option base",
-      "prices": {
-        "base": {
-          "subscription_monthly": 12.44,
-          "price_kwh": 0.2516
-        }
-      },
-      "power_range": [3, 6, 9, 12, 15, 18],
-      "updated_at": "2025-11-01T00:00:00Z"
-    },
-    {
-      "name": "Tarif Bleu - Heures Creuses",
-      "type": "regulated",
-      "description": "Tarif réglementé option heures creuses",
-      "prices": {
-        "hp": {
-          "subscription_monthly": 16.13,
-          "price_kwh": 0.27
-        },
-        "hc": {
-          "subscription_monthly": 16.13,
-          "price_kwh": 0.2068
-        }
-      },
-      "power_range": [6, 9, 12, 15, 18],
-      "updated_at": "2025-11-01T00:00:00Z"
-    }
-  ]
-}
+### Parsing PDF Tarif Bleu
+
+1. Telecharge le PDF via `httpx`
+2. Extrait le texte avec `pdfplumber`
+3. Parse les sections "Option Base", "Option Heures Creuses", "Option Tempo"
+4. Extrait les prix en centimes et convertit en euros
+
+```python
+# Format PDF: "3 11,73 19,52" (power subscription price_centimes)
+match = re.match(r'^\s*(\d+)\s+([\d,\.]+)\s+([\d,\.]+)', line)
+power = int(match.group(1))  # 3
+subscription = float(match.group(2).replace(',', '.'))  # 11.73
+kwh_price = float(match.group(3).replace(',', '.')) / 100  # 0.1952
 ```
 
-## Méthode de Scraping
+### Parsing PDF Zen Week-End
 
-### Option 1 : Scraping HTML
-- Parser la page avec BeautifulSoup4
-- Extraire les tableaux de prix
-- Identifier les puissances et options tarifaires
+Structure avec 2 tableaux cote a cote:
+- Option Week-End: `power subscription heures_semaine weekend`
+- Option HC/HP+WE: `power subscription hp_sem hc_sem hp_we hc_we`
 
-### Option 2 : API RTE (Données Publiques)
-- Authentification via API Key
-- Endpoint : `/open_api/tariff_blue/v1/`
-- Format JSON structuré
+## Puissances supportees
 
-## Notes Importantes
+3, 6, 9, 12, 15, 18, 24, 30, 36 kVA
 
-- Les tarifs réglementés sont fixés par la CRE (Commission de Régulation de l'Énergie)
-- Mise à jour généralement au 1er février et au 1er août de chaque année
+> **Note**: Option Heures Creuses et Tempo disponibles a partir de 6 kVA
+
+## Donnees de fallback
+
+Prix TTC mis a jour au 1er aout 2025 (-3.17% sur le kWh).
+
+### BASE (exemple 6 kVA)
+
+| Champ | Valeur |
+|-------|--------|
+| Abonnement | 12.44 EUR/mois |
+| Prix kWh | 0.1952 EUR |
+
+### HC/HP (exemple 6 kVA)
+
+| Champ | Valeur |
+|-------|--------|
+| Abonnement | 16.13 EUR/mois |
+| Prix HP | 0.2068 EUR |
+| Prix HC | 0.1586 EUR |
+
+### TEMPO (exemple 6 kVA)
+
+| Champ | Valeur |
+|-------|--------|
+| Abonnement | 12.94 EUR/mois |
+| Bleu HC | 0.1296 EUR |
+| Bleu HP | 0.1609 EUR |
+| Blanc HC | 0.1486 EUR |
+| Blanc HP | 0.1894 EUR |
+| Rouge HC | 0.1568 EUR |
+| Rouge HP | 0.7562 EUR |
+
+## Validation
+
+- Tous les champs requis presents
+- Prix de souscription > 0
+- Prix kWh dans plages attendues
+- Puissance dans [3, 6, 9, 12, 15, 18, 24, 30, 36]
+
+## Notes
+
+- Tarifs reglementes fixes par la CRE
+- Mise a jour 2 fois par an (1er fevrier et 1er aout)
 - Les prix incluent toutes taxes (TTC)
-- Distinction entre abonnement mensuel et prix au kWh
