@@ -7,7 +7,7 @@ It also ensures ADMIN_EMAILS users always have the admin role.
 """
 
 import logging
-from typing import Any, cast
+from typing import cast
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from .role import Role, Permission

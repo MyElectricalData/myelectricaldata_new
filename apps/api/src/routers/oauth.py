@@ -4,7 +4,7 @@ import uuid
 
 import httpx
 from fastapi import APIRouter, Depends, Path, Query, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
