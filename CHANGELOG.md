@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.0.0...1.1.0-dev.1) (2025-12-14)
+
+### Features
+
+* **ci:** add build validation before semantic-release ([f261fe7](https://github.com/MyElectricalData/myelectricaldata_new/commit/f261fe7faee82629eeb519ea6314fdab8fe322df))
+* **ci:** add pre-commit hooks for linting ([c1614a9](https://github.com/MyElectricalData/myelectricaldata_new/commit/c1614a9e813a62328ed20eea777ea47b62843f45))
+
+### Bug Fixes
+
+* **api:** remove unused imports ([6da4bf0](https://github.com/MyElectricalData/myelectricaldata_new/commit/6da4bf0955de2b360fea0cb3f660b74cf25c0df0))
+* **api:** resolve all 204 mypy type errors ([3e45d5b](https://github.com/MyElectricalData/myelectricaldata_new/commit/3e45d5b8e38c663216ddcc69dacad6035a7f1d20))
+* **api:** resolve all ruff linting errors ([d3366b3](https://github.com/MyElectricalData/myelectricaldata_new/commit/d3366b38bf1ece18179c9ad1c8ccdfa9899abde6))
+* **ci:** add mypy to dependency-groups for CI type checking ([717f99d](https://github.com/MyElectricalData/myelectricaldata_new/commit/717f99d1aaf1634780d5c8d80b1c8cbefcec9984))
+
 ## 1.0.0 (2025-12-13)
 
 ### Features
