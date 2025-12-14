@@ -1,6 +1,6 @@
 {
   "name": "myelectricaldata-web",
-  "version": "1.5.15",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
