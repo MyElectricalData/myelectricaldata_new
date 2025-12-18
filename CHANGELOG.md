@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0-dev.4](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.3...1.1.0-dev.4) (2025-12-18)
+
+### Features
+
+* **helm:** migrate from Redis to Valkey ([5dd2ada](https://github.com/MyElectricalData/myelectricaldata_new/commit/5dd2adae748dd4a7e5fa6d2185162c7734823704))
+
 ## [1.1.0-dev.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.2...1.1.0-dev.3) (2025-12-18)
 
 ### Bug Fixes
