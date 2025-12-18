@@ -27,7 +27,7 @@ Les API Enedis sont soumises à un quota strict de 5 appels par seconde. Sans m�
 
 ### Configuration
 
-- **`REDIS_URL`** : URL de connexion à Redis (ex: `redis://redis:6379/0`)
+- **`REDIS_URL`** : URL de connexion à Valkey (protocole Redis compatible, ex: `redis://valkey:6379/0`)
 - **`CACHE_TTL_SECONDS`** : Durée de vie du cache (défaut: 86400 = 24h)
 - **`ENEDIS_RATE_LIMIT`** : Limite de requêtes/seconde vers Enedis (défaut: 5)
 
@@ -43,7 +43,7 @@ En plus du rate limiting Enedis, chaque utilisateur dispose de quotas journalier
   - Consommé lorsque la donnée est servie depuis le cache
   - Aucun appel vers Enedis
 
-### Clés Redis
+### Clés Valkey/Redis
 
 Format des clés de cache :
 ```

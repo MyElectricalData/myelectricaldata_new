@@ -259,32 +259,32 @@ secrets:
         name: ""
         key: ""
 
-# Redis configuration (CloudPirates subchart)
-# Repository: oci://registry-1.docker.io/cloudpirates/redis
-redis:
+# Valkey configuration (CloudPirates subchart)
+# Repository: oci://registry-1.docker.io/cloudpirates/valkey
+valkey:
   enabled: true
 
-  # Redis image configuration
+  # Valkey image configuration
   image:
-    repository: redis
-    tag: "7-alpine"
+    repository: valkey/valkey
+    tag: "8-alpine"
     pullPolicy: IfNotPresent
 
-  # Redis authentication
+  # Valkey authentication
   auth:
     # Option 1: Set password directly (Helm creates the secret)
     password: ""
     # Option 2: Use an existing secret with a generated password
     # The secret must contain the key specified in existingSecretKey
-    existingSecret: ""           # e.g., "redis-credentials"
-    existingSecretKey: "redis-password"  # Key containing the password in the secret
+    existingSecret: ""           # e.g., "valkey-credentials"
+    existingSecretKey: "valkey-password"  # Key containing the password in the secret
 
-  # Redis configuration
+  # Valkey configuration
   config:
     maxmemory: "256mb"
     maxmemory-policy: "allkeys-lru"
 
-  # Redis service
+  # Valkey service
   service:
     type: ClusterIP
     port: 6379
@@ -294,6 +294,14 @@ redis:
     enabled: true
     size: 1Gi
     storageClass: ""
+    annotations:
+      helm.sh/resource-policy: keep
+
+  # PVC retention policy (keeps data when StatefulSet is deleted/scaled)
+  persistentVolumeClaimRetentionPolicy:
+    enabled: true
+    whenScaled: Retain
+    whenDeleted: Retain
 
   # Resources
   resources:
@@ -336,6 +344,14 @@ postgres:
     enabled: true
     size: 5Gi
     storageClass: ""
+    annotations:
+      helm.sh/resource-policy: keep
+
+  # PVC retention policy (keeps data when StatefulSet is deleted/scaled)
+  persistentVolumeClaimRetentionPolicy:
+    enabled: true
+    whenScaled: Retain
+    whenDeleted: Retain
 
   # Resources
   resources:
@@ -356,11 +372,12 @@ externalDatabase:
   # Use an existing secret for the password (key: password)
   existingSecret: ""
 
-# External Redis configuration (if redis.enabled is false)
-externalRedis:
+# External Valkey configuration (if valkey.enabled is false)
+externalValkey:
   host: ""
   port: 6379
   password: ""
+  existingSecret: ""  # Name of existing secret containing 'password' key
 
 # Service Account
 serviceAccount:

@@ -28,7 +28,7 @@ MyElectricalData implémente un système de chiffrement **GDPR-compliant** pour 
 │      │                                                      │
 │      ▼                                                      │
 │  ┌─────────────────────────────────────┐                    │
-│  │  Redis (données chiffrées)          │                    │
+│  │  Valkey (données chiffrées)         │                    │
 │  │                                     │                    │
 │  │  consumption:daily:{pdl}:{date}     │                    │
 │  │  production:daily:{pdl}:{date}      │                    │
@@ -115,7 +115,7 @@ async def set(
     encryption_key: str,
     ttl: int | None = None
 ) -> bool:
-    """Store encrypted data in Redis"""
+    """Store encrypted data in Valkey"""
     try:
         # 1. Sérialise en JSON
         json_data = json.dumps(value)
@@ -124,7 +124,7 @@ async def set(
         cipher = self._get_cipher(encryption_key)
         encrypted_data = cipher.encrypt(json_data.encode())
 
-        # 3. Stocke dans Redis avec TTL
+        # 3. Stocke dans Valkey avec TTL
         await self.redis.setex(
             key,
             ttl or self.default_ttl,
@@ -140,7 +140,7 @@ async def set(
 
 ```python
 async def get(self, key: str, encryption_key: str) -> Any | None:
-    """Retrieve and decrypt data from Redis"""
+    """Retrieve and decrypt data from Valkey"""
     try:
         # 1. Récupère les bytes chiffrés
         encrypted_data = await self.redis.get(key)
@@ -282,9 +282,9 @@ Le `client_secret` est stocké en clair dans la base de données car :
 
 ## Scénarios de sécurité
 
-### Redis compromis
+### Valkey compromis
 
-Si un attaquant accède à Redis :
+Si un attaquant accède à Valkey :
 
 - ✅ Il ne voit que des bytes chiffrés
 - ✅ Sans le `client_secret`, déchiffrement impossible
@@ -295,7 +295,7 @@ Si un attaquant accède à Redis :
 Si un attaquant accède à PostgreSQL/SQLite :
 
 - ⚠️ Il peut lire les `client_secret`
-- ⚠️ Il pourrait déchiffrer les caches Redis
+- ⚠️ Il pourrait déchiffrer les caches Valkey
 - 🔒 **Mitigation** : Chiffrer la base de données au niveau disque
 
 ### Rotation des clés
@@ -313,7 +313,7 @@ Actuellement, le `client_secret` ne change jamais après la création du compte.
 ### Variables d'environnement
 
 ```bash
-# Redis connection
+# Valkey connection (protocole Redis compatible)
 REDIS_URL=redis://localhost:6379/0
 
 # Cache TTL (default: 24 hours)
@@ -351,7 +351,7 @@ async def get(self, key: str, encryption_key: str) -> Any | None:
 | ------------------ | ------------------------------------------------- |
 | `get()` échoue     | Retourne `None`, données récupérées depuis Enedis |
 | `set()` échoue     | Retourne `False`, données non cachées             |
-| Redis indisponible | Application continue, performances dégradées      |
+| Valkey indisponible | Application continue, performances dégradées      |
 | Clé invalide       | Déchiffrement échoue silencieusement              |
 
 ---

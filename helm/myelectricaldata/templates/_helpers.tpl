@@ -100,10 +100,10 @@ Frontend fullname
 {{- end }}
 
 {{/*
-Redis fullname - CloudPirates subchart uses release-name-redis
+Valkey fullname - CloudPirates subchart uses release-name-valkey
 */}}
-{{- define "myelectricaldata.redis.fullname" -}}
-{{- printf "%s-redis" .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- define "myelectricaldata.valkey.fullname" -}}
+{{- printf "%s-valkey" .Release.Name | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
@@ -114,24 +114,24 @@ PostgreSQL fullname - CloudPirates subchart uses release-name-postgres
 {{- end }}
 
 {{/*
-Redis host
+Valkey host
 */}}
-{{- define "myelectricaldata.redis.host" -}}
-{{- if .Values.redis.enabled }}
-{{- include "myelectricaldata.redis.fullname" . }}
+{{- define "myelectricaldata.valkey.host" -}}
+{{- if .Values.valkey.enabled }}
+{{- include "myelectricaldata.valkey.fullname" . }}
 {{- else }}
-{{- .Values.externalRedis.host }}
+{{- .Values.externalValkey.host }}
 {{- end }}
 {{- end }}
 
 {{/*
-Redis port
+Valkey port
 */}}
-{{- define "myelectricaldata.redis.port" -}}
-{{- if .Values.redis.enabled }}
-{{- .Values.redis.service.port | default 6379 }}
+{{- define "myelectricaldata.valkey.port" -}}
+{{- if .Values.valkey.enabled }}
+{{- .Values.valkey.service.port | default 6379 }}
 {{- else }}
-{{- .Values.externalRedis.port }}
+{{- .Values.externalValkey.port }}
 {{- end }}
 {{- end }}
 
@@ -191,31 +191,31 @@ postgresql+asyncpg://{{ $username }}:$(POSTGRES_PASSWORD)@{{ $host }}:{{ $port }
 {{- end }}
 
 {{/*
-Redis secret name - Supports external secrets or subchart-generated secrets
+Valkey secret name - Supports external secrets or subchart-generated secrets
 */}}
-{{- define "myelectricaldata.redis.secretName" -}}
-{{- if .Values.redis.enabled }}
-  {{- if .Values.redis.auth.existingSecret }}
-    {{- .Values.redis.auth.existingSecret }}
+{{- define "myelectricaldata.valkey.secretName" -}}
+{{- if .Values.valkey.enabled }}
+  {{- if .Values.valkey.auth.existingSecret }}
+    {{- .Values.valkey.auth.existingSecret }}
   {{- else }}
-    {{- printf "%s-redis" .Release.Name }}
+    {{- printf "%s-valkey" .Release.Name }}
   {{- end }}
-{{- else if .Values.externalRedis.existingSecret }}
-  {{- .Values.externalRedis.existingSecret }}
+{{- else if .Values.externalValkey.existingSecret }}
+  {{- .Values.externalValkey.existingSecret }}
 {{- else }}
-  {{- printf "%s-external-redis" (include "myelectricaldata.fullname" .) }}
+  {{- printf "%s-external-valkey" (include "myelectricaldata.fullname" .) }}
 {{- end }}
 {{- end }}
 
 {{/*
-Redis secret key - Returns the key name for the password in the secret
+Valkey secret key - Returns the key name for the password in the secret
 */}}
-{{- define "myelectricaldata.redis.secretKey" -}}
-{{- if .Values.redis.enabled }}
-  {{- if .Values.redis.auth.existingSecret }}
-    {{- .Values.redis.auth.existingSecretKey | default "redis-password" }}
+{{- define "myelectricaldata.valkey.secretKey" -}}
+{{- if .Values.valkey.enabled }}
+  {{- if .Values.valkey.auth.existingSecret }}
+    {{- .Values.valkey.auth.existingSecretKey | default "valkey-password" }}
   {{- else }}
-    {{- "redis-password" }}
+    {{- "valkey-password" }}
   {{- end }}
 {{- else }}
   {{- "password" }}
@@ -223,12 +223,12 @@ Redis secret key - Returns the key name for the password in the secret
 {{- end }}
 
 {{/*
-Redis URL - uses REDIS_PASSWORD env var for the password
+Valkey URL - uses VALKEY_PASSWORD env var for the password (protocol remains redis://)
 */}}
-{{- define "myelectricaldata.redisUrl" -}}
-{{- $host := include "myelectricaldata.redis.host" . -}}
-{{- $port := include "myelectricaldata.redis.port" . -}}
-redis://:$(REDIS_PASSWORD)@{{ $host }}:{{ $port }}/0
+{{- define "myelectricaldata.valkeyUrl" -}}
+{{- $host := include "myelectricaldata.valkey.host" . -}}
+{{- $port := include "myelectricaldata.valkey.port" . -}}
+redis://:$(VALKEY_PASSWORD)@{{ $host }}:{{ $port }}/0
 {{- end }}
 
 {{/*

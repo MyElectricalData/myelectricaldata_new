@@ -23,13 +23,13 @@ data:
   DATABASE_USER: {{ .Values.externalDatabase.username | quote }}
   {{- end }}
 
-  # Redis configuration
-  {{- if .Values.redis.enabled }}
-  REDIS_HOST: {{ .Release.Name }}-redis
-  REDIS_PORT: {{ .Values.redis.service.port | default 6379 | quote }}
+  # Valkey (Redis) configuration
+  {{- if .Values.valkey.enabled }}
+  REDIS_HOST: {{ .Release.Name }}-valkey
+  REDIS_PORT: {{ .Values.valkey.service.port | default 6379 | quote }}
   {{- else }}
-  REDIS_HOST: {{ .Values.externalRedis.host | quote }}
-  REDIS_PORT: {{ .Values.externalRedis.port | quote }}
+  REDIS_HOST: {{ .Values.externalValkey.host | quote }}
+  REDIS_PORT: {{ .Values.externalValkey.port | quote }}
   {{- end }}
 
   # Application configuration (non-sensitive values)

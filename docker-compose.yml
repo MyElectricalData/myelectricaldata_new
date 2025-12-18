@@ -1,16 +1,16 @@
 services:
 
-  # Redis
-  redis:
-    image: redis:7-alpine
+  # Valkey (Redis-compatible cache)
+  valkey:
+    image: valkey/valkey:8-alpine
     restart: unless-stopped
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: valkey-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
-      - redis_data:/data
+      - valkey_data:/data
     networks:
       - myelectricaldata
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -78,7 +78,7 @@ services:
     networks:
       - myelectricaldata
     depends_on:
-      - redis
+      - valkey
     # ports définis dans docker-compose.override.yml pour support multi-instances
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping')"]
@@ -128,7 +128,7 @@ services:
       - docs
 
 volumes:
-  redis_data:
+  valkey_data:
     driver: local
   postgres_data:
     driver: local
