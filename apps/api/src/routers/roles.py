@@ -81,7 +81,7 @@ async def list_permissions(
         permissions = result.scalars().all()
 
         # Group by resource
-        grouped = {}
+        grouped: dict[str, list[dict[str, str | None]]] = {}
         for perm in permissions:
             if perm.resource not in grouped:
                 grouped[perm.resource] = []
@@ -142,17 +142,17 @@ async def update_role_permissions(
 
         # Get all permissions
         result = await db.execute(select(Permission).where(Permission.id.in_(permission_ids)))
-        permissions = result.scalars().all()
+        permissions_list = list(result.scalars().all())
 
         # Update role permissions
-        role.permissions = permissions
+        role.permissions = permissions_list  # type: ignore[assignment]
         await db.commit()
 
         return APIResponse(
             success=True,
             data={
                 "role_id": role.id,
-                "permission_count": len(permissions),
+                "permission_count": len(permissions_list),
             },
         )
     except Exception as e:
@@ -194,8 +194,8 @@ async def update_user_role(
             )
 
         # Get role
-        result = await db.execute(select(Role).where(Role.id == role_id))
-        role = result.scalar_one_or_none()
+        role_result = await db.execute(select(Role).where(Role.id == role_id))
+        role = role_result.scalar_one_or_none()
 
         if not role:
             return APIResponse(

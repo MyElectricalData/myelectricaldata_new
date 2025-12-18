@@ -22,9 +22,9 @@ class TempoDay(Base):
 
     id = Column(String, primary_key=True)  # Format: YYYY-MM-DD
     date = Column(DateTime(timezone=True), nullable=False, unique=True, index=True)
-    color = Column(SQLEnum(TempoColor), nullable=False)
+    color = Column(SQLEnum(TempoColor), nullable=False)  # type: ignore
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     rte_updated_date = Column(DateTime(timezone=True), nullable=True)  # Date from RTE API
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<TempoDay(date={self.date.strftime('%Y-%m-%d')}, color={self.color})>"

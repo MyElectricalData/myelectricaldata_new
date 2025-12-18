@@ -18,7 +18,7 @@ async def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
-def require_permission(resource: str):
+def require_permission(resource: str):  # type: ignore[no-untyped-def]
     """Dependency factory to check if user has permission for a resource"""
     async def permission_checker(
         current_user: User = Depends(get_current_user),
@@ -59,7 +59,7 @@ def require_permission(resource: str):
     return permission_checker
 
 
-def require_action(resource: str, action: str):
+def require_action(resource: str, action: str):  # type: ignore[no-untyped-def]
     """Dependency factory to check if user has a specific action permission for a resource"""
     async def action_checker(
         current_user: User = Depends(get_current_user),

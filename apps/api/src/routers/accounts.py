@@ -1,6 +1,7 @@
 import logging
 import secrets
 from datetime import datetime, timedelta, UTC
+from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Body, Query
@@ -10,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from ..config import settings
 from ..middleware import get_current_user, require_not_demo
-from ..models import User, PDL, Token, EmailVerificationToken, PasswordResetToken, Role
+from ..models import User, PDL, EmailVerificationToken, PasswordResetToken, Role
 from ..models.database import get_db
 from ..schemas import (
     UserCreate,
@@ -185,11 +186,11 @@ async def login(
 async def get_token(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    grant_type: str = Form(None),
+    grant_type: Optional[str] = Form(None),
     scope: str = Form(""),
-    client_id: str = Form(None),
-    client_secret: str = Form(None)
-):
+    client_id: Optional[str] = Form(None),
+    client_secret: Optional[str] = Form(None)
+) -> dict[str, str]:
     """
     OAuth2 Client Credentials Flow
 
@@ -220,8 +221,13 @@ async def get_token(
         try:
             form_data = await request.form()
             logger.debug(f"[TOKEN] Form data keys: {list(form_data.keys())}")
-            client_id = form_data.get('client_id') or client_id
-            client_secret = form_data.get('client_secret') or client_secret
+            client_id_form = form_data.get('client_id')
+            client_secret_form = form_data.get('client_secret')
+            # Only use if it's a string (not UploadFile)
+            if isinstance(client_id_form, str):
+                client_id = client_id_form or client_id
+            if isinstance(client_secret_form, str):
+                client_secret = client_secret_form or client_secret
             logger.debug(f"[TOKEN] After form parse - client_id: {client_id}, client_secret: {'***' if client_secret else None}")
         except Exception as e:
             logger.error(f"[TOKEN] Failed to parse form: {e}")
@@ -365,18 +371,18 @@ async def verify_email(
         )
 
     # Get user
-    result = await db.execute(select(User).where(User.id == email_token.user_id))
-    user = result.scalar_one_or_none()
+    user_result = await db.execute(select(User).where(User.id == email_token.user_id))
+    user_obj = user_result.scalar_one_or_none()
 
-    if not user:
+    if not user_obj:
         return APIResponse(success=False, error=ErrorDetail(code="USER_NOT_FOUND", message="User not found"))
 
     # Mark email as verified
-    user.email_verified = True
+    user_obj.email_verified = True
     await db.delete(email_token)
     await db.commit()
 
-    logger.info(f"[EMAIL_VERIFICATION] Email verified for user {user.email}")
+    logger.info(f"[EMAIL_VERIFICATION] Email verified for user {user_obj.email}")
 
     return APIResponse(success=True, data={"message": "Email verified successfully! You can now log in."})
 
@@ -548,7 +554,7 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)) -
     reset_token = result.scalar_one_or_none()
 
     if not reset_token:
-        logger.info(f"[RESET_PASSWORD] Invalid token")
+        logger.info("[RESET_PASSWORD] Invalid token")
         return APIResponse(
             success=False,
             error=ErrorDetail(code="INVALID_TOKEN", message="Invalid or expired reset token")
@@ -556,7 +562,7 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)) -
 
     # Check if token expired
     if datetime.now(UTC) > reset_token.expires_at:
-        logger.info(f"[RESET_PASSWORD] Token expired")
+        logger.info("[RESET_PASSWORD] Token expired")
         await db.delete(reset_token)
         await db.commit()
         return APIResponse(
@@ -565,23 +571,23 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)) -
         )
 
     # Get user
-    result = await db.execute(select(User).where(User.id == reset_token.user_id))
-    user = result.scalar_one_or_none()
+    user_result = await db.execute(select(User).where(User.id == reset_token.user_id))
+    user_obj = user_result.scalar_one_or_none()
 
-    if not user:
+    if not user_obj:
         return APIResponse(
             success=False,
             error=ErrorDetail(code="USER_NOT_FOUND", message="User not found")
         )
 
     # Update password
-    user.hashed_password = get_password_hash(new_password)
+    user_obj.hashed_password = get_password_hash(new_password)
 
     # Delete the used reset token
     await db.delete(reset_token)
     await db.commit()
 
-    logger.info(f"[RESET_PASSWORD] Password reset successfully for user: {user.email}")
+    logger.info(f"[RESET_PASSWORD] Password reset successfully for user: {user_obj.email}")
 
     return APIResponse(success=True, data={"message": "Password reset successfully!"})
 

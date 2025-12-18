@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class EmailService:
     """Service for sending emails via Mailgun"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.api_key = settings.MAILGUN_API_KEY
         self.domain = settings.MAILGUN_DOMAIN
         self.from_email = settings.MAILGUN_FROM_EMAIL

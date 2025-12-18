@@ -4,7 +4,7 @@ import uuid
 
 import httpx
 from fastapi import APIRouter, Depends, Path, Query, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -174,7 +174,8 @@ async def oauth_callback(
                     logger.warning(f"[OAUTH CALLBACK] PDL {pdl_usage_point_id} cree par requete concurrente - abandon silencieux")
                     # Don't redirect with error - let the first request handle it
                     # Just return empty response to avoid double redirect
-                    return Response(status_code=204)  # No Content - browser will ignore
+                    from fastapi.responses import Response as FastAPIResponse
+                    return FastAPIResponse(status_code=204)  # type: ignore[return-value]
                 raise  # Re-raise other exceptions
 
             # Try to fetch contract info automatically
@@ -272,12 +273,12 @@ async def refresh_token(
         )
 
     # Get token
-    result = await db.execute(
+    token_result = await db.execute(
         select(Token).where(Token.user_id == current_user.id, Token.usage_point_id == usage_point_id)
     )
-    token = result.scalar_one_or_none()
+    token_obj: Token | None = token_result.scalar_one_or_none()
 
-    if not token or not token.refresh_token:
+    if not token_obj or not token_obj.refresh_token:
         return APIResponse(
             success=False,
             error=ErrorDetail(code="TOKEN_NOT_FOUND", message="No refresh token available for this usage point"),
@@ -287,18 +288,18 @@ async def refresh_token(
         # Refresh token
         from datetime import UTC, datetime, timedelta
 
-        token_data = await enedis_adapter.refresh_access_token(token.refresh_token)
+        token_data = await enedis_adapter.refresh_access_token(token_obj.refresh_token)
 
         # Update token
         expires_in = token_data.get("expires_in", 3600)
-        token.access_token = token_data["access_token"]
-        token.refresh_token = token_data.get("refresh_token", token.refresh_token)
-        token.expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+        token_obj.access_token = token_data["access_token"]
+        token_obj.refresh_token = token_data.get("refresh_token", token_obj.refresh_token)
+        token_obj.expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
 
         await db.commit()
 
         return APIResponse(
-            success=True, data={"message": "Token refreshed successfully", "expires_at": token.expires_at.isoformat()}
+            success=True, data={"message": "Token refreshed successfully", "expires_at": token_obj.expires_at.isoformat()}
         )
 
     except Exception as e:

@@ -1,8 +1,14 @@
+from __future__ import annotations
 import uuid
+from typing import TYPE_CHECKING
 from sqlalchemy import String, ForeignKey, Integer, JSON, Boolean, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import date
 from .base import Base, TimestampMixin
+
+if TYPE_CHECKING:
+    from .user import User
+    from .energy_provider import EnergyOffer
 
 
 class PDL(Base, TimestampMixin):

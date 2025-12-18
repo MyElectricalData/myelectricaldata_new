@@ -5,7 +5,7 @@ This adapter intercepts Enedis API calls for demo users and returns
 pre-generated mock data from Redis cache instead of making real API calls.
 """
 import logging
-from typing import Any, Optional
+from typing import Any
 from datetime import datetime
 from ..services.cache import cache_service
 
@@ -17,7 +17,7 @@ class DemoAdapter:
 
     DEMO_EMAIL = "demo@myelectricaldata.fr"
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.cache_service = cache_service
 
     async def is_demo_user(self, user_email: str) -> bool:
@@ -46,7 +46,7 @@ class DemoAdapter:
         logger.debug(f"[DEMO] Generating dynamic consumption data for {usage_point_id} from {start} to {end}")
 
         # Generate daily consumption data dynamically
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         import math
 
         start_date = datetime.strptime(start, "%Y-%m-%d")
@@ -220,7 +220,7 @@ class DemoAdapter:
             }
 
         # Generate daily production data dynamically
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         import math
 
         start_date = datetime.strptime(start, "%Y-%m-%d")

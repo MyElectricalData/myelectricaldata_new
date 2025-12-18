@@ -1,0 +1,39 @@
+repos:
+  # Backend (Python) linting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        name: ruff (backend)
+        args: [--fix]
+        files: ^apps/api/src/
+      - id: ruff-format
+        name: ruff format (backend)
+        files: ^apps/api/src/
+
+  # Backend type checking
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (backend)
+        entry: bash -c 'cd apps/api && uv run mypy src --ignore-missing-imports'
+        language: system
+        files: ^apps/api/src/.*\.py$
+        pass_filenames: false
+
+  # Frontend linting
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint (frontend)
+        entry: bash -c 'cd apps/web && npm run lint'
+        language: system
+        files: ^apps/web/src/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: tsc
+        name: tsc (frontend)
+        entry: bash -c 'cd apps/web && npx tsc --noEmit'
+        language: system
+        files: ^apps/web/src/.*\.(ts|tsx)$
+        pass_filenames: false

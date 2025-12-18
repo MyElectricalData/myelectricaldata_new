@@ -2,7 +2,7 @@ apiVersion: v2
 name: myelectricaldata
 description: A Helm chart for MyElectricalData - Secure API gateway for Linky electricity data
 type: application
-version: 0.1.0
+version: 1.0.0-dev.2
 appVersion: "1.0.0"
 
 keywords:
@@ -18,12 +18,12 @@ maintainers:
   - name: MyElectricalData Team
 
 dependencies:
-  - name: redis
-    version: "0.16.0"
+  - name: valkey
+    version: "0.13.0"
     repository: oci://registry-1.docker.io/cloudpirates
-    condition: redis.enabled
+    condition: valkey.enabled
 
   - name: postgres
     version: "0.12.2"
     repository: oci://registry-1.docker.io/cloudpirates
-    condition: postgresql.enabled
+    condition: postgres.enabled

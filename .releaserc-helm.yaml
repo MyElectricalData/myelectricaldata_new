@@ -1,0 +1,86 @@
+---
+# Semantic Release Configuration for Helm Chart
+# Independent versioning from the main application
+
+branches:
+  # Production releases on main
+  - name: main
+    channel: latest
+  # Development prereleases on develop
+  - name: develop
+    channel: dev
+    prerelease: dev
+
+# Tag format: helm/X.X.X (no GitHub release, just tags)
+tagFormat: helm/${version}
+
+plugins:
+  # Analyze commits to determine version bump
+  # Only considers commits affecting helm/ directory
+  - - '@semantic-release/commit-analyzer'
+    - preset: conventionalcommits
+      releaseRules:
+        - type: feat
+          release: minor
+        - type: fix
+          release: patch
+        - type: perf
+          release: patch
+        - type: refactor
+          release: patch
+        - type: docs
+          release: false
+        - type: style
+          release: false
+        - type: chore
+          release: false
+        - type: test
+          release: false
+        - type: ci
+          release: false
+        - breaking: true
+          release: major
+
+  # Generate release notes
+  - - '@semantic-release/release-notes-generator'
+    - preset: conventionalcommits
+      presetConfig:
+        types:
+          - type: feat
+            section: Features
+          - type: fix
+            section: Bug Fixes
+          - type: perf
+            section: Performance
+          - type: refactor
+            section: Refactoring
+          - type: docs
+            section: Documentation
+            hidden: true
+          - type: chore
+            hidden: true
+          - type: test
+            hidden: true
+          - type: ci
+            hidden: true
+
+  # Generate CHANGELOG for Helm chart
+  - - '@semantic-release/changelog'
+    - changelogFile: helm/CHANGELOG.md
+      changelogTitle: '# Helm Chart Changelog'
+
+  # Update version in Chart.yaml
+  - - semantic-release-replace-plugin
+    - replacements:
+        - files:
+            - helm/myelectricaldata/Chart.yaml
+          from: '^version: .*'
+          to: 'version: ${nextRelease.version}'
+          countMatches: true
+
+  # Commit version changes and create tag (no GitHub release)
+  - - '@semantic-release/git'
+    - assets:
+        - helm/CHANGELOG.md
+        - helm/myelectricaldata/Chart.yaml
+      message: 'chore(helm): release ${nextRelease.version} [skip ci]'

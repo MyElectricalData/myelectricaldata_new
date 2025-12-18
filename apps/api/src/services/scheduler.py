@@ -15,35 +15,35 @@ logger = logging.getLogger(__name__)
 
 async def should_refresh(db: AsyncSession, cache_type: str, min_interval_minutes: int) -> bool:
     """Check if cache should be refreshed based on last refresh time"""
-    tracker = await db.execute(
+    result = await db.execute(
         select(RefreshTracker).where(RefreshTracker.cache_type == cache_type)
     )
-    tracker = tracker.scalar_one_or_none()
+    tracker = result.scalar_one_or_none()
 
     if not tracker:
         return True  # Never refreshed
 
     time_since_refresh = datetime.now(UTC) - tracker.last_refresh
-    return time_since_refresh > timedelta(minutes=min_interval_minutes)
+    return bool(time_since_refresh > timedelta(minutes=min_interval_minutes))
 
 
-async def update_refresh_time(db: AsyncSession, cache_type: str):
+async def update_refresh_time(db: AsyncSession, cache_type: str) -> None:
     """Update the last refresh time for a cache type"""
-    tracker = await db.execute(
+    result = await db.execute(
         select(RefreshTracker).where(RefreshTracker.cache_type == cache_type)
     )
-    tracker = tracker.scalar_one_or_none()
+    tracker = result.scalar_one_or_none()
 
     if tracker:
-        tracker.last_refresh = datetime.now(UTC)
+        tracker.last_refresh = datetime.now(UTC)  # type: ignore[assignment]
     else:
-        tracker = RefreshTracker(cache_type=cache_type, last_refresh=datetime.now(UTC))
-        db.add(tracker)
+        new_tracker = RefreshTracker(cache_type=cache_type, last_refresh=datetime.now(UTC))
+        db.add(new_tracker)
 
     await db.commit()
 
 
-async def refresh_tempo_cache_task():
+async def refresh_tempo_cache_task() -> None:
     """Refresh TEMPO cache from RTE API (runs every 10 minutes)"""
     while True:
         try:
@@ -59,7 +59,7 @@ async def refresh_tempo_cache_task():
                     # Update last refresh time
                     await update_refresh_time(db, 'tempo')
                 else:
-                    logger.warning(f"[SCHEDULER] Skipping TEMPO refresh - last refresh too recent")
+                    logger.warning("[SCHEDULER] Skipping TEMPO refresh - last refresh too recent")
 
         except Exception as e:
             logger.error(f"[SCHEDULER ERROR] Failed to refresh TEMPO cache: {e}")
@@ -70,7 +70,7 @@ async def refresh_tempo_cache_task():
         await asyncio.sleep(600)
 
 
-async def refresh_ecowatt_cache_task():
+async def refresh_ecowatt_cache_task() -> None:
     """Refresh EcoWatt cache from RTE API (runs every hour)"""
     while True:
         try:
@@ -85,7 +85,7 @@ async def refresh_ecowatt_cache_task():
                     # Update last refresh time
                     await update_refresh_time(db, 'ecowatt')
                 else:
-                    logger.warning(f"[SCHEDULER] Skipping EcoWatt refresh - last refresh too recent")
+                    logger.warning("[SCHEDULER] Skipping EcoWatt refresh - last refresh too recent")
 
         except Exception as e:
             logger.error(f"[SCHEDULER ERROR] Failed to refresh EcoWatt cache: {e}")
@@ -96,7 +96,7 @@ async def refresh_ecowatt_cache_task():
         await asyncio.sleep(3600)
 
 
-def start_background_tasks():
+def start_background_tasks() -> None:
     """Start all background tasks"""
     asyncio.create_task(refresh_tempo_cache_task())
     asyncio.create_task(refresh_ecowatt_cache_task())

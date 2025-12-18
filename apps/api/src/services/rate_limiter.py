@@ -8,7 +8,7 @@ from ..config import settings
 class RateLimiterService:
     """Service to track and limit user API calls per day"""
 
-    def _get_daily_key(self, user_id: str, cache_used: bool, endpoint: str = None) -> str:
+    def _get_daily_key(self, user_id: str, cache_used: bool, endpoint: str | None = None) -> str:
         """Generate Redis key for daily counter"""
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         cache_type = "cached" if cache_used else "no_cache"
@@ -16,7 +16,7 @@ class RateLimiterService:
             return f"rate_limit:{user_id}:{endpoint}:{cache_type}:{today}"
         return f"rate_limit:{user_id}:{cache_type}:{today}"
 
-    async def increment_and_check(self, user_id: str, cache_used: bool, is_admin: bool = False, endpoint: str = None) -> Tuple[bool, int, int]:
+    async def increment_and_check(self, user_id: str, cache_used: bool, is_admin: bool = False, endpoint: str | None = None) -> Tuple[bool, int, int]:
         """
         Increment counter and check if limit is reached
 

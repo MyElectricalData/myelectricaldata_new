@@ -1,8 +1,12 @@
 from typing import Optional
 from fastapi import Security, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.openapi.models import OAuthFlows as OAuthFlowsModel
 from fastapi.security import OAuth2
+from fastapi.security.oauth2 import OAuthFlowsModel
+try:
+    from fastapi.security.oauth2 import OAuthFlowClientCredentials  # type: ignore[attr-defined]
+except ImportError:
+    from fastapi.openapi.models import OAuthFlowClientCredentials  # type: ignore[assignment, attr-defined]
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import User
@@ -20,10 +24,10 @@ DEMO_EMAIL = "demo@myelectricaldata.fr"
 
 oauth2_scheme = OAuth2(
     flows=OAuthFlowsModel(
-        clientCredentials={
-            "tokenUrl": "/api/accounts/token",
-            "scopes": {}
-        }
+        clientCredentials=OAuthFlowClientCredentials(
+            tokenUrl="/api/accounts/token",
+            scopes={}
+        )
     ),
     scheme_name="OAuth2ClientCredentials",
     description="Use your client_id and client_secret to authenticate",

@@ -2,7 +2,7 @@
 
 import logging
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class RTEService:
     """Service to fetch and cache Tempo Calendar and EcoWatt data from RTE API"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.base_url = settings.RTE_BASE_URL
         self.client_id = settings.RTE_CLIENT_ID
         self.client_secret = settings.RTE_CLIENT_SECRET
@@ -99,7 +99,7 @@ class RTEService:
 
             logger.debug(f"[RTE API] Raw response: {data}")
             logger.info(f"[RTE API] Received {len(data.get('tempo_like_calendars', {}).get('values', []))} TEMPO days")
-            return data.get("tempo_like_calendars", {}).get("values", [])
+            return cast(list[dict[str, Any]], data.get("tempo_like_calendars", {}).get("values", []))
 
     async def update_tempo_cache(self, db: AsyncSession, days: int = 7) -> int:
         """
@@ -169,7 +169,6 @@ class RTEService:
                 # RTE API: start_date represents the day the color applies to
                 # Example: start_date=2025-11-19 00:00 + end_date=2025-11-20 00:00 means color for Nov 19
                 day_start = datetime.fromisoformat(value["start_date"])
-                day_end = datetime.fromisoformat(value["end_date"])
                 color_str = value["value"]
                 updated_date_str = value.get("updated_date")
 
@@ -187,9 +186,9 @@ class RTEService:
 
                 if existing:
                     # Update existing record
-                    existing.color = TempoColor(color_str)
-                    existing.rte_updated_date = rte_updated
-                    existing.updated_at = datetime.now(UTC)
+                    existing.color = TempoColor(color_str)  # type: ignore[assignment]
+                    existing.rte_updated_date = rte_updated  # type: ignore[assignment]
+                    existing.updated_at = datetime.now(UTC)  # type: ignore[assignment]
                 else:
                     # Create new record (use start_date as the actual day)
                     tempo_day = TempoDay(
@@ -230,7 +229,7 @@ class RTEService:
             query = query.where(TempoDay.date <= end_date)
 
         result = await db.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_tempo_day(self, db: AsyncSession, date: datetime) -> TempoDay | None:
         """
@@ -293,7 +292,7 @@ class RTEService:
             data = response.json()
 
             logger.info("[RTE API] Received EcoWatt signals")
-            return data
+            return cast(dict[str, Any], data)
 
     async def update_ecowatt_cache(self, db: AsyncSession) -> int:
         """
@@ -372,7 +371,7 @@ class RTEService:
                         # Update existing record
                         for key, value in ecowatt_create.items():
                             setattr(existing, key, value)
-                        existing.updated_at = datetime.now(UTC).replace(tzinfo=None)
+                        existing.updated_at = datetime.now(UTC).replace(tzinfo=None)  # type: ignore[assignment]
                     else:
                         # Create new record
                         ecowatt = EcoWatt(**ecowatt_create)
@@ -418,7 +417,7 @@ class RTEService:
             query = query.where(EcoWatt.periode <= end_date)
 
         result = await db.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_ecowatt_signal(self, db: AsyncSession, target_date: date) -> Optional[EcoWatt]:
         """

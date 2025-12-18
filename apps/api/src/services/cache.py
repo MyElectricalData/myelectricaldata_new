@@ -1,6 +1,6 @@
 import json
 import redis.asyncio as redis
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from cryptography.fernet import Fernet
 from ..config import settings
 
@@ -40,7 +40,7 @@ class CacheService:
 
             cipher = self._get_cipher(encryption_key)
             decrypted_data = cipher.decrypt(encrypted_data)
-            return json.loads(decrypted_data.decode())
+            return cast(dict[str, Any], json.loads(decrypted_data.decode()))
         except Exception:
             return None
 
@@ -107,7 +107,7 @@ class CacheService:
                 keys.append(key)
 
             if keys:
-                return await self.redis_client.delete(*keys)
+                return cast(int, await self.redis_client.delete(*keys))
             return 0
         except Exception:
             return 0

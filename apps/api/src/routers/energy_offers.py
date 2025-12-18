@@ -20,7 +20,7 @@ router = APIRouter(prefix="/energy", tags=["Energy Offers"])
 @router.get("/providers", response_model=APIResponse)
 async def list_providers(db: AsyncSession = Depends(get_db)) -> APIResponse:
     """List all active energy providers"""
-    result = await db.execute(select(EnergyProvider).where(EnergyProvider.is_active == True))
+    result = await db.execute(select(EnergyProvider).where(EnergyProvider.is_active.is_(True)))
     providers = result.scalars().all()
 
     return APIResponse(
@@ -49,13 +49,13 @@ async def list_offers(
     By default, returns only offers valid for the current period (valid_to IS NULL or valid_to >= NOW)
     Set include_history=true to get all offers including historical ones
     """
-    query = select(EnergyOffer).where(EnergyOffer.is_active == True)
+    query = select(EnergyOffer).where(EnergyOffer.is_active.is_(True))
 
     # Filter by current period only (unless include_history is True)
     if not include_history:
         now = datetime.now(UTC)
         query = query.where(
-            (EnergyOffer.valid_to == None) | (EnergyOffer.valid_to >= now)
+            (EnergyOffer.valid_to.is_(None)) | (EnergyOffer.valid_to >= now)
         )
 
     if provider_id:
@@ -660,9 +660,10 @@ async def approve_contribution(
         elif contribution.contribution_type == "UPDATE_OFFER" and contribution.existing_offer_id:
             # Update existing offer
             offer_result = await db.execute(select(EnergyOffer).where(EnergyOffer.id == contribution.existing_offer_id))
-            offer = offer_result.scalar_one_or_none()
+            offer_maybe = offer_result.scalar_one_or_none()
 
-            if offer:
+            if offer_maybe:
+                offer = offer_maybe
                 offer.name = contribution.offer_name
                 offer.offer_type = contribution.offer_type
                 offer.description = contribution.description
@@ -818,9 +819,10 @@ async def bulk_approve_contributions(
             elif contribution.contribution_type == "UPDATE_OFFER" and contribution.existing_offer_id:
                 # Update existing offer
                 offer_result = await db.execute(select(EnergyOffer).where(EnergyOffer.id == contribution.existing_offer_id))
-                offer = offer_result.scalar_one_or_none()
+                offer_maybe = offer_result.scalar_one_or_none()
 
-                if offer:
+                if offer_maybe:
+                    offer = offer_maybe
                     offer.name = contribution.offer_name
                     offer.offer_type = contribution.offer_type
                     offer.description = contribution.description
@@ -1238,7 +1240,7 @@ async def delete_provider(
         return APIResponse(success=False, error=ErrorDetail(code="SERVER_ERROR", message=str(e)))
 
 
-async def send_contribution_notification(contribution: OfferContribution, contributor: User, db: AsyncSession):
+async def send_contribution_notification(contribution: OfferContribution, contributor: User, db: AsyncSession) -> None:
     """Send email notification to all admins about a new contribution"""
     if not settings.ADMIN_EMAILS:
         logger.info("[CONTRIBUTION] No admin emails configured")
@@ -1319,7 +1321,7 @@ MyElectricalData
             logger.error(f"[CONTRIBUTION] Failed to send email to {admin_email}: {str(e)}")
 
 
-async def send_rejection_notification(contribution: OfferContribution, contributor: User, reason: str):
+async def send_rejection_notification(contribution: OfferContribution, contributor: User, reason: str) -> None:
     """Send email notification to contributor about rejection"""
     contributions_url = f"{settings.FRONTEND_URL}/contribute"
 
@@ -1406,7 +1408,7 @@ MyElectricalData - Base de données communautaire des offres d'électricité
         raise
 
 
-async def send_info_request_notification(contribution: OfferContribution, contributor: User, message: str):
+async def send_info_request_notification(contribution: OfferContribution, contributor: User, message: str) -> None:
     """Send email notification to contributor requesting more information"""
     contributions_url = f"{settings.FRONTEND_URL}/contribute"
 

@@ -3,9 +3,8 @@ EcoWatt data model for storing RTE EcoWatt signals
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict
-from sqlalchemy import Column, String, DateTime, Integer, JSON, Boolean, Float, UniqueConstraint, Index
-from sqlalchemy.ext.declarative import declarative_base
+from typing import Optional, List
+from sqlalchemy import Column, String, DateTime, Integer, JSON, UniqueConstraint, Index
 from pydantic import BaseModel
 
 from .base import Base

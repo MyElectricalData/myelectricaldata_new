@@ -1,7 +1,7 @@
 import secrets
 import bcrypt
 from datetime import datetime, timedelta, UTC
-from typing import Optional
+from typing import Optional, Any, cast
 from jose import JWTError, jwt
 from ..config import settings
 
@@ -26,14 +26,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
+    return cast(str, encoded_jwt)
 
 
-def decode_access_token(token: str) -> Optional[dict]:
+def decode_access_token(token: str) -> dict[Any, Any] | None:
     """Decode JWT access token"""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        return payload
+        return cast(dict[Any, Any], payload)
     except JWTError:
         return None
 

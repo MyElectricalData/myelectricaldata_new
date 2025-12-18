@@ -813,7 +813,7 @@ wheels = [
 
 [[package]]
 name = "myelectricaldata-api"
-version = "1.5.15"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },

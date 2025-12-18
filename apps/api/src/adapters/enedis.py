@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import httpx
 
@@ -224,7 +224,7 @@ class EnedisAdapter:
                 )
                 logger.debug("=" * 80)
 
-            return response_json
+            return cast(dict[str, Any], response_json)
         except httpx.HTTPStatusError as e:
             if settings.DEBUG:
                 logger.error(f"[ENEDIS API ERROR] HTTP {e.response.status_code}")
@@ -240,7 +240,7 @@ class EnedisAdapter:
                     # Special case for ADAM-ERR0123 (data older than meter activation)
                     if error_json.get("error") == "ADAM-ERR0123":
                         logger.warning("[ENEDIS] Data requested is anterior to meter activation date")
-                        return error_json  # Return error as dict for router to handle
+                        return cast(dict[str, Any], error_json)  # Return error as dict for router to handle
                     # For other errors, raise exception
                     error_msg = f"{error_json.get('error')}: {error_json.get('error_description', 'Unknown error')}"
                     raise ValueError(error_msg) from e

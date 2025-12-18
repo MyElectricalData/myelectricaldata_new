@@ -171,7 +171,7 @@ npm run test:coverage    # Generate coverage report
 ```text
 User → Frontend (React) → Backend (FastAPI) → Adapter → Enedis API
                               ↓
-                          Cache (Redis)
+                          Cache (Valkey)
                               ↓
                           Database (SQLite/PostgreSQL)
 ```
@@ -182,7 +182,7 @@ User → Frontend (React) → Backend (FastAPI) → Adapter → Enedis API
 - **`routers/`**: FastAPI endpoints (accounts, pdl, enedis, admin, energy_offers)
 - **`models/`**: SQLAlchemy models (User, PDL, Token, Role, EnergyProvider, EnergyOffer)
 - **`middleware/`**: Auth verification, admin checks
-- **`services/`**: Cache (Redis with Fernet encryption), email, rate limiter, **price scrapers**
+- **`services/`**: Cache (Valkey with Fernet encryption), email, rate limiter, **price scrapers**
 - **`schemas/`**: Pydantic request/response validation
 - **`config/`**: Settings with auto-detection of database type
 
@@ -337,7 +337,7 @@ See `docs/demo/` for detailed implementation guide.
 - Frontend served as static files from Nginx
 - Backend runs with Uvicorn
 - PostgreSQL recommended over SQLite
-- Redis required for caching
+- Valkey required for caching
 
 Deployment docs: `docs/setup/docker.md`
 

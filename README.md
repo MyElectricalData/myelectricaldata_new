@@ -166,7 +166,7 @@ Configuration is managed through environment variables. Copy `.env.example` to `
 ### Backend (API)
 
 - `DATABASE_URL`: URL de connexion à la base de données (SQLite ou PostgreSQL, auto-détecté)
-- `REDIS_URL`: Redis cache URL
+- `REDIS_URL`: Valkey cache URL (Redis-compatible protocol)
 - `ENEDIS_CLIENT_ID`: Client ID fourni par Enedis
 - `ENEDIS_CLIENT_SECRET`: Client secret fourni par Enedis
 - `ENEDIS_ENVIRONMENT`: `sandbox` ou `production`

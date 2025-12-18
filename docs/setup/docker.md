@@ -170,15 +170,15 @@ USER_DAILY_LIMIT_NO_CACHE=50
 USER_DAILY_LIMIT_WITH_CACHE=1000
 ```
 
-##### 🗃️ Cache Redis
+##### 🗃️ Cache Valkey (Redis-compatible)
 
 | Variable | Description | Valeur par défaut |
 |----------|-------------|-------------------|
-| `REDIS_URL` | URI de connexion Redis | `redis://redis:6379/0` |
+| `REDIS_URL` | URI de connexion Valkey (protocole Redis) | `redis://valkey:6379/0` |
 | `CACHE_TTL_SECONDS` | Durée de vie du cache en secondes (86400 = 24h) | `86400` |
 
 ```bash
-REDIS_URL=redis://redis:6379/0
+REDIS_URL=redis://valkey:6379/0
 CACHE_TTL_SECONDS=86400
 ```
 

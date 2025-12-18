@@ -36,11 +36,11 @@ spec:
           image: busybox:1.36
           command: ['sh', '-c', 'until nc -z {{ .Release.Name }}-postgres {{ .Values.postgres.service.port | default 5432 }}; do echo "Waiting for PostgreSQL..."; sleep 2; done; echo "PostgreSQL is ready!"']
         {{- end }}
-        # Wait for Redis to be ready
-        {{- if .Values.redis.enabled }}
-        - name: wait-for-redis
+        # Wait for Valkey to be ready
+        {{- if .Values.valkey.enabled }}
+        - name: wait-for-valkey
           image: busybox:1.36
-          command: ['sh', '-c', 'until nc -z {{ .Release.Name }}-redis {{ .Values.redis.service.port | default 6379 }}; do echo "Waiting for Redis..."; sleep 2; done; echo "Redis is ready!"']
+          command: ['sh', '-c', 'until nc -z {{ .Release.Name }}-valkey {{ .Values.valkey.service.port | default 6379 }}; do echo "Waiting for Valkey..."; sleep 2; done; echo "Valkey is ready!"']
         {{- end }}
         {{- if .Values.devMode.enabled }}
         # Install Python dependencies in dev mode using uv
@@ -105,14 +105,14 @@ spec:
                   key: {{ include "myelectricaldata.postgres.secretKey" . | trim }}
             - name: DATABASE_URL
               value: {{ include "myelectricaldata.databaseUrl" . | quote }}
-            # Redis password MUST be defined before REDIS_URL for $(REDIS_PASSWORD) substitution
-            - name: REDIS_PASSWORD
+            # Valkey password MUST be defined before REDIS_URL for $(VALKEY_PASSWORD) substitution
+            - name: VALKEY_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "myelectricaldata.redis.secretName" . | trim }}
-                  key: {{ include "myelectricaldata.redis.secretKey" . | trim }}
+                  name: {{ include "myelectricaldata.valkey.secretName" . | trim }}
+                  key: {{ include "myelectricaldata.valkey.secretKey" . | trim }}
             - name: REDIS_URL
-              value: {{ include "myelectricaldata.redisUrl" . | quote }}
+              value: {{ include "myelectricaldata.valkeyUrl" . | quote }}
             - name: ENEDIS_ENVIRONMENT
               value: {{ .Values.secrets.enedis.environment | quote }}
             # --- Application Secrets ---

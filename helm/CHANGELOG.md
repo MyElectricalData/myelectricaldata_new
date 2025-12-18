@@ -1,45 +1,12 @@
-# Changelog
+# Helm Chart Changelog
 
-## [1.1.0-dev.5](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.4...1.1.0-dev.5) (2025-12-18)
-
-### Features
-
-* **ci:** separate CI/CD pipelines for apps and Helm chart ([6480760](https://github.com/MyElectricalData/myelectricaldata_new/commit/64807609ad5f7dc2c8c14701e569d67e6fe6573d))
-
-## [1.1.0-dev.4](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.3...1.1.0-dev.4) (2025-12-18)
-
-### Features
-
-* **helm:** migrate from Redis to Valkey ([5dd2ada](https://github.com/MyElectricalData/myelectricaldata_new/commit/5dd2adae748dd4a7e5fa6d2185162c7734823704))
-
-## [1.1.0-dev.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.2...1.1.0-dev.3) (2025-12-18)
+## [1.0.0-dev.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/v1.0.0-dev.1...helm/v1.0.0-dev.2) (2025-12-18)
 
 ### Bug Fixes
 
-* **helm:** correct postgres/valkey condition and configmap references ([61087da](https://github.com/MyElectricalData/myelectricaldata_new/commit/61087daf59425a7fe0d7ef7f928c6dc98cadc5b7))
+* **valkey:** update existingSecretKey to existingSecretPasswordKey in values.yaml and helpers.tpl ([9597eb4](https://github.com/MyElectricalData/myelectricaldata_new/commit/9597eb4e65947f6a18e6bdeb95f85b78126204cd))
 
-## [1.1.0-dev.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.1...1.1.0-dev.2) (2025-12-14)
-
-### Bug Fixes
-
-* **ci:** add extra_plugins for semantic-release action ([5a1561f](https://github.com/MyElectricalData/myelectricaldata_new/commit/5a1561f2e7fc4e2b1e576fd3163a44cccb716ba4))
-* **ci:** use semantic-release action for proper GitHub outputs ([4c5ead6](https://github.com/MyElectricalData/myelectricaldata_new/commit/4c5ead6f34f38f9ade6530a6e6d05e420c31b70d))
-
-## [1.1.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.0.0...1.1.0-dev.1) (2025-12-14)
-
-### Features
-
-* **ci:** add build validation before semantic-release ([f261fe7](https://github.com/MyElectricalData/myelectricaldata_new/commit/f261fe7faee82629eeb519ea6314fdab8fe322df))
-* **ci:** add pre-commit hooks for linting ([c1614a9](https://github.com/MyElectricalData/myelectricaldata_new/commit/c1614a9e813a62328ed20eea777ea47b62843f45))
-
-### Bug Fixes
-
-* **api:** remove unused imports ([6da4bf0](https://github.com/MyElectricalData/myelectricaldata_new/commit/6da4bf0955de2b360fea0cb3f660b74cf25c0df0))
-* **api:** resolve all 204 mypy type errors ([3e45d5b](https://github.com/MyElectricalData/myelectricaldata_new/commit/3e45d5b8e38c663216ddcc69dacad6035a7f1d20))
-* **api:** resolve all ruff linting errors ([d3366b3](https://github.com/MyElectricalData/myelectricaldata_new/commit/d3366b38bf1ece18179c9ad1c8ccdfa9899abde6))
-* **ci:** add mypy to dependency-groups for CI type checking ([717f99d](https://github.com/MyElectricalData/myelectricaldata_new/commit/717f99d1aaf1634780d5c8d80b1c8cbefcec9984))
-
-## 1.0.0 (2025-12-13)
+## 1.0.0-dev.1 (2025-12-18)
 
 ### Features
 
@@ -86,7 +53,10 @@
 * avertissement fallback + correction URLs manquantes ([a035577](https://github.com/MyElectricalData/myelectricaldata_new/commit/a035577159de610889be9883844caff0d10b0e5a))
 * cache scraped offers + auto-create providers with defaults ([4a6d334](https://github.com/MyElectricalData/myelectricaldata_new/commit/4a6d334567fee4b97a9070ec554510e4be245a72))
 * **chat:** améliorer la gestion de la saisie avec un textarea redimensionnable et prise en charge des nouvelles lignes ([51f4d1e](https://github.com/MyElectricalData/myelectricaldata_new/commit/51f4d1e34ed7bbf2b76b45954aa8fc0768cb9950))
+* **ci:** add build validation before semantic-release ([f261fe7](https://github.com/MyElectricalData/myelectricaldata_new/commit/f261fe7faee82629eeb519ea6314fdab8fe322df))
+* **ci:** add pre-commit hooks for linting ([c1614a9](https://github.com/MyElectricalData/myelectricaldata_new/commit/c1614a9e813a62328ed20eea777ea47b62843f45))
 * **ci:** configure semantic-release with develop/main workflow ([a78a3ec](https://github.com/MyElectricalData/myelectricaldata_new/commit/a78a3ecd796ecb7298c21e57b2e23a49da5345ab))
+* **ci:** separate CI/CD pipelines for apps and Helm chart ([6480760](https://github.com/MyElectricalData/myelectricaldata_new/commit/64807609ad5f7dc2c8c14701e569d67e6fe6573d))
 * **commands:** add /sync command for worktree synchronization ([#56](https://github.com/MyElectricalData/myelectricaldata_new/issues/56)) ([200201b](https://github.com/MyElectricalData/myelectricaldata_new/commit/200201bec24762a927efebb8249b79b5cb1b9f44))
 * **conductor:** add Docker Compose dev environment with dynamic ports ([#78](https://github.com/MyElectricalData/myelectricaldata_new/issues/78)) ([cdf5e99](https://github.com/MyElectricalData/myelectricaldata_new/commit/cdf5e99f5ae06707f21fb08927bdc4f51f1b2312))
 * **contribute:** ajouter des onglets pour la gestion des contributions et améliorer la navigation ([d761afa](https://github.com/MyElectricalData/myelectricaldata_new/commit/d761afad496341890834a191bfbe47df8a2fb71b))
@@ -103,6 +73,7 @@
 * Enhance admin contributions page with detailed features and statistics ([261aeb4](https://github.com/MyElectricalData/myelectricaldata_new/commit/261aeb40f61c9e2b750a3983f9ec98d3c142530c))
 * Enhance Admin PDL Management Interface ([e22acb7](https://github.com/MyElectricalData/myelectricaldata_new/commit/e22acb7b2d9cdbd58461c320ea0b36c0c59be135))
 * Enhance PowerPeaks component with multi-year selection and zoom functionality ([dc12655](https://github.com/MyElectricalData/myelectricaldata_new/commit/dc12655d7f8f9b02cf5e4b19b2329119796b98a3))
+* **helm:** migrate from Redis to Valkey ([5dd2ada](https://github.com/MyElectricalData/myelectricaldata_new/commit/5dd2adae748dd4a7e5fa6d2185162c7734823704))
 * Implement cache synchronization using BroadcastChannel API ([66c98e7](https://github.com/MyElectricalData/myelectricaldata_new/commit/66c98e7d2481ff385b96b443e2f42380976faf60))
 * Implement TEMPO calendar page with data fetching and visualization ([e1226ca](https://github.com/MyElectricalData/myelectricaldata_new/commit/e1226ca86945ef95713545bac9969e64799b8ed3))
 * Intégrer Ekwateur et compléter l'écosystème de 8 fournisseurs d'énergie ([5f80927](https://github.com/MyElectricalData/myelectricaldata_new/commit/5f809272bca1651e31b31981c80a995e0a42c306))
@@ -137,6 +108,15 @@
 
 * Add location state handling for navigation in ProtectedRoute, Login, and Settings components ([e6c65a4](https://github.com/MyElectricalData/myelectricaldata_new/commit/e6c65a4dc1de47bcb24ca8a95b02be6716148e39))
 * **api:** add migration for selected_offer_id column in pdls table ([#38](https://github.com/MyElectricalData/myelectricaldata_new/issues/38)) ([f734ee9](https://github.com/MyElectricalData/myelectricaldata_new/commit/f734ee966b0b0159b59686dcdc7805054520024e))
+* **api:** remove unused imports ([6da4bf0](https://github.com/MyElectricalData/myelectricaldata_new/commit/6da4bf0955de2b360fea0cb3f660b74cf25c0df0))
+* **api:** resolve all 204 mypy type errors ([3e45d5b](https://github.com/MyElectricalData/myelectricaldata_new/commit/3e45d5b8e38c663216ddcc69dacad6035a7f1d20))
+* **api:** resolve all ruff linting errors ([d3366b3](https://github.com/MyElectricalData/myelectricaldata_new/commit/d3366b38bf1ece18179c9ad1c8ccdfa9899abde6))
+* **ci:** add extra_plugins for semantic-release action ([5a1561f](https://github.com/MyElectricalData/myelectricaldata_new/commit/5a1561f2e7fc4e2b1e576fd3163a44cccb716ba4))
+* **ci:** add mypy to dependency-groups for CI type checking ([717f99d](https://github.com/MyElectricalData/myelectricaldata_new/commit/717f99d1aaf1634780d5c8d80b1c8cbefcec9984))
+* **ci:** trigger release only on apps changes ([dfd98af](https://github.com/MyElectricalData/myelectricaldata_new/commit/dfd98afaba9f3602e7827b84a52b392003852f7b))
+* **ci:** use config swap instead of extends for helm release ([9eee893](https://github.com/MyElectricalData/myelectricaldata_new/commit/9eee893fce951e853915f204810f045796a46467))
+* **ci:** use helm/vX.X.X tags without GitHub releases ([9ab83ed](https://github.com/MyElectricalData/myelectricaldata_new/commit/9ab83eda8a0da3dcfd0d12a6af94b51f9ddab510))
+* **ci:** use semantic-release action for proper GitHub outputs ([4c5ead6](https://github.com/MyElectricalData/myelectricaldata_new/commit/4c5ead6f34f38f9ade6530a6e6d05e420c31b70d))
 * **conductor:** simplify config format for app detection ([#80](https://github.com/MyElectricalData/myelectricaldata_new/issues/80)) ([a39425a](https://github.com/MyElectricalData/myelectricaldata_new/commit/a39425a8a6ca23ff11d49823be923b0589d64b36))
 * **conductor:** support multi-instance deployment with external services ([#79](https://github.com/MyElectricalData/myelectricaldata_new/issues/79)) ([d93523b](https://github.com/MyElectricalData/myelectricaldata_new/commit/d93523b89c827b6d89ef9f02bd981fd586e1a98f))
 * **consumption:** display correct year labels for annual curve ([#50](https://github.com/MyElectricalData/myelectricaldata_new/issues/50)) ([4fa3510](https://github.com/MyElectricalData/myelectricaldata_new/commit/4fa3510656216ab2255e160133003b4ebd58bc49))
@@ -150,6 +130,7 @@
 * Corriger les issues GitHub Copilot (imports et variables inutilisés) ([43e6954](https://github.com/MyElectricalData/myelectricaldata_new/commit/43e69545cafae5412023a1ba5eb8c4217c60c9ef)), closes [#3](https://github.com/MyElectricalData/myelectricaldata_new/issues/3)
 * corriger position fixed du HelpButton et cache IndexedDB ([2b03e48](https://github.com/MyElectricalData/myelectricaldata_new/commit/2b03e4865fd80e6d0f24a3a3430fec8161a5b505))
 * **dev:** enable recursive file watching for backend hot reload ([#75](https://github.com/MyElectricalData/myelectricaldata_new/issues/75)) ([e7ea921](https://github.com/MyElectricalData/myelectricaldata_new/commit/e7ea92152b5bf1a049080f7bd123aa523dcf2eec))
+* **helm:** correct postgres/valkey condition and configmap references ([61087da](https://github.com/MyElectricalData/myelectricaldata_new/commit/61087daf59425a7fe0d7ef7f928c6dc98cadc5b7))
 * **helm:** disable backend PVC when using PostgreSQL ([4d7fec2](https://github.com/MyElectricalData/myelectricaldata_new/commit/4d7fec2e1d191907bf557fce6a40cbccf36bc143))
 * hide linked production PDLs from selector ([#73](https://github.com/MyElectricalData/myelectricaldata_new/issues/73)) ([10559d7](https://github.com/MyElectricalData/myelectricaldata_new/commit/10559d705ae9dd44cc924d6f826fc11655d86619))
 * implement Ekwateur HTML parsing and update Dec 2025 prices ([#57](https://github.com/MyElectricalData/myelectricaldata_new/issues/57)) ([87c9c1d](https://github.com/MyElectricalData/myelectricaldata_new/commit/87c9c1df22b3cf5a51825ece5ea787233055bac8))
@@ -169,7 +150,7 @@
 * **simulator:** resolve race condition in auto-launch with cached data ([#72](https://github.com/MyElectricalData/myelectricaldata_new/issues/72)) ([0526630](https://github.com/MyElectricalData/myelectricaldata_new/commit/052663089685ff00162f5430e351248fc2ebce7b))
 * **simulator:** resolve React hooks violations ([#61](https://github.com/MyElectricalData/myelectricaldata_new/issues/61)) ([21d3993](https://github.com/MyElectricalData/myelectricaldata_new/commit/21d3993d1262dcf05cbd705bafab5d442662026e)), closes [#310](https://github.com/MyElectricalData/myelectricaldata_new/issues/310) [#310](https://github.com/MyElectricalData/myelectricaldata_new/issues/310)
 * **simulator:** use subscription pattern for cache hydration ([#74](https://github.com/MyElectricalData/myelectricaldata_new/issues/74)) ([f902c18](https://github.com/MyElectricalData/myelectricaldata_new/commit/f902c18c77c23e191fbccb528d5bc735d4cf4420))
-* Supprimer les variables inutilisées (LoadingStatusBadge et AdminOffers) ([98d7c09](https://github.com/MyElectricalData/myelectricaldata_new/commit/98d7c0974aaae07cbc7d741e9a476b3c42f92871)), closes [#3](https://github.com/MyElectricalData/myelectricaldata_new/issues/3)
+* Supprimer les variables inutilisées (LoadingStatusBadge et AdminOffers) ([98d7c09](https://github.com/MyElectricalData/myelectricaldata_new/commit/98d7c0974aaae07cbc7d741e9a476b3c42f92871)), closes [#3](https://github.com/MyElectricalData/myelectricaldata_new/issues/3) [#3](https://github.com/MyElectricalData/myelectricaldata_new/issues/3)
 * UI improvements - cache, tooltip, help button ([f989c02](https://github.com/MyElectricalData/myelectricaldata_new/commit/f989c02c34dc3001a59a049eefd722f0d4be5a8f))
 * Update cache persistence logic for energy providers and enhance admin offers page with token checks and real-time messaging features ([14db3a2](https://github.com/MyElectricalData/myelectricaldata_new/commit/14db3a2cd407ae92907760a04c6a7eb7aa2c1945))
 * use spawn context for ProcessPoolExecutor to avoid asyncio deadlocks ([f72cbd4](https://github.com/MyElectricalData/myelectricaldata_new/commit/f72cbd436fd9932149cda84bd48e681b3ec3e051))
@@ -196,35 +177,3 @@
 * Corriger les nitpicks Copilot sur AdminLogs et Layout ([bb767b3](https://github.com/MyElectricalData/myelectricaldata_new/commit/bb767b3fea7876dfae791995f0393b9497f73b03))
 * remplacer Landing v1 par v2 + ajout blague disponibilité ([a8298fe](https://github.com/MyElectricalData/myelectricaldata_new/commit/a8298fed78dea6cec2155ba708e82a1fb0d63877))
 * **simulator:** supprimer les calculs de différence de coût pour les offres ([fc2f447](https://github.com/MyElectricalData/myelectricaldata_new/commit/fc2f4472705288eda9ad937bfdb4a2a6c5e0d87c))
-
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### Fixed
-- **[Frontend]** Calendrier de navigation - Correction de l'alignement des jours pour le calendrier français
-  - Les jours sont maintenant correctement alignés avec lundi en première colonne (L, M, M, J, V, S, D)
-  - Fix: `getDay()` retourne 0 pour dimanche, ajout de transformation modulo `(getDay() + 6) % 7`
-  - Exemple: 4 septembre 2025 (jeudi) s'affiche maintenant dans la colonne jeudi et non vendredi
-  - Fichier: `apps/web/src/pages/Consumption/components/DetailedLoadCurve.tsx`
-
-### Improved
-- **[Frontend]** Navigation par jour dans la courbe de charge détaillée
-  - Boutons de jour affichés sur 2 lignes : date complète (ex: "lun. 17 nov") + puissance (ex: "12.45 kWh")
-  - Nombre de jours visibles calculé dynamiquement avec hook `useResponsiveDayCount`
-  - Ajustement automatique selon la largeur du conteneur (min 3 jours, max 14 jours)
-  - Fichier: `apps/web/src/pages/Consumption/hooks/useResponsiveDayCount.ts`
-
-- **[Frontend]** Sélection de date intelligente dans le calendrier
-  - Lorsqu'une date nécessite le chargement d'une nouvelle semaine, l'utilisateur arrive maintenant sur la date sélectionnée (et non la première date)
-  - Implémentation d'un état `pendingDateSelection` pour mémoriser la date cliquée pendant le chargement
-  - Navigation automatique vers le bon jour une fois les données chargées
-
-- **[Frontend]** Comparaisons semaine -1 et année -1
-  - Extraction automatique des données de comparaison depuis le cache React Query
-  - Parcours intelligent des queries en cache pour trouver les données par filtrage de date
-  - Support du format batch avec filtrage sur `interval_reading` array
-  - Boutons de comparaison toujours actifs (suppression des checks de disponibilité restrictifs)

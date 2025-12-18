@@ -22,18 +22,18 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 86400
 
     # Enedis API
-    ENEDIS_CLIENT_ID: str
-    ENEDIS_CLIENT_SECRET: str
+    ENEDIS_CLIENT_ID: str = ""
+    ENEDIS_CLIENT_SECRET: str = ""
     ENEDIS_ENVIRONMENT: Literal["sandbox", "production"] = "sandbox"
     ENEDIS_REDIRECT_URI: str = "http://localhost:3000/oauth/callback"
 
     # RTE API (for Tempo Calendar)
-    RTE_CLIENT_ID: str
-    RTE_CLIENT_SECRET: str
+    RTE_CLIENT_ID: str = ""
+    RTE_CLIENT_SECRET: str = ""
     RTE_BASE_URL: str = "https://digital.iservices.rte-france.com"
 
     # API Security
-    SECRET_KEY: str
+    SECRET_KEY: str = "dev-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 43200
 
@@ -53,8 +53,8 @@ class Settings(BaseSettings):
     BACKEND_URL: str = "http://localhost:8000"
 
     # Mailgun Email
-    MAILGUN_API_KEY: str
-    MAILGUN_DOMAIN: str
+    MAILGUN_API_KEY: str = ""
+    MAILGUN_DOMAIN: str = ""
     MAILGUN_FROM_EMAIL: str = "MyElectricalData <noreply@myelectricaldata.fr>"
     MAILGUN_API_BASE_URL: str = "https://api.mailgun.net/v3"  # or https://api.eu.mailgun.net/v3 for EU
     REQUIRE_EMAIL_VERIFICATION: bool = False

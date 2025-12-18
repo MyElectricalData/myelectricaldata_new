@@ -2,36 +2,136 @@ name: Release Helm Chart
 
 on:
   push:
-    tags:
-      - 'helm-v*'  # Déclenché par les tags comme helm-v0.1.0
+    branches:
+      - main
+      - develop
     paths:
       - 'helm/myelectricaldata/**'
-  workflow_dispatch:  # Permet le déclenchement manuel
-    inputs:
-      version:
-        description: 'Version du chart (ex: 0.1.0)'
-        required: false
-        default: ''
+  workflow_dispatch:
 
-# Annule les builds en cours sur la même branche
+# Prevent concurrent releases
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: helm-release-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
   CHART_PATH: helm/myelectricaldata
 
 jobs:
+  # ===========================================
+  # STEP 1: Validate Chart
+  # ===========================================
+  validate:
+    name: Validate Chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.0'
+
+      - name: Update dependencies
+        run: helm dependency update ${{ env.CHART_PATH }}
+
+      - name: Lint chart
+        run: helm lint ${{ env.CHART_PATH }}
+
+      - name: Template chart
+        run: helm template myelectricaldata ${{ env.CHART_PATH }} --debug > /dev/null
+
+  # ===========================================
+  # STEP 2: Semantic Release for Helm Chart
+  # ===========================================
   release:
+    name: Semantic Release
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      packages: write
+    outputs:
+      new_release_published: ${{ steps.semantic.outputs.new_release_published }}
+      new_release_version: ${{ steps.semantic.outputs.new_release_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Use Helm release config
+        run: |
+          # Backup original releaserc if exists
+          if [ -f .releaserc.yaml ]; then
+            mv .releaserc.yaml .releaserc.yaml.bak
+          fi
+          # Use helm-specific config
+          cp .releaserc-helm.yaml .releaserc.yaml
+
+      - name: Semantic Release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          extra_plugins: |
+            @semantic-release/changelog@6.0.3
+            @semantic-release/git@10.0.1
+            semantic-release-replace-plugin@1.2.7
+            conventional-changelog-conventionalcommits@8.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore original config
+        if: always()
+        run: |
+          # Restore original releaserc
+          if [ -f .releaserc.yaml.bak ]; then
+            mv .releaserc.yaml.bak .releaserc.yaml
+          else
+            rm -f .releaserc.yaml
+          fi
+
+      - name: Release info
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: |
+          echo "## Helm Chart Release 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ steps.semantic.outputs.new_release_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`helm/${{ steps.semantic.outputs.new_release_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================
+  # STEP 3: Package and Push to GHCR
+  # ===========================================
+  publish:
+    name: Publish to GHCR
+    needs: release
+    if: needs.release.outputs.new_release_published == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          # Fetch latest to get the version bump commit
+          fetch-depth: 1
+
+      - name: Pull latest changes
+        run: git pull origin ${{ github.ref_name }}
 
       - name: Set lowercase owner
         id: repo
@@ -47,33 +147,15 @@ jobs:
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
 
+      - name: Update Helm dependencies
+        run: helm dependency update ${{ env.CHART_PATH }}
+
       - name: Get chart version
         id: chart_version
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          elif [[ "${{ github.ref }}" == refs/tags/helm-v* ]]; then
-            VERSION="${{ github.ref_name }}"
-            VERSION="${VERSION#helm-v}"
-          else
-            VERSION=$(grep '^version:' ${{ env.CHART_PATH }}/Chart.yaml | awk '{print $2}')
-          fi
+          VERSION=$(grep '^version:' ${{ env.CHART_PATH }}/Chart.yaml | awk '{print $2}')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Chart version: $VERSION"
-
-      - name: Update chart version
-        run: |
-          sed -i "s/^version:.*/version: ${{ steps.chart_version.outputs.version }}/" ${{ env.CHART_PATH }}/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.chart_version.outputs.version }}\"/" ${{ env.CHART_PATH }}/Chart.yaml
-          cat ${{ env.CHART_PATH }}/Chart.yaml
-
-      - name: Update Helm dependencies
-        run: |
-          helm dependency update ${{ env.CHART_PATH }}
-
-      - name: Lint Helm chart
-        run: |
-          helm lint ${{ env.CHART_PATH }}
 
       - name: Package Helm chart
         run: |
@@ -87,13 +169,23 @@ jobs:
 
       - name: Summary
         run: |
-          echo "## Helm Chart Published" >> $GITHUB_STEP_SUMMARY
+          VERSION="${{ steps.chart_version.outputs.version }}"
+
+          if [[ "$VERSION" == *"-dev."* ]]; then
+            RELEASE_TYPE="🧪 Development"
+          else
+            RELEASE_TYPE="🚀 Production"
+          fi
+
+          echo "## Helm Chart Published 📦" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release Type:** $RELEASE_TYPE" >> $GITHUB_STEP_SUMMARY
           echo "**Chart:** myelectricaldata" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ steps.chart_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`helm/$VERSION\`" >> $GITHUB_STEP_SUMMARY
           echo "**Registry:** oci://${{ env.REGISTRY }}/${{ steps.repo.outputs.owner }}/charts" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Installation" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "helm install myelectricaldata oci://${{ env.REGISTRY }}/${{ steps.repo.outputs.owner }}/charts/myelectricaldata --version ${{ steps.chart_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "helm install myelectricaldata oci://${{ env.REGISTRY }}/${{ steps.repo.outputs.owner }}/charts/myelectricaldata --version $VERSION" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

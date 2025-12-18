@@ -1,4 +1,4 @@
-from .base import BasePriceScraper, run_sync_in_thread, pdf_executor
+from .base import BasePriceScraper
 from .edf_scraper import EDFPriceScraper
 from .enercoop_scraper import EnercoopPriceScraper
 from .totalenergies_scraper import TotalEnergiesPriceScraper

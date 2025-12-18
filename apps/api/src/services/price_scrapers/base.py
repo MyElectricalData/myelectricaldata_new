@@ -22,7 +22,7 @@ pdf_executor = ProcessPoolExecutor(max_workers=4, mp_context=_mp_context)
 T = TypeVar('T')
 
 
-async def run_sync_in_process(func: Callable[..., T], *args) -> T:
+async def run_sync_in_process(func: Callable[..., T], *args: Any) -> T:
     """
     Run a synchronous function in a process pool to bypass Python's GIL.
     Use this for CPU-intensive operations like PDF parsing.
@@ -149,9 +149,9 @@ class OfferData:
             result["price_updated_at"] = datetime.now(UTC).isoformat()
         else:
             # Keep native datetime for database insertion
-            result["valid_from"] = self.valid_from
-            result["valid_to"] = self.valid_to
-            result["price_updated_at"] = datetime.now(UTC)
+            result["valid_from"] = self.valid_from  # type: ignore
+            result["valid_to"] = self.valid_to  # type: ignore
+            result["price_updated_at"] = datetime.now(UTC)  # type: ignore
 
         return result
 

@@ -10,7 +10,7 @@ from typing import Optional, List
 from ..models import User, PDL, EnergyProvider, EnergyOffer
 from ..models.database import get_db
 from ..middleware import require_admin, require_permission, get_current_user
-from ..schemas import APIResponse
+from ..schemas import APIResponse, ErrorDetail
 from ..services import rate_limiter, cache_service
 from ..services.price_update_service import PriceUpdateService
 from ..config import settings
@@ -34,9 +34,9 @@ _scraper_status: dict = {
 SCRAPED_OFFERS_CACHE_TTL = 300  # 5 minutes
 
 
-async def _get_redis_client():
+async def _get_redis_client() -> redis.Redis:  # type: ignore[return-value]
     """Get Redis client"""
-    return await redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
+    return await redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)  # type: ignore[no-any-return]
 
 
 async def _cache_scraped_offers(provider: str, offers: List[dict]) -> None:
@@ -59,7 +59,7 @@ async def _get_cached_offers(provider: str) -> List[dict] | None:
         cached = await client.get(cache_key)
         await client.close()
         if cached:
-            offers = json.loads(cached)
+            offers: List[dict] = json.loads(cached)
             logger.info(f"Found {len(offers)} cached offers for {provider}")
             return offers
     except Exception as e:
@@ -79,7 +79,7 @@ async def _clear_cached_offers(provider: str) -> None:
         logger.error(f"Failed to clear cached offers for {provider}: {e}")
 
 
-def _update_scraper_progress(step: str, progress: int):
+def _update_scraper_progress(step: str, progress: int) -> None:
     """Update scraper progress status"""
     global _scraper_status
     _scraper_status["current_step"] = step
@@ -147,7 +147,7 @@ async def reset_user_quota(
     user = result.scalar_one_or_none()
 
     if not user:
-        return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
+        return APIResponse(success=False, error=ErrorDetail(code="USER_NOT_FOUND", message="User not found"))
 
     # Reset quota by deleting Redis keys
     today = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -176,7 +176,7 @@ async def clear_user_cache(
     user = result.scalar_one_or_none()
 
     if not user:
-        return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
+        return APIResponse(success=False, error=ErrorDetail(code="USER_NOT_FOUND", message="User not found"))
 
     # Get all PDLs for this user
     pdl_result = await db.execute(select(PDL).where(PDL.user_id == user_id))
@@ -222,7 +222,7 @@ async def clear_user_blacklist(
     user = result.scalar_one_or_none()
 
     if not user:
-        return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
+        return APIResponse(success=False, error=ErrorDetail(code="USER_NOT_FOUND", message="User not found"))
 
     # Get all PDLs for this user
     pdl_result = await db.execute(select(PDL).where(PDL.user_id == user_id))
@@ -280,7 +280,7 @@ async def clear_all_consumption_cache(
     return APIResponse(
         success=True,
         data={
-            "message": f"All consumption cache cleared",
+            "message": "All consumption cache cleared",
             "total_pdls": len(pdls),
             "deleted_keys": deleted_count
         }
@@ -315,7 +315,7 @@ async def clear_all_production_cache(
     return APIResponse(
         success=True,
         data={
-            "message": f"All production cache cleared",
+            "message": "All production cache cleared",
             "total_pdls": len(pdls),
             "deleted_keys": deleted_count
         }
@@ -353,7 +353,7 @@ async def clear_all_cache(
     return APIResponse(
         success=True,
         data={
-            "message": f"All cache cleared (consumption + production)",
+            "message": "All cache cleared (consumption + production)",
             "total_pdls": len(pdls),
             "deleted_keys": deleted_count
         }
@@ -373,13 +373,13 @@ async def get_user_stats(
 
     # Active users
     active_result = await db.execute(
-        select(func.count()).select_from(User).where(User.is_active == True)
+        select(func.count()).select_from(User).where(User.is_active.is_(True))
     )
     active_users = active_result.scalar()
 
     # Verified users
     verified_result = await db.execute(
-        select(func.count()).select_from(User).where(User.email_verified == True)
+        select(func.count()).select_from(User).where(User.email_verified.is_(True))
     )
     verified_users = verified_result.scalar()
 
@@ -425,12 +425,12 @@ async def create_user(
     role_id = request.get('role_id')
 
     if not email:
-        return APIResponse(success=False, error={"code": "MISSING_EMAIL", "message": "Email is required"})
+        return APIResponse(success=False, error=ErrorDetail(code="MISSING_EMAIL", message="Email is required"))
 
     # Check if user already exists
     existing_result = await db.execute(select(User).where(User.email == email))
     if existing_result.scalar_one_or_none():
-        return APIResponse(success=False, error={"code": "USER_EXISTS", "message": "User already exists"})
+        return APIResponse(success=False, error=ErrorDetail(code="USER_EXISTS", message="User already exists"))
 
     # Create user
     new_user = User(
@@ -476,7 +476,7 @@ async def toggle_user_status(
     user = result.scalar_one_or_none()
 
     if not user:
-        return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
+        return APIResponse(success=False, error=ErrorDetail(code="USER_NOT_FOUND", message="User not found"))
 
     # Toggle status
     user.is_active = not user.is_active
@@ -504,11 +504,11 @@ async def delete_user(
     user = result.scalar_one_or_none()
 
     if not user:
-        return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
+        return APIResponse(success=False, error=ErrorDetail(code="USER_NOT_FOUND", message="User not found"))
 
     # Prevent deleting yourself
     if user.id == current_user.id:
-        return APIResponse(success=False, error={"code": "CANNOT_DELETE_SELF", "message": "Cannot delete your own account"})
+        return APIResponse(success=False, error=ErrorDetail(code="CANNOT_DELETE_SELF", message="Cannot delete your own account"))
 
     # Delete user (cascades will handle PDLs, etc.)
     await db.delete(user)
@@ -535,7 +535,7 @@ async def reset_user_password(
     user = result.scalar_one_or_none()
 
     if not user:
-        return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
+        return APIResponse(success=False, error=ErrorDetail(code="USER_NOT_FOUND", message="User not found"))
 
     # TODO: Send password reset email
 
@@ -561,7 +561,7 @@ async def toggle_user_debug_mode(
     user = result.scalar_one_or_none()
 
     if not user:
-        return APIResponse(success=False, error={"code": "USER_NOT_FOUND", "message": "User not found"})
+        return APIResponse(success=False, error=ErrorDetail(code="USER_NOT_FOUND", message="User not found"))
 
     # Toggle debug mode
     user.debug_mode = not user.debug_mode
@@ -590,7 +590,7 @@ async def get_global_stats(
 
     # Active users (email verified)
     active_users_result = await db.execute(
-        select(func.count()).select_from(User).where(User.email_verified == True)
+        select(func.count()).select_from(User).where(User.email_verified.is_(True))
     )
     active_users = active_users_result.scalar()
 
@@ -748,7 +748,7 @@ async def refresh_ecowatt_cache(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
-):
+) -> APIResponse:
     """
     Refresh EcoWatt cache with latest data from RTE
     """
@@ -756,7 +756,8 @@ async def refresh_ecowatt_cache(
         raise HTTPException(status_code=403, detail="Admin access required")
 
     # Check rate limit
-    endpoint_path = request.scope.get("route").path if request.scope.get("route") else request.url.path
+    route = request.scope.get("route")
+    endpoint_path = route.path if route else request.url.path
     is_allowed, current_count, limit = await rate_limiter.increment_and_check(
         current_user.id, False, current_user.is_admin, endpoint_path
     )
@@ -775,8 +776,7 @@ async def refresh_ecowatt_cache(
 
         return APIResponse(
             success=True,
-            data={"count": updated_count},
-            message=f"Cache EcoWatt mis à jour avec {updated_count} signaux"
+            data={"count": updated_count, "message": f"Cache EcoWatt mis à jour avec {updated_count} signaux"}
         )
     except Exception as e:
         logger.error(f"Error refreshing EcoWatt cache: {e}")
@@ -795,7 +795,7 @@ async def get_logs(
     if not cache_service.redis_client:
         return APIResponse(
             success=False,
-            error={"code": "REDIS_NOT_AVAILABLE", "message": "Redis is not available"}
+            error=ErrorDetail(code="REDIS_NOT_AVAILABLE", message="Redis is not available")
         )
 
     try:
@@ -852,7 +852,7 @@ async def get_logs(
         logger.error(f"Error retrieving logs from Redis: {e}")
         return APIResponse(
             success=False,
-            error={"code": "LOG_RETRIEVAL_ERROR", "message": str(e)}
+            error=ErrorDetail(code="LOG_RETRIEVAL_ERROR", message=str(e))
         )
 
 
@@ -866,7 +866,7 @@ async def clear_logs(
     if not cache_service.redis_client:
         return APIResponse(
             success=False,
-            error={"code": "REDIS_NOT_AVAILABLE", "message": "Redis is not available"}
+            error=ErrorDetail(code="REDIS_NOT_AVAILABLE", message="Redis is not available")
         )
 
     try:
@@ -902,7 +902,7 @@ async def clear_logs(
         logger.error(f"Error clearing logs from Redis: {e}")
         return APIResponse(
             success=False,
-            error={"code": "LOG_CLEAR_ERROR", "message": str(e)}
+            error=ErrorDetail(code="LOG_CLEAR_ERROR", message=str(e))
         )
 
 
@@ -959,10 +959,10 @@ async def preview_offers_update(
     if _scraper_lock.locked():
         return APIResponse(
             success=False,
-            error={
-                "code": "SYNC_IN_PROGRESS",
-                "message": f"Une synchronisation est déjà en cours pour le fournisseur '{_scraper_status['provider']}' depuis {_scraper_status['started_at']}"
-            }
+            error=ErrorDetail(
+                code="SYNC_IN_PROGRESS",
+                message=f"Une synchronisation est déjà en cours pour le fournisseur '{_scraper_status['provider']}' depuis {_scraper_status['started_at']}"
+            )
         )
 
     async with _scraper_lock:
@@ -983,10 +983,10 @@ async def preview_offers_update(
                 if provider not in PriceUpdateService.SCRAPERS:
                     return APIResponse(
                         success=False,
-                        error={
-                            "code": "INVALID_PROVIDER",
-                            "message": f"Unknown provider: {provider}. Available: {', '.join(PriceUpdateService.SCRAPERS.keys())}"
-                        }
+                        error=ErrorDetail(
+                            code="INVALID_PROVIDER",
+                            message=f"Unknown provider: {provider}. Available: {', '.join(PriceUpdateService.SCRAPERS.keys())}"
+                        )
                     )
 
                 _update_scraper_progress(f"Téléchargement des tarifs {provider}", 20)
@@ -996,10 +996,10 @@ async def preview_offers_update(
                 if not preview_result.get("success"):
                     return APIResponse(
                         success=False,
-                        error={
-                            "code": "PREVIEW_FAILED",
-                            "message": preview_result.get("error", "Unknown error")
-                        }
+                        error=ErrorDetail(
+                            code="PREVIEW_FAILED",
+                            message=preview_result.get("error", "Unknown error")  # type: ignore
+                        )
                     )
 
                 # Cache scraped offers for later refresh (avoids re-scraping)
@@ -1092,10 +1092,10 @@ async def preview_offers_update(
             logger.error(f"Error previewing offers: {e}", exc_info=True)
             return APIResponse(
                 success=False,
-                error={
-                    "code": "PREVIEW_ERROR",
-                    "message": str(e)
-                }
+                error=ErrorDetail(
+                    code="PREVIEW_ERROR",
+                    message=str(e)
+                )
             )
         finally:
             _scraper_status = {"running": False, "provider": None, "started_at": None, "current_step": None, "steps": [], "progress": 0}
@@ -1125,10 +1125,10 @@ async def refresh_offers(
     if _scraper_lock.locked():
         return APIResponse(
             success=False,
-            error={
-                "code": "SYNC_IN_PROGRESS",
-                "message": f"Une synchronisation est déjà en cours pour le fournisseur '{_scraper_status['provider']}' depuis {_scraper_status['started_at']}"
-            }
+            error=ErrorDetail(
+                code="SYNC_IN_PROGRESS",
+                message=f"Une synchronisation est déjà en cours pour le fournisseur '{_scraper_status['provider']}' depuis {_scraper_status['started_at']}"
+            )
         )
 
     async with _scraper_lock:
@@ -1149,10 +1149,10 @@ async def refresh_offers(
                 if provider not in PriceUpdateService.SCRAPERS:
                     return APIResponse(
                         success=False,
-                        error={
-                            "code": "INVALID_PROVIDER",
-                            "message": f"Unknown provider: {provider}. Available: {', '.join(PriceUpdateService.SCRAPERS.keys())}"
-                        }
+                        error=ErrorDetail(
+                            code="INVALID_PROVIDER",
+                            message=f"Unknown provider: {provider}. Available: {', '.join(PriceUpdateService.SCRAPERS.keys())}"
+                        )
                     )
 
                 # Check for cached offers from preview (avoids re-scraping)
@@ -1178,10 +1178,10 @@ async def refresh_offers(
                 if not result.get("success"):
                     return APIResponse(
                         success=False,
-                        error={
-                            "code": "UPDATE_FAILED",
-                            "message": result.get("error", "Unknown error")
-                        }
+                        error=ErrorDetail(
+                            code="UPDATE_FAILED",
+                            message=result.get("error", "Unknown error")  # type: ignore
+                        )
                     )
 
                 _update_scraper_progress("Terminé", 100)
@@ -1220,10 +1220,10 @@ async def refresh_offers(
             logger.error(f"Error refreshing offers: {e}", exc_info=True)
             return APIResponse(
                 success=False,
-                error={
-                    "code": "REFRESH_ERROR",
-                    "message": str(e)
-                }
+                error=ErrorDetail(
+                    code="REFRESH_ERROR",
+                    message=str(e)
+                )
             )
         finally:
             _scraper_status = {"running": False, "provider": None, "started_at": None, "current_step": None, "steps": [], "progress": 0}
@@ -1254,7 +1254,7 @@ async def purge_provider_offers(
         if not provider_obj:
             return APIResponse(
                 success=False,
-                error={"code": "PROVIDER_NOT_FOUND", "message": f"Provider not found: {provider}"}
+                error=ErrorDetail(code="PROVIDER_NOT_FOUND", message=f"Provider not found: {provider}")
             )
 
         # Count offers to be deleted
@@ -1300,10 +1300,10 @@ async def purge_provider_offers(
         logger.error(f"Error purging provider offers: {e}", exc_info=True)
         return APIResponse(
             success=False,
-            error={
-                "code": "PURGE_ERROR",
-                "message": str(e)
-            }
+            error=ErrorDetail(
+                code="PURGE_ERROR",
+                message=str(e)
+            )
         )
 
 
@@ -1337,13 +1337,13 @@ async def list_offers(
             if not provider_obj:
                 return APIResponse(
                     success=False,
-                    error={"code": "PROVIDER_NOT_FOUND", "message": f"Provider not found: {provider}"}
+                    error=ErrorDetail(code="PROVIDER_NOT_FOUND", message=f"Provider not found: {provider}")
                 )
 
             query = query.where(EnergyOffer.provider_id == provider_obj.id)
 
         if active_only:
-            query = query.where(EnergyOffer.is_active == True)  # noqa: E712
+            query = query.where(EnergyOffer.is_active.is_(True))
 
         query = query.order_by(EnergyOffer.name)
 
@@ -1388,7 +1388,7 @@ async def list_offers(
         logger.error(f"Error listing offers: {e}", exc_info=True)
         return APIResponse(
             success=False,
-            error={"code": "LIST_ERROR", "message": str(e)}
+            error=ErrorDetail(code="LIST_ERROR", message=str(e))
         )
 
 
@@ -1417,7 +1417,7 @@ async def list_available_scrapers(
         logger.error(f"Error listing scrapers: {e}", exc_info=True)
         return APIResponse(
             success=False,
-            error={"code": "LIST_ERROR", "message": str(e)}
+            error=ErrorDetail(code="LIST_ERROR", message=str(e))
         )
 
 
@@ -1491,7 +1491,7 @@ async def list_providers(
             })
 
         # Sort by name
-        providers_data.sort(key=lambda x: x["name"])
+        providers_data.sort(key=lambda x: x.get("name", ""))  # type: ignore
 
         return APIResponse(
             success=True,
@@ -1505,5 +1505,5 @@ async def list_providers(
         logger.error(f"Error listing providers: {e}", exc_info=True)
         return APIResponse(
             success=False,
-            error={"code": "LIST_ERROR", "message": str(e)}
+            error=ErrorDetail(code="LIST_ERROR", message=str(e))
         )

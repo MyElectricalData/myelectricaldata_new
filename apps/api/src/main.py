@@ -1,10 +1,11 @@
 import logging
 from contextlib import asynccontextmanager
+from typing import AsyncGenerator, Callable
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .adapters import enedis_adapter
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan events"""
     # Startup
     await init_db()
@@ -64,7 +65,7 @@ async def lifespan(app: FastAPI):
     await enedis_adapter.close()
 
 
-def get_servers():
+def get_servers() -> list[dict[str, str]]:
     """Build servers list for OpenAPI based on configuration."""
     is_production = settings.FRONTEND_URL and settings.FRONTEND_URL != "http://localhost:3000"
 
@@ -121,9 +122,9 @@ app.add_middleware(
 
 # Middleware to fix redirect URLs when behind HTTPS proxy
 @app.middleware("http")
-async def fix_redirect_urls(request: Request, call_next):
+async def fix_redirect_urls(request: Request, call_next: Callable) -> Response:
     """Fix redirect URLs to use HTTPS and correct path when behind proxy"""
-    response = await call_next(request)
+    response: Response = await call_next(request)
 
     # If it's a redirect and we're behind HTTPS proxy
     if response.status_code in (301, 302, 303, 307, 308):

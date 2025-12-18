@@ -1,4 +1,4 @@
-from sqlalchemy import String, Float, Boolean, DateTime, Text, JSON, ForeignKey, Numeric
+from sqlalchemy import String, Boolean, DateTime, Text, JSON, ForeignKey, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, UTC
 from decimal import Decimal

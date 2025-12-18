@@ -28,14 +28,14 @@ LOG_RETENTION_SECONDS = 24 * 60 * 60
 class LocalTimeFormatter(logging.Formatter):
     """Custom formatter that uses Europe/Paris timezone and centers the level name."""
 
-    def formatTime(self, record, datefmt=None):
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
         """Format time with Europe/Paris timezone."""
         dt = datetime.fromtimestamp(record.created, tz=ZoneInfo("Europe/Paris"))
         if datefmt:
             return dt.strftime(datefmt)
         return dt.isoformat()
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         """Format the record with perfectly centered level name."""
         # Custom centering to ensure true symmetry
         levelname = record.levelname
@@ -58,7 +58,7 @@ class SQLAlchemyFilter(logging.Filter):
         super().__init__()
         self.debug_sql = debug_sql
 
-    def filter(self, record):
+    def filter(self, record: logging.LogRecord) -> bool:
         # If DEBUG_SQL is True, allow all logs
         if self.debug_sql:
             return True
@@ -77,12 +77,12 @@ class SQLAlchemyFilter(logging.Filter):
 class RedisLogHandler(logging.Handler):
     """Handler that stores logs in Redis with 24-hour retention."""
 
-    def __init__(self, cache_service: "CacheService", redis_url: str):
+    def __init__(self, cache_service: "CacheService", redis_url: str) -> None:
         super().__init__()
         self.cache_service = cache_service
         self.redis_url = redis_url
 
-    def emit(self, record: logging.LogRecord):
+    def emit(self, record: logging.LogRecord) -> None:
         """Send log record to Redis."""
         if not self.cache_service.redis_client:
             return
@@ -125,12 +125,12 @@ class RedisLogHandler(logging.Handler):
             redis_key = f"logs:{original_levelname.lower()}:{timestamp_ms}"
 
             # Use thread pool to run the async operation
-            def _store_log():
+            def _store_log() -> None:
                 try:
                     # Create a new Redis client for this thread's event loop
                     import redis.asyncio as redis
 
-                    async def store():
+                    async def store() -> None:
                         client = await redis.from_url(
                             self.redis_url,
                             encoding="utf-8",
@@ -156,7 +156,7 @@ class RedisLogHandler(logging.Handler):
             pass
 
 
-def setup_logging(debug_sql: bool = False, cache_service: "CacheService" = None, redis_url: str = None):
+def setup_logging(debug_sql: bool = False, cache_service: "CacheService | None" = None, redis_url: str | None = None) -> None:
     """Configure logging to write to file, stdout, and Redis.
 
     Args:

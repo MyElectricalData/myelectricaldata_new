@@ -145,7 +145,7 @@ class EnercoopPriceScraper(BasePriceScraper):
             List[OfferData]: Extracted offers or empty list if parsing fails
         """
         try:
-            offers = []
+            offers: List[OfferData] = []
             valid_from = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
             # Extract Basic Watt - Base offers
@@ -240,7 +240,7 @@ class EnercoopPriceScraper(BasePriceScraper):
         Returns:
             List of BASE offers
         """
-        offers = []
+        offers: List[OfferData] = []
 
         # Find section: starts with "Basic Watt - base" or "Basic Watt - Base"
         section = self._extract_section_between(
@@ -296,7 +296,7 @@ class EnercoopPriceScraper(BasePriceScraper):
         Returns:
             List of HC_HP offers
         """
-        offers = []
+        offers: List[OfferData] = []
 
         # Find section
         section = self._extract_section_between(
@@ -355,7 +355,7 @@ class EnercoopPriceScraper(BasePriceScraper):
         Returns:
             List of HC_NUIT_WEEKEND offers
         """
-        offers = []
+        offers: List[OfferData] = []
 
         # Find section - look for the table header "Flexi Watt - nuit & week-end"
         section = self._extract_section_between(
@@ -412,7 +412,7 @@ class EnercoopPriceScraper(BasePriceScraper):
         Returns:
             List of SEASONAL offers
         """
-        offers = []
+        offers: List[OfferData] = []
 
         # Find section - stop before "Option" or "Jours de pointe" to exclude the option variant
         section = self._extract_section_between(
@@ -472,7 +472,7 @@ class EnercoopPriceScraper(BasePriceScraper):
         Returns:
             List[OfferData]: List of Enercoop offers
         """
-        offers = []
+        offers: List[OfferData] = []
         valid_from = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         # BASE offers
@@ -579,7 +579,7 @@ class EnercoopPriceScraper(BasePriceScraper):
 
             # Validate Enercoop-specific constraints
             # Enercoop should always be more expensive than regulated tariffs
-            if offer.offer_type == "BASE" and offer.base_price < 0.20:
+            if offer.offer_type == "BASE" and offer.base_price and offer.base_price < 0.20:
                 self.logger.warning(f"Suspiciously low price for Enercoop: {offer.base_price}")
 
         return True

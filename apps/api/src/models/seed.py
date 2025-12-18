@@ -7,6 +7,7 @@ It also ensures ADMIN_EMAILS users always have the admin role.
 """
 
 import logging
+from typing import cast
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from .role import Role, Permission
@@ -172,12 +173,13 @@ async def init_default_roles_and_permissions(db: AsyncSession) -> None:
             )
 
             # Assign permissions to role
-            for perm_name in role_data["permissions"]:
+            permissions_list = cast(list[str], role_data["permissions"])
+            for perm_name in permissions_list:
                 if perm_name in permission_objects:
                     role.permissions.append(permission_objects[perm_name])
 
             db.add(role)
-            logger.info(f"[SEED] Created role: {role_data['name']} with {len(role_data['permissions'])} permissions")
+            logger.info(f"[SEED] Created role: {role_data['name']} with {len(permissions_list)} permissions")
 
         await db.commit()
         logger.info("[SEED] Default roles and permissions initialized successfully")
@@ -234,16 +236,16 @@ async def sync_admin_users(db: AsyncSession) -> None:
 
             # Check if user needs update
             needs_update = False
-            if user.role_id != admin_role.id:
-                user.role_id = admin_role.id
+            if user.role_id != admin_role.id:  # type: ignore[attr-defined]
+                user.role_id = admin_role.id  # type: ignore[attr-defined,assignment]
                 needs_update = True
-            if not user.is_admin:
-                user.is_admin = True
+            if not user.is_admin:  # type: ignore[attr-defined]
+                user.is_admin = True  # type: ignore[attr-defined,assignment]
                 needs_update = True
 
             if needs_update:
                 updated_count += 1
-                logger.info(f"[SEED] Admin role assigned to: {user.email}")
+                logger.info(f"[SEED] Admin role assigned to: {user.email}")  # type: ignore[attr-defined]
 
         if updated_count > 0:
             await db.commit()

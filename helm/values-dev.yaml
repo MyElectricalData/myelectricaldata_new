@@ -74,8 +74,8 @@ ingress:
     kubernetes.io/ingress.allow-http: "true"
   tls: []
 
-# Lightweight Redis for dev
-redis:
+# Lightweight Valkey for dev
+valkey:
   enabled: true
   resources:
     limits:
@@ -102,6 +102,13 @@ postgres:
   persistence:
     enabled: true
     size: 1Gi
+    annotations:
+      helm.sh/resource-policy: keep
+  # PVC retention policy (keeps data when StatefulSet is deleted/scaled)
+  persistentVolumeClaimRetentionPolicy:
+    enabled: true
+    whenScaled: Retain
+    whenDeleted: Retain
 
 # Dummy secrets for development
 secrets:

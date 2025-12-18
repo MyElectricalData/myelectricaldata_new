@@ -43,4 +43,4 @@ Energie (Wh) = Puissance (W) / (60 / interval_minutes)
 | --------------------------------- | ------------------------------ |
 | `apps/api/src/adapters/enedis.py` | Wrapper API avec rate limiting |
 | `apps/api/src/routers/enedis.py`  | Endpoints FastAPI              |
-| `apps/api/src/services/cache.py`  | Cache chiffre Redis            |
+| `apps/api/src/services/cache.py`  | Cache chiffre Valkey           |

@@ -203,7 +203,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
         except Exception:
             return []
 
-    def _parse_essentielle_pdf(self, text: str, valid_from) -> List[OfferData]:
+    def _parse_essentielle_pdf(self, text: str, valid_from: datetime | None) -> List[OfferData]:
         """Parse Essentielle PDF format with mixed tables"""
         offers = []
 
@@ -273,7 +273,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
 
         return offers
 
-    def _parse_verte_fixe_pdf(self, text: str, valid_from) -> List[OfferData]:
+    def _parse_verte_fixe_pdf(self, text: str, valid_from: datetime | None) -> List[OfferData]:
         """Parse Verte Fixe PDF format with side-by-side tables"""
         offers = []
 
@@ -591,7 +591,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
                 return False
 
             # Validate price reasonableness
-            if offer.offer_type == "BASE" and (offer.base_price < 0.15 or offer.base_price > 0.40):
+            if offer.offer_type == "BASE" and offer.base_price and (offer.base_price < 0.15 or offer.base_price > 0.40):
                 self.logger.warning(f"Unusual price for TotalEnergies: {offer.base_price}")
 
         return True

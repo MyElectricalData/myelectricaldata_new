@@ -51,9 +51,9 @@ kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/component=frontend
 kubectl exec -it -n {{ .Release.Namespace }} $(kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name=postgres -o jsonpath='{.items[0].metadata.name}') -- psql -U {{ .Values.postgres.auth.username }} -d {{ .Values.postgres.auth.database }}
 {{- end }}
 
-{{- if .Values.redis.enabled }}
-# Access Redis CLI
-kubectl exec -it -n {{ .Release.Namespace }} $(kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name=redis -o jsonpath='{.items[0].metadata.name}') -- redis-cli
+{{- if .Values.valkey.enabled }}
+# Access Valkey CLI
+kubectl exec -it -n {{ .Release.Namespace }} $(kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name=valkey -o jsonpath='{.items[0].metadata.name}') -- valkey-cli
 {{- end }}
 
 === Important Notes ===

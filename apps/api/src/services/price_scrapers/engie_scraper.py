@@ -1,6 +1,6 @@
 """Engie price scraper - Fetches tariffs from HelloWatt comparison site"""
 import re
-from typing import List
+from typing import List, Any
 import httpx
 from datetime import datetime, UTC
 from bs4 import BeautifulSoup
@@ -221,13 +221,13 @@ class EngieScraper(BasePriceScraper):
 
         return offer_name, offer_type
 
-    def _find_next_table(self, header) -> "BeautifulSoup | None":
+    def _find_next_table(self, header: Any) -> "BeautifulSoup | None":
         """Find the next table element after a header"""
         # Try to find table in next siblings
         for sibling in header.next_siblings:
             if hasattr(sibling, 'name'):
                 if sibling.name == 'table':
-                    return sibling
+                    return sibling  # type: ignore
                 # If we hit another header, stop looking
                 if sibling.name in ['h2', 'h3', 'h4']:
                     break
@@ -235,7 +235,7 @@ class EngieScraper(BasePriceScraper):
                 if sibling.name in ['div', 'section', 'article']:
                     table = sibling.find('table')
                     if table:
-                        return table
+                        return table  # type: ignore
 
         # Try parent's next siblings
         parent = header.parent
@@ -243,11 +243,11 @@ class EngieScraper(BasePriceScraper):
             for sibling in parent.next_siblings:
                 if hasattr(sibling, 'name'):
                     if sibling.name == 'table':
-                        return sibling
+                        return sibling  # type: ignore
                     if sibling.name in ['div', 'section', 'article']:
                         table = sibling.find('table')
                         if table:
-                            return table
+                            return table  # type: ignore
                     # Stop if we hit another header-like element
                     if sibling.name in ['h2', 'h3', 'h4']:
                         break
@@ -276,7 +276,7 @@ class EngieScraper(BasePriceScraper):
         # Default to current month
         return datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    def _parse_pricing_table(self, table, offer_type: str | None) -> dict:
+    def _parse_pricing_table(self, table: Any, offer_type: str | None) -> dict:
         """
         Parse a pricing table and extract subscription and kWh prices per power level.
 
