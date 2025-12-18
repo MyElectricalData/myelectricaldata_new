@@ -275,9 +275,9 @@ valkey:
     # Option 1: Set password directly (Helm creates the secret)
     password: ""
     # Option 2: Use an existing secret with a generated password
-    # The secret must contain the key specified in existingSecretKey
-    existingSecret: ""           # e.g., "valkey-credentials"
-    existingSecretKey: "password"  # Key containing the password in the secret
+    # The secret must contain the key specified in existingSecretPasswordKey
+    existingSecret: ""                      # e.g., "valkey-credentials"
+    existingSecretPasswordKey: "password"   # Key containing the password in the secret
 
   # Valkey configuration
   config:

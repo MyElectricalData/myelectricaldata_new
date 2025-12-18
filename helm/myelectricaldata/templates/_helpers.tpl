@@ -214,7 +214,7 @@ CloudPirates Valkey chart uses 'password' as the default key
 {{- define "myelectricaldata.valkey.secretKey" -}}
 {{- if .Values.valkey.enabled }}
   {{- if .Values.valkey.auth.existingSecret }}
-    {{- .Values.valkey.auth.existingSecretKey | default "password" }}
+    {{- .Values.valkey.auth.existingSecretPasswordKey | default "password" }}
   {{- else }}
     {{- "password" }}
   {{- end }}
