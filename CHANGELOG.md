@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.0-dev.6](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.5...1.1.0-dev.6) (2025-12-18)
+
+### Bug Fixes
+
+* **ci:** remove 'v' prefix from helm tags ([8f2557e](https://github.com/MyElectricalData/myelectricaldata_new/commit/8f2557e4d2816f668e4c24211d61e2d9ca73e73c))
+* **ci:** trigger release only on apps changes ([dfd98af](https://github.com/MyElectricalData/myelectricaldata_new/commit/dfd98afaba9f3602e7827b84a52b392003852f7b))
+* **ci:** use config swap instead of extends for helm release ([9eee893](https://github.com/MyElectricalData/myelectricaldata_new/commit/9eee893fce951e853915f204810f045796a46467))
+* **ci:** use helm/vX.X.X tags without GitHub releases ([9ab83ed](https://github.com/MyElectricalData/myelectricaldata_new/commit/9ab83eda8a0da3dcfd0d12a6af94b51f9ddab510))
+* **valkey:** update existingSecretKey to existingSecretPasswordKey in values.yaml and helpers.tpl ([9597eb4](https://github.com/MyElectricalData/myelectricaldata_new/commit/9597eb4e65947f6a18e6bdeb95f85b78126204cd))
+* **web:** handle nested arrays in offpeak_hours parsing ([609661b](https://github.com/MyElectricalData/myelectricaldata_new/commit/609661bdcd45913e37224b238264181a68594caf))
+
 ## [1.1.0-dev.5](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.4...1.1.0-dev.5) (2025-12-18)
 
 ### Features
