@@ -90,6 +90,7 @@ jobs:
           echo "## Helm Chart Release 🎉" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** \`${{ steps.semantic.outputs.new_release_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`helm/v${{ steps.semantic.outputs.new_release_version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================
@@ -163,6 +164,7 @@ jobs:
           echo "**Release Type:** $RELEASE_TYPE" >> $GITHUB_STEP_SUMMARY
           echo "**Chart:** myelectricaldata" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`helm/v$VERSION\`" >> $GITHUB_STEP_SUMMARY
           echo "**Registry:** oci://${{ env.REGISTRY }}/${{ steps.repo.outputs.owner }}/charts" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Installation" >> $GITHUB_STEP_SUMMARY

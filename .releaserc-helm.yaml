@@ -11,8 +11,8 @@ branches:
     channel: dev
     prerelease: dev
 
-# Tag format with helm- prefix to distinguish from app releases
-tagFormat: helm-${version}
+# Tag format: helm/vX.X.X (no GitHub release, just tags)
+tagFormat: helm/v${version}
 
 plugins:
   # Analyze commits to determine version bump
@@ -78,15 +78,9 @@ plugins:
           to: 'version: ${nextRelease.version}'
           countMatches: true
 
-  # Commit version changes
+  # Commit version changes and create tag (no GitHub release)
   - - '@semantic-release/git'
     - assets:
         - helm/CHANGELOG.md
         - helm/myelectricaldata/Chart.yaml
       message: 'chore(helm): release ${nextRelease.version} [skip ci]'
-
-  # Create GitHub release with helm- prefix
-  - - '@semantic-release/github'
-    - successComment: false
-      failComment: false
-      releasedLabels: false
