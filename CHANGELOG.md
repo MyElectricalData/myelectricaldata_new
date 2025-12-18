@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0-dev.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.2...1.1.0-dev.3) (2025-12-18)
+
+### Bug Fixes
+
+* **helm:** correct postgres/valkey condition and configmap references ([61087da](https://github.com/MyElectricalData/myelectricaldata_new/commit/61087daf59425a7fe0d7ef7f928c6dc98cadc5b7))
+
 ## [1.1.0-dev.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.1...1.1.0-dev.2) (2025-12-14)
 
 ### Bug Fixes
