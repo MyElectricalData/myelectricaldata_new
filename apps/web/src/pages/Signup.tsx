@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
-import { Copy, Check, Eye, EyeOff, AlertCircle, UserPlus } from 'lucide-react'
+import { Copy, Check, Eye, EyeOff, AlertCircle, UserPlus, Download } from 'lucide-react'
 import { logger } from '@/utils/logger'
 
 declare global {
@@ -143,6 +143,23 @@ export default function Signup() {
     setTimeout(() => setCopied(null), 2000)
   }
 
+  const downloadCredentials = () => {
+    if (!credentials) return
+    const data = {
+      client_id: credentials.client_id,
+      client_secret: credentials.client_secret,
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'myelectricaldata-credentials.json'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   if (credentials) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
@@ -202,6 +219,14 @@ export default function Signup() {
                   </button>
                 </div>
               </div>
+
+              <button
+                onClick={downloadCredentials}
+                className="btn btn-secondary w-full flex items-center justify-center gap-2"
+              >
+                <Download size={20} />
+                Télécharger en JSON
+              </button>
             </div>
 
             <div className="mt-8">
