@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0-dev.7](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.6...1.1.0-dev.7) (2025-12-19)
+
+### Bug Fixes
+
+* **web:** sync OfferSelector state on page navigation ([2ec0cf1](https://github.com/MyElectricalData/myelectricaldata_new/commit/2ec0cf13ec462efa2e57a75d9f871a87f9d13ff0))
+
 ## [1.1.0-dev.6](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.5...1.1.0-dev.6) (2025-12-18)
 
 ### Bug Fixes
