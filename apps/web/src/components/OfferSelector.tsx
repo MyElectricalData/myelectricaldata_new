@@ -95,32 +95,25 @@ export default function OfferSelector({
     return allOffers.find(o => o.id === selectedOfferId) || null
   }, [selectedOfferId, allOffers])
 
-  // Initialize/sync selectors from selected offer
-  // This effect handles two cases:
-  // 1. Initial mount with a selectedOfferId - wait for offers to load then sync
-  // 2. selectedOfferId prop changes externally - sync to new offer
-  // We track which offer we've synced to avoid interfering with manual user selection
-  const [lastSyncedOfferId, setLastSyncedOfferId] = useState<string | null | undefined>(undefined)
-
+  // Sync selectors when selectedOffer changes (after data is loaded)
+  // This handles:
+  // 1. Initial mount - wait for offers to load, then sync
+  // 2. Page navigation (back to Dashboard) - offers reload, sync when ready
+  // 3. External offer change - sync immediately
   useEffect(() => {
     if (selectedOffer) {
-      // We have a valid offer - sync the selectors if not already synced to this offer
-      if (lastSyncedOfferId !== selectedOffer.id) {
-        setSelectedProviderId(selectedOffer.provider_id)
-        setSelectedOfferType(selectedOffer.offer_type)
-        setLastSyncedOfferId(selectedOffer.id)
-      }
+      // Always sync when selectedOffer is available
+      // This ensures selectors are populated after page navigation
+      setSelectedProviderId(selectedOffer.provider_id)
+      setSelectedOfferType(selectedOffer.offer_type)
     } else if (selectedOfferId === null || selectedOfferId === undefined) {
-      // Offer was cleared externally - reset selectors
-      if (lastSyncedOfferId !== null) {
-        setSelectedProviderId(null)
-        setSelectedOfferType(null)
-        setLastSyncedOfferId(null)
-      }
+      // Offer was cleared - reset selectors
+      setSelectedProviderId(null)
+      setSelectedOfferType(null)
     }
-    // Note: when selectedOfferId is set but selectedOffer is null (offers loading),
-    // we wait - the effect will re-run when offers finish loading
-  }, [selectedOffer, selectedOfferId, lastSyncedOfferId])
+    // When selectedOfferId is set but offers not loaded yet, wait
+    // The effect re-runs when allOffers populates and selectedOffer becomes non-null
+  }, [selectedOffer, selectedOfferId])
 
   // Reset offer type when provider changes
   const handleProviderChange = (providerId: string | null) => {
