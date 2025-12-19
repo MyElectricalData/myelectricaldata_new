@@ -1,10 +1,54 @@
 # Changelog
 
-## [1.1.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.0.0...1.1.0) (2025-12-18)
+## [1.2.0-dev.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.2.0-dev.1...1.2.0-dev.2) (2025-12-19)
 
 ### Features
 
-* **ci:** add build validation before semantic-release ([f261fe7](https://github.com/MyElectricalData/myelectricaldata_new/commit/f261fe7faee82629eeb519ea6314fdab8fe322df))
+* **web:** mask client_secret and update warning message ([8824238](https://github.com/MyElectricalData/myelectricaldata_new/commit/8824238120167c9fd5ec17cc9a423e70f3e8f652))
+
+## [1.2.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0...1.2.0-dev.1) (2025-12-19)
+
+### Features
+
+* **ci:** add pre-commit hooks for linting ([c1614a9](https://github.com/MyElectricalData/myelectricaldata_new/commit/c1614a9e813a62328ed20eea777ea47b62843f45))
+* **ci:** separate CI/CD pipelines for apps and Helm chart ([6480760](https://github.com/MyElectricalData/myelectricaldata_new/commit/64807609ad5f7dc2c8c14701e569d67e6fe6573d))
+* **helm:** migrate from Redis to Valkey ([5dd2ada](https://github.com/MyElectricalData/myelectricaldata_new/commit/5dd2adae748dd4a7e5fa6d2185162c7734823704))
+* **web:** add JSON download button for API credentials ([ed5bc85](https://github.com/MyElectricalData/myelectricaldata_new/commit/ed5bc85d70b080793dd3c9ea0a09f8eed9765a3d))
+
+### Bug Fixes
+
+* **api:** remove unused imports ([6da4bf0](https://github.com/MyElectricalData/myelectricaldata_new/commit/6da4bf0955de2b360fea0cb3f660b74cf25c0df0))
+* **api:** resolve all 204 mypy type errors ([3e45d5b](https://github.com/MyElectricalData/myelectricaldata_new/commit/3e45d5b8e38c663216ddcc69dacad6035a7f1d20))
+* **api:** resolve all ruff linting errors ([d3366b3](https://github.com/MyElectricalData/myelectricaldata_new/commit/d3366b38bf1ece18179c9ad1c8ccdfa9899abde6))
+* **ci:** add extra_plugins for semantic-release action ([5a1561f](https://github.com/MyElectricalData/myelectricaldata_new/commit/5a1561f2e7fc4e2b1e576fd3163a44cccb716ba4))
+* **ci:** add mypy to dependency-groups for CI type checking ([717f99d](https://github.com/MyElectricalData/myelectricaldata_new/commit/717f99d1aaf1634780d5c8d80b1c8cbefcec9984))
+* **ci:** remove 'v' prefix from helm tags ([8f2557e](https://github.com/MyElectricalData/myelectricaldata_new/commit/8f2557e4d2816f668e4c24211d61e2d9ca73e73c))
+* **ci:** trigger release only on apps changes ([dfd98af](https://github.com/MyElectricalData/myelectricaldata_new/commit/dfd98afaba9f3602e7827b84a52b392003852f7b))
+* **ci:** use config swap instead of extends for helm release ([9eee893](https://github.com/MyElectricalData/myelectricaldata_new/commit/9eee893fce951e853915f204810f045796a46467))
+* **ci:** use helm/vX.X.X tags without GitHub releases ([9ab83ed](https://github.com/MyElectricalData/myelectricaldata_new/commit/9ab83eda8a0da3dcfd0d12a6af94b51f9ddab510))
+* **ci:** use semantic-release action for proper GitHub outputs ([4c5ead6](https://github.com/MyElectricalData/myelectricaldata_new/commit/4c5ead6f34f38f9ade6530a6e6d05e420c31b70d))
+* **helm:** correct postgres/valkey condition and configmap references ([61087da](https://github.com/MyElectricalData/myelectricaldata_new/commit/61087daf59425a7fe0d7ef7f928c6dc98cadc5b7))
+* **valkey:** update existingSecretKey to existingSecretPasswordKey in values.yaml and helpers.tpl ([9597eb4](https://github.com/MyElectricalData/myelectricaldata_new/commit/9597eb4e65947f6a18e6bdeb95f85b78126204cd))
+* **web:** handle nested arrays in offpeak_hours parsing ([609661b](https://github.com/MyElectricalData/myelectricaldata_new/commit/609661bdcd45913e37224b238264181a68594caf))
+* **web:** make login button full width on signup success ([07786f8](https://github.com/MyElectricalData/myelectricaldata_new/commit/07786f87493d7a508558fe529621f37cf45cdb5b))
+* **web:** sync OfferSelector state on page navigation ([2ec0cf1](https://github.com/MyElectricalData/myelectricaldata_new/commit/2ec0cf13ec462efa2e57a75d9f871a87f9d13ff0))
+
+## [1.1.0-dev.7](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.6...1.1.0-dev.7) (2025-12-19)
+
+### Bug Fixes
+
+* **web:** sync OfferSelector state on page navigation ([2ec0cf1](https://github.com/MyElectricalData/myelectricaldata_new/commit/2ec0cf13ec462efa2e57a75d9f871a87f9d13ff0))
+
+## [1.1.0-dev.6](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.5...1.1.0-dev.6) (2025-12-18)
+
+### Bug Fixes
+
+* **ci:** remove 'v' prefix from helm tags ([8f2557e](https://github.com/MyElectricalData/myelectricaldata_new/commit/8f2557e4d2816f668e4c24211d61e2d9ca73e73c))
+* **ci:** trigger release only on apps changes ([dfd98af](https://github.com/MyElectricalData/myelectricaldata_new/commit/dfd98afaba9f3602e7827b84a52b392003852f7b))
+* **ci:** use config swap instead of extends for helm release ([9eee893](https://github.com/MyElectricalData/myelectricaldata_new/commit/9eee893fce951e853915f204810f045796a46467))
+* **ci:** use helm/vX.X.X tags without GitHub releases ([9ab83ed](https://github.com/MyElectricalData/myelectricaldata_new/commit/9ab83eda8a0da3dcfd0d12a6af94b51f9ddab510))
+* **valkey:** update existingSecretKey to existingSecretPasswordKey in values.yaml and helpers.tpl ([9597eb4](https://github.com/MyElectricalData/myelectricaldata_new/commit/9597eb4e65947f6a18e6bdeb95f85b78126204cd))
+* **web:** handle nested arrays in offpeak_hours parsing ([609661b](https://github.com/MyElectricalData/myelectricaldata_new/commit/609661bdcd45913e37224b238264181a68594caf))
 
 ## [1.1.0-dev.5](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0-dev.4...1.1.0-dev.5) (2025-12-18)
 

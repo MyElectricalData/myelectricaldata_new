@@ -90,13 +90,17 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
     if (!pdl.offpeak_hours) return [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }]
 
     if (Array.isArray(pdl.offpeak_hours)) {
-      return pdl.offpeak_hours.length > 0
-        ? pdl.offpeak_hours.flatMap(parseAllRanges)
+      // Filter to only strings and parse
+      const stringValues = pdl.offpeak_hours.filter((v): v is string => typeof v === 'string')
+      return stringValues.length > 0
+        ? stringValues.flatMap(parseAllRanges)
         : [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }]
     }
 
     // Legacy format: convert object to array and deduplicate
-    const values = Object.values(pdl.offpeak_hours).filter(Boolean) as string[]
+    // Handle nested arrays (e.g., {"ranges": ["22:00-06:00"]})
+    const rawValues = Object.values(pdl.offpeak_hours).filter(Boolean)
+    const values = rawValues.flatMap(v => Array.isArray(v) ? v : [v]).filter((v): v is string => typeof v === 'string')
     const uniqueValues = Array.from(new Set(values))
     return uniqueValues.length > 0
       ? uniqueValues.flatMap(parseAllRanges)
@@ -147,11 +151,15 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
     if (!pdl.offpeak_hours) {
       setOffpeakRanges([{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }])
     } else if (Array.isArray(pdl.offpeak_hours)) {
-      const parsed = pdl.offpeak_hours.flatMap(parseAllRanges)
+      // Filter to only strings and parse
+      const stringValues = pdl.offpeak_hours.filter((v): v is string => typeof v === 'string')
+      const parsed = stringValues.flatMap(parseAllRanges)
       setOffpeakRanges(parsed.length > 0 ? parsed : [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }])
     } else {
       // Legacy format: convert object to array and deduplicate
-      const values = Object.values(pdl.offpeak_hours).filter(Boolean) as string[]
+      // Handle nested arrays (e.g., {"ranges": ["22:00-06:00"]})
+      const rawValues = Object.values(pdl.offpeak_hours).filter(Boolean)
+      const values = rawValues.flatMap(v => Array.isArray(v) ? v : [v]).filter((v): v is string => typeof v === 'string')
       const uniqueValues = Array.from(new Set(values))
       const parsed = uniqueValues.flatMap(parseAllRanges)
       setOffpeakRanges(parsed.length > 0 ? parsed : [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }])

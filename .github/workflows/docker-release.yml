@@ -9,6 +9,10 @@ on:
       version:
         description: 'Version tag (e.g., 1.0.0 or 1.0.0-dev.1)'
         required: true
+      build_arm64:
+        description: 'Build ARM64 images (slow, uses QEMU emulation)'
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -62,11 +66,21 @@ jobs:
 
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
 
+      - name: Determine platforms
+        id: platforms
+        run: |
+          if [[ "${{ github.event.inputs.build_arm64 }}" == "true" ]]; then
+            echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
+          else
+            echo "platforms=linux/amd64" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push ${{ matrix.image }}
         uses: docker/build-push-action@v6
+        timeout-minutes: 30
         with:
           context: ${{ matrix.context }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ steps.platforms.outputs.platforms }}
           push: true
           tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.image }}

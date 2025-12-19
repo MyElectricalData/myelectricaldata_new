@@ -15,9 +15,16 @@ export function parseOffpeakHours(offpeakConfig?: string[] | Record<string, stri
   if (!offpeakConfig) return []
 
   const ranges: OffpeakRange[] = []
-  const rangeStrings: string[] = Array.isArray(offpeakConfig)
-    ? offpeakConfig.filter((item): item is string => typeof item === 'string')
-    : Object.values(offpeakConfig).filter((item): item is string => typeof item === 'string' && Boolean(item))
+
+  // Handle array format and object format
+  // Also handle nested arrays like {"ranges": ["22:00-06:00"]}
+  let rawValues: unknown[]
+  if (Array.isArray(offpeakConfig)) {
+    rawValues = offpeakConfig
+  } else {
+    rawValues = Object.values(offpeakConfig).flatMap(v => Array.isArray(v) ? v : [v])
+  }
+  const rangeStrings: string[] = rawValues.filter((item): item is string => typeof item === 'string' && Boolean(item))
 
   for (const range of rangeStrings) {
     // Skip if range is not a string (safety check)

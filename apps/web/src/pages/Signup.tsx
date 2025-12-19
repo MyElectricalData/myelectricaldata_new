@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
-import { Copy, Check, Eye, EyeOff, AlertCircle, UserPlus } from 'lucide-react'
+import { Copy, Check, Eye, EyeOff, AlertCircle, UserPlus, Download } from 'lucide-react'
 import { logger } from '@/utils/logger'
 
 declare global {
@@ -52,6 +52,7 @@ export default function Signup() {
   const [turnstileError, setTurnstileError] = useState(false)
   const [credentials, setCredentials] = useState<{ client_id: string; client_secret: string } | null>(null)
   const [copied, setCopied] = useState<'id' | 'secret' | null>(null)
+  const [showSecret, setShowSecret] = useState(false)
   const { signup, signupLoading, signupError } = useAuth()
 
   const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY
@@ -143,6 +144,23 @@ export default function Signup() {
     setTimeout(() => setCopied(null), 2000)
   }
 
+  const downloadCredentials = () => {
+    if (!credentials) return
+    const data = {
+      client_id: credentials.client_id,
+      client_secret: credentials.client_secret,
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'myelectricaldata-credentials.json'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   if (credentials) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
@@ -161,7 +179,7 @@ export default function Signup() {
             <div className="space-y-4">
               <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                 <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium">
-                  ⚠️ Important : Sauvegardez ces identifiants maintenant. Ils ne seront plus affichés.
+                  ⚠️ Important : Sauvegardez ces identifiants maintenant. Le Client Secret ne sera plus affichable, mais vous pourrez en générer un nouveau depuis votre compte.
                 </p>
               </div>
 
@@ -188,11 +206,18 @@ export default function Signup() {
                 <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Client Secret</label>
                 <div className="flex gap-2">
                   <input
-                    type="text"
+                    type={showSecret ? 'text' : 'password'}
                     value={credentials.client_secret}
                     readOnly
                     className="input flex-1"
                   />
+                  <button
+                    onClick={() => setShowSecret(!showSecret)}
+                    className="btn btn-secondary"
+                    title={showSecret ? 'Masquer' : 'Afficher'}
+                  >
+                    {showSecret ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
                   <button
                     onClick={() => copyToClipboard(credentials.client_secret, 'secret')}
                     className="btn btn-secondary"
@@ -202,10 +227,18 @@ export default function Signup() {
                   </button>
                 </div>
               </div>
+
+              <button
+                onClick={downloadCredentials}
+                className="btn btn-secondary w-full flex items-center justify-center gap-2"
+              >
+                <Download size={20} />
+                Télécharger en JSON
+              </button>
             </div>
 
             <div className="mt-8">
-              <Link to="/login" className="btn btn-primary w-full">
+              <Link to="/login" className="btn btn-primary w-full block text-center">
                 Continuer vers la connexion
               </Link>
             </div>
