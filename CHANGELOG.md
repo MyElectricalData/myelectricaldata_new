@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.0-dev.6](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.2.0-dev.5...1.2.0-dev.6) (2025-12-20)
+
+### Refactoring
+
+* **web:** consolidate info blocks in Simulator page ([1c4d5d5](https://github.com/MyElectricalData/myelectricaldata_new/commit/1c4d5d59e5750ce1279300274811c5f664e93ac0))
+
 ## [1.2.0-dev.5](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.2.0-dev.4...1.2.0-dev.5) (2025-12-20)
 
 ### Features
