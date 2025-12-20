@@ -6,7 +6,7 @@ from datetime import datetime, UTC
 import logging
 import json
 import asyncio
-from typing import Optional, List
+from typing import Optional, List, Any
 from ..models import User, PDL, EnergyProvider, EnergyOffer
 from ..models.database import get_db
 from ..middleware import require_admin, require_permission, get_current_user
@@ -1656,7 +1656,7 @@ async def get_user_shared_cache_data(
         )
 
     # Retrieve cached data using user's client_secret for decryption
-    cached_data = []
+    cached_data: list[dict[str, Any]] = []
     cache_entries_count = 0
 
     if data_type in ["consumption", "production"]:
@@ -1698,7 +1698,7 @@ async def get_user_shared_cache_data(
         cache_key = f"contract:{pdl.usage_point_id}"
         data = await cache_service.get(cache_key, user.client_secret)
         if data:
-            cached_data = data
+            cached_data.append({"type": "contract", "data": data})
             cache_entries_count = 1
 
     logger.info(
