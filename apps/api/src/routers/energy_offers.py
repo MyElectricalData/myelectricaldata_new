@@ -7,6 +7,7 @@ from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
 from ..middleware import get_current_user, require_permission, require_action, require_not_demo
 from ..services.email import email_service
+from ..services.slack import slack_service
 from ..config import settings
 import logging
 
@@ -155,6 +156,13 @@ async def create_contribution(
     except Exception as e:
         logger.error(f"[CONTRIBUTION] Failed to send admin notifications: {str(e)}")
         # Don't fail the contribution if email fails
+
+    # Send Slack notification (fire-and-forget, don't block on errors)
+    try:
+        await slack_service.send_contribution_notification(contribution, current_user)
+    except Exception as e:
+        logger.error(f"[CONTRIBUTION] Failed to send Slack notification: {str(e)}")
+        # Don't fail the contribution if Slack fails
 
     return APIResponse(
         success=True,

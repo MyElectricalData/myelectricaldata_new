@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.3.0-dev.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.3.0-dev.1...1.3.0-dev.2) (2025-12-20)
+
+### Bug Fixes
+
+* **ci:** move sync-develop into Release workflow ([74e3240](https://github.com/MyElectricalData/myelectricaldata_new/commit/74e3240fdd84e4cb5b4bc10894396784408c1800))
+* **web:** resolve race condition in OfferSelector initial load ([d1fe1db](https://github.com/MyElectricalData/myelectricaldata_new/commit/d1fe1db96fcd460589f4459706bee0c28c042370))
+
+## [1.3.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.2.0...1.3.0-dev.1) (2025-12-20)
+
+### Features
+
+* **api:** add Slack notifications for new contributions ([4a87243](https://github.com/MyElectricalData/myelectricaldata_new/commit/4a872435d5c019122ed32d9df031583af17d7300))
+* **simulator:** add PDF export per offer and calculation explanations ([bdfa4aa](https://github.com/MyElectricalData/myelectricaldata_new/commit/bdfa4aa5ba3a2400af4fc083b4cc38b74c0032dc))
+* **workflow:** update sync process to trigger on successful Release workflow ([a2d039b](https://github.com/MyElectricalData/myelectricaldata_new/commit/a2d039b3d552655959c0b7a0ff68a4ad92779b26))
+
+### Bug Fixes
+
+* **api:** fix type annotations in SlackService ([bb055e9](https://github.com/MyElectricalData/myelectricaldata_new/commit/bb055e9296a3426c68a0bbd2dbff0e4383209141))
+
+### Refactoring
+
+* **web:** consolidate info blocks in Simulator page ([1c4d5d5](https://github.com/MyElectricalData/myelectricaldata_new/commit/1c4d5d59e5750ce1279300274811c5f664e93ac0))
+
+## [1.2.1-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.2.0...1.2.1-dev.1) (2025-12-20)
+
+### Features
+
+* **api:** add Slack notifications for new contributions ([4a87243](https://github.com/MyElectricalData/myelectricaldata_new/commit/4a872435d5c019122ed32d9df031583af17d7300))
+* **simulator:** add PDF export per offer and calculation explanations ([bdfa4aa](https://github.com/MyElectricalData/myelectricaldata_new/commit/bdfa4aa5ba3a2400af4fc083b4cc38b74c0032dc))
+* **workflow:** update sync process to trigger on successful Release workflow ([a2d039b](https://github.com/MyElectricalData/myelectricaldata_new/commit/a2d039b3d552655959c0b7a0ff68a4ad92779b26))
+
+### Bug Fixes
+
+* **api:** fix type annotations in SlackService ([bb055e9](https://github.com/MyElectricalData/myelectricaldata_new/commit/bb055e9296a3426c68a0bbd2dbff0e4383209141))
+
+### Refactoring
+
+* **web:** consolidate info blocks in Simulator page ([1c4d5d5](https://github.com/MyElectricalData/myelectricaldata_new/commit/1c4d5d59e5750ce1279300274811c5f664e93ac0))
+
 ## [1.2.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.1.0...1.2.0) (2025-12-20)
 
 ### Features

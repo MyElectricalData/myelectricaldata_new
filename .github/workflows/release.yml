@@ -259,3 +259,47 @@ jobs:
           echo "docker pull ${{ env.IMAGE_PREFIX }}/backend:$VERSION" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.IMAGE_PREFIX }}/frontend:$VERSION" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================
+  # Sync develop with main (only after main release)
+  # ===========================================
+  sync-develop:
+    name: Sync develop
+    needs: [release]
+    # Only sync when releasing from main (not develop)
+    if: >
+      needs.release.outputs.new_release_published == 'true' &&
+      github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync develop with main
+        env:
+          RELEASE_VERSION: ${{ needs.release.outputs.new_release_version }}
+        run: |
+          # Fetch all branches
+          git fetch origin main develop
+
+          # Log current state
+          echo "=== Main branch HEAD ==="
+          git log -1 --oneline origin/main
+
+          echo "=== Develop branch HEAD ==="
+          git log -1 --oneline origin/develop
+
+          # Checkout develop and merge main
+          git checkout develop
+          git merge origin/main -m "chore: sync develop with main after v${RELEASE_VERSION} [skip ci]"
+          git push origin develop
+
+          echo "✅ Develop synced with main"

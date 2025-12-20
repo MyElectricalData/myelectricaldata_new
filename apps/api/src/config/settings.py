@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     # Admin
     ADMIN_EMAILS: str = ""
 
+    # Slack Notifications
+    SLACK_WEBHOOK_URL: str = ""
+    SLACK_NOTIFICATIONS_ENABLED: bool = False
+
     def is_admin(self, email: str) -> bool:
         """Check if an email is in the admin list"""
         if not self.ADMIN_EMAILS:

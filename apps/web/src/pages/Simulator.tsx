@@ -67,7 +67,7 @@ function getEnerocoopOffpeakHours(offerName: string, hour: number, isWeekendOrHo
 }
 
 // Helper function to check if an hour is in offpeak hours
-function isOffpeakHour(hour: number, offpeakConfig?: Record<string, string> | string[]): boolean {
+function isOffpeakHour(hour: number, offpeakConfig?: Record<string, string | string[]> | string[] | { ranges?: string[] }): boolean {
   if (!offpeakConfig) {
     // Default: 22h-6h if no config
     return hour >= 22 || hour < 6
@@ -75,8 +75,25 @@ function isOffpeakHour(hour: number, offpeakConfig?: Record<string, string> | st
 
   // Parse offpeak hours from config
   // Format can be: {"default": "22h30-06h30"} or {"HC": "22:00-06:00"} or "HC (22H00-6H00)" or array of strings
-  const values = Array.isArray(offpeakConfig) ? offpeakConfig : Object.values(offpeakConfig)
+  // Or: {ranges: ["22h30-06h30"]} (new format from PDL config)
+  let values: string[] = []
+
+  if (Array.isArray(offpeakConfig)) {
+    values = offpeakConfig
+  } else if (typeof offpeakConfig === 'object' && offpeakConfig !== null) {
+    // Check for {ranges: [...]} format first
+    if ('ranges' in offpeakConfig && Array.isArray(offpeakConfig.ranges)) {
+      values = offpeakConfig.ranges
+    } else {
+      // Flatten all values from the object
+      values = Object.values(offpeakConfig).flat().filter((v): v is string => typeof v === 'string')
+    }
+  }
+
   for (const range of values) {
+    // Skip non-string values
+    if (typeof range !== 'string') continue
+
     // Extract hours from various formats: "22h30-06h30", "22:00-06:00", "HC (22H00-6H00)", etc.
     // Match: optional text, then first hour (1-2 digits), separator, then second hour
     const match = range.match(/(\d{1,2})[hH:]\d{0,2}\s*-\s*(\d{1,2})[hH:]?\d{0,2}/)
@@ -243,6 +260,7 @@ export default function Simulator() {
   const [_fetchProgress, setFetchProgress] = useState<{current: number, total: number, phase: string}>({current: 0, total: 0, phase: ''})
   const [simulationError, setSimulationError] = useState<string | null>(null)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [expandedCalculations, setExpandedCalculations] = useState<Set<string>>(new Set())
   const [hasAutoLaunched, setHasAutoLaunched] = useState(false)
   const [isInitialLoadingFromCache, setIsInitialLoadingFromCache] = useState(false)
   const [isLoadingExiting, setIsLoadingExiting] = useState(false)
@@ -1296,6 +1314,19 @@ export default function Simulator() {
     })
   }
 
+  const toggleCalculationsExpansion = (offerId: string, e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent row collapse
+    setExpandedCalculations((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(offerId)) {
+        newSet.delete(offerId)
+      } else {
+        newSet.add(offerId)
+      }
+      return newSet
+    })
+  }
+
   const handleSort = (column: 'total' | 'subscription' | 'energy') => {
     if (sortBy === column) {
       // Toggle sort order if clicking the same column
@@ -1747,6 +1778,409 @@ export default function Simulator() {
     pdf.save(fileName)
   }
 
+  // Export a single offer to PDF with detailed calculations
+  const exportSingleOfferToPDF = async (result: any, e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent row collapse
+
+    const pdf = new jsPDF('p', 'mm', 'a4')
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const margin = 15
+    let y = 20
+
+    // Get PDL object from selectedPdl string
+    const currentPdl = Array.isArray(pdlsData) ? pdlsData.find((p) => p.usage_point_id === selectedPdl) : undefined
+
+    // Helper function to add footer
+    const addFooter = (pageNum: number) => {
+      pdf.setFontSize(8)
+      pdf.setTextColor(107, 114, 128)
+      const footerY = pageHeight - 10
+      pdf.text('Généré par myelectricaldata.fr', margin, footerY)
+      pdf.text(`Page ${pageNum}`, pageWidth - margin - 15, footerY)
+    }
+
+    // Helper to check if we need a new page
+    const checkNewPage = (neededSpace: number, currentPage: number): number => {
+      if (y + neededSpace > pageHeight - 20) {
+        addFooter(currentPage)
+        pdf.addPage()
+        y = 20
+        return currentPage + 1
+      }
+      return currentPage
+    }
+
+    let currentPage = 1
+
+    // ===== HEADER =====
+    pdf.setFontSize(16)
+    pdf.setTextColor(37, 99, 235)
+    pdf.text('Détail de l\'offre', margin, y)
+    y += 8
+
+    pdf.setFontSize(12)
+    pdf.setTextColor(0, 0, 0)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text(`${result.providerName} - ${result.offerName}`, margin, y)
+    pdf.setFont('helvetica', 'normal')
+    y += 10
+
+    // ===== PDL INFO =====
+    pdf.setFontSize(9)
+    pdf.setTextColor(75, 85, 99)
+    pdf.text(`PDL: ${currentPdl?.usage_point_id || selectedPdl || 'N/A'}`, margin, y)
+    y += 4
+    if (currentPdl?.subscribed_power) {
+      pdf.text(`Puissance souscrite: ${currentPdl.subscribed_power} kVA`, margin, y)
+      y += 4
+    }
+    pdf.text(`Période analysée: ${simulationStartDate} → ${simulationEndDate}`, margin, y)
+    y += 4
+    pdf.text(`Date de génération: ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, margin, y)
+    y += 8
+
+    // ===== COST SUMMARY BOX =====
+    pdf.setFillColor(240, 249, 244) // Light green background
+    pdf.rect(margin, y - 2, pageWidth - 2 * margin, 28, 'F')
+    pdf.setDrawColor(34, 197, 94)
+    pdf.rect(margin, y - 2, pageWidth - 2 * margin, 28, 'S')
+
+    pdf.setFontSize(10)
+    pdf.setFont('helvetica', 'bold')
+    pdf.setTextColor(0, 0, 0)
+    pdf.text('COÛT TOTAL ANNUEL ESTIMÉ', margin + 5, y + 5)
+
+    pdf.setFontSize(20)
+    pdf.setTextColor(22, 163, 74) // Green
+    pdf.text(`${result.totalCost.toFixed(2)} €`, margin + 5, y + 16)
+
+    pdf.setFontSize(9)
+    pdf.setTextColor(75, 85, 99)
+    pdf.setFont('helvetica', 'normal')
+    pdf.text(`Abonnement: ${result.subscriptionCost.toFixed(2)} €/an  |  Énergie: ${result.energyCost.toFixed(2)} €/an`, margin + 5, y + 23)
+    y += 35
+
+    // ===== SECTION: DÉTAIL DU CALCUL DE L'ABONNEMENT =====
+    currentPage = checkNewPage(40, currentPage)
+
+    pdf.setFontSize(11)
+    pdf.setTextColor(37, 99, 235)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text('1. CALCUL DE L\'ABONNEMENT', margin, y)
+    pdf.setFont('helvetica', 'normal')
+    y += 7
+
+    pdf.setFontSize(9)
+    pdf.setTextColor(0, 0, 0)
+    const monthlySubscription = result.offer?.subscription_price || 0
+    pdf.text(`Prix mensuel de l'abonnement: ${formatPrice(monthlySubscription, 2)} €/mois`, margin + 3, y)
+    y += 5
+    pdf.text(`Calcul: ${formatPrice(monthlySubscription, 2)} € × 12 mois = ${result.subscriptionCost.toFixed(2)} €/an`, margin + 3, y)
+    y += 8
+
+    // ===== SECTION: DÉTAIL DU CALCUL DE L'ÉNERGIE =====
+    currentPage = checkNewPage(60, currentPage)
+
+    pdf.setFontSize(11)
+    pdf.setTextColor(37, 99, 235)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text('2. CALCUL DU COÛT ÉNERGÉTIQUE', margin, y)
+    pdf.setFont('helvetica', 'normal')
+    y += 7
+
+    pdf.setFontSize(9)
+    pdf.setTextColor(75, 85, 99)
+    pdf.text(`Consommation totale sur la période: ${result.totalKwh?.toFixed(2) || 0} kWh`, margin + 3, y)
+    y += 6
+
+    pdf.setTextColor(0, 0, 0)
+
+    // Detailed breakdown based on offer type
+    if (result.breakdown) {
+      if (result.offerType === 'BASE' || result.offerType === 'BASE_WEEKEND') {
+        if (result.offer?.base_price_weekend && result.breakdown.baseWeekendKwh > 0) {
+          pdf.setFont('helvetica', 'bold')
+          pdf.text('Tarif Base avec différenciation Semaine/Week-end:', margin + 3, y)
+          pdf.setFont('helvetica', 'normal')
+          y += 6
+
+          const weekdayCost = result.breakdown.baseWeekdayKwh * result.offer.base_price
+          pdf.text(`  → Semaine: ${result.breakdown.baseWeekdayKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.base_price, 5)} €/kWh = ${weekdayCost.toFixed(2)} €`, margin + 3, y)
+          y += 5
+
+          const weekendCost = result.breakdown.baseWeekendKwh * result.offer.base_price_weekend
+          pdf.text(`  → Week-end: ${result.breakdown.baseWeekendKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.base_price_weekend, 5)} €/kWh = ${weekendCost.toFixed(2)} €`, margin + 3, y)
+          y += 5
+
+          pdf.setFont('helvetica', 'bold')
+          pdf.text(`  TOTAL ÉNERGIE: ${weekdayCost.toFixed(2)} € + ${weekendCost.toFixed(2)} € = ${result.energyCost.toFixed(2)} €`, margin + 3, y)
+          pdf.setFont('helvetica', 'normal')
+          y += 8
+        } else {
+          pdf.setFont('helvetica', 'bold')
+          pdf.text('Tarif Base unique:', margin + 3, y)
+          pdf.setFont('helvetica', 'normal')
+          y += 6
+
+          pdf.text(`  → ${result.totalKwh?.toFixed(0)} kWh × ${formatPrice(result.offer?.base_price, 5)} €/kWh = ${result.energyCost.toFixed(2)} €`, margin + 3, y)
+          y += 8
+        }
+      } else if (result.offerType === 'HC_HP' || result.offerType === 'WEEKEND' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') {
+        pdf.setFont('helvetica', 'bold')
+        pdf.text('Tarif Heures Creuses / Heures Pleines:', margin + 3, y)
+        pdf.setFont('helvetica', 'normal')
+        y += 6
+
+        if (result.breakdown.hcWeekendKwh > 0) {
+          // With weekend differentiation
+          pdf.text('  📅 SEMAINE:', margin + 3, y)
+          y += 5
+
+          const hcCost = result.breakdown.hcKwh * result.offer.hc_price
+          pdf.text(`    → Heures Creuses: ${result.breakdown.hcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price, 5)} €/kWh = ${hcCost.toFixed(2)} €`, margin + 3, y)
+          y += 5
+
+          const hpCost = result.breakdown.hpKwh * result.offer.hp_price
+          pdf.text(`    → Heures Pleines: ${result.breakdown.hpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price, 5)} €/kWh = ${hpCost.toFixed(2)} €`, margin + 3, y)
+          y += 6
+
+          pdf.text('  🌴 WEEK-END (tout en HC):', margin + 3, y)
+          y += 5
+
+          const weekendPrice = result.offer.hc_price_weekend || result.offer.hc_price
+          const weekendCost = result.breakdown.hcWeekendKwh * weekendPrice
+          pdf.text(`    → ${result.breakdown.hcWeekendKwh?.toFixed(0)} kWh × ${formatPrice(weekendPrice, 5)} €/kWh = ${weekendCost.toFixed(2)} €`, margin + 3, y)
+          y += 6
+
+          pdf.setFont('helvetica', 'bold')
+          pdf.text(`  TOTAL ÉNERGIE: ${hcCost.toFixed(2)} + ${hpCost.toFixed(2)} + ${weekendCost.toFixed(2)} = ${result.energyCost.toFixed(2)} €`, margin + 3, y)
+          pdf.setFont('helvetica', 'normal')
+          y += 8
+        } else {
+          const hcCost = result.breakdown.hcKwh * result.offer.hc_price
+          pdf.text(`  → Heures Creuses: ${result.breakdown.hcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price, 5)} €/kWh = ${hcCost.toFixed(2)} €`, margin + 3, y)
+          y += 5
+
+          const hpCost = result.breakdown.hpKwh * result.offer.hp_price
+          pdf.text(`  → Heures Pleines: ${result.breakdown.hpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price, 5)} €/kWh = ${hpCost.toFixed(2)} €`, margin + 3, y)
+          y += 6
+
+          pdf.setFont('helvetica', 'bold')
+          pdf.text(`  TOTAL ÉNERGIE: ${hcCost.toFixed(2)} € + ${hpCost.toFixed(2)} € = ${result.energyCost.toFixed(2)} €`, margin + 3, y)
+          pdf.setFont('helvetica', 'normal')
+          y += 8
+        }
+      } else if (result.offerType === 'SEASONAL') {
+        pdf.setFont('helvetica', 'bold')
+        pdf.text('Tarif Saisonnier (Hiver/Été):', margin + 3, y)
+        pdf.setFont('helvetica', 'normal')
+        y += 6
+
+        pdf.text('  ❄️ HIVER (novembre à mars):', margin + 3, y)
+        y += 5
+
+        const hcWinterCost = result.breakdown.hcWinterKwh * result.offer.hc_price_winter
+        pdf.text(`    → HC: ${result.breakdown.hcWinterKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_winter, 5)} €/kWh = ${hcWinterCost.toFixed(2)} €`, margin + 3, y)
+        y += 5
+
+        const hpWinterCost = result.breakdown.hpWinterKwh * result.offer.hp_price_winter
+        pdf.text(`    → HP: ${result.breakdown.hpWinterKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_winter, 5)} €/kWh = ${hpWinterCost.toFixed(2)} €`, margin + 3, y)
+        y += 6
+
+        pdf.text('  ☀️ ÉTÉ (avril à octobre):', margin + 3, y)
+        y += 5
+
+        const hcSummerCost = result.breakdown.hcSummerKwh * result.offer.hc_price_summer
+        pdf.text(`    → HC: ${result.breakdown.hcSummerKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_summer, 5)} €/kWh = ${hcSummerCost.toFixed(2)} €`, margin + 3, y)
+        y += 5
+
+        const hpSummerCost = result.breakdown.hpSummerKwh * result.offer.hp_price_summer
+        pdf.text(`    → HP: ${result.breakdown.hpSummerKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_summer, 5)} €/kWh = ${hpSummerCost.toFixed(2)} €`, margin + 3, y)
+        y += 6
+
+        let totalEnergy = hcWinterCost + hpWinterCost + hcSummerCost + hpSummerCost
+        let peakCost = 0
+        if (result.breakdown.peakDayKwh > 0 && result.offer.peak_day_price) {
+          pdf.text('  ⚡ JOURS DE POINTE:', margin + 3, y)
+          y += 5
+          peakCost = result.breakdown.peakDayKwh * result.offer.peak_day_price
+          pdf.text(`    → ${result.breakdown.peakDayKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.peak_day_price, 5)} €/kWh = ${peakCost.toFixed(2)} €`, margin + 3, y)
+          y += 6
+          totalEnergy += peakCost
+        }
+
+        pdf.setFont('helvetica', 'bold')
+        pdf.text(`  TOTAL ÉNERGIE: ${result.energyCost.toFixed(2)} €`, margin + 3, y)
+        pdf.setFont('helvetica', 'normal')
+        y += 8
+      } else if (result.offerType === 'TEMPO') {
+        pdf.setFont('helvetica', 'bold')
+        pdf.text('Tarif TEMPO (3 couleurs de jours):', margin + 3, y)
+        pdf.setFont('helvetica', 'normal')
+        y += 6
+
+        currentPage = checkNewPage(50, currentPage)
+
+        pdf.text('  🔵 JOURS BLEUS (~300 jours/an - les moins chers):', margin + 3, y)
+        y += 5
+        const blueHcCost = result.breakdown.blueHcKwh * result.offer.tempo_blue_hc
+        pdf.text(`    → HC: ${result.breakdown.blueHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_blue_hc, 5)} €/kWh = ${blueHcCost.toFixed(2)} €`, margin + 3, y)
+        y += 5
+        const blueHpCost = result.breakdown.blueHpKwh * result.offer.tempo_blue_hp
+        pdf.text(`    → HP: ${result.breakdown.blueHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_blue_hp, 5)} €/kWh = ${blueHpCost.toFixed(2)} €`, margin + 3, y)
+        y += 6
+
+        pdf.text('  ⚪ JOURS BLANCS (~43 jours/an - tarif intermédiaire):', margin + 3, y)
+        y += 5
+        const whiteHcCost = result.breakdown.whiteHcKwh * result.offer.tempo_white_hc
+        pdf.text(`    → HC: ${result.breakdown.whiteHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_white_hc, 5)} €/kWh = ${whiteHcCost.toFixed(2)} €`, margin + 3, y)
+        y += 5
+        const whiteHpCost = result.breakdown.whiteHpKwh * result.offer.tempo_white_hp
+        pdf.text(`    → HP: ${result.breakdown.whiteHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_white_hp, 5)} €/kWh = ${whiteHpCost.toFixed(2)} €`, margin + 3, y)
+        y += 6
+
+        pdf.text('  🔴 JOURS ROUGES (22 jours/an - les plus chers):', margin + 3, y)
+        y += 5
+        const redHcCost = result.breakdown.redHcKwh * result.offer.tempo_red_hc
+        pdf.text(`    → HC: ${result.breakdown.redHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_red_hc, 5)} €/kWh = ${redHcCost.toFixed(2)} €`, margin + 3, y)
+        y += 5
+        const redHpCost = result.breakdown.redHpKwh * result.offer.tempo_red_hp
+        pdf.text(`    → HP: ${result.breakdown.redHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_red_hp, 5)} €/kWh = ${redHpCost.toFixed(2)} €`, margin + 3, y)
+        y += 6
+
+        pdf.setFont('helvetica', 'bold')
+        pdf.text(`  TOTAL ÉNERGIE: ${result.energyCost.toFixed(2)} €`, margin + 3, y)
+        pdf.setFont('helvetica', 'normal')
+        y += 8
+      } else if (result.offerType === 'ZEN_FLEX') {
+        pdf.setFont('helvetica', 'bold')
+        pdf.text('Tarif ZEN FLEX (Jours Éco / Jours Sobriété):', margin + 3, y)
+        pdf.setFont('helvetica', 'normal')
+        y += 6
+
+        pdf.text('  🌿 JOURS ÉCO (~345 jours/an - tarif normal):', margin + 3, y)
+        y += 5
+        const ecoHcCost = result.breakdown.zenFlexEcoHcKwh * result.offer.hc_price_winter
+        pdf.text(`    → HC: ${result.breakdown.zenFlexEcoHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_winter, 5)} €/kWh = ${ecoHcCost.toFixed(2)} €`, margin + 3, y)
+        y += 5
+        const ecoHpCost = result.breakdown.zenFlexEcoHpKwh * result.offer.hp_price_winter
+        pdf.text(`    → HP: ${result.breakdown.zenFlexEcoHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_winter, 5)} €/kWh = ${ecoHpCost.toFixed(2)} €`, margin + 3, y)
+        y += 6
+
+        pdf.text('  ⚡ JOURS SOBRIÉTÉ (~20 jours/an - tarif majoré):', margin + 3, y)
+        y += 5
+        const sobrietyHcCost = result.breakdown.zenFlexSobrietyHcKwh * result.offer.hc_price_summer
+        pdf.text(`    → HC: ${result.breakdown.zenFlexSobrietyHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_summer, 5)} €/kWh = ${sobrietyHcCost.toFixed(2)} €`, margin + 3, y)
+        y += 5
+        const sobrietyHpCost = result.breakdown.zenFlexSobrietyHpKwh * result.offer.hp_price_summer
+        pdf.text(`    → HP: ${result.breakdown.zenFlexSobrietyHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_summer, 5)} €/kWh = ${sobrietyHpCost.toFixed(2)} €`, margin + 3, y)
+        y += 6
+
+        pdf.setFont('helvetica', 'bold')
+        pdf.text(`  TOTAL ÉNERGIE: ${result.energyCost.toFixed(2)} €`, margin + 3, y)
+        pdf.setFont('helvetica', 'normal')
+        y += 8
+      }
+    }
+
+    // ===== SECTION: RÉCAPITULATIF FINAL =====
+    currentPage = checkNewPage(35, currentPage)
+
+    pdf.setFontSize(11)
+    pdf.setTextColor(37, 99, 235)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text('3. RÉCAPITULATIF FINAL', margin, y)
+    pdf.setFont('helvetica', 'normal')
+    y += 8
+
+    pdf.setFontSize(9)
+    pdf.setTextColor(0, 0, 0)
+
+    // Draw a summary box
+    pdf.setFillColor(249, 250, 251)
+    pdf.rect(margin, y - 2, pageWidth - 2 * margin, 22, 'F')
+
+    pdf.text(`Abonnement annuel:`, margin + 5, y + 4)
+    pdf.text(`${result.subscriptionCost.toFixed(2)} €`, pageWidth - margin - 25, y + 4)
+
+    pdf.text(`Coût énergétique:`, margin + 5, y + 10)
+    pdf.text(`${result.energyCost.toFixed(2)} €`, pageWidth - margin - 25, y + 10)
+
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(10)
+    pdf.text(`TOTAL ANNUEL:`, margin + 5, y + 17)
+    pdf.setTextColor(22, 163, 74)
+    pdf.text(`${result.totalCost.toFixed(2)} €`, pageWidth - margin - 25, y + 17)
+    pdf.setFont('helvetica', 'normal')
+    y += 28
+
+    // ===== SECTION: GRILLE TARIFAIRE =====
+    currentPage = checkNewPage(50, currentPage)
+
+    pdf.setFontSize(11)
+    pdf.setTextColor(37, 99, 235)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text('4. GRILLE TARIFAIRE DE L\'OFFRE', margin, y)
+    pdf.setFont('helvetica', 'normal')
+    y += 8
+
+    pdf.setFontSize(9)
+    pdf.setTextColor(0, 0, 0)
+
+    if (result.offer) {
+      pdf.text(`Type d'offre: ${getTypeLabel(result.offerType)}`, margin + 3, y)
+      y += 5
+      if (result.offer.power_kva) {
+        pdf.text(`Puissance: ${result.offer.power_kva} kVA`, margin + 3, y)
+        y += 5
+      }
+      pdf.text(`Abonnement mensuel: ${formatPrice(result.offer.subscription_price, 2)} €/mois`, margin + 3, y)
+      y += 6
+
+      // Price table based on offer type
+      if (result.offer.base_price) {
+        pdf.text(`Prix Base: ${formatPrice(result.offer.base_price, 5)} €/kWh`, margin + 3, y)
+        y += 5
+        if (result.offer.base_price_weekend) {
+          pdf.text(`Prix Base Week-end: ${formatPrice(result.offer.base_price_weekend, 5)} €/kWh`, margin + 3, y)
+          y += 5
+        }
+      }
+
+      if (result.offer.hc_price && result.offer.hp_price) {
+        pdf.text(`Prix Heures Creuses: ${formatPrice(result.offer.hc_price, 5)} €/kWh`, margin + 3, y)
+        y += 5
+        pdf.text(`Prix Heures Pleines: ${formatPrice(result.offer.hp_price, 5)} €/kWh`, margin + 3, y)
+        y += 5
+      }
+
+      if (result.offerType === 'TEMPO') {
+        pdf.text(`Bleu HC: ${formatPrice(result.offer.tempo_blue_hc, 5)} €  |  Bleu HP: ${formatPrice(result.offer.tempo_blue_hp, 5)} €`, margin + 3, y)
+        y += 5
+        pdf.text(`Blanc HC: ${formatPrice(result.offer.tempo_white_hc, 5)} €  |  Blanc HP: ${formatPrice(result.offer.tempo_white_hp, 5)} €`, margin + 3, y)
+        y += 5
+        pdf.text(`Rouge HC: ${formatPrice(result.offer.tempo_red_hc, 5)} €  |  Rouge HP: ${formatPrice(result.offer.tempo_red_hp, 5)} €`, margin + 3, y)
+        y += 5
+      }
+
+      if (result.offer.valid_from) {
+        y += 3
+        pdf.setTextColor(107, 114, 128)
+        pdf.text(`Tarif valable depuis: ${new Date(result.offer.valid_from).toLocaleDateString('fr-FR')}`, margin + 3, y)
+      }
+    }
+
+    // Add footer
+    addFooter(currentPage)
+
+    // Save PDF
+    const safeProviderName = result.providerName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)
+    const safeOfferName = result.offerName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30)
+    const fileName = `offre-${safeProviderName}-${safeOfferName}-${new Date().toISOString().split('T')[0]}.pdf`
+    pdf.save(fileName)
+  }
+
   // Block rendering during initialization to prevent flash of content
   if (isInitializing) {
     return <div className="w-full" />
@@ -2125,8 +2559,8 @@ export default function Simulator() {
                                 {/* Breakdown by tariff */}
                                 {result.breakdown && (result.offerType === 'BASE' || result.offerType === 'BASE_WEEKEND') && result.offer && (
                                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                    <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2">
-                                      <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                                    <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 border-b border-gray-200 dark:border-gray-600">
+                                      <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2">
                                         <span className="text-lg">⚡</span>
                                         Détail de consommation
                                       </h4>
@@ -2164,8 +2598,8 @@ export default function Simulator() {
                                 )}
                                 {result.breakdown && (result.offerType === 'HC_HP' || result.offerType === 'WEEKEND' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') && result.offer && (
                                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                    <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2">
-                                      <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                                    <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 border-b border-gray-200 dark:border-gray-600">
+                                      <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2">
                                         <span className="text-lg">⚡</span>
                                         Détail de consommation
                                       </h4>
@@ -2226,8 +2660,8 @@ export default function Simulator() {
                                 )}
                                 {result.breakdown && result.offerType === 'SEASONAL' && result.offer && (
                                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                    <div className="bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2">
-                                      <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                                    <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 border-b border-gray-200 dark:border-gray-600">
+                                      <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2">
                                         <span className="text-lg">🌡️</span>
                                         Détail de consommation
                                       </h4>
@@ -2297,8 +2731,8 @@ export default function Simulator() {
                                 )}
                                 {result.breakdown && result.offerType === 'TEMPO' && result.offer && (
                                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                    <div className="bg-gradient-to-r from-violet-500 to-purple-600 px-4 py-2">
-                                      <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                                    <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 border-b border-gray-200 dark:border-gray-600">
+                                      <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2">
                                         <span className="text-lg">🎨</span>
                                         Détail de consommation
                                       </h4>
@@ -2376,8 +2810,8 @@ export default function Simulator() {
                                 )}
                                 {result.breakdown && result.offerType === 'ZEN_FLEX' && result.offer && (
                                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                    <div className="bg-gradient-to-r from-teal-500 to-emerald-600 px-4 py-2">
-                                      <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                                    <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 border-b border-gray-200 dark:border-gray-600">
+                                      <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2">
                                         <span className="text-lg">🌿</span>
                                         Détail de consommation
                                       </h4>
@@ -2439,8 +2873,8 @@ export default function Simulator() {
                                 {/* Pricing details */}
                                 {result.offer && (
                                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                    <div className="bg-gradient-to-r from-gray-600 to-gray-700 px-4 py-2">
-                                      <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+                                    <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 border-b border-gray-200 dark:border-gray-600">
+                                      <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2">
                                         <span className="text-lg">💰</span>
                                         Tarifs de l'offre
                                       </h4>
@@ -2610,7 +3044,234 @@ export default function Simulator() {
                                           Voir l'offre officielle
                                         </a>
                                       )}
+
+                                      {/* Export PDF button */}
+                                      <button
+                                        onClick={(e) => exportSingleOfferToPDF(result, e)}
+                                        className="flex items-center justify-center gap-2 w-full py-2 px-4 mt-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 font-medium text-sm transition-colors"
+                                      >
+                                        <FileDown size={16} />
+                                        Exporter en PDF (détails complets)
+                                      </button>
                                     </div>
+                                  </div>
+                                )}
+
+                                {/* Calculation explanation block - collapsible */}
+                                {result.breakdown && (
+                                  <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                    <button
+                                      onClick={(e) => toggleCalculationsExpansion(result.offerId, e)}
+                                      className="w-full flex items-center justify-between bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 px-4 py-2 transition-colors border-b border-gray-200 dark:border-gray-600"
+                                    >
+                                      <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                                        <span className="text-lg">📚</span>
+                                        Comprendre les calculs
+                                      </h4>
+                                      <ChevronDown
+                                        size={18}
+                                        className={`text-gray-500 dark:text-gray-400 transition-transform duration-200 ${expandedCalculations.has(result.offerId) ? 'rotate-180' : ''}`}
+                                      />
+                                    </button>
+
+                                    {expandedCalculations.has(result.offerId) && (
+                                      <div className="p-4 space-y-4 text-sm">
+                                        {/* Section 1: Subscription explanation */}
+                                        <div className="space-y-2">
+                                          <h5 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                                            <span className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400 text-xs font-bold">1</span>
+                                            Calcul de l'abonnement annuel
+                                          </h5>
+                                          <div className="ml-8 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                                            <p className="text-gray-700 dark:text-gray-300">
+                                              L'abonnement est facturé mensuellement par votre fournisseur, indépendamment de votre consommation.
+                                            </p>
+                                            <div className="mt-2 p-2 bg-white dark:bg-gray-800 rounded border border-purple-300 dark:border-purple-700 font-mono text-xs">
+                                              <span className="text-purple-600 dark:text-purple-400">{formatPrice(result.offer?.subscription_price, 2)} €/mois</span>
+                                              <span className="text-gray-500"> × </span>
+                                              <span className="text-purple-600 dark:text-purple-400">12 mois</span>
+                                              <span className="text-gray-500"> = </span>
+                                              <span className="font-bold text-purple-700 dark:text-purple-300">{result.subscriptionCost.toFixed(2)} €/an</span>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Section 2: Energy cost explanation */}
+                                        <div className="space-y-2">
+                                          <h5 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                                            <span className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 text-xs font-bold">2</span>
+                                            Calcul du coût énergétique
+                                          </h5>
+                                          <div className="ml-8 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800 space-y-3">
+                                            <p className="text-gray-700 dark:text-gray-300">
+                                              Le coût énergétique dépend de votre consommation réelle ({result.totalKwh?.toFixed(0)} kWh sur la période)
+                                              et des tarifs appliqués selon le type d'offre (<strong>{getTypeLabel(result.offerType)}</strong>).
+                                            </p>
+
+                                            {/* Detailed formula based on offer type */}
+                                            {(result.offerType === 'BASE' || result.offerType === 'BASE_WEEKEND') && (
+                                              <div className="space-y-2">
+                                                {result.offer?.base_price_weekend && result.breakdown.baseWeekendKwh > 0 ? (
+                                                  <>
+                                                    <div className="p-2 bg-white dark:bg-gray-800 rounded border border-emerald-300 dark:border-emerald-700 font-mono text-xs">
+                                                      <div className="text-gray-600 dark:text-gray-400 mb-1">Semaine :</div>
+                                                      <span className="text-emerald-600 dark:text-emerald-400">{result.breakdown.baseWeekdayKwh?.toFixed(0)} kWh</span>
+                                                      <span className="text-gray-500"> × </span>
+                                                      <span className="text-emerald-600 dark:text-emerald-400">{formatPrice(result.offer.base_price, 5)} €</span>
+                                                      <span className="text-gray-500"> = </span>
+                                                      <span className="font-bold">{calcPrice(result.breakdown.baseWeekdayKwh, result.offer.base_price)} €</span>
+                                                    </div>
+                                                    <div className="p-2 bg-white dark:bg-gray-800 rounded border border-amber-300 dark:border-amber-700 font-mono text-xs">
+                                                      <div className="text-gray-600 dark:text-gray-400 mb-1">Week-end :</div>
+                                                      <span className="text-amber-600 dark:text-amber-400">{result.breakdown.baseWeekendKwh?.toFixed(0)} kWh</span>
+                                                      <span className="text-gray-500"> × </span>
+                                                      <span className="text-amber-600 dark:text-amber-400">{formatPrice(result.offer.base_price_weekend, 5)} €</span>
+                                                      <span className="text-gray-500"> = </span>
+                                                      <span className="font-bold">{calcPrice(result.breakdown.baseWeekendKwh, result.offer.base_price_weekend)} €</span>
+                                                    </div>
+                                                  </>
+                                                ) : (
+                                                  <div className="p-2 bg-white dark:bg-gray-800 rounded border border-emerald-300 dark:border-emerald-700 font-mono text-xs">
+                                                    <span className="text-emerald-600 dark:text-emerald-400">{result.totalKwh?.toFixed(0)} kWh</span>
+                                                    <span className="text-gray-500"> × </span>
+                                                    <span className="text-emerald-600 dark:text-emerald-400">{formatPrice(result.offer?.base_price, 5)} €/kWh</span>
+                                                    <span className="text-gray-500"> = </span>
+                                                    <span className="font-bold text-emerald-700 dark:text-emerald-300">{result.energyCost.toFixed(2)} €</span>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+
+                                            {(result.offerType === 'HC_HP' || result.offerType === 'WEEKEND' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') && (
+                                              <div className="space-y-2">
+                                                <div className="p-2 bg-white dark:bg-gray-800 rounded border border-sky-300 dark:border-sky-700 font-mono text-xs">
+                                                  <div className="text-gray-600 dark:text-gray-400 mb-1">Heures Creuses (tarif réduit) :</div>
+                                                  <span className="text-sky-600 dark:text-sky-400">{result.breakdown.hcKwh?.toFixed(0)} kWh</span>
+                                                  <span className="text-gray-500"> × </span>
+                                                  <span className="text-sky-600 dark:text-sky-400">{formatPrice(result.offer?.hc_price, 5)} €</span>
+                                                  <span className="text-gray-500"> = </span>
+                                                  <span className="font-bold">{calcPrice(result.breakdown.hcKwh, result.offer?.hc_price)} €</span>
+                                                </div>
+                                                <div className="p-2 bg-white dark:bg-gray-800 rounded border border-orange-300 dark:border-orange-700 font-mono text-xs">
+                                                  <div className="text-gray-600 dark:text-gray-400 mb-1">Heures Pleines (tarif normal) :</div>
+                                                  <span className="text-orange-600 dark:text-orange-400">{result.breakdown.hpKwh?.toFixed(0)} kWh</span>
+                                                  <span className="text-gray-500"> × </span>
+                                                  <span className="text-orange-600 dark:text-orange-400">{formatPrice(result.offer?.hp_price, 5)} €</span>
+                                                  <span className="text-gray-500"> = </span>
+                                                  <span className="font-bold">{calcPrice(result.breakdown.hpKwh, result.offer?.hp_price)} €</span>
+                                                </div>
+                                                {result.breakdown.hcWeekendKwh > 0 && (
+                                                  <div className="p-2 bg-white dark:bg-gray-800 rounded border border-amber-300 dark:border-amber-700 font-mono text-xs">
+                                                    <div className="text-gray-600 dark:text-gray-400 mb-1">Week-end (tout en HC) :</div>
+                                                    <span className="text-amber-600 dark:text-amber-400">{result.breakdown.hcWeekendKwh?.toFixed(0)} kWh</span>
+                                                    <span className="text-gray-500"> × </span>
+                                                    <span className="text-amber-600 dark:text-amber-400">{formatPrice(result.offer?.hc_price_weekend || result.offer?.hc_price, 5)} €</span>
+                                                    <span className="text-gray-500"> = </span>
+                                                    <span className="font-bold">{calcPrice(result.breakdown.hcWeekendKwh, result.offer?.hc_price_weekend || result.offer?.hc_price)} €</span>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+
+                                            {result.offerType === 'TEMPO' && (
+                                              <div className="space-y-2">
+                                                <p className="text-xs text-gray-600 dark:text-gray-400 italic">
+                                                  Le tarif Tempo applique des prix différents selon la couleur du jour (Bleu, Blanc, Rouge) et l'heure (HC/HP).
+                                                </p>
+                                                <div className="grid grid-cols-1 gap-2">
+                                                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-300 dark:border-blue-700 font-mono text-xs">
+                                                    <div className="text-blue-700 dark:text-blue-300 font-semibold mb-1">🔵 Jours Bleus (~300j/an)</div>
+                                                    <div>HC: {result.breakdown.blueHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.tempo_blue_hc, 5)} € = {calcPrice(result.breakdown.blueHcKwh, result.offer?.tempo_blue_hc)} €</div>
+                                                    <div>HP: {result.breakdown.blueHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.tempo_blue_hp, 5)} € = {calcPrice(result.breakdown.blueHpKwh, result.offer?.tempo_blue_hp)} €</div>
+                                                  </div>
+                                                  <div className="p-2 bg-gray-100 dark:bg-gray-700/50 rounded border border-gray-300 dark:border-gray-600 font-mono text-xs">
+                                                    <div className="text-gray-700 dark:text-gray-300 font-semibold mb-1">⚪ Jours Blancs (~43j/an)</div>
+                                                    <div>HC: {result.breakdown.whiteHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.tempo_white_hc, 5)} € = {calcPrice(result.breakdown.whiteHcKwh, result.offer?.tempo_white_hc)} €</div>
+                                                    <div>HP: {result.breakdown.whiteHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.tempo_white_hp, 5)} € = {calcPrice(result.breakdown.whiteHpKwh, result.offer?.tempo_white_hp)} €</div>
+                                                  </div>
+                                                  <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded border border-red-300 dark:border-red-700 font-mono text-xs">
+                                                    <div className="text-red-700 dark:text-red-300 font-semibold mb-1">🔴 Jours Rouges (22j/an)</div>
+                                                    <div>HC: {result.breakdown.redHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.tempo_red_hc, 5)} € = {calcPrice(result.breakdown.redHcKwh, result.offer?.tempo_red_hc)} €</div>
+                                                    <div>HP: {result.breakdown.redHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.tempo_red_hp, 5)} € = {calcPrice(result.breakdown.redHpKwh, result.offer?.tempo_red_hp)} €</div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            )}
+
+                                            {result.offerType === 'SEASONAL' && (
+                                              <div className="space-y-2">
+                                                <p className="text-xs text-gray-600 dark:text-gray-400 italic">
+                                                  Le tarif saisonnier applique des prix différents selon la saison (Hiver/Été) et l'heure (HC/HP).
+                                                </p>
+                                                <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-300 dark:border-blue-700 font-mono text-xs">
+                                                  <div className="text-blue-700 dark:text-blue-300 font-semibold mb-1">❄️ Hiver (nov-mars)</div>
+                                                  <div>HC: {result.breakdown.hcWinterKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.hc_price_winter, 5)} € = {calcPrice(result.breakdown.hcWinterKwh, result.offer?.hc_price_winter)} €</div>
+                                                  <div>HP: {result.breakdown.hpWinterKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.hp_price_winter, 5)} € = {calcPrice(result.breakdown.hpWinterKwh, result.offer?.hp_price_winter)} €</div>
+                                                </div>
+                                                <div className="p-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-300 dark:border-amber-700 font-mono text-xs">
+                                                  <div className="text-amber-700 dark:text-amber-300 font-semibold mb-1">☀️ Été (avr-oct)</div>
+                                                  <div>HC: {result.breakdown.hcSummerKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.hc_price_summer, 5)} € = {calcPrice(result.breakdown.hcSummerKwh, result.offer?.hc_price_summer)} €</div>
+                                                  <div>HP: {result.breakdown.hpSummerKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.hp_price_summer, 5)} € = {calcPrice(result.breakdown.hpSummerKwh, result.offer?.hp_price_summer)} €</div>
+                                                </div>
+                                                {result.breakdown.peakDayKwh > 0 && (
+                                                  <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded border border-red-300 dark:border-red-700 font-mono text-xs">
+                                                    <div className="text-red-700 dark:text-red-300 font-semibold mb-1">⚡ Jours de pointe</div>
+                                                    <div>{result.breakdown.peakDayKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.peak_day_price, 5)} € = {calcPrice(result.breakdown.peakDayKwh, result.offer?.peak_day_price)} €</div>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+
+                                            {result.offerType === 'ZEN_FLEX' && (
+                                              <div className="space-y-2">
+                                                <p className="text-xs text-gray-600 dark:text-gray-400 italic">
+                                                  Zen Flex propose des tarifs avantageux ~345 jours/an (Éco), mais majorés ~20 jours/an (Sobriété).
+                                                </p>
+                                                <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-300 dark:border-green-700 font-mono text-xs">
+                                                  <div className="text-green-700 dark:text-green-300 font-semibold mb-1">🌿 Jours Éco (~345j)</div>
+                                                  <div>HC: {result.breakdown.zenFlexEcoHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.hc_price_winter, 5)} € = {calcPrice(result.breakdown.zenFlexEcoHcKwh, result.offer?.hc_price_winter)} €</div>
+                                                  <div>HP: {result.breakdown.zenFlexEcoHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.hp_price_winter, 5)} € = {calcPrice(result.breakdown.zenFlexEcoHpKwh, result.offer?.hp_price_winter)} €</div>
+                                                </div>
+                                                <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded border border-red-300 dark:border-red-700 font-mono text-xs">
+                                                  <div className="text-red-700 dark:text-red-300 font-semibold mb-1">⚡ Jours Sobriété (~20j)</div>
+                                                  <div>HC: {result.breakdown.zenFlexSobrietyHcKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.hc_price_summer, 5)} € = {calcPrice(result.breakdown.zenFlexSobrietyHcKwh, result.offer?.hc_price_summer)} €</div>
+                                                  <div>HP: {result.breakdown.zenFlexSobrietyHpKwh?.toFixed(0)} kWh × {formatPrice(result.offer?.hp_price_summer, 5)} € = {calcPrice(result.breakdown.zenFlexSobrietyHpKwh, result.offer?.hp_price_summer)} €</div>
+                                                </div>
+                                              </div>
+                                            )}
+
+                                            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded border border-emerald-400 dark:border-emerald-600 font-mono text-xs font-bold">
+                                              <span className="text-gray-600 dark:text-gray-400">Total énergie = </span>
+                                              <span className="text-emerald-700 dark:text-emerald-300">{result.energyCost.toFixed(2)} €</span>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Section 3: Total */}
+                                        <div className="space-y-2">
+                                          <h5 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                                            <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 text-xs font-bold">3</span>
+                                            Total annuel
+                                          </h5>
+                                          <div className="ml-8 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                                            <div className="p-3 bg-white dark:bg-gray-800 rounded border-2 border-blue-400 dark:border-blue-600 font-mono text-sm">
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-gray-600 dark:text-gray-400">Abonnement</span>
+                                                <span className="text-purple-600 dark:text-purple-400">{result.subscriptionCost.toFixed(2)} €</span>
+                                              </div>
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-gray-600 dark:text-gray-400">+ Énergie</span>
+                                                <span className="text-emerald-600 dark:text-emerald-400">{result.energyCost.toFixed(2)} €</span>
+                                              </div>
+                                              <div className="border-t border-gray-300 dark:border-gray-600 mt-2 pt-2 flex items-center justify-between">
+                                                <span className="font-bold text-gray-800 dark:text-gray-200">= TOTAL</span>
+                                                <span className="font-bold text-xl text-blue-600 dark:text-blue-400">{result.totalCost.toFixed(2)} €/an</span>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -2713,55 +3374,60 @@ export default function Simulator() {
         {/* Collapsible Content */}
         {isInfoSectionExpanded && (
           <div className="px-6 pb-6 space-y-4">
-            {/* Cache Information */}
+            {/* Cache Warning */}
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
               <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                <strong>⚠️ Cache automatique :</strong> L'utilisation du simulateur active automatiquement le cache. Vos données de consommation seront stockées temporairement sur la passerelle pour améliorer les performances et éviter de solliciter excessivement l'API Enedis. Les données en cache expirent automatiquement après 24 heures.
+                <strong>⚠️ Cache automatique :</strong> Vos données de consommation sont mises en cache pour améliorer les performances. Le cache expire après 24 heures.
               </p>
             </div>
 
-            {/* Simulation Information */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <p className="text-sm text-blue-800 dark:text-blue-200">
-                <strong>🔍 Comparaison automatique :</strong> La simulation comparera automatiquement <strong>toutes les offres disponibles</strong> dans la base de données
-                {(() => {
-                  const selectedPdlData = Array.isArray(pdlsData) ? pdlsData.find((p) => p.usage_point_id === selectedPdl) : undefined
-                  const subscribedPower = selectedPdlData?.subscribed_power
-                  return subscribedPower ? (
-                    <> correspondant à votre puissance souscrite de <strong>{subscribedPower} kVA</strong></>
-                  ) : null
-                })()}.
-              </p>
-            </div>
-
-            {/* Data Source Information */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
-                <p>
-                  <strong>📊 Source des données :</strong>
-                </p>
-                <ul className="list-disc list-inside space-y-1 ml-2">
-                  <li>Les données sont récupérées depuis l'API <strong>Enedis Data Connect</strong></li>
-                  <li>Endpoint utilisé : <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">consumption/daily</code> (relevés quotidiens)</li>
-                  <li>Les données sont mises en cache pour optimiser les performances</li>
-                  <li>Récupération automatique de <strong>1095 jours d'historique</strong> (limite maximale Enedis)</li>
-                  <li>Les données Enedis ne sont disponibles qu'en <strong>J-1</strong> (hier)</li>
-                </ul>
+            {/* Features Block - Period + Export */}
+            <div className="bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+              <div className="text-sm text-gray-700 dark:text-gray-300 space-y-3">
+                <p className="font-semibold text-gray-800 dark:text-gray-200">🛠️ Fonctionnalités</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="font-medium mb-1">📅 Choix de la période</p>
+                    <ul className="list-disc list-inside space-y-0.5 ml-2 text-gray-600 dark:text-gray-400">
+                      <li><strong>Année glissante</strong> : 365 derniers jours</li>
+                      <li><strong>Année civile</strong> : année complète</li>
+                      <li><strong>Personnalisée</strong> : dates au choix</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="font-medium mb-1">📄 Export et détails</p>
+                    <ul className="list-disc list-inside space-y-0.5 ml-2 text-gray-600 dark:text-gray-400">
+                      <li><strong>PDF global</strong> : comparatif complet</li>
+                      <li><strong>PDF par offre</strong> : détail des calculs</li>
+                      <li><strong>Formules</strong> : section "Comprendre les calculs"</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Tariff Information */}
+            {/* How it works Block */}
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
-                <p>
-                  <strong>💰 À propos des tarifs :</strong>
-                </p>
-                <ul className="list-disc list-inside space-y-1 ml-2">
-                  <li>Les tarifs sont issus de la base de données MyElectricalData</li>
-                  <li>Les calculs HC/HP sont basés sur vos plages horaires configurées dans votre PDL</li>
-                  <li>Pour les offres Enercoop spécifiques (Flexi Watt), les plages HC/HP sont détectées automatiquement</li>
-                  <li>Les économies affichées sont calculées sur la base de votre consommation réelle sur la période sélectionnée ({periodLabel})</li>
-                </ul>
+              <div className="text-sm text-blue-800 dark:text-blue-200 space-y-3">
+                <p className="font-semibold">ℹ️ Comment ça marche</p>
+                <div className="space-y-2 text-blue-700 dark:text-blue-300">
+                  <p>
+                    <strong>🔍 Comparaison :</strong> Toutes les offres correspondant à votre puissance souscrite
+                    {(() => {
+                      const selectedPdlData = Array.isArray(pdlsData) ? pdlsData.find((p) => p.usage_point_id === selectedPdl) : undefined
+                      const subscribedPower = selectedPdlData?.subscribed_power
+                      return subscribedPower ? (
+                        <> (<strong>{subscribedPower} kVA</strong>)</>
+                      ) : null
+                    })()} sont automatiquement simulées.
+                  </p>
+                  <p>
+                    <strong>📊 Source :</strong> Données via API Enedis Data Connect (historique jusqu'à 3 ans, disponible en J-1).
+                  </p>
+                  <p>
+                    <strong>💰 Tarifs :</strong> Base MyElectricalData mise à jour régulièrement. Calculs HC/HP selon vos plages horaires. Offres spéciales (Tempo, Zen Flex) : détection automatique.
+                  </p>
+                </div>
               </div>
             </div>
           </div>

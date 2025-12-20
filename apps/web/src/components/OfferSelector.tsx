@@ -100,6 +100,10 @@ export default function OfferSelector({
   // 1. Initial mount - wait for offers to load, then sync
   // 2. Page navigation (back to Dashboard) - offers reload, sync when ready
   // 3. External offer change - sync immediately
+  //
+  // IMPORTANT: We include allOffers.length in dependencies to handle race conditions
+  // where selectedOfferId is set but offers haven't loaded yet. When offers load,
+  // this effect re-runs and selectedOffer becomes available for sync.
   useEffect(() => {
     if (selectedOffer) {
       // Always sync when selectedOffer is available
@@ -113,7 +117,7 @@ export default function OfferSelector({
     }
     // When selectedOfferId is set but offers not loaded yet, wait
     // The effect re-runs when allOffers populates and selectedOffer becomes non-null
-  }, [selectedOffer, selectedOfferId])
+  }, [selectedOffer, selectedOfferId, allOffers.length])
 
   // Reset offer type when provider changes
   const handleProviderChange = (providerId: string | null) => {
