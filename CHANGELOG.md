@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-dev.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.3.0-dev.1...1.3.0-dev.2) (2025-12-20)
+
+### Bug Fixes
+
+* **ci:** move sync-develop into Release workflow ([74e3240](https://github.com/MyElectricalData/myelectricaldata_new/commit/74e3240fdd84e4cb5b4bc10894396784408c1800))
+* **web:** resolve race condition in OfferSelector initial load ([d1fe1db](https://github.com/MyElectricalData/myelectricaldata_new/commit/d1fe1db96fcd460589f4459706bee0c28c042370))
+
 ## [1.3.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.2.0...1.3.0-dev.1) (2025-12-20)
 
 ### Features
