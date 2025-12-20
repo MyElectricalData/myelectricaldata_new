@@ -3374,55 +3374,60 @@ export default function Simulator() {
         {/* Collapsible Content */}
         {isInfoSectionExpanded && (
           <div className="px-6 pb-6 space-y-4">
-            {/* Cache Information */}
+            {/* Cache Warning */}
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
               <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                <strong>⚠️ Cache automatique :</strong> L'utilisation du simulateur active automatiquement le cache. Vos données de consommation seront stockées temporairement sur la passerelle pour améliorer les performances et éviter de solliciter excessivement l'API Enedis. Les données en cache expirent automatiquement après 24 heures.
+                <strong>⚠️ Cache automatique :</strong> Vos données de consommation sont mises en cache pour améliorer les performances. Le cache expire après 24 heures.
               </p>
             </div>
 
-            {/* Simulation Information */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <p className="text-sm text-blue-800 dark:text-blue-200">
-                <strong>🔍 Comparaison automatique :</strong> La simulation comparera automatiquement <strong>toutes les offres disponibles</strong> dans la base de données
-                {(() => {
-                  const selectedPdlData = Array.isArray(pdlsData) ? pdlsData.find((p) => p.usage_point_id === selectedPdl) : undefined
-                  const subscribedPower = selectedPdlData?.subscribed_power
-                  return subscribedPower ? (
-                    <> correspondant à votre puissance souscrite de <strong>{subscribedPower} kVA</strong></>
-                  ) : null
-                })()}.
-              </p>
-            </div>
-
-            {/* Data Source Information */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
-                <p>
-                  <strong>📊 Source des données :</strong>
-                </p>
-                <ul className="list-disc list-inside space-y-1 ml-2">
-                  <li>Les données sont récupérées depuis l'API <strong>Enedis Data Connect</strong></li>
-                  <li>Endpoint utilisé : <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">consumption/daily</code> (relevés quotidiens)</li>
-                  <li>Les données sont mises en cache pour optimiser les performances</li>
-                  <li>Récupération automatique de <strong>1095 jours d'historique</strong> (limite maximale Enedis)</li>
-                  <li>Les données Enedis ne sont disponibles qu'en <strong>J-1</strong> (hier)</li>
-                </ul>
+            {/* Features Block - Period + Export */}
+            <div className="bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+              <div className="text-sm text-gray-700 dark:text-gray-300 space-y-3">
+                <p className="font-semibold text-gray-800 dark:text-gray-200">🛠️ Fonctionnalités</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="font-medium mb-1">📅 Choix de la période</p>
+                    <ul className="list-disc list-inside space-y-0.5 ml-2 text-gray-600 dark:text-gray-400">
+                      <li><strong>Année glissante</strong> : 365 derniers jours</li>
+                      <li><strong>Année civile</strong> : année complète</li>
+                      <li><strong>Personnalisée</strong> : dates au choix</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="font-medium mb-1">📄 Export et détails</p>
+                    <ul className="list-disc list-inside space-y-0.5 ml-2 text-gray-600 dark:text-gray-400">
+                      <li><strong>PDF global</strong> : comparatif complet</li>
+                      <li><strong>PDF par offre</strong> : détail des calculs</li>
+                      <li><strong>Formules</strong> : section "Comprendre les calculs"</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Tariff Information */}
+            {/* How it works Block */}
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <div className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
-                <p>
-                  <strong>💰 À propos des tarifs :</strong>
-                </p>
-                <ul className="list-disc list-inside space-y-1 ml-2">
-                  <li>Les tarifs sont issus de la base de données MyElectricalData</li>
-                  <li>Les calculs HC/HP sont basés sur vos plages horaires configurées dans votre PDL</li>
-                  <li>Pour les offres Enercoop spécifiques (Flexi Watt), les plages HC/HP sont détectées automatiquement</li>
-                  <li>Les économies affichées sont calculées sur la base de votre consommation réelle sur la période sélectionnée ({periodLabel})</li>
-                </ul>
+              <div className="text-sm text-blue-800 dark:text-blue-200 space-y-3">
+                <p className="font-semibold">ℹ️ Comment ça marche</p>
+                <div className="space-y-2 text-blue-700 dark:text-blue-300">
+                  <p>
+                    <strong>🔍 Comparaison :</strong> Toutes les offres correspondant à votre puissance souscrite
+                    {(() => {
+                      const selectedPdlData = Array.isArray(pdlsData) ? pdlsData.find((p) => p.usage_point_id === selectedPdl) : undefined
+                      const subscribedPower = selectedPdlData?.subscribed_power
+                      return subscribedPower ? (
+                        <> (<strong>{subscribedPower} kVA</strong>)</>
+                      ) : null
+                    })()} sont automatiquement simulées.
+                  </p>
+                  <p>
+                    <strong>📊 Source :</strong> Données via API Enedis Data Connect (historique jusqu'à 3 ans, disponible en J-1).
+                  </p>
+                  <p>
+                    <strong>💰 Tarifs :</strong> Base MyElectricalData mise à jour régulièrement. Calculs HC/HP selon vos plages horaires. Offres spéciales (Tempo, Zen Flex) : détection automatique.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
