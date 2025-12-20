@@ -621,7 +621,7 @@ async def toggle_admin_data_sharing(
         data={
             "admin_data_sharing": current_user.admin_data_sharing,
             "admin_data_sharing_enabled_at": current_user.admin_data_sharing_enabled_at.isoformat() if current_user.admin_data_sharing_enabled_at else None,
-            "message": f"Partage des donnees avec les administrateurs {'active' if current_user.admin_data_sharing else 'desactive'}"
+            "message": f"Partage des données avec les administrateurs {'activé' if current_user.admin_data_sharing else 'désactivé'}"
         }
     )
 

@@ -60,10 +60,17 @@ const PAGE_CONFIG: Record<string, { title: string; icon: typeof TrendingUp; subt
 
 export default function PageHeader() {
   const location = useLocation()
-  const { selectedPdl, setSelectedPdl, impersonation } = usePdlStore()
+  const { selectedPdl, setSelectedPdl, impersonation, clearImpersonation } = usePdlStore()
   const { setFetchDataFunction, isLoading, setIsLoading } = useDataFetchStore()
   const isDemo = useIsDemo()
   const { isAdmin } = usePermissions()
+
+  // Clear stale impersonation state for non-admin users
+  useEffect(() => {
+    if (!isAdmin() && impersonation) {
+      clearImpersonation()
+    }
+  }, [isAdmin, impersonation, clearImpersonation])
 
   // Récupérer la liste des PDLs de l'utilisateur
   const { data: pdlsResponse } = useQuery({
