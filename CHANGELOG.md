@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.0-dev.5](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.2.0-dev.4...1.2.0-dev.5) (2025-12-20)
+
+### Features
+
+* **simulator:** add PDF export per offer and calculation explanations ([bdfa4aa](https://github.com/MyElectricalData/myelectricaldata_new/commit/bdfa4aa5ba3a2400af4fc083b4cc38b74c0032dc))
+
 ## [1.2.0-dev.4](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.2.0-dev.3...1.2.0-dev.4) (2025-12-20)
 
 ### Features
