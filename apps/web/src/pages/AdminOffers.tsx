@@ -19,8 +19,6 @@ const formatPrice = (price: number | string | undefined | null, decimals: number
 export default function AdminOffers() {
   const queryClient = useQueryClient()
   const { hasAction } = usePermissions()
-  // Use direct token check to avoid timing issues with useAuth hook
-  const hasToken = !!localStorage.getItem('access_token')
 
   // Filters
   const [filterProvider, setFilterProvider] = useState<string>('all')
@@ -96,7 +94,7 @@ export default function AdminOffers() {
       }
       return []
     },
-    enabled: hasToken,
+    // Query will use httpOnly cookie automatically via withCredentials
     staleTime: 0, // Always refetch on mount to avoid stale cache issues
   })
 
@@ -110,7 +108,7 @@ export default function AdminOffers() {
       }
       return []
     },
-    enabled: hasToken,
+    // Query will use httpOnly cookie automatically via withCredentials
     staleTime: 0, // Always refetch on mount to avoid stale cache issues
   })
 
@@ -124,7 +122,7 @@ export default function AdminOffers() {
       }
       return { sync_in_progress: false, provider: null, started_at: null, current_step: null, steps: [], progress: 0 }
     },
-    enabled: hasToken,
+    // Query will use httpOnly cookie automatically via withCredentials
     refetchInterval: (query) => {
       // Poll much more frequently when sync is in progress or we're refreshing
       if (refreshingProvider || loadingPreview || query.state.data?.sync_in_progress) {

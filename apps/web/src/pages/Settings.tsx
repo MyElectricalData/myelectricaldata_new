@@ -31,7 +31,6 @@ export default function Settings() {
   const [newSecret, setNewSecret] = useState<string | null>(null)
   const [copiedNewSecret, setCopiedNewSecret] = useState(false)
   const [copiedClientId, setCopiedClientId] = useState(false)
-  const [copiedToken, setCopiedToken] = useState(false)
   const [showSharingConfirm, setShowSharingConfirm] = useState(false)
 
   const { data: credentialsResponse } = useQuery({
@@ -170,15 +169,6 @@ export default function Settings() {
     }
   }
 
-  const copyToken = () => {
-    const token = localStorage.getItem('access_token')
-    if (token) {
-      navigator.clipboard.writeText(token)
-      setCopiedToken(true)
-      toast.success('Token JWT copié dans le presse-papier !', { icon: '📋' })
-      setTimeout(() => setCopiedToken(false), 2000)
-    }
-  }
 
   return (
     <div className="space-y-8 w-full">
@@ -593,34 +583,21 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* JWT Token */}
-      <div className="card border-blue-200 dark:border-blue-800">
+      {/* Session Security Info */}
+      <div className="card border-green-200 dark:border-green-800">
         <div className="flex items-center gap-2 mb-4">
-          <Key className="text-blue-600 dark:text-blue-400" size={24} />
-          <h2 className="text-xl font-semibold">Token d'API (JWT)</h2>
+          <Key className="text-green-600 dark:text-green-400" size={24} />
+          <h2 className="text-xl font-semibold">Sécurité de session</h2>
         </div>
-        <div className="space-y-3">
-          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <p className="text-sm text-blue-800 dark:text-blue-200 mb-2">
-              ℹ️ Ce token vous permet d'appeler les API directement (pour développeurs)
-            </p>
-            <ul className="text-sm text-blue-700 dark:text-blue-300 list-disc list-inside space-y-1">
-              <li>Durée de vie limitée (généralement 24h)</li>
-              <li>Ne partagez jamais ce token</li>
-              <li>Utilisez-le dans le header : Authorization: Bearer [token]</li>
-            </ul>
-          </div>
-          <button
-            onClick={copyToken}
-            className="btn bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
-          >
-            {copiedToken ? '✓ Copié !' : (
-              <>
-                <Copy size={18} />
-                Copier le token de session
-              </>
-            )}
-          </button>
+        <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+          <p className="text-sm text-green-800 dark:text-green-200 mb-2">
+            🔒 Votre session est protégée par un cookie httpOnly sécurisé
+          </p>
+          <ul className="text-sm text-green-700 dark:text-green-300 list-disc list-inside space-y-1">
+            <li>Le token de session n'est pas accessible par JavaScript (protection XSS)</li>
+            <li>Durée de validité : 30 jours</li>
+            <li>Pour l'API, utilisez vos identifiants client_id / client_secret</li>
+          </ul>
         </div>
       </div>
 

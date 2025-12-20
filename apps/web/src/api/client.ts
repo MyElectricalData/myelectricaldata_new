@@ -33,17 +33,15 @@ class APIClient {
       headers: {
         'Content-Type': 'application/json',
       },
+      // Enable credentials for httpOnly cookie authentication
+      withCredentials: true,
       // Force HTTP adapter to prevent browser from upgrading to HTTPS
       adapter: 'xhr',
     })
 
-    // Request interceptor to add auth token and impersonation header
+    // Request interceptor for impersonation header and debugging
+    // Note: Auth is now handled via httpOnly cookie (withCredentials: true)
     this.client.interceptors.request.use((config) => {
-      const token = localStorage.getItem('access_token')
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`
-      }
-
       // Add impersonation header if viewing another user's PDL (admin feature)
       const { impersonation } = usePdlStore.getState()
       if (impersonation?.ownerId) {
@@ -65,8 +63,8 @@ class APIClient {
       (response) => response,
       async (error: AxiosError<APIResponse>) => {
         if (error.response?.status === 401) {
-          // Token expired, clear storage and redirect to login
-          localStorage.removeItem('access_token')
+          // Cookie expired/invalid, redirect to login
+          // The httpOnly cookie will be cleared by the server on next request
           window.location.href = '/login'
         }
         return Promise.reject(error)

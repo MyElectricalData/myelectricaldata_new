@@ -110,13 +110,34 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=[
     "backend",
 ])
 
-# CORS middleware
+# CORS middleware - explicit origins required for credentials (httpOnly cookies)
+def get_cors_origins() -> list[str]:
+    """Build CORS origins from settings"""
+    origins = [settings.FRONTEND_URL]
+    # Add backend URL for Swagger UI
+    if settings.BACKEND_URL and settings.BACKEND_URL != settings.FRONTEND_URL:
+        origins.append(settings.BACKEND_URL)
+    # Add common development origins
+    if settings.DEBUG:
+        origins.extend([
+            "http://localhost:3000",
+            "http://localhost:8000",
+            "http://localhost:8081",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:8000",
+            "http://127.0.0.1:8081",
+        ])
+    # Remove duplicates while preserving order
+    return list(dict.fromkeys(origins))
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
+    allow_origins=get_cors_origins(),
+    allow_credentials=True,  # Required for httpOnly cookies
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Set-Cookie"],  # Allow browser to see Set-Cookie header
 )
 
 

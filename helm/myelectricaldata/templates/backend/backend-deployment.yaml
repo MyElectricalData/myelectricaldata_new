@@ -230,6 +230,15 @@ spec:
                   name: {{ include "myelectricaldata.fullname" . }}
                   key: FRONTEND_URL
             {{- end }}
+            # Cookie settings for httpOnly JWT authentication
+            - name: COOKIE_SECURE
+              value: {{ .Values.config.cookie.secure | quote }}
+            - name: COOKIE_SAMESITE
+              value: {{ .Values.config.cookie.sameSite | quote }}
+            {{- if .Values.config.cookie.domain }}
+            - name: COOKIE_DOMAIN
+              value: {{ .Values.config.cookie.domain | quote }}
+            {{- end }}
           {{- with .Values.backend.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}

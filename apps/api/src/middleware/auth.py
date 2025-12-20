@@ -44,13 +44,25 @@ async def get_current_user(
     bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
     db: AsyncSession = Depends(get_db)
 ) -> User:
-    """Get current authenticated user from JWT token or API key"""
-    # Get token from either OAuth2 or Bearer header
+    """Get current authenticated user from JWT token (cookie or header) or API key"""
+    # Priority order: httpOnly cookie > Bearer header > OAuth2 token
     token = None
-    if bearer_token:
+
+    # 1. Try httpOnly cookie first (most secure for browser clients)
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        token = cookie_token
+        logger.debug("[AUTH] Token from httpOnly cookie")
+
+    # 2. Fallback to Bearer header (for API clients)
+    if not token and bearer_token:
         token = bearer_token.credentials
-    elif oauth_token:
+        logger.debug("[AUTH] Token from Bearer header")
+
+    # 3. Fallback to OAuth2 token
+    if not token and oauth_token:
         token = oauth_token
+        logger.debug("[AUTH] Token from OAuth2 scheme")
 
     if not token:
         logger.warning("[AUTH] No token provided")

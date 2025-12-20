@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = "http://localhost:8000"
 
+    # Cookie settings
+    COOKIE_SECURE: bool = False  # Set True in production (HTTPS only)
+    COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+    COOKIE_DOMAIN: str = ""  # Empty = current domain only
+
     # Mailgun Email
     MAILGUN_API_KEY: str = ""
     MAILGUN_DOMAIN: str = ""
