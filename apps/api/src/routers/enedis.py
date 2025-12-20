@@ -1,12 +1,12 @@
 from datetime import datetime, UTC, timedelta
-from typing import cast
+from typing import cast, Optional
 from fastapi import APIRouter, Depends, Query, Request, Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import User, Token, PDL
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail, CacheDeleteResponse
-from ..middleware import get_current_user
+from ..middleware import get_current_user, get_impersonation_context, get_encryption_key
 from ..adapters import enedis_adapter
 from ..adapters.demo_adapter import demo_adapter
 from ..services import cache_service, rate_limiter
@@ -114,6 +114,44 @@ async def verify_pdl_ownership(usage_point_id: str, user: User, db: AsyncSession
     )
     pdl = result.scalar_one_or_none()
     return pdl is not None
+
+
+async def get_pdl_with_owner(
+    usage_point_id: str,
+    current_user: User,
+    impersonated_user: User | None,
+    db: AsyncSession
+) -> tuple[PDL | None, User | None]:
+    """
+    Get PDL and its owner, supporting admin impersonation.
+
+    Returns (pdl, owner) tuple where:
+    - pdl: The PDL if found and accessible
+    - owner: The user who owns the PDL (for getting client_secret)
+
+    Access is granted if:
+    1. PDL belongs to current_user, OR
+    2. PDL belongs to impersonated_user (admin impersonation with data sharing enabled)
+    """
+    # First, try current user's PDL
+    result = await db.execute(
+        select(PDL).where(PDL.user_id == current_user.id, PDL.usage_point_id == usage_point_id)
+    )
+    pdl = result.scalar_one_or_none()
+    if pdl:
+        return pdl, current_user
+
+    # If impersonating, try impersonated user's PDL
+    if impersonated_user:
+        result = await db.execute(
+            select(PDL).where(PDL.user_id == impersonated_user.id, PDL.usage_point_id == usage_point_id)
+        )
+        pdl = result.scalar_one_or_none()
+        if pdl:
+            logger.info(f"[IMPERSONATION] Admin {current_user.email} accessing PDL {usage_point_id} of user {impersonated_user.email}")
+            return pdl, impersonated_user
+
+    return None, None
 
 
 def adjust_date_range(start: str, end: str) -> tuple[str, str]:
@@ -375,9 +413,15 @@ async def get_consumption_daily(
         }
     ),
     current_user: User = Depends(get_current_user),
+    impersonated_user: Optional[User] = Depends(get_impersonation_context),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Get daily consumption data (max 3 years history)"""
+
+    # Get the encryption key (impersonated user's key if admin is viewing shared data)
+    encryption_key = get_encryption_key(current_user, impersonated_user)
+    # Get the effective user for PDL ownership check
+    effective_user = impersonated_user or current_user
 
     # Adjust date range: cap end date to today and ensure start is before end
     start, end = adjust_date_range(start, end)
@@ -390,7 +434,7 @@ async def get_consumption_daily(
     if dates_too_old and error_response:
         # Try to serve from cache only
         cache_key = f"consumption:daily:{usage_point_id}:{start}:{end}"
-        cached_data = await cache_service.get(cache_key, current_user.client_secret)
+        cached_data = await cache_service.get(cache_key, encryption_key)
 
         if cached_data:
             log_with_pdl("info", usage_point_id, f"[CACHE] Serving old data from cache for ({start} to {end})")
@@ -400,11 +444,11 @@ async def get_consumption_daily(
             return error_response
 
     # Check if user is demo - skip token validation for demo users
-    _, is_demo = await get_adapter_for_user(current_user)
+    _, is_demo = await get_adapter_for_user(effective_user)
     access_token = None
 
     if not is_demo:
-        access_token = await get_valid_token(usage_point_id, current_user, db)
+        access_token = await get_valid_token(usage_point_id, effective_user, db)
         if not access_token:
             return APIResponse(
                 success=False,
@@ -437,23 +481,23 @@ async def get_consumption_daily(
         while current_date <= end_date:
             date_str = current_date.strftime("%Y-%m-%d")
             cache_key = f"consumption:daily:{usage_point_id}:{date_str}"
-            cached_reading = await cache_service.get(cache_key, current_user.client_secret)
+            cached_reading = await cache_service.get(cache_key, encryption_key)
 
             if cached_reading:
                 all_readings.append(cached_reading)
-                log_if_debug(current_user, "debug", f"[CACHE HIT] Daily data for on {date_str}", pdl=usage_point_id)
+                log_if_debug(effective_user, "debug", f"[CACHE HIT] Daily data for on {date_str}", pdl=usage_point_id)
             else:
                 missing_dates.append(date_str)
-                log_if_debug(current_user, "debug", f"[CACHE MISS] Daily data for on {date_str}", pdl=usage_point_id)
+                log_if_debug(effective_user, "debug", f"[CACHE MISS] Daily data for on {date_str}", pdl=usage_point_id)
 
             current_date += timedelta(days=1)
 
         # If we have all data from cache, return it
         if not missing_dates:
-            log_if_debug(current_user, "info", f"[CACHE] All daily data served from cache for ({start} to {end})", pdl=usage_point_id)
+            log_if_debug(effective_user, "info", f"[CACHE] All daily data served from cache for ({start} to {end})", pdl=usage_point_id)
             # Get reading_type from cache or default
             reading_type_cache_key = f"consumption:reading_type:{usage_point_id}"
-            reading_type = await cache_service.get(reading_type_cache_key, current_user.client_secret)
+            reading_type = await cache_service.get(reading_type_cache_key, encryption_key)
             if not reading_type:
                 reading_type = {"unit": "W", "measurement_kind": "power"}
             return APIResponse(success=True, data={"meter_reading": {"interval_reading": all_readings, "reading_type": reading_type}})
@@ -492,7 +536,7 @@ async def get_consumption_daily(
             # Add the last range
             date_ranges.append((range_start, range_end))
 
-        log_if_debug(current_user, "info", f"[API CALL] Fetching {len(missing_dates)} missing dates in {len(date_ranges)} API call(s)", pdl=usage_point_id)
+        log_if_debug(effective_user, "info", f"[API CALL] Fetching {len(missing_dates)} missing dates in {len(date_ranges)} API call(s)", pdl=usage_point_id)
 
         # Fetch each range from Enedis
         api_errors = []
@@ -506,20 +550,20 @@ async def get_consumption_daily(
                 if start_date_obj == end_date_obj:
                     # Single day request, extend to include previous day
                     adjusted_start = (start_date_obj - timedelta(days=1)).strftime("%Y-%m-%d")
-                    log_if_debug(current_user, "info", f"[API CALL] Single day detected, extending range: {adjusted_start} to {range_end}", pdl=usage_point_id)
+                    log_if_debug(effective_user, "info", f"[API CALL] Single day detected, extending range: {adjusted_start} to {range_end}", pdl=usage_point_id)
                     api_start = adjusted_start
                     api_end = range_end
                 else:
                     api_start = range_start
                     api_end = range_end
 
-                log_if_debug(current_user, "info", f"[API CALL] Fetching data from {api_start} to {api_end}", pdl=usage_point_id)
+                log_if_debug(effective_user, "info", f"[API CALL] Fetching data from {api_start} to {api_end}", pdl=usage_point_id)
 
                 # Use appropriate adapter based on user type
-                adapter, is_demo = await get_adapter_for_user(current_user)
+                adapter, is_demo = await get_adapter_for_user(effective_user)
                 if is_demo:
                     # Demo adapter uses client_secret instead of access_token
-                    data = await adapter.get_consumption_daily(usage_point_id, api_start, api_end, current_user.client_secret)
+                    data = await adapter.get_consumption_daily(usage_point_id, api_start, api_end, encryption_key)
                 else:
                     data = await adapter.get_consumption_daily(usage_point_id, api_start, api_end, access_token)
 
@@ -541,14 +585,14 @@ async def get_consumption_daily(
                         date_str = reading.get("date", "")[:10]  # Extract YYYY-MM-DD
                         if date_str:
                             cache_key = f"consumption:daily:{usage_point_id}:{date_str}"
-                            await cache_service.set(cache_key, reading, current_user.client_secret)
-                            log_if_debug(current_user, "debug", f"[CACHE SET] Daily data for on {date_str}", pdl=usage_point_id)
+                            await cache_service.set(cache_key, reading, encryption_key)
+                            log_if_debug(effective_user, "debug", f"[CACHE SET] Daily data for on {date_str}", pdl=usage_point_id)
 
                             # Only add to all_readings if it was actually requested
                             if date_str in missing_dates:
                                 all_readings.append(reading)
                             else:
-                                log_if_debug(current_user, "debug", f"[CACHE ONLY] Data for {date_str} cached but not added to response (wasn't requested)", pdl=usage_point_id)
+                                log_if_debug(effective_user, "debug", f"[CACHE ONLY] Data for {date_str} cached but not added to response (wasn't requested)", pdl=usage_point_id)
                 else:
                     # Not using cache, just add to all_readings (filter by missing_dates)
                     for reading in fetched_readings:
@@ -565,8 +609,8 @@ async def get_consumption_daily(
         # Cache reading_type if present
         if reading_type and use_cache:
             reading_type_cache_key = f"consumption:reading_type:{usage_point_id}"
-            await cache_service.set(reading_type_cache_key, reading_type, current_user.client_secret)
-            log_if_debug(current_user, "debug", f"[CACHE SET] Reading type for: unit={reading_type.get('unit')}, interval={reading_type.get('interval_length')}", pdl=usage_point_id)
+            await cache_service.set(reading_type_cache_key, reading_type, encryption_key)
+            log_if_debug(effective_user, "debug", f"[CACHE SET] Reading type for: unit={reading_type.get('unit')}, interval={reading_type.get('interval_length')}", pdl=usage_point_id)
 
         # If all API calls failed and we have no cached data, return error
         if api_errors and not all_readings:
@@ -575,7 +619,7 @@ async def get_consumption_daily(
     # Get reading_type from cache if not fetched from API
     if not reading_type and use_cache:
         reading_type_cache_key = f"consumption:reading_type:{usage_point_id}"
-        reading_type = await cache_service.get(reading_type_cache_key, current_user.client_secret)
+        reading_type = await cache_service.get(reading_type_cache_key, encryption_key)
 
     # Use default reading_type if not found
     if not reading_type:
@@ -623,6 +667,7 @@ async def get_consumption_detail(
         }
     ),
     current_user: User = Depends(get_current_user),
+    impersonated_user: Optional[User] = Depends(get_impersonation_context),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Get detailed consumption data (load curve) (max 2 years history)
@@ -630,6 +675,9 @@ async def get_consumption_detail(
     New cache strategy: Data is cached per individual day instead of per date range.
     This allows cache reuse across different date ranges.
     """
+    # Get encryption key and effective user for impersonation support
+    encryption_key = get_encryption_key(current_user, impersonated_user)
+    effective_user = impersonated_user or current_user
 
     # Adjust date range: cap end date to today and ensure start is before end
     start, end = adjust_date_range(start, end)
@@ -647,7 +695,7 @@ async def get_consumption_detail(
         date_list.append(current_date.strftime("%Y-%m-%d"))
         current_date += timedelta(days=1)
 
-    access_token = await get_valid_token(usage_point_id, current_user, db)
+    access_token = await get_valid_token(usage_point_id, effective_user, db)
     if not access_token:
         return APIResponse(
             success=False,
@@ -676,7 +724,7 @@ async def get_consumption_detail(
                 for minute in [0, 30]:
                     timestamp = f"{date_str}T{hour:02d}:{minute:02d}"
                     cache_key = f"consumption:detail:{usage_point_id}:{timestamp}"
-                    cached_reading = await cache_service.get(cache_key, current_user.client_secret)
+                    cached_reading = await cache_service.get(cache_key, encryption_key)
 
                     if cached_reading:
                         day_readings.append(cached_reading)
@@ -685,14 +733,14 @@ async def get_consumption_detail(
 
             if day_complete and len(day_readings) > 0:
                 cached_readings.extend(day_readings)
-                log_if_debug(current_user, "debug", f"[CACHE HIT] {date_str} (all {len(day_readings)} readings)", pdl=usage_point_id)
+                log_if_debug(effective_user, "debug", f"[CACHE HIT] {date_str} (all {len(day_readings)} readings)", pdl=usage_point_id)
             else:
                 # Add partial readings we found
                 if day_readings:
                     cached_readings.extend(day_readings)
-                    log_if_debug(current_user, "debug", f"[CACHE PARTIAL] {date_str} ({len(day_readings)}/48 readings)", pdl=usage_point_id)
+                    log_if_debug(effective_user, "debug", f"[CACHE PARTIAL] {date_str} ({len(day_readings)}/48 readings)", pdl=usage_point_id)
                 else:
-                    log_if_debug(current_user, "debug", f"[CACHE MISS] {date_str}", pdl=usage_point_id)
+                    log_if_debug(effective_user, "debug", f"[CACHE MISS] {date_str}", pdl=usage_point_id)
                 missing_dates.append(date_str)
     else:
         missing_dates = date_list
@@ -745,9 +793,9 @@ async def get_consumption_detail(
                     log_with_pdl("info", usage_point_id, f"[FETCH] {range_start} to {range_end}")
 
                 # Use appropriate adapter based on user type
-                adapter, is_demo = await get_adapter_for_user(current_user)
+                adapter, is_demo = await get_adapter_for_user(effective_user)
                 if is_demo:
-                    data = await adapter.get_consumption_detail(usage_point_id, range_start, range_end, current_user.client_secret)
+                    data = await adapter.get_consumption_detail(usage_point_id, range_start, range_end, encryption_key)
                 else:
                     data = await adapter.get_consumption_detail(usage_point_id, range_start, range_end, access_token)
 
@@ -761,7 +809,7 @@ async def get_consumption_detail(
 
                     # Get the PDL and update the oldest_available_data_date
                     pdl_query = await db.execute(
-                        select(PDL).where(PDL.usage_point_id == usage_point_id, PDL.user_id == current_user.id)
+                        select(PDL).where(PDL.usage_point_id == usage_point_id, PDL.user_id == effective_user.id)
                     )
                     pdl = pdl_query.scalar_one_or_none()
 
@@ -800,7 +848,7 @@ async def get_consumption_detail(
                                 timestamp = timestamp[:16]  # Keep only YYYY-MM-DDTHH:MM
 
                             cache_key = f"consumption:detail:{usage_point_id}:{timestamp}"
-                            await cache_service.set(cache_key, reading, current_user.client_secret)
+                            await cache_service.set(cache_key, reading, encryption_key)
 
                     log_with_pdl("info", usage_point_id, f"[CACHE SET] {range_start} to {range_end} ({len(readings)} individual readings cached)")
 
@@ -856,6 +904,7 @@ async def get_consumption_detail_batch(
         }
     ),
     current_user: User = Depends(get_current_user),
+    impersonated_user: Optional[User] = Depends(get_impersonation_context),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """
@@ -870,6 +919,9 @@ async def get_consumption_detail_batch(
     - ADAM-ERR0123 error handling with progressive retry
     - Returns all data in a single response
     """
+    # Get encryption key and effective user for impersonation support
+    encryption_key = get_encryption_key(current_user, impersonated_user)
+    effective_user = impersonated_user or current_user
 
     # Adjust date range: cap end date to yesterday (J-1) and ensure start is before end
     start, end = adjust_date_range(start, end)
@@ -918,12 +970,12 @@ async def get_consumption_detail_batch(
         return error_response
 
     # Get adapter for user (demo or real)
-    adapter, is_demo = await get_adapter_for_user(current_user)
+    adapter, is_demo = await get_adapter_for_user(effective_user)
 
     # Get valid token
     access_token = None
     if not is_demo:
-        access_token = await get_valid_token(usage_point_id, current_user, db)
+        access_token = await get_valid_token(usage_point_id, effective_user, db)
         if not access_token:
             return APIResponse(
                 success=False,
@@ -942,7 +994,7 @@ async def get_consumption_detail_batch(
         all_dates.append(current_date.strftime("%Y-%m-%d"))
         current_date += timedelta(days=1)
 
-    log_if_debug(current_user, "info", f"[BATCH] Requested {len(all_dates)} days from {start} to {end}", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH] Requested {len(all_dates)} days from {start} to {end}", pdl=usage_point_id)
 
     # Check cache for each day using OPTIMIZED per-day cache keys
     # OLD format (slow): consumption:detail:{pdl}:{date}T{hour}:{minute} = single reading (312 queries/day)
@@ -957,7 +1009,7 @@ async def get_consumption_detail_batch(
         for date_str in all_dates:
             # Try NEW per-day cache format first (fast: 1 query per day)
             daily_cache_key = f"consumption:detail:daily:{usage_point_id}:{date_str}"
-            daily_cached = await cache_service.get(daily_cache_key, current_user.client_secret)
+            daily_cached = await cache_service.get(daily_cache_key, encryption_key)
 
             if daily_cached and isinstance(daily_cached, dict) and "readings" in daily_cached:
                 day_readings = daily_cached["readings"]
@@ -1003,33 +1055,33 @@ async def get_consumption_detail_batch(
         missing_dates = non_blacklisted_dates
 
     # Log cache summary report with clear formatting
-    log_if_debug(current_user, "info", "[BATCH CACHE REPORT] ═══════════════════════════════════════════════════════════", pdl=usage_point_id)
-    log_if_debug(current_user, "info", f"[BATCH CACHE REPORT] Period: {start} → {end} ({len(all_dates)} days)", pdl=usage_point_id)
-    log_if_debug(current_user, "info", "[BATCH CACHE REPORT] ───────────────────────────────────────────────────────────", pdl=usage_point_id)
-    log_if_debug(current_user, "info", f"[BATCH CACHE REPORT] ✓ CACHE HIT:     {cache_hit_count:4d} days ({cache_hit_count*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
-    log_if_debug(current_user, "info", f"[BATCH CACHE REPORT] ◐ CACHE PARTIAL: {cache_partial_count:4d} days ({cache_partial_count*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
-    log_if_debug(current_user, "info", f"[BATCH CACHE REPORT] ✗ CACHE MISS:    {cache_miss_count:4d} days ({cache_miss_count*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
-    log_if_debug(current_user, "info", f"[BATCH CACHE REPORT] ⊗ BLACKLISTED:   {len(blacklisted_dates):4d} days ({len(blacklisted_dates)*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
-    log_if_debug(current_user, "info", "[BATCH CACHE REPORT] ───────────────────────────────────────────────────────────", pdl=usage_point_id)
-    log_if_debug(current_user, "info", f"[BATCH CACHE REPORT] → TO FETCH:      {len(missing_dates):4d} days (after filtering blacklisted)", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", "[BATCH CACHE REPORT] ═══════════════════════════════════════════════════════════", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH CACHE REPORT] Period: {start} → {end} ({len(all_dates)} days)", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", "[BATCH CACHE REPORT] ───────────────────────────────────────────────────────────", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH CACHE REPORT] ✓ CACHE HIT:     {cache_hit_count:4d} days ({cache_hit_count*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH CACHE REPORT] ◐ CACHE PARTIAL: {cache_partial_count:4d} days ({cache_partial_count*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH CACHE REPORT] ✗ CACHE MISS:    {cache_miss_count:4d} days ({cache_miss_count*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH CACHE REPORT] ⊗ BLACKLISTED:   {len(blacklisted_dates):4d} days ({len(blacklisted_dates)*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", "[BATCH CACHE REPORT] ───────────────────────────────────────────────────────────", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH CACHE REPORT] → TO FETCH:      {len(missing_dates):4d} days (after filtering blacklisted)", pdl=usage_point_id)
 
     if blacklisted_dates:
-        log_if_debug(current_user, "info", "[BATCH CACHE REPORT] ───────────────────────────────────────────────────────────", pdl=usage_point_id)
+        log_if_debug(effective_user, "info", "[BATCH CACHE REPORT] ───────────────────────────────────────────────────────────", pdl=usage_point_id)
         if len(blacklisted_dates) <= 10:
-            log_if_debug(current_user, "info", f"[BATCH CACHE REPORT] Blacklisted dates: {', '.join(blacklisted_dates)}", pdl=usage_point_id)
+            log_if_debug(effective_user, "info", f"[BATCH CACHE REPORT] Blacklisted dates: {', '.join(blacklisted_dates)}", pdl=usage_point_id)
         else:
-            log_if_debug(current_user, "info", f"[BATCH CACHE REPORT] Blacklisted dates (first 5): {', '.join(blacklisted_dates[:5])}", pdl=usage_point_id)
-            log_if_debug(current_user, "info", f"[BATCH CACHE REPORT] Blacklisted dates (last 5):  {', '.join(blacklisted_dates[-5:])}", pdl=usage_point_id)
+            log_if_debug(effective_user, "info", f"[BATCH CACHE REPORT] Blacklisted dates (first 5): {', '.join(blacklisted_dates[:5])}", pdl=usage_point_id)
+            log_if_debug(effective_user, "info", f"[BATCH CACHE REPORT] Blacklisted dates (last 5):  {', '.join(blacklisted_dates[-5:])}", pdl=usage_point_id)
 
-    log_if_debug(current_user, "info", "[BATCH CACHE REPORT] ═══════════════════════════════════════════════════════════", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", "[BATCH CACHE REPORT] ═══════════════════════════════════════════════════════════", pdl=usage_point_id)
 
     # Debug: Log first and last missing dates
     if missing_dates:
-        log_if_debug(current_user, "info", f"[BATCH DEBUG] First missing: {missing_dates[0]}, Last missing: {missing_dates[-1]}, Total: {len(missing_dates)}", pdl=usage_point_id)
+        log_if_debug(effective_user, "info", f"[BATCH DEBUG] First missing: {missing_dates[0]}, Last missing: {missing_dates[-1]}, Total: {len(missing_dates)}", pdl=usage_point_id)
 
     # If we have all data from cache, return it immediately
     if not missing_dates:
-        log_if_debug(current_user, "info", "[BATCH] All data served from cache", pdl=usage_point_id)
+        log_if_debug(effective_user, "info", "[BATCH] All data served from cache", pdl=usage_point_id)
         return APIResponse(success=True, data={"meter_reading": {"interval_reading": cached_readings}})
 
     # Check rate limit only if we need to fetch from Enedis
@@ -1075,7 +1127,7 @@ async def get_consumption_detail_batch(
         i = j  # Move to next non-consecutive date
 
     total_chunks = len(week_chunks)
-    log_if_debug(current_user, "info", f"[BATCH] Split into {total_chunks} chunks from {len(missing_dates)} missing dates", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH] Split into {total_chunks} chunks from {len(missing_dates)} missing dates", pdl=usage_point_id)
 
     # Fetch each chunk from Enedis with retry logic for ADAM-ERR0123
     all_readings = []
@@ -1090,7 +1142,7 @@ async def get_consumption_detail_batch(
             # Calculate chunk size for logging
             chunk_start_date = datetime.strptime(chunk_start, "%Y-%m-%d")
             chunk_size = (chunk_end_date - chunk_start_date).days + 1
-            log_if_debug(current_user, "info", f"[BATCH FETCH {chunk_idx+1}/{len(week_chunks)}] {chunk_start} to {chunk_end} ({chunk_size} days)", pdl=usage_point_id)
+            log_if_debug(effective_user, "info", f"[BATCH FETCH {chunk_idx+1}/{len(week_chunks)}] {chunk_start} to {chunk_end} ({chunk_size} days)", pdl=usage_point_id)
 
             # Fetch with retry logic for ADAM-ERR0123
             current_start = datetime.strptime(chunk_start, "%Y-%m-%d")
@@ -1129,7 +1181,7 @@ async def get_consumption_detail_batch(
 
                 try:
                     if is_demo:
-                        chunk_data = await adapter.get_consumption_detail(usage_point_id, current_start_str, fetch_end, current_user.client_secret)
+                        chunk_data = await adapter.get_consumption_detail(usage_point_id, current_start_str, fetch_end, encryption_key)
                     else:
                         chunk_data = await adapter.get_consumption_detail(usage_point_id, current_start_str, fetch_end, access_token)
 
@@ -1158,7 +1210,7 @@ async def get_consumption_detail_batch(
 
                             # Increment fail counter for this date
                             fail_count = await increment_date_fail_count(usage_point_id, current_start_str)
-                            log_if_debug(current_user, "debug", f"[BATCH FAIL COUNT] {current_start_str} now has {fail_count} failures", pdl=usage_point_id)
+                            log_if_debug(effective_user, "debug", f"[BATCH FAIL COUNT] {current_start_str} now has {fail_count} failures", pdl=usage_point_id)
 
                             # Blacklist if > 5 failures
                             if fail_count > 5:
@@ -1192,7 +1244,7 @@ async def get_consumption_detail_batch(
 
                     # For other errors: increment fail counter and retry
                     fail_count = await increment_date_fail_count(usage_point_id, current_start_str)
-                    log_if_debug(current_user, "debug", f"[BATCH FAIL COUNT] {current_start_str} now has {fail_count} failures", pdl=usage_point_id)
+                    log_if_debug(effective_user, "debug", f"[BATCH FAIL COUNT] {current_start_str} now has {fail_count} failures", pdl=usage_point_id)
 
                     # Blacklist if > 5 failures
                     if fail_count > 5:
@@ -1255,9 +1307,9 @@ async def get_consumption_detail_batch(
                         "interval_length": interval_length,
                         "count": len(day_readings)
                     }
-                    await cache_service.set(daily_cache_key, cache_data, current_user.client_secret)
+                    await cache_service.set(daily_cache_key, cache_data, encryption_key)
 
-                log_if_debug(current_user, "debug", f"[BATCH CACHE SET] {chunk_start} to {chunk_end} ({len(readings)} readings in {len(readings_by_date)} days)", pdl=usage_point_id)
+                log_if_debug(effective_user, "debug", f"[BATCH CACHE SET] {chunk_start} to {chunk_end} ({len(readings)} readings in {len(readings_by_date)} days)", pdl=usage_point_id)
 
             all_readings.extend(readings)
             fetched_count += 1
@@ -1273,7 +1325,7 @@ async def get_consumption_detail_batch(
     # Sort by timestamp
     all_readings.sort(key=lambda x: x.get("date", ""))
 
-    log_if_debug(current_user, "info", f"[BATCH COMPLETE] Total readings: {len(all_readings)}, Fetched chunks: {fetched_count}/{len(week_chunks)}", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH COMPLETE] Total readings: {len(all_readings)}, Fetched chunks: {fetched_count}/{len(week_chunks)}", pdl=usage_point_id)
 
     if not all_readings:
         return APIResponse(
@@ -1308,10 +1360,15 @@ async def get_max_power(
     end: str = Query(..., description="End date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "End of 2024", "value": "2024-12-31"}, "recent_month": {"summary": "Month end", "value": "2024-10-31"}}),
     use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
+    impersonated_user: Optional[User] = Depends(get_impersonation_context),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Get maximum power data"""
-    access_token = await get_valid_token(usage_point_id, current_user, db)
+    # Get encryption key and effective user for impersonation support
+    encryption_key = get_encryption_key(current_user, impersonated_user)
+    effective_user = impersonated_user or current_user
+
+    access_token = await get_valid_token(usage_point_id, effective_user, db)
     if not access_token:
         return APIResponse(
             success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
@@ -1328,21 +1385,21 @@ async def get_max_power(
     # Check cache
     if use_cache:
         cache_key = cache_service.make_cache_key(usage_point_id, "power", start=start, end=end)
-        cached_data = await cache_service.get(cache_key, current_user.client_secret)
+        cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
             return APIResponse(success=True, data=cached_data)
 
     try:
         # Use appropriate adapter based on user type
-        adapter, is_demo = await get_adapter_for_user(current_user)
+        adapter, is_demo = await get_adapter_for_user(effective_user)
         if is_demo:
-            data = await adapter.get_max_power(usage_point_id, start, end, current_user.client_secret)
+            data = await adapter.get_max_power(usage_point_id, start, end, encryption_key)
         else:
             data = await adapter.get_max_power(usage_point_id, start, end, access_token)
 
         # Cache result
         if use_cache:
-            await cache_service.set(cache_key, data, current_user.client_secret)
+            await cache_service.set(cache_key, data, encryption_key)
 
         return APIResponse(success=True, data=data)
     except Exception as e:
@@ -1357,10 +1414,15 @@ async def get_production_daily(
     end: str = Query(..., description="End date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "End of 2024", "value": "2024-12-31"}, "recent_month": {"summary": "Month end", "value": "2024-10-31"}}),
     use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
+    impersonated_user: Optional[User] = Depends(get_impersonation_context),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Get daily production data"""
-    access_token = await get_valid_token(usage_point_id, current_user, db)
+    # Get encryption key and effective user for impersonation support
+    encryption_key = get_encryption_key(current_user, impersonated_user)
+    effective_user = impersonated_user or current_user
+
+    access_token = await get_valid_token(usage_point_id, effective_user, db)
     if not access_token:
         return APIResponse(
             success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
@@ -1377,21 +1439,21 @@ async def get_production_daily(
     # Check cache
     if use_cache:
         cache_key = cache_service.make_cache_key(usage_point_id, "production_daily", start=start, end=end)
-        cached_data = await cache_service.get(cache_key, current_user.client_secret)
+        cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
             return APIResponse(success=True, data=cached_data)
 
     try:
         # Use appropriate adapter based on user type
-        adapter, is_demo = await get_adapter_for_user(current_user)
+        adapter, is_demo = await get_adapter_for_user(effective_user)
         if is_demo:
-            data = await adapter.get_production_daily(usage_point_id, start, end, current_user.client_secret)
+            data = await adapter.get_production_daily(usage_point_id, start, end, encryption_key)
         else:
             data = await adapter.get_production_daily(usage_point_id, start, end, access_token)
 
         # Cache result
         if use_cache:
-            await cache_service.set(cache_key, data, current_user.client_secret)
+            await cache_service.set(cache_key, data, encryption_key)
 
         return APIResponse(success=True, data=data)
     except Exception as e:
@@ -1406,10 +1468,15 @@ async def get_production_detail(
     end: str = Query(..., description="End date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "End of 2024", "value": "2024-12-31"}, "recent_week": {"summary": "Week end", "value": "2024-10-07"}}),
     use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
+    impersonated_user: Optional[User] = Depends(get_impersonation_context),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Get detailed production data"""
-    access_token = await get_valid_token(usage_point_id, current_user, db)
+    # Get encryption key and effective user for impersonation support
+    encryption_key = get_encryption_key(current_user, impersonated_user)
+    effective_user = impersonated_user or current_user
+
+    access_token = await get_valid_token(usage_point_id, effective_user, db)
     if not access_token:
         return APIResponse(
             success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
@@ -1426,21 +1493,21 @@ async def get_production_detail(
     # Check cache
     if use_cache:
         cache_key = cache_service.make_cache_key(usage_point_id, "production_detail", start=start, end=end)
-        cached_data = await cache_service.get(cache_key, current_user.client_secret)
+        cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
             return APIResponse(success=True, data=cached_data)
 
     try:
         # Use appropriate adapter based on user type
-        adapter, is_demo = await get_adapter_for_user(current_user)
+        adapter, is_demo = await get_adapter_for_user(effective_user)
         if is_demo:
-            data = await adapter.get_production_detail(usage_point_id, start, end, current_user.client_secret)
+            data = await adapter.get_production_detail(usage_point_id, start, end, encryption_key)
         else:
             data = await adapter.get_production_detail(usage_point_id, start, end, access_token)
 
         # Cache result
         if use_cache:
-            await cache_service.set(cache_key, data, current_user.client_secret)
+            await cache_service.set(cache_key, data, encryption_key)
 
         return APIResponse(success=True, data=data)
     except Exception as e:
@@ -1483,6 +1550,7 @@ async def get_production_detail_batch(
         }
     ),
     current_user: User = Depends(get_current_user),
+    impersonated_user: Optional[User] = Depends(get_impersonation_context),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """
@@ -1497,6 +1565,9 @@ async def get_production_detail_batch(
     - ADAM-ERR0123 error handling with progressive retry
     - Returns all data in a single response
     """
+    # Get encryption key and effective user for impersonation support
+    encryption_key = get_encryption_key(current_user, impersonated_user)
+    effective_user = impersonated_user or current_user
 
     # Adjust date range: cap end date to yesterday (J-1) and ensure start is before end
     start, end = adjust_date_range(start, end)
@@ -1544,13 +1615,13 @@ async def get_production_detail_batch(
         assert error_response is not None
         return error_response
 
-    # Get adapter for user (demo or real)
-    adapter, is_demo = await get_adapter_for_user(current_user)
+    # Get adapter for user (demo or real) - use effective_user for impersonation
+    adapter, is_demo = await get_adapter_for_user(effective_user)
 
     # Get valid token
     access_token = None
     if not is_demo:
-        access_token = await get_valid_token(usage_point_id, current_user, db)
+        access_token = await get_valid_token(usage_point_id, effective_user, db)
         if not access_token:
             return APIResponse(
                 success=False,
@@ -1569,7 +1640,7 @@ async def get_production_detail_batch(
         all_dates.append(current_date.strftime("%Y-%m-%d"))
         current_date += timedelta(days=1)
 
-    log_if_debug(current_user, "info", f"[BATCH PRODUCTION] Requested {len(all_dates)} days from {start} to {end}", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH PRODUCTION] Requested {len(all_dates)} days from {start} to {end}", pdl=usage_point_id)
 
     # Check cache for each day using OPTIMIZED per-day cache keys
     # OLD format (slow): production:detail:{pdl}:{date}T{hour}:{minute} = single reading (312 queries/day)
@@ -1584,7 +1655,7 @@ async def get_production_detail_batch(
         for date_str in all_dates:
             # Try NEW per-day cache format first (fast: 1 query per day)
             daily_cache_key = f"production:detail:daily:{usage_point_id}:{date_str}"
-            daily_cached = await cache_service.get(daily_cache_key, current_user.client_secret)
+            daily_cached = await cache_service.get(daily_cache_key, encryption_key)
 
             if daily_cached and isinstance(daily_cached, dict) and "readings" in daily_cached:
                 day_readings = daily_cached["readings"]
@@ -1630,29 +1701,29 @@ async def get_production_detail_batch(
         missing_dates = non_blacklisted_dates
 
     # Log cache summary report with clear formatting
-    log_if_debug(current_user, "info", "[BATCH PRODUCTION CACHE REPORT] ═══════════════════════════════════════════════════════════", pdl=usage_point_id)
-    log_if_debug(current_user, "info", f"[BATCH PRODUCTION CACHE REPORT] Period: {start} → {end} ({len(all_dates)} days)", pdl=usage_point_id)
-    log_if_debug(current_user, "info", "[BATCH PRODUCTION CACHE REPORT] ───────────────────────────────────────────────────────────", pdl=usage_point_id)
-    log_if_debug(current_user, "info", f"[BATCH PRODUCTION CACHE REPORT] ✓ CACHE HIT:     {cache_hit_count:4d} days ({cache_hit_count*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
-    log_if_debug(current_user, "info", f"[BATCH PRODUCTION CACHE REPORT] ◐ CACHE PARTIAL: {cache_partial_count:4d} days ({cache_partial_count*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
-    log_if_debug(current_user, "info", f"[BATCH PRODUCTION CACHE REPORT] ✗ CACHE MISS:    {cache_miss_count:4d} days ({cache_miss_count*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
-    log_if_debug(current_user, "info", f"[BATCH PRODUCTION CACHE REPORT] ⊗ BLACKLISTED:   {len(blacklisted_dates):4d} days ({len(blacklisted_dates)*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
-    log_if_debug(current_user, "info", "[BATCH PRODUCTION CACHE REPORT] ───────────────────────────────────────────────────────────", pdl=usage_point_id)
-    log_if_debug(current_user, "info", f"[BATCH PRODUCTION CACHE REPORT] → TO FETCH:      {len(missing_dates):4d} days (after filtering blacklisted)", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", "[BATCH PRODUCTION CACHE REPORT] ═══════════════════════════════════════════════════════════", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH PRODUCTION CACHE REPORT] Period: {start} → {end} ({len(all_dates)} days)", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", "[BATCH PRODUCTION CACHE REPORT] ───────────────────────────────────────────────────────────", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH PRODUCTION CACHE REPORT] ✓ CACHE HIT:     {cache_hit_count:4d} days ({cache_hit_count*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH PRODUCTION CACHE REPORT] ◐ CACHE PARTIAL: {cache_partial_count:4d} days ({cache_partial_count*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH PRODUCTION CACHE REPORT] ✗ CACHE MISS:    {cache_miss_count:4d} days ({cache_miss_count*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH PRODUCTION CACHE REPORT] ⊗ BLACKLISTED:   {len(blacklisted_dates):4d} days ({len(blacklisted_dates)*100//len(all_dates) if len(all_dates) > 0 else 0:3d}%)", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", "[BATCH PRODUCTION CACHE REPORT] ───────────────────────────────────────────────────────────", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH PRODUCTION CACHE REPORT] → TO FETCH:      {len(missing_dates):4d} days (after filtering blacklisted)", pdl=usage_point_id)
 
     if blacklisted_dates:
-        log_if_debug(current_user, "info", "[BATCH PRODUCTION CACHE REPORT] ───────────────────────────────────────────────────────────", pdl=usage_point_id)
+        log_if_debug(effective_user, "info", "[BATCH PRODUCTION CACHE REPORT] ───────────────────────────────────────────────────────────", pdl=usage_point_id)
         if len(blacklisted_dates) <= 10:
-            log_if_debug(current_user, "info", f"[BATCH PRODUCTION CACHE REPORT] Blacklisted dates: {', '.join(blacklisted_dates)}", pdl=usage_point_id)
+            log_if_debug(effective_user, "info", f"[BATCH PRODUCTION CACHE REPORT] Blacklisted dates: {', '.join(blacklisted_dates)}", pdl=usage_point_id)
         else:
-            log_if_debug(current_user, "info", f"[BATCH PRODUCTION CACHE REPORT] Blacklisted dates (first 5): {', '.join(blacklisted_dates[:5])}", pdl=usage_point_id)
-            log_if_debug(current_user, "info", f"[BATCH PRODUCTION CACHE REPORT] Blacklisted dates (last 5):  {', '.join(blacklisted_dates[-5:])}", pdl=usage_point_id)
+            log_if_debug(effective_user, "info", f"[BATCH PRODUCTION CACHE REPORT] Blacklisted dates (first 5): {', '.join(blacklisted_dates[:5])}", pdl=usage_point_id)
+            log_if_debug(effective_user, "info", f"[BATCH PRODUCTION CACHE REPORT] Blacklisted dates (last 5):  {', '.join(blacklisted_dates[-5:])}", pdl=usage_point_id)
 
-    log_if_debug(current_user, "info", "[BATCH PRODUCTION CACHE REPORT] ═══════════════════════════════════════════════════════════", pdl=usage_point_id) # Empty line with PDL for better readability
+    log_if_debug(effective_user, "info", "[BATCH PRODUCTION CACHE REPORT] ═══════════════════════════════════════════════════════════", pdl=usage_point_id) # Empty line with PDL for better readability
 
     # If we have all data from cache, return it immediately
     if not missing_dates:
-        log_if_debug(current_user, "info", "[BATCH PRODUCTION] All data served from cache", pdl=usage_point_id)
+        log_if_debug(effective_user, "info", "[BATCH PRODUCTION] All data served from cache", pdl=usage_point_id)
         return APIResponse(success=True, data={"meter_reading": {"interval_reading": cached_readings}})
 
     # Check rate limit only if we need to fetch from Enedis
@@ -1698,7 +1769,7 @@ async def get_production_detail_batch(
         i = j  # Move to next non-consecutive date
 
     total_chunks = len(week_chunks)
-    log_if_debug(current_user, "info", f"[BATCH PRODUCTION] Split into {total_chunks} chunks from {len(missing_dates)} missing dates", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH PRODUCTION] Split into {total_chunks} chunks from {len(missing_dates)} missing dates", pdl=usage_point_id)
 
     # Fetch each chunk from Enedis with retry logic for ADAM-ERR0123
     all_readings = []
@@ -1713,7 +1784,7 @@ async def get_production_detail_batch(
             # Calculate chunk size for logging
             chunk_start_date = datetime.strptime(chunk_start, "%Y-%m-%d")
             chunk_size = (chunk_end_date - chunk_start_date).days + 1
-            log_if_debug(current_user, "info", f"[BATCH PRODUCTION FETCH {chunk_idx+1}/{len(week_chunks)}] {chunk_start} to {chunk_end} ({chunk_size} days)", pdl=usage_point_id)
+            log_if_debug(effective_user, "info", f"[BATCH PRODUCTION FETCH {chunk_idx+1}/{len(week_chunks)}] {chunk_start} to {chunk_end} ({chunk_size} days)", pdl=usage_point_id)
 
             # Fetch with retry logic for ADAM-ERR0123
             current_start = datetime.strptime(chunk_start, "%Y-%m-%d")
@@ -1752,7 +1823,7 @@ async def get_production_detail_batch(
 
                 try:
                     if is_demo:
-                        chunk_data = await adapter.get_production_detail(usage_point_id, current_start_str, fetch_end, current_user.client_secret)
+                        chunk_data = await adapter.get_production_detail(usage_point_id, current_start_str, fetch_end, encryption_key)
                     else:
                         chunk_data = await adapter.get_production_detail(usage_point_id, current_start_str, fetch_end, access_token)
 
@@ -1781,7 +1852,7 @@ async def get_production_detail_batch(
 
                             # Increment fail counter for this date
                             fail_count = await increment_date_fail_count(usage_point_id, current_start_str)
-                            log_if_debug(current_user, "debug", f"[BATCH PRODUCTION FAIL COUNT] {current_start_str} now has {fail_count} failures", pdl=usage_point_id)
+                            log_if_debug(effective_user, "debug", f"[BATCH PRODUCTION FAIL COUNT] {current_start_str} now has {fail_count} failures", pdl=usage_point_id)
 
                             # Blacklist if > 5 failures
                             if fail_count > 5:
@@ -1815,7 +1886,7 @@ async def get_production_detail_batch(
 
                     # For other errors: increment fail counter and retry
                     fail_count = await increment_date_fail_count(usage_point_id, current_start_str)
-                    log_if_debug(current_user, "debug", f"[BATCH PRODUCTION FAIL COUNT] {current_start_str} now has {fail_count} failures", pdl=usage_point_id)
+                    log_if_debug(effective_user, "debug", f"[BATCH PRODUCTION FAIL COUNT] {current_start_str} now has {fail_count} failures", pdl=usage_point_id)
 
                     # Blacklist if > 5 failures
                     if fail_count > 5:
@@ -1878,9 +1949,9 @@ async def get_production_detail_batch(
                         "interval_length": interval_length,
                         "count": len(day_readings)
                     }
-                    await cache_service.set(daily_cache_key, cache_data, current_user.client_secret)
+                    await cache_service.set(daily_cache_key, cache_data, encryption_key)
 
-                log_if_debug(current_user, "debug", f"[BATCH PRODUCTION CACHE SET] {chunk_start} to {chunk_end} ({len(readings)} readings in {len(readings_by_date)} days)", pdl=usage_point_id)
+                log_if_debug(effective_user, "debug", f"[BATCH PRODUCTION CACHE SET] {chunk_start} to {chunk_end} ({len(readings)} readings in {len(readings_by_date)} days)", pdl=usage_point_id)
 
             all_readings.extend(readings)
             fetched_count += 1
@@ -1896,7 +1967,7 @@ async def get_production_detail_batch(
     # Sort by timestamp
     all_readings.sort(key=lambda x: x.get("date", ""))
 
-    log_if_debug(current_user, "info", f"[BATCH PRODUCTION COMPLETE] Total readings: {len(all_readings)}, Fetched chunks: {fetched_count}/{len(week_chunks)}", pdl=usage_point_id)
+    log_if_debug(effective_user, "info", f"[BATCH PRODUCTION COMPLETE] Total readings: {len(all_readings)}, Fetched chunks: {fetched_count}/{len(week_chunks)}", pdl=usage_point_id)
 
     if not all_readings:
         return APIResponse(
@@ -1930,10 +2001,15 @@ async def get_contract(
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
     use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
+    impersonated_user: Optional[User] = Depends(get_impersonation_context),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Get contract data"""
-    access_token = await get_valid_token(usage_point_id, current_user, db)
+    # Get encryption key and effective user for impersonation support
+    encryption_key = get_encryption_key(current_user, impersonated_user)
+    effective_user = impersonated_user or current_user
+
+    access_token = await get_valid_token(usage_point_id, effective_user, db)
     if not access_token:
         return APIResponse(
             success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
@@ -1950,7 +2026,7 @@ async def get_contract(
     # Check cache
     if use_cache:
         cache_key = cache_service.make_cache_key(usage_point_id, "contract")
-        cached_data = await cache_service.get(cache_key, current_user.client_secret)
+        cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
             return APIResponse(success=True, data=cached_data)
 
@@ -1958,9 +2034,9 @@ async def get_contract(
         log_with_pdl("info", usage_point_id, f"[ENEDIS CONTRACT] Fetching contract (use_cache={use_cache})")
 
         # Use appropriate adapter based on user type
-        adapter, is_demo = await get_adapter_for_user(current_user)
+        adapter, is_demo = await get_adapter_for_user(effective_user)
         if is_demo:
-            data = await adapter.get_contract(usage_point_id, current_user.client_secret)
+            data = await adapter.get_contract(usage_point_id, encryption_key)
         else:
             data = await adapter.get_contract(usage_point_id, access_token)
 
@@ -1968,7 +2044,7 @@ async def get_contract(
 
         # Cache result
         if use_cache:
-            await cache_service.set(cache_key, data, current_user.client_secret)
+            await cache_service.set(cache_key, data, encryption_key)
 
         return APIResponse(success=True, data=data)
     except Exception as e:
@@ -1984,10 +2060,15 @@ async def get_address(
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
     use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
+    impersonated_user: Optional[User] = Depends(get_impersonation_context),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Get address data"""
-    access_token = await get_valid_token(usage_point_id, current_user, db)
+    # Get encryption key and effective user for impersonation support
+    encryption_key = get_encryption_key(current_user, impersonated_user)
+    effective_user = impersonated_user or current_user
+
+    access_token = await get_valid_token(usage_point_id, effective_user, db)
     if not access_token:
         return APIResponse(
             success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
@@ -2004,21 +2085,21 @@ async def get_address(
     # Check cache
     if use_cache:
         cache_key = cache_service.make_cache_key(usage_point_id, "address")
-        cached_data = await cache_service.get(cache_key, current_user.client_secret)
+        cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
             return APIResponse(success=True, data=cached_data)
 
     try:
         # Use appropriate adapter based on user type
-        adapter, is_demo = await get_adapter_for_user(current_user)
+        adapter, is_demo = await get_adapter_for_user(effective_user)
         if is_demo:
-            data = await adapter.get_address(usage_point_id, current_user.client_secret)
+            data = await adapter.get_address(usage_point_id, encryption_key)
         else:
             data = await adapter.get_address(usage_point_id, access_token)
 
         # Cache result
         if use_cache:
-            await cache_service.set(cache_key, data, current_user.client_secret)
+            await cache_service.set(cache_key, data, encryption_key)
 
         return APIResponse(success=True, data=data)
     except Exception as e:
@@ -2031,10 +2112,15 @@ async def get_customer(
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
     use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
+    impersonated_user: Optional[User] = Depends(get_impersonation_context),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Get customer identity data"""
-    access_token = await get_valid_token(usage_point_id, current_user, db)
+    # Get encryption key and effective user for impersonation support
+    encryption_key = get_encryption_key(current_user, impersonated_user)
+    effective_user = impersonated_user or current_user
+
+    access_token = await get_valid_token(usage_point_id, effective_user, db)
     if not access_token:
         return APIResponse(
             success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
@@ -2051,21 +2137,21 @@ async def get_customer(
     # Check cache
     if use_cache:
         cache_key = cache_service.make_cache_key(usage_point_id, "customer")
-        cached_data = await cache_service.get(cache_key, current_user.client_secret)
+        cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
             return APIResponse(success=True, data=cached_data)
 
     try:
         # Use appropriate adapter based on user type
-        adapter, is_demo = await get_adapter_for_user(current_user)
+        adapter, is_demo = await get_adapter_for_user(effective_user)
         if is_demo:
-            data = await adapter.get_customer(usage_point_id, current_user.client_secret)
+            data = await adapter.get_customer(usage_point_id, encryption_key)
         else:
             data = await adapter.get_customer(usage_point_id, access_token)
 
         # Cache result
         if use_cache:
-            await cache_service.set(cache_key, data, current_user.client_secret)
+            await cache_service.set(cache_key, data, encryption_key)
 
         return APIResponse(success=True, data=data)
     except Exception as e:
@@ -2078,10 +2164,15 @@ async def get_contact(
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
     use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
+    impersonated_user: Optional[User] = Depends(get_impersonation_context),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Get customer contact data"""
-    access_token = await get_valid_token(usage_point_id, current_user, db)
+    # Get encryption key and effective user for impersonation support
+    encryption_key = get_encryption_key(current_user, impersonated_user)
+    effective_user = impersonated_user or current_user
+
+    access_token = await get_valid_token(usage_point_id, effective_user, db)
     if not access_token:
         return APIResponse(
             success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
@@ -2098,21 +2189,21 @@ async def get_contact(
     # Check cache
     if use_cache:
         cache_key = cache_service.make_cache_key(usage_point_id, "contact")
-        cached_data = await cache_service.get(cache_key, current_user.client_secret)
+        cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
             return APIResponse(success=True, data=cached_data)
 
     try:
         # Use appropriate adapter based on user type
-        adapter, is_demo = await get_adapter_for_user(current_user)
+        adapter, is_demo = await get_adapter_for_user(effective_user)
         if is_demo:
-            data = await adapter.get_contact(usage_point_id, current_user.client_secret)
+            data = await adapter.get_contact(usage_point_id, encryption_key)
         else:
             data = await adapter.get_contact(usage_point_id, access_token)
 
         # Cache result
         if use_cache:
-            await cache_service.set(cache_key, data, current_user.client_secret)
+            await cache_service.set(cache_key, data, encryption_key)
 
         return APIResponse(success=True, data=data)
     except Exception as e:

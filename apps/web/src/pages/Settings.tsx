@@ -6,7 +6,7 @@ import { authApi } from '@/api/auth'
 import { useAuth } from '@/hooks/useAuth'
 import { useThemeStore } from '@/stores/themeStore'
 import { useIsDemo } from '@/hooks/useIsDemo'
-import { Trash2, TrendingUp, Copy, RefreshCw, Key, Lock, LogOut, Palette, Eye, EyeOff } from 'lucide-react'
+import { Trash2, TrendingUp, Copy, RefreshCw, Key, Lock, LogOut, Palette, Eye, EyeOff, Share2 } from 'lucide-react'
 
 export default function Settings() {
   const { user, logout } = useAuth()
@@ -32,6 +32,7 @@ export default function Settings() {
   const [copiedNewSecret, setCopiedNewSecret] = useState(false)
   const [copiedClientId, setCopiedClientId] = useState(false)
   const [copiedToken, setCopiedToken] = useState(false)
+  const [showSharingConfirm, setShowSharingConfirm] = useState(false)
 
   const { data: credentialsResponse } = useQuery({
     queryKey: ['credentials'],
@@ -91,6 +92,22 @@ export default function Settings() {
       logout()
       navigate('/')
     },
+  })
+
+  const toggleSharingMutation = useMutation({
+    mutationFn: () => authApi.toggleAdminSharing(),
+    onSuccess: (response) => {
+      if (response.success && response.data) {
+        const action = response.data.admin_data_sharing ? 'activé' : 'désactivé'
+        toast.success(`Partage avec les administrateurs ${action}`)
+        queryClient.invalidateQueries({ queryKey: ['user'] })
+        setShowSharingConfirm(false)
+      }
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error?.message || 'Erreur lors du changement de partage')
+      setShowSharingConfirm(false)
+    }
   })
 
   const handleChangePassword = () => {
@@ -490,6 +507,88 @@ export default function Settings() {
                 <div className="text-sm font-medium">Système</div>
               </div>
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Admin Data Sharing */}
+      <div className="card border-purple-200 dark:border-purple-800">
+        <div className="flex items-center gap-2 mb-4">
+          <Share2 className="text-purple-600 dark:text-purple-400" size={24} />
+          <h2 className="text-xl font-semibold">Partage avec les administrateurs</h2>
+        </div>
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Autorisez les administrateurs à accéder à vos données de consommation pour faciliter le débogage et le support technique.
+          </p>
+
+          {isDemo && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                <strong>Mode Démo :</strong> Le partage des données est désactivé pour le compte de démonstration.
+              </p>
+            </div>
+          )}
+
+          <div className="p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+            <p className="text-sm text-purple-800 dark:text-purple-200 mb-2">
+              <strong>Données partagées :</strong>
+            </p>
+            <ul className="text-sm text-purple-700 dark:text-purple-300 list-disc list-inside space-y-1">
+              <li>Vos points de livraison (PDL)</li>
+              <li>Les données de consommation en cache</li>
+              <li>Les données de production en cache</li>
+              <li>Les informations de contrat</li>
+            </ul>
+          </div>
+
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                user?.admin_data_sharing
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400'
+              }`}>
+                {user?.admin_data_sharing ? '● Partage actif' : '○ Partage désactivé'}
+              </span>
+              {user?.admin_data_sharing_enabled_at && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Activé le {new Date(user.admin_data_sharing_enabled_at).toLocaleDateString('fr-FR')}
+                </p>
+              )}
+            </div>
+
+            {!showSharingConfirm ? (
+              <button
+                onClick={() => setShowSharingConfirm(true)}
+                disabled={isDemo}
+                className={`btn ${user?.admin_data_sharing
+                  ? 'btn-secondary'
+                  : 'bg-purple-600 hover:bg-purple-700 text-white'
+                } disabled:opacity-50`}
+              >
+                {user?.admin_data_sharing ? 'Revoquer le partage' : 'Activer le partage'}
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => toggleSharingMutation.mutate()}
+                  disabled={toggleSharingMutation.isPending}
+                  className={`btn ${user?.admin_data_sharing
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-purple-600 hover:bg-purple-700'
+                  } text-white disabled:opacity-50`}
+                >
+                  {toggleSharingMutation.isPending ? 'En cours...' : 'Confirmer'}
+                </button>
+                <button
+                  onClick={() => setShowSharingConfirm(false)}
+                  className="btn btn-secondary"
+                >
+                  Annuler
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

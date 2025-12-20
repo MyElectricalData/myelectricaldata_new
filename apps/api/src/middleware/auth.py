@@ -158,3 +158,61 @@ async def require_not_demo(current_user: User = Depends(get_current_user)) -> Us
             detail="Le compte de démonstration est en lecture seule"
         )
     return current_user
+
+
+async def get_impersonation_context(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """
+    Get the user being impersonated if admin is accessing shared data.
+
+    Returns:
+        - The impersonated user (for getting their client_secret) if:
+          1. Current user is admin (is_admin or role admin)
+          2. X-Impersonate-User-Id header is present
+          3. Target user has enabled admin_data_sharing
+        - None otherwise (use current_user's client_secret)
+
+    This is used to properly decrypt cached data that was encrypted
+    with the data owner's client_secret.
+    """
+    impersonate_user_id = request.headers.get("X-Impersonate-User-Id")
+
+    if not impersonate_user_id:
+        return None
+
+    # Check if current user is admin
+    is_admin = current_user.is_admin or (current_user.role and current_user.role.name == "admin")
+    if not is_admin:
+        logger.warning(f"[IMPERSONATION] Non-admin user {current_user.email} tried to impersonate {impersonate_user_id}")
+        return None
+
+    # Get the target user
+    result = await db.execute(select(User).where(User.id == impersonate_user_id))
+    target_user = result.scalar_one_or_none()
+
+    if not target_user:
+        logger.warning(f"[IMPERSONATION] Admin {current_user.email} tried to impersonate non-existent user {impersonate_user_id}")
+        return None
+
+    # Check if target user has enabled data sharing
+    if not target_user.admin_data_sharing:
+        logger.warning(f"[IMPERSONATION] Admin {current_user.email} tried to impersonate user {target_user.email} who has not enabled data sharing")
+        return None
+
+    logger.info(f"[IMPERSONATION] Admin {current_user.email} impersonating user {target_user.email}")
+    return target_user
+
+
+def get_encryption_key(current_user: User, impersonated_user: Optional[User]) -> str:
+    """
+    Get the encryption key (client_secret) to use for cache operations.
+
+    Uses the impersonated user's key if impersonation is active,
+    otherwise uses the current user's key.
+    """
+    if impersonated_user:
+        return impersonated_user.client_secret
+    return current_user.client_secret

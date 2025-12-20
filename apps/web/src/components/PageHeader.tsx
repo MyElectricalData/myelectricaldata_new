@@ -1,15 +1,24 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
-import { TrendingUp, Sun, Calculator, Download, Lock, LayoutDashboard, Calendar, Zap, Users, AlertCircle, BookOpen, Settings as SettingsIcon, Key, Shield, FileText, Activity, Euro, Scale } from 'lucide-react'
+import { TrendingUp, Sun, Calculator, Download, Lock, LayoutDashboard, Calendar, Zap, Users, AlertCircle, BookOpen, Settings as SettingsIcon, Key, Shield, FileText, Activity, Euro, Scale, UserCheck } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { pdlApi } from '@/api/pdl'
+import { adminApi } from '@/api/admin'
 import { usePdlStore } from '@/stores/pdlStore'
 import { useDataFetchStore } from '@/stores/dataFetchStore'
 import { useIsDemo } from '@/hooks/useIsDemo'
 import { useUnifiedDataFetch } from '@/hooks/useUnifiedDataFetch'
+import { usePermissions } from '@/hooks/usePermissions'
 import { LoadingStatusBadge } from './LoadingStatusBadge'
 import type { PDL } from '@/types/api'
+
+// Extended PDL type with owner info for shared PDLs
+interface SharedPDL extends PDL {
+  owner_id?: string
+  owner_email?: string
+  isShared?: boolean
+}
 
 // Pages qui affichent le sélecteur de PDL avec bouton "Récupérer"
 const PDL_SELECTOR_PAGES = [
@@ -51,11 +60,19 @@ const PAGE_CONFIG: Record<string, { title: string; icon: typeof TrendingUp; subt
 
 export default function PageHeader() {
   const location = useLocation()
-  const { selectedPdl, setSelectedPdl } = usePdlStore()
+  const { selectedPdl, setSelectedPdl, impersonation, clearImpersonation } = usePdlStore()
   const { setFetchDataFunction, isLoading, setIsLoading } = useDataFetchStore()
   const isDemo = useIsDemo()
+  const { isAdmin } = usePermissions()
 
-  // Récupérer la liste des PDLs
+  // Clear stale impersonation state for non-admin users
+  useEffect(() => {
+    if (!isAdmin() && impersonation) {
+      clearImpersonation()
+    }
+  }, [isAdmin, impersonation, clearImpersonation])
+
+  // Récupérer la liste des PDLs de l'utilisateur
   const { data: pdlsResponse } = useQuery({
     queryKey: ['pdls'],
     queryFn: async () => {
@@ -67,7 +84,34 @@ export default function PageHeader() {
     },
   })
 
-  const pdls: PDL[] = Array.isArray(pdlsResponse) ? pdlsResponse : []
+  // Récupérer les PDL partagés (admin only)
+  const { data: sharedPdlsResponse } = useQuery({
+    queryKey: ['admin-shared-pdls'],
+    queryFn: async () => {
+      const response = await adminApi.getAllSharedPdls()
+      if (response.success && (response.data as { pdls: SharedPDL[] })?.pdls) {
+        return (response.data as { pdls: SharedPDL[] }).pdls
+      }
+      return []
+    },
+    enabled: isAdmin(), // Only fetch if user is admin
+    staleTime: 60000, // Cache for 1 minute
+  })
+
+  const userPdls: PDL[] = Array.isArray(pdlsResponse) ? pdlsResponse : []
+  const sharedPdls: SharedPDL[] = Array.isArray(sharedPdlsResponse) ? sharedPdlsResponse : []
+
+  // Merge user PDLs with shared PDLs (mark shared PDLs)
+  const allPdls: SharedPDL[] = useMemo(() => {
+    const userPdlIds = new Set(userPdls.map(p => p.usage_point_id))
+    const markedSharedPdls = sharedPdls
+      .filter(p => !userPdlIds.has(p.usage_point_id)) // Exclude PDLs the user already owns
+      .map(p => ({ ...p, isShared: true }))
+    return [...userPdls, ...markedSharedPdls]
+  }, [userPdls, sharedPdls])
+
+  // For compatibility with existing code, use allPdls as pdls
+  const pdls = allPdls
   const selectedPDLDetails = pdls.find(p => p.usage_point_id === selectedPdl)
 
   // Toujours récupérer toutes les données (consommation + production), quelle que soit la page
@@ -203,21 +247,59 @@ export default function PageHeader() {
                 <LoadingStatusBadge />
               ) : (
                 <>
-                  <label htmlFor="pdl-selector" className="text-sm font-medium text-gray-700 dark:text-gray-300 hidden md:block whitespace-nowrap">
-                    Point de livraison :
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="pdl-selector" className="text-sm font-medium text-gray-700 dark:text-gray-300 hidden md:block whitespace-nowrap">
+                      Point de livraison :
+                    </label>
+                    {/* Impersonation indicator */}
+                    {impersonation && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400" title={`Visualisation des données de ${impersonation.ownerEmail}`}>
+                        <UserCheck size={12} />
+                        Partage
+                      </span>
+                    )}
+                  </div>
                   <select
                     id="pdl-selector"
                     data-tour="header-pdl-selector"
                     value={selectedPdl}
-                    onChange={(e) => setSelectedPdl(e.target.value)}
-                    className="px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors text-sm w-full sm:w-auto min-w-[20ch]"
+                    onChange={(e) => {
+                      const selected = displayedPdls.find(p => p.usage_point_id === e.target.value) as SharedPDL | undefined
+                      if (selected?.isShared && selected.owner_id && selected.owner_email) {
+                        setSelectedPdl(e.target.value, {
+                          ownerId: selected.owner_id,
+                          ownerEmail: selected.owner_email,
+                        })
+                      } else {
+                        setSelectedPdl(e.target.value, null)
+                      }
+                    }}
+                    className={`px-3 sm:px-4 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors text-sm w-full sm:w-auto min-w-[20ch] ${
+                      impersonation
+                        ? 'border-purple-400 dark:border-purple-600'
+                        : 'border-gray-300 dark:border-gray-600'
+                    }`}
                   >
-                    {displayedPdls.map((pdl: PDL) => (
-                      <option key={pdl.usage_point_id} value={pdl.usage_point_id}>
-                        {pdl.name || pdl.usage_point_id}
-                      </option>
-                    ))}
+                    {/* User's own PDLs */}
+                    {displayedPdls.filter((p: SharedPDL) => !p.isShared).length > 0 && (
+                      <optgroup label="Mes PDL">
+                        {displayedPdls.filter((p: SharedPDL) => !p.isShared).map((pdl: SharedPDL) => (
+                          <option key={pdl.usage_point_id} value={pdl.usage_point_id}>
+                            {pdl.name || pdl.usage_point_id}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {/* Shared PDLs */}
+                    {displayedPdls.filter((p: SharedPDL) => p.isShared).length > 0 && (
+                      <optgroup label="PDL partagés">
+                        {displayedPdls.filter((p: SharedPDL) => p.isShared).map((pdl: SharedPDL) => (
+                          <option key={pdl.usage_point_id} value={pdl.usage_point_id}>
+                            {pdl.name || pdl.usage_point_id} ({pdl.owner_email?.split('@')[0]})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
 
                   {/* Bouton de récupération - Affiché seulement quand pas en chargement */}

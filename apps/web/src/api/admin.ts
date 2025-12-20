@@ -71,6 +71,49 @@ export const adminApi = {
     if (level) params.level = level
     return apiClient.delete('admin/logs/clear', params)
   },
+
+  // Admin Data Sharing - Access user data when sharing is enabled
+  getSharedPdls: async (userId: string) => {
+    return apiClient.get(`admin/users/${userId}/shared-pdls`)
+  },
+
+  // Get all shared PDLs from all users with data sharing enabled (for admin PDL selector)
+  getAllSharedPdls: async () => {
+    return apiClient.get('admin/shared-pdls')
+  },
+
+  getSharedCacheData: async (
+    userId: string,
+    pdlId: string,
+    dataType: 'consumption' | 'production' | 'contract' = 'consumption',
+    startDate?: string,
+    endDate?: string
+  ) => {
+    const params: Record<string, string> = { data_type: dataType }
+    if (startDate) params.start_date = startDate
+    if (endDate) params.end_date = endDate
+    return apiClient.get(`admin/users/${userId}/shared-cache/${pdlId}`, params)
+  },
+
+  getCacheStats: async (userId: string) => {
+    return apiClient.get(`admin/users/${userId}/cache-stats`)
+  },
+
+  // Fetch fresh data from Enedis for a user (requires data sharing enabled)
+  fetchEnedisData: async (
+    userId: string,
+    pdlId: string,
+    dataType: 'consumption' | 'production',
+    startDate: string,
+    endDate: string
+  ) => {
+    const params: Record<string, string> = {
+      data_type: dataType,
+      start_date: startDate,
+      end_date: endDate,
+    }
+    return apiClient.post(`admin/users/${userId}/fetch-enedis/${pdlId}`, undefined, params)
+  },
 }
 
 export const getAdminLogs = async (level?: string, limit?: number, offset?: number) => {

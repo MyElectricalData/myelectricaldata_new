@@ -41,4 +41,8 @@ export const authApi = {
   changePassword: async (old_password: string, new_password: string) => {
     return apiClient.post('accounts/update-password', { old_password, new_password })
   },
+
+  toggleAdminSharing: async () => {
+    return apiClient.post<{ admin_data_sharing: boolean; admin_data_sharing_enabled_at: string | null; message: string }>('accounts/toggle-admin-sharing')
+  },
 }

@@ -4,9 +4,9 @@ import { adminApi } from '@/api/admin'
 import { rolesApi } from '@/api/roles'
 import { useAuth } from '@/hooks/useAuth'
 import {
-  RefreshCw, Users, CheckCircle, XCircle, Copy, Trash2, Shield, Bug, Database,
+  RefreshCw, Users, CheckCircle, XCircle, Copy, Trash2, Shield, Bug,
   ArrowUpDown, ArrowUp, ArrowDown, Filter, Search, UserPlus, Key, Power,
-  TrendingUp, UserCheck, Mail, Ban
+  TrendingUp, UserCheck, Mail, Ban, Share2, Database
 } from 'lucide-react'
 import type { Role, AdminUserStats } from '@/types/api'
 
@@ -654,6 +654,7 @@ export default function AdminUsers() {
                       {getSortIcon('is_active')}
                     </div>
                   </th>
+                  <th className="text-center py-2 px-2 text-xs font-medium text-gray-600 dark:text-gray-400">Partage</th>
                   <th className="text-center py-2 px-2 text-xs font-medium text-gray-600 dark:text-gray-400">Actions</th>
                 </tr>
               </thead>
@@ -722,6 +723,22 @@ export default function AdminUsers() {
                           {user.email_verified ? '✓' : '✗'}
                         </span>
                       </div>
+                    </td>
+                    <td className="py-2 px-2 text-center">
+                      {user.admin_data_sharing ? (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400"
+                          title={user.admin_data_sharing_enabled_at ? `Activé le ${new Date(user.admin_data_sharing_enabled_at).toLocaleDateString('fr-FR')}` : 'Partage actif'}
+                        >
+                          <Share2 size={12} />
+                          Actif
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-gray-500 dark:text-gray-500">
+                          <Share2 size={12} />
+                          —
+                        </span>
+                      )}
                     </td>
                     <td className="py-2 px-2 text-center">
                       <div className="flex gap-1 items-center justify-center flex-wrap">

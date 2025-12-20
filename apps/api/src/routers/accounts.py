@@ -276,11 +276,13 @@ async def get_current_user_info(
         created_at=user.created_at,
     )
 
-    # Add is_admin field, debug_mode, and role
+    # Add is_admin field, debug_mode, admin_data_sharing, and role
     # is_admin is true if: database flag OR email in ADMIN_EMAILS env var
     user_data = user_response.model_dump()
     user_data['is_admin'] = user.is_admin or settings.is_admin(user.email)
     user_data['debug_mode'] = user.debug_mode
+    user_data['admin_data_sharing'] = user.admin_data_sharing
+    user_data['admin_data_sharing_enabled_at'] = user.admin_data_sharing_enabled_at.isoformat() if user.admin_data_sharing_enabled_at else None
 
     # Add role information with permissions
     if user.role:
@@ -590,6 +592,38 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)) -
     logger.info(f"[RESET_PASSWORD] Password reset successfully for user: {user_obj.email}")
 
     return APIResponse(success=True, data={"message": "Password reset successfully!"})
+
+
+@router.post("/toggle-admin-sharing", response_model=APIResponse)
+async def toggle_admin_data_sharing(
+    current_user: User = Depends(require_not_demo),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Toggle admin data sharing for current user.
+
+    When enabled, administrators can access the user's PDL data and cache
+    for debugging purposes. The user can revoke this access at any time.
+    """
+    current_user.admin_data_sharing = not current_user.admin_data_sharing
+
+    if current_user.admin_data_sharing:
+        current_user.admin_data_sharing_enabled_at = datetime.now(UTC)
+    else:
+        current_user.admin_data_sharing_enabled_at = None
+
+    await db.commit()
+
+    action = "enabled" if current_user.admin_data_sharing else "disabled"
+    logger.info(f"[ADMIN_SHARING] User {current_user.email} {action} admin data sharing")
+
+    return APIResponse(
+        success=True,
+        data={
+            "admin_data_sharing": current_user.admin_data_sharing,
+            "admin_data_sharing_enabled_at": current_user.admin_data_sharing_enabled_at.isoformat() if current_user.admin_data_sharing_enabled_at else None,
+            "message": f"Partage des données avec les administrateurs {'activé' if current_user.admin_data_sharing else 'désactivé'}"
+        }
+    )
 
 
 @router.post("/update-password", response_model=APIResponse)

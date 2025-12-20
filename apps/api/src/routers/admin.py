@@ -6,7 +6,7 @@ from datetime import datetime, UTC
 import logging
 import json
 import asyncio
-from typing import Optional, List
+from typing import Optional, List, Any
 from ..models import User, PDL, EnergyProvider, EnergyOffer
 from ..models.database import get_db
 from ..middleware import require_admin, require_permission, get_current_user
@@ -121,6 +121,8 @@ async def list_users(
             "is_active": user.is_active,
             "email_verified": user.email_verified,
             "debug_mode": user.debug_mode,
+            "admin_data_sharing": user.admin_data_sharing,
+            "admin_data_sharing_enabled_at": user.admin_data_sharing_enabled_at.isoformat() if user.admin_data_sharing_enabled_at else None,
             "created_at": user.created_at.isoformat(),
             "pdl_count": pdl_count,
             "usage_stats": usage_stats,
@@ -1507,3 +1509,553 @@ async def list_providers(
             success=False,
             error=ErrorDetail(code="LIST_ERROR", message=str(e))
         )
+
+
+# Admin Data Sharing - PDL Access Endpoints
+
+@router.get("/users/{user_id}/shared-pdls", response_model=APIResponse)
+async def get_user_shared_pdls(
+    user_id: str = Path(..., description="User ID (UUID)"),
+    current_user: User = Depends(require_permission('users')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """
+    Get PDLs for a user who has enabled data sharing (admin only).
+
+    This endpoint allows administrators to view the PDLs of users who have
+    explicitly enabled data sharing for debugging purposes.
+
+    Returns:
+        APIResponse with list of user's PDLs if sharing is enabled
+    """
+    # Get user
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(code="USER_NOT_FOUND", message="User not found")
+        )
+
+    if not user.admin_data_sharing:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="SHARING_DISABLED",
+                message="User has not enabled data sharing with administrators"
+            )
+        )
+
+    # Get PDLs
+    pdl_result = await db.execute(
+        select(PDL).where(PDL.user_id == user_id).order_by(PDL.created_at)
+    )
+    pdls = pdl_result.scalars().all()
+
+    pdls_data = []
+    for pdl in pdls:
+        pdls_data.append({
+            "id": pdl.id,
+            "usage_point_id": pdl.usage_point_id,
+            "name": pdl.name,
+            "has_consumption": pdl.has_consumption,
+            "has_production": pdl.has_production,
+            "is_active": pdl.is_active,
+            "subscribed_power": pdl.subscribed_power,
+            "pricing_option": pdl.pricing_option,
+            "oldest_available_data_date": pdl.oldest_available_data_date.isoformat() if pdl.oldest_available_data_date else None,
+            "activation_date": pdl.activation_date.isoformat() if pdl.activation_date else None,
+            "created_at": pdl.created_at.isoformat(),
+        })
+
+    logger.info(f"[ADMIN_ACCESS] Admin {current_user.email} accessed PDL list for user {user.email}")
+
+    return APIResponse(
+        success=True,
+        data={
+            "pdls": pdls_data,
+            "total": len(pdls_data),
+            "user_email": user.email,
+            "sharing_enabled_at": user.admin_data_sharing_enabled_at.isoformat() if user.admin_data_sharing_enabled_at else None
+        }
+    )
+
+
+@router.get("/users/{user_id}/shared-cache/{pdl_id}", response_model=APIResponse)
+async def get_user_shared_cache_data(
+    user_id: str = Path(..., description="User ID (UUID)"),
+    pdl_id: str = Path(..., description="PDL ID (UUID)"),
+    data_type: str = Query("consumption", description="Type of data: consumption, production, contract"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    current_user: User = Depends(require_permission('users')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """
+    Get cached data for a user's PDL (admin only, requires data sharing enabled).
+
+    This endpoint allows administrators to view the cached consumption/production
+    data for users who have enabled data sharing. The data is decrypted using
+    the user's client_secret.
+
+    Args:
+        user_id: UUID of the user
+        pdl_id: UUID of the PDL
+        data_type: Type of data to retrieve (consumption, production, contract)
+        start_date: Start date for date range queries
+        end_date: End date for date range queries
+
+    Returns:
+        APIResponse with cached data if available
+    """
+    from datetime import timedelta
+
+    # Get user with client_secret for decryption
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(code="USER_NOT_FOUND", message="User not found")
+        )
+
+    if not user.admin_data_sharing:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="SHARING_DISABLED",
+                message="User has not enabled data sharing with administrators"
+            )
+        )
+
+    # Verify PDL belongs to user
+    pdl_result = await db.execute(
+        select(PDL).where(PDL.id == pdl_id, PDL.user_id == user_id)
+    )
+    pdl = pdl_result.scalar_one_or_none()
+
+    if not pdl:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="PDL_NOT_FOUND",
+                message="PDL not found or does not belong to user"
+            )
+        )
+
+    # Validate data_type
+    if data_type not in ["consumption", "production", "contract"]:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="INVALID_DATA_TYPE",
+                message="data_type must be: consumption, production, or contract"
+            )
+        )
+
+    # Retrieve cached data using user's client_secret for decryption
+    cached_data: list[dict[str, Any]] = []
+    cache_entries_count = 0
+
+    if data_type in ["consumption", "production"]:
+        # Get daily data from cache
+        if start_date and end_date:
+            try:
+                current = datetime.strptime(start_date, "%Y-%m-%d")
+                end = datetime.strptime(end_date, "%Y-%m-%d")
+
+                while current <= end:
+                    date_str = current.strftime("%Y-%m-%d")
+                    cache_key = f"{data_type}:daily:{pdl.usage_point_id}:{date_str}"
+                    data = await cache_service.get(cache_key, user.client_secret)
+                    if data:
+                        cached_data.append({"date": date_str, "data": data})
+                        cache_entries_count += 1
+                    current += timedelta(days=1)
+            except ValueError:
+                return APIResponse(
+                    success=False,
+                    error=ErrorDetail(
+                        code="INVALID_DATE_FORMAT",
+                        message="Dates must be in YYYY-MM-DD format"
+                    )
+                )
+        else:
+            # Return last 7 days by default
+            today = datetime.now(UTC)
+            for i in range(7):
+                date_obj = today - timedelta(days=i)
+                date_str = date_obj.strftime("%Y-%m-%d")
+                cache_key = f"{data_type}:daily:{pdl.usage_point_id}:{date_str}"
+                data = await cache_service.get(cache_key, user.client_secret)
+                if data:
+                    cached_data.append({"date": date_str, "data": data})
+                    cache_entries_count += 1
+
+    elif data_type == "contract":
+        cache_key = f"contract:{pdl.usage_point_id}"
+        data = await cache_service.get(cache_key, user.client_secret)
+        if data:
+            cached_data.append({"type": "contract", "data": data})
+            cache_entries_count = 1
+
+    logger.info(
+        f"[ADMIN_ACCESS] Admin {current_user.email} accessed {data_type} cache "
+        f"for user {user.email}, PDL {pdl.usage_point_id}"
+    )
+
+    return APIResponse(
+        success=True,
+        data={
+            "pdl_id": pdl_id,
+            "usage_point_id": pdl.usage_point_id,
+            "data_type": data_type,
+            "cached_data": cached_data,
+            "cache_entries": cache_entries_count,
+            "date_range": {
+                "start": start_date,
+                "end": end_date
+            } if start_date and end_date else None
+        }
+    )
+
+
+@router.get("/users/{user_id}/cache-stats", response_model=APIResponse)
+async def get_user_cache_stats(
+    user_id: str = Path(..., description="User ID (UUID)"),
+    current_user: User = Depends(require_permission('users')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """
+    Get cache statistics for a user's PDLs (admin only, requires data sharing enabled).
+
+    This endpoint provides an overview of cached data for each of the user's PDLs,
+    including counts of consumption and production cache entries.
+
+    Returns:
+        APIResponse with cache statistics per PDL
+    """
+    # Get user
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(code="USER_NOT_FOUND", message="User not found")
+        )
+
+    if not user.admin_data_sharing:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="SHARING_DISABLED",
+                message="User has not enabled data sharing with administrators"
+            )
+        )
+
+    # Get PDLs
+    pdl_result = await db.execute(select(PDL).where(PDL.user_id == user_id))
+    pdls = pdl_result.scalars().all()
+
+    stats = []
+    for pdl in pdls:
+        pdl_stats = {
+            "pdl_id": pdl.id,
+            "usage_point_id": pdl.usage_point_id,
+            "name": pdl.name,
+            "consumption_daily": 0,
+            "consumption_detail": 0,
+            "production_daily": 0,
+            "production_detail": 0,
+        }
+
+        # Count cache entries
+        if cache_service.redis_client:
+            patterns = {
+                "consumption_daily": f"consumption:daily:{pdl.usage_point_id}:*",
+                "consumption_detail": f"consumption:detail:{pdl.usage_point_id}:*",
+                "production_daily": f"production:daily:{pdl.usage_point_id}:*",
+                "production_detail": f"production:detail:{pdl.usage_point_id}:*",
+            }
+
+            for key_type, pattern in patterns.items():
+                count = 0
+                async for _ in cache_service.redis_client.scan_iter(match=pattern):
+                    count += 1
+                pdl_stats[key_type] = count
+
+        stats.append(pdl_stats)
+
+    logger.info(f"[ADMIN_ACCESS] Admin {current_user.email} accessed cache stats for user {user.email}")
+
+    return APIResponse(
+        success=True,
+        data={
+            "cache_stats": stats,
+            "user_email": user.email,
+            "pdl_count": len(pdls)
+        }
+    )
+
+
+@router.post("/users/{user_id}/fetch-enedis/{pdl_id}", response_model=APIResponse)
+async def admin_fetch_enedis_data(
+    user_id: str = Path(..., description="User ID (UUID)"),
+    pdl_id: str = Path(..., description="PDL ID (UUID)"),
+    data_type: str = Query("consumption", description="Type of data: consumption or production"),
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    current_user: User = Depends(require_permission('users')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """
+    Fetch fresh data from Enedis API for a user who has enabled data sharing (admin only).
+
+    This endpoint allows administrators to fetch consumption/production data from Enedis
+    on behalf of a user who has explicitly enabled data sharing. The data is fetched
+    using the global API token and cached with the user's client_secret.
+
+    Args:
+        user_id: UUID of the user
+        pdl_id: UUID of the PDL
+        data_type: Type of data to fetch (consumption or production)
+        start_date: Start date (YYYY-MM-DD)
+        end_date: End date (YYYY-MM-DD)
+
+    Returns:
+        APIResponse with fetched data from Enedis
+    """
+    from datetime import timedelta
+    from ..adapters import enedis_adapter
+    from ..models import Token
+
+    # Get user with client_secret for cache encryption
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(code="USER_NOT_FOUND", message="User not found")
+        )
+
+    if not user.admin_data_sharing:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="SHARING_DISABLED",
+                message="User has not enabled data sharing with administrators"
+            )
+        )
+
+    # Verify PDL belongs to user
+    pdl_result = await db.execute(
+        select(PDL).where(PDL.id == pdl_id, PDL.user_id == user_id)
+    )
+    pdl = pdl_result.scalar_one_or_none()
+
+    if not pdl:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="PDL_NOT_FOUND",
+                message="PDL not found or does not belong to user"
+            )
+        )
+
+    # Validate data_type
+    if data_type not in ["consumption", "production"]:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="INVALID_DATA_TYPE",
+                message="data_type must be: consumption or production"
+            )
+        )
+
+    # Validate dates
+    try:
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+        if start_dt > end_dt:
+            return APIResponse(
+                success=False,
+                error=ErrorDetail(
+                    code="INVALID_DATE_RANGE",
+                    message="Start date must be before end date"
+                )
+            )
+    except ValueError:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="INVALID_DATE_FORMAT",
+                message="Dates must be in YYYY-MM-DD format"
+            )
+        )
+
+    # Get global API token
+    token_result = await db.execute(
+        select(Token).where(Token.user_id.is_(None), Token.usage_point_id == "__global__").limit(1)
+    )
+    token = token_result.scalar_one_or_none()
+
+    if not token:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="NO_API_TOKEN",
+                message="No global API token available. Please configure Enedis API credentials."
+            )
+        )
+
+    # Check if token is expired and refresh if needed
+    now_utc = datetime.now(UTC)
+    token_expires = token.expires_at.replace(tzinfo=UTC) if token.expires_at.tzinfo is None else token.expires_at
+
+    if token_expires <= now_utc:
+        try:
+            token_data = await enedis_adapter.get_client_credentials_token()
+            expires_in = token_data.get("expires_in", 3600)
+            token.access_token = token_data["access_token"]
+            token.expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+            await db.commit()
+            await db.refresh(token)
+        except Exception as e:
+            logger.error(f"[ADMIN_FETCH] Failed to refresh token: {e}")
+            return APIResponse(
+                success=False,
+                error=ErrorDetail(
+                    code="TOKEN_REFRESH_FAILED",
+                    message=f"Failed to refresh API token: {str(e)}"
+                )
+            )
+
+    # Fetch data from Enedis
+    try:
+        if data_type == "consumption":
+            enedis_data = await enedis_adapter.get_consumption_daily(
+                access_token=token.access_token,
+                usage_point_id=pdl.usage_point_id,
+                start=start_date,
+                end=end_date
+            )
+        else:  # production
+            enedis_data = await enedis_adapter.get_production_daily(
+                access_token=token.access_token,
+                usage_point_id=pdl.usage_point_id,
+                start=start_date,
+                end=end_date
+            )
+
+        # Cache the data with user's client_secret
+        if enedis_data and "meter_reading" in enedis_data:
+            readings = enedis_data["meter_reading"].get("interval_reading", [])
+            cached_count = 0
+
+            for reading in readings:
+                if "date" in reading:
+                    date_str = reading["date"]
+                    cache_key = f"{data_type}:daily:{pdl.usage_point_id}:{date_str}"
+                    await cache_service.set(cache_key, reading, user.client_secret)
+                    cached_count += 1
+
+            logger.info(
+                f"[ADMIN_FETCH] Admin {current_user.email} fetched {data_type} data "
+                f"for user {user.email}, PDL {pdl.usage_point_id} ({start_date} to {end_date}). "
+                f"Cached {cached_count} days."
+            )
+
+        return APIResponse(
+            success=True,
+            data={
+                "pdl_id": pdl_id,
+                "usage_point_id": pdl.usage_point_id,
+                "data_type": data_type,
+                "date_range": {
+                    "start": start_date,
+                    "end": end_date
+                },
+                "enedis_data": enedis_data,
+                "cached_days": cached_count if 'cached_count' in dir() else 0
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"[ADMIN_FETCH] Error fetching Enedis data: {e}", exc_info=True)
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="ENEDIS_API_ERROR",
+                message=f"Failed to fetch data from Enedis: {str(e)}"
+            )
+        )
+
+
+@router.get("/shared-pdls", response_model=APIResponse)
+async def get_all_shared_pdls(
+    current_user: User = Depends(require_permission('users')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """
+    Get all PDLs from users who have enabled data sharing (admin only).
+
+    This endpoint returns all PDLs from all users who have enabled admin data sharing.
+    Used by the admin PDL selector to allow admins to view the app as any shared user.
+
+    Returns:
+        APIResponse with list of all shared PDLs grouped by owner
+    """
+    # Get all users with data sharing enabled
+    result = await db.execute(
+        select(User)
+        .where(User.admin_data_sharing == True)  # noqa: E712
+        .order_by(User.email)
+    )
+    users_with_sharing = result.scalars().all()
+
+    shared_pdls = []
+    for user in users_with_sharing:
+        # Get PDLs for this user
+        pdl_result = await db.execute(
+            select(PDL)
+            .where(PDL.user_id == user.id)
+            .order_by(PDL.created_at)
+        )
+        pdls = pdl_result.scalars().all()
+
+        for pdl in pdls:
+            shared_pdls.append({
+                "id": pdl.id,
+                "usage_point_id": pdl.usage_point_id,
+                "name": pdl.name,
+                "has_consumption": pdl.has_consumption,
+                "has_production": pdl.has_production,
+                "is_active": pdl.is_active,
+                "subscribed_power": pdl.subscribed_power,
+                "pricing_option": pdl.pricing_option,
+                "oldest_available_data_date": pdl.oldest_available_data_date.isoformat() if pdl.oldest_available_data_date else None,
+                "activation_date": pdl.activation_date.isoformat() if pdl.activation_date else None,
+                "created_at": pdl.created_at.isoformat(),
+                # Owner information for impersonation
+                "owner_id": str(user.id),
+                "owner_email": user.email,
+                "owner_sharing_enabled_at": user.admin_data_sharing_enabled_at.isoformat() if user.admin_data_sharing_enabled_at else None,
+            })
+
+    logger.info(
+        f"[ADMIN_ACCESS] Admin {current_user.email} accessed all shared PDLs "
+        f"({len(shared_pdls)} PDLs from {len(users_with_sharing)} users)"
+    )
+
+    return APIResponse(
+        success=True,
+        data={
+            "pdls": shared_pdls,
+            "total": len(shared_pdls),
+            "users_count": len(users_with_sharing),
+        }
+    )

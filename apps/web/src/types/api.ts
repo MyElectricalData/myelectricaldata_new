@@ -42,6 +42,8 @@ export interface User {
   created_at: string
   is_admin?: boolean
   debug_mode?: boolean
+  admin_data_sharing?: boolean
+  admin_data_sharing_enabled_at?: string
   role?: Role
   email_verified?: boolean
   pdl_count?: number

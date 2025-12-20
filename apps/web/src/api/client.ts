@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosInstance } from 'axios'
 import type { APIResponse } from '@/types/api'
 import { logger, isDebugEnabled } from '@/utils/logger'
+import { usePdlStore } from '@/stores/pdlStore'
 
 // Runtime environment from env.js (generated at container startup)
 // Falls back to build-time env or default
@@ -36,15 +37,25 @@ class APIClient {
       adapter: 'xhr',
     })
 
-    // Request interceptor to add auth token
+    // Request interceptor to add auth token and impersonation header
     this.client.interceptors.request.use((config) => {
       const token = localStorage.getItem('access_token')
       if (token) {
         config.headers.Authorization = `Bearer ${token}`
       }
+
+      // Add impersonation header if viewing another user's PDL (admin feature)
+      const { impersonation } = usePdlStore.getState()
+      if (impersonation?.ownerId) {
+        config.headers['X-Impersonate-User-Id'] = impersonation.ownerId
+      }
+
       // Debug: log the full URL being called
       if (isDebugEnabled()) {
         logger.log('[API Client] Request:', config.method?.toUpperCase(), (config.baseURL || '') + (config.url || ''))
+        if (impersonation) {
+          logger.log('[API Client] Impersonating user:', impersonation.ownerEmail)
+        }
       }
       return config
     })
@@ -68,8 +79,8 @@ class APIClient {
     return response.data
   }
 
-  async post<T>(url: string, data?: unknown): Promise<APIResponse<T>> {
-    const response = await this.client.post<APIResponse<T>>(url, data)
+  async post<T>(url: string, data?: unknown, params?: Record<string, unknown>): Promise<APIResponse<T>> {
+    const response = await this.client.post<APIResponse<T>>(url, data, { params })
     return response.data
   }
 

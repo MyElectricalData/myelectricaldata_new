@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.4.0-dev.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.4.0-dev.1...1.4.0-dev.2) (2025-12-20)
+
+### Bug Fixes
+
+* address Copilot review suggestions ([f78115a](https://github.com/MyElectricalData/myelectricaldata_new/commit/f78115a8dbed44f5a03fd410f8be5da01b2554db))
+
+## [1.4.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.3.0...1.4.0-dev.1) (2025-12-20)
+
+### Features
+
+* add admin data sharing for PDL debugging ([cfb32b8](https://github.com/MyElectricalData/myelectricaldata_new/commit/cfb32b83ddb435c9c792aec031ead2ad2ae054ab))
+
+### Bug Fixes
+
+* **api:** correct type annotation for cached_data in admin router ([9b383f1](https://github.com/MyElectricalData/myelectricaldata_new/commit/9b383f13dade4ea6332254165e075837c17fd26b))
+
 ## [1.3.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.2.0...1.3.0) (2025-12-20)
 
 ### Features
