@@ -29,7 +29,12 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mobileMenuRef = useRef<HTMLDivElement | null>(null)
   const [offpeakRanges, setOffpeakRanges] = useState<Array<{startHour: string, startMin: string, endHour: string, endMin: string}>>(() => {
-    const parseRange = (range: string) => {
+    const defaultRange = { startHour: '00', startMin: '00', endHour: '00', endMin: '00' }
+
+    const parseRange = (range: unknown) => {
+      // Safety check: ensure range is a string
+      if (typeof range !== 'string') return defaultRange
+
       // Try format "HH:MM-HH:MM" (array format)
       let match = range.match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/)
       if (match) {
@@ -60,10 +65,13 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
         }
       }
 
-      return { startHour: '00', startMin: '00', endHour: '00', endMin: '00' }
+      return defaultRange
     }
 
-    const parseAllRanges = (str: string) => {
+    const parseAllRanges = (str: unknown) => {
+      // Safety check: ensure str is a string
+      if (typeof str !== 'string') return [defaultRange]
+
       const results = []
       // Check if it's Enedis format with parentheses
       const enedisMatch = str.match(/HC\s*\(([^)]+)\)/i)
@@ -87,30 +95,40 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
       return [parseRange(str)]
     }
 
-    if (!pdl.offpeak_hours) return [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }]
+    if (!pdl.offpeak_hours) return [defaultRange]
 
-    if (Array.isArray(pdl.offpeak_hours)) {
-      // Filter to only strings and parse
-      const stringValues = pdl.offpeak_hours.filter((v): v is string => typeof v === 'string')
-      return stringValues.length > 0
-        ? stringValues.flatMap(parseAllRanges)
-        : [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }]
+    try {
+      if (Array.isArray(pdl.offpeak_hours)) {
+        // Filter to only strings and parse
+        const stringValues = pdl.offpeak_hours.filter((v): v is string => typeof v === 'string')
+        return stringValues.length > 0
+          ? stringValues.flatMap(parseAllRanges)
+          : [defaultRange]
+      }
+
+      // Legacy format: convert object to array and deduplicate
+      // Handle nested arrays (e.g., {"ranges": ["22:00-06:00"]})
+      const rawValues = Object.values(pdl.offpeak_hours).filter(Boolean)
+      const values = rawValues.flatMap(v => Array.isArray(v) ? v : [v]).filter((v): v is string => typeof v === 'string')
+      const uniqueValues = Array.from(new Set(values))
+      return uniqueValues.length > 0
+        ? uniqueValues.flatMap(parseAllRanges)
+        : [defaultRange]
+    } catch (error) {
+      console.error('[PDLCard] Error parsing offpeak_hours:', error, pdl.offpeak_hours)
+      return [defaultRange]
     }
-
-    // Legacy format: convert object to array and deduplicate
-    // Handle nested arrays (e.g., {"ranges": ["22:00-06:00"]})
-    const rawValues = Object.values(pdl.offpeak_hours).filter(Boolean)
-    const values = rawValues.flatMap(v => Array.isArray(v) ? v : [v]).filter((v): v is string => typeof v === 'string')
-    const uniqueValues = Array.from(new Set(values))
-    return uniqueValues.length > 0
-      ? uniqueValues.flatMap(parseAllRanges)
-      : [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }]
   })
   const queryClient = useQueryClient()
 
   // Sync edited values with PDL changes
   useEffect(() => {
-    const parseAllRanges = (str: string) => {
+    const defaultRange = { startHour: '00', startMin: '00', endHour: '00', endMin: '00' }
+
+    const parseAllRanges = (str: unknown) => {
+      // Safety check: ensure str is a string
+      if (typeof str !== 'string') return [defaultRange]
+
       const results = []
       // Check if it's Enedis format with parentheses
       const enedisMatch = str.match(/HC\s*\(([^)]+)\)/i)
@@ -128,7 +146,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
             })
           }
         }
-        return results.length > 0 ? results : [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }]
+        return results.length > 0 ? results : [defaultRange]
       }
 
       // Try format "HH:MM-HH:MM" (array format)
@@ -142,27 +160,32 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
         }]
       }
 
-      return [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }]
+      return [defaultRange]
     }
 
     setEditedName(pdl.name || '')
     setEditedPower(pdl.subscribed_power?.toString() || '')
 
-    if (!pdl.offpeak_hours) {
-      setOffpeakRanges([{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }])
-    } else if (Array.isArray(pdl.offpeak_hours)) {
-      // Filter to only strings and parse
-      const stringValues = pdl.offpeak_hours.filter((v): v is string => typeof v === 'string')
-      const parsed = stringValues.flatMap(parseAllRanges)
-      setOffpeakRanges(parsed.length > 0 ? parsed : [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }])
-    } else {
-      // Legacy format: convert object to array and deduplicate
-      // Handle nested arrays (e.g., {"ranges": ["22:00-06:00"]})
-      const rawValues = Object.values(pdl.offpeak_hours).filter(Boolean)
-      const values = rawValues.flatMap(v => Array.isArray(v) ? v : [v]).filter((v): v is string => typeof v === 'string')
-      const uniqueValues = Array.from(new Set(values))
-      const parsed = uniqueValues.flatMap(parseAllRanges)
-      setOffpeakRanges(parsed.length > 0 ? parsed : [{ startHour: '00', startMin: '00', endHour: '00', endMin: '00' }])
+    try {
+      if (!pdl.offpeak_hours) {
+        setOffpeakRanges([defaultRange])
+      } else if (Array.isArray(pdl.offpeak_hours)) {
+        // Filter to only strings and parse
+        const stringValues = pdl.offpeak_hours.filter((v): v is string => typeof v === 'string')
+        const parsed = stringValues.flatMap(parseAllRanges)
+        setOffpeakRanges(parsed.length > 0 ? parsed : [defaultRange])
+      } else {
+        // Legacy format: convert object to array and deduplicate
+        // Handle nested arrays (e.g., {"ranges": ["22:00-06:00"]})
+        const rawValues = Object.values(pdl.offpeak_hours).filter(Boolean)
+        const values = rawValues.flatMap(v => Array.isArray(v) ? v : [v]).filter((v): v is string => typeof v === 'string')
+        const uniqueValues = Array.from(new Set(values))
+        const parsed = uniqueValues.flatMap(parseAllRanges)
+        setOffpeakRanges(parsed.length > 0 ? parsed : [defaultRange])
+      }
+    } catch (error) {
+      console.error('[PDLCard] Error parsing offpeak_hours in effect:', error, pdl.offpeak_hours)
+      setOffpeakRanges([defaultRange])
     }
   }, [pdl.id, pdl.name, pdl.subscribed_power, pdl.offpeak_hours])
 

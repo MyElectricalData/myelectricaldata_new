@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0-dev.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.2.0-dev.2...1.2.0-dev.3) (2025-12-20)
+
+### Bug Fixes
+
+* **ci:** disable ARM64 build by default to speed up CI ([3b3e6cb](https://github.com/MyElectricalData/myelectricaldata_new/commit/3b3e6cbc327074f432614651ea1220c0655a54b1))
+* **web:** add defensive type checks for offpeak_hours parsing ([a82441f](https://github.com/MyElectricalData/myelectricaldata_new/commit/a82441f5b5374bef197302cf16df4bbd3485f74d))
+
 ## [1.2.0-dev.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.2.0-dev.1...1.2.0-dev.2) (2025-12-19)
 
 ### Features
