@@ -225,10 +225,6 @@ async def get_token(
 
     Accepts credentials either in form data or in Authorization header (Basic Auth).
     """
-    logger.debug(f"[TOKEN] Received request - Content-Type: {request.headers.get('content-type')}")
-    logger.debug(f"[TOKEN] Authorization header: {request.headers.get('authorization', 'None')[:50] if request.headers.get('authorization') else 'None'}")
-    logger.debug(f"[TOKEN] Form client_id: {client_id}, client_secret: {'***' if client_secret else None}")
-
     # Try to get credentials from Authorization header (Basic Auth)
     if not client_id or not client_secret:
         auth_header = request.headers.get('authorization')
@@ -238,15 +234,13 @@ async def get_token(
                 encoded = auth_header.split(' ')[1]
                 decoded = base64.b64decode(encoded).decode('utf-8')
                 client_id, client_secret = decoded.split(':', 1)
-                logger.debug(f"[TOKEN] From Basic Auth - client_id: {client_id}, client_secret: ***")
-            except Exception as e:
-                logger.error(f"[TOKEN] Failed to parse Basic Auth: {e}")
+            except Exception:
+                pass  # Invalid Basic Auth format, will try form data next
 
     # If still not found, try form data
     if not client_id or not client_secret:
         try:
             form_data = await request.form()
-            logger.debug(f"[TOKEN] Form data keys: {list(form_data.keys())}")
             client_id_form = form_data.get('client_id')
             client_secret_form = form_data.get('client_secret')
             # Only use if it's a string (not UploadFile)
@@ -254,12 +248,10 @@ async def get_token(
                 client_id = client_id_form or client_id
             if isinstance(client_secret_form, str):
                 client_secret = client_secret_form or client_secret
-            logger.debug(f"[TOKEN] After form parse - client_id: {client_id}, client_secret: {'***' if client_secret else None}")
-        except Exception as e:
-            logger.error(f"[TOKEN] Failed to parse form: {e}")
+        except Exception:
+            pass  # Form parsing failed, credentials may still be from Basic Auth
 
     if not client_id or not client_secret:
-        logger.debug(f"[TOKEN] Missing credentials - client_id: {client_id}, client_secret: {'***' if client_secret else None}")
         raise HTTPException(status_code=422, detail="client_id and client_secret are required (provide in form data or Basic Auth header)")
 
     # Find user by client_id
