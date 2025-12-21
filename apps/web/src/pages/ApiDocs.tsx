@@ -1,7 +1,7 @@
 import SwaggerUI from 'swagger-ui-react'
 import 'swagger-ui-react/swagger-ui.css'
 import { Key } from 'lucide-react'
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
 import { useThemeStore } from '@/stores/themeStore'
 import { Link } from 'react-router-dom'
 
@@ -16,8 +16,6 @@ declare global {
 }
 
 export default function ApiDocs() {
-  // Get the access token from localStorage
-  const accessToken = useMemo(() => localStorage.getItem('access_token'), [])
   const { isDark } = useThemeStore()
   // Use runtime config first, then build-time env, then default
   const apiBaseUrl = window.__ENV__?.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || '/api'
@@ -892,17 +890,10 @@ export default function ApiDocs() {
             displayRequestDuration={true}
             deepLinking={false}
             requestInterceptor={(req) => {
-              // Add Authorization header with the access token
-              if (accessToken) {
-                req.headers.Authorization = `Bearer ${accessToken}`
-              }
+              // Swagger UI v5+ uses Fetch API, so req.credentials = 'include' is correct
+              // This enables httpOnly cookie to be sent with requests
+              req.credentials = 'include'
               return req
-            }}
-            onComplete={(swaggerApi) => {
-              // Pre-authorize with the Bearer token
-              if (accessToken) {
-                swaggerApi.preauthorizeApiKey('HTTPBearer', accessToken)
-              }
             }}
           />
         </div>

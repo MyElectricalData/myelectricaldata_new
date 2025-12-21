@@ -93,11 +93,8 @@ export default function OAuthCallback() {
       if (state) backendUrl.searchParams.set('state', state)
       if (usagePointId) backendUrl.searchParams.set('usage_point_id', usagePointId)
 
-      // Include access_token for backend to identify the user
-      const accessToken = localStorage.getItem('access_token')
-      if (accessToken) {
-        backendUrl.searchParams.set('access_token', accessToken)
-      }
+      // Note: The httpOnly cookie will be sent automatically with the redirect
+      // No need to pass access_token in URL (more secure)
 
       // Use replace to prevent browser back button from returning here
       window.location.replace(backendUrl.toString())

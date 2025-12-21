@@ -6,24 +6,29 @@ import type { UserCreate, UserLogin } from '@/types/api'
 
 export const useAuth = () => {
   const queryClient = useQueryClient()
-  const { setUser, setToken, logout: logoutStore } = useAuthStore()
+  const { user: storedUser, setUser, setAuthenticated, logout: logoutStore } = useAuthStore()
 
-  const { data: user, isLoading } = useQuery({
+  const { data: user, isLoading, isError } = useQuery({
     queryKey: ['user'],
     queryFn: async () => {
       const response = await authApi.getMe()
       if (response.success && response.data) {
         setUser(response.data)
+        setAuthenticated(true)
         // Update debug mode based on user settings
         const debugMode = response.data.debug_mode || false
         setDebugMode(debugMode)
-        // Always log this to verify it's working (even when debug is off)
-        console.log('[useAuth] Debug mode set to:', debugMode, 'localStorage value:', JSON.stringify(localStorage.getItem('debug_mode')))
         return response.data
       }
+      // Not authenticated - clear state
+      setAuthenticated(false)
       return null
     },
-    enabled: !!localStorage.getItem('access_token'),
+    // Always try to fetch - the httpOnly cookie will be sent automatically
+    // If not authenticated, the request will fail with 401
+    retry: false,
+    // Refetch on window focus to check if session is still valid
+    refetchOnWindowFocus: true,
   })
 
   const loginMutation = useMutation({
@@ -34,11 +39,10 @@ export const useAuth = () => {
       }
       return response
     },
-    onSuccess: (response) => {
-      if (response.success && response.data) {
-        setToken(response.data.access_token)
-        queryClient.invalidateQueries({ queryKey: ['user'] })
-      }
+    onSuccess: () => {
+      // Cookie is set by the server, just refresh user data
+      setAuthenticated(true)
+      queryClient.invalidateQueries({ queryKey: ['user'] })
     },
   })
 
@@ -52,20 +56,17 @@ export const useAuth = () => {
     },
   })
 
-  const logout = () => {
-    logoutStore()
+  const logout = async () => {
+    await logoutStore()
     queryClient.clear()
   }
-
-  // Check if we have a valid token in localStorage
-  const hasToken = !!localStorage.getItem('access_token')
 
   return {
     user,
     isLoading,
-    // Consider authenticated if user exists OR if we have a token in localStorage
-    // This prevents logout during page refresh while the user query is loading
-    isAuthenticated: !!user || hasToken,
+    // Authenticated if we have user data, or if we have stored user and query is still loading
+    // isError means the cookie check failed (401), so not authenticated
+    isAuthenticated: !!user || (!!storedUser && isLoading && !isError),
     login: loginMutation.mutate,
     signup: signupMutation.mutate,
     logout,

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, UTC
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Body, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Body, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -18,7 +18,6 @@ from ..schemas import (
     UserLogin,
     UserResponse,
     ClientCredentials,
-    TokenResponse,
     APIResponse,
     ErrorDetail,
 )
@@ -148,8 +147,34 @@ async def signup(
     )
 
 
+def _set_auth_cookie(response: Response, token: str) -> None:
+    """Set httpOnly cookie with JWT token"""
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,  # Prevents JavaScript access (XSS protection)
+        secure=settings.COOKIE_SECURE,  # HTTPS only in production
+        samesite=settings.COOKIE_SAMESITE,  # CSRF protection
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # 43200 min = 30 days in seconds
+        path="/",  # Available for all paths
+        domain=settings.COOKIE_DOMAIN or None,  # None = current domain
+    )
+
+
+def _clear_auth_cookie(response: Response) -> None:
+    """Clear the auth cookie on logout"""
+    response.delete_cookie(
+        key="access_token",
+        path="/",
+        domain=settings.COOKIE_DOMAIN or None,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+    )
+
+
 @router.post("/login", response_model=APIResponse)
 async def login(
+    response: Response,
     credentials: UserLogin = Body(
         ...,
         openapi_examples={
@@ -165,7 +190,7 @@ async def login(
     ),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
-    """Login and get access token"""
+    """Login and get access token (stored in httpOnly cookie)"""
     result = await db.execute(select(User).where(User.email == credentials.email))
     user = result.scalar_one_or_none()
 
@@ -175,11 +200,12 @@ async def login(
     if not user.is_active:
         return APIResponse(success=False, error=ErrorDetail(code="USER_INACTIVE", message="User account is inactive"))
 
-    # Create access token
+    # Create access token and set as httpOnly cookie
     access_token = create_access_token(data={"sub": user.id})
-    token_response = TokenResponse(access_token=access_token)
+    _set_auth_cookie(response, access_token)
 
-    return APIResponse(success=True, data=token_response.model_dump())
+    # Return success without exposing token in response body
+    return APIResponse(success=True, data={"message": "Login successful"})
 
 
 @router.post("/token", tags=["Authentication"])
@@ -310,6 +336,13 @@ async def get_current_user_info(
         }
 
     return APIResponse(success=True, data=user_data)
+
+
+@router.post("/logout", response_model=APIResponse)
+async def logout(response: Response) -> APIResponse:
+    """Logout and clear auth cookie"""
+    _clear_auth_cookie(response)
+    return APIResponse(success=True, data={"message": "Logout successful"})
 
 
 @router.get("/credentials", response_model=APIResponse)

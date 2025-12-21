@@ -175,6 +175,12 @@ config:
   enedisRedirectUri: ""     # Enedis OAuth callback URL (e.g., https://example.com/consent)
   frontendUrl: ""           # Frontend URL for redirects (e.g., https://example.com)
 
+  # Cookie settings for httpOnly JWT authentication
+  cookie:
+    secure: true            # true for HTTPS (production), false for HTTP (local dev)
+    sameSite: "lax"         # "lax", "strict", or "none" (lax recommended)
+    domain: ""              # Cookie domain (empty = current domain only)
+
 # Application secrets
 # You can configure secrets in 3 ways:
 # 1. Use a single existing Kubernetes Secret by setting existingSecret (legacy)

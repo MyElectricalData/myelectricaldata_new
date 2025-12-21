@@ -11,7 +11,12 @@ export const authApi = {
   },
 
   getMe: async () => {
-    return apiClient.get<User>('accounts/me')
+    try {
+      return await apiClient.get<User>('accounts/me')
+    } catch {
+      // 401 is expected when not logged in - return success: false instead of throwing
+      return { success: false, data: null, error: { message: 'Not authenticated' } }
+    }
   },
 
   getCredentials: async () => {
