@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Calendar, Download, BarChart3, Loader2, CalendarDays, CalendarRange } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from '@/stores/notificationStore'
 import { useQueryClient } from '@tanstack/react-query'
 import { logger } from '@/utils/logger'
 import { useResponsiveDayCount } from '@/hooks/useResponsiveDayCount'

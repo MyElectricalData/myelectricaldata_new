@@ -1,5 +1,5 @@
 import { Download, Zap, TrendingDown, TrendingUp, Calendar } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from '@/stores/notificationStore'
 
 interface YearlyStatCardsProps {
   chartData: {

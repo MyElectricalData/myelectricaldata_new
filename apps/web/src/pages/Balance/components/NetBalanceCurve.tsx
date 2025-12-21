@@ -1,6 +1,6 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Download } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from '@/stores/notificationStore'
 import type { BalanceChartData } from '../types/balance.types'
 
 interface NetBalanceCurveProps {

@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
-import { RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { ecowattApi, type EcoWattSignal } from '../api/ecowatt'
+import { toast } from '@/stores/notificationStore'
 
 export default function AdminEcoWatt() {
   const [signals, setSignals] = useState<EcoWattSignal[]>([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<string | null>(null)
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [nextRefreshTime, setNextRefreshTime] = useState<string | null>(null)
 
   useEffect(() => {
@@ -33,7 +33,7 @@ export default function AdminEcoWatt() {
       }
     } catch (error) {
       console.error('Error fetching EcoWatt signals:', error)
-      setMessage({ type: 'error', text: 'Erreur lors du chargement des signaux EcoWatt' })
+      toast.error('Erreur lors du chargement des signaux EcoWatt')
     } finally {
       setLoading(false)
     }
@@ -57,15 +57,11 @@ export default function AdminEcoWatt() {
 
   const updateEcoWattCache = async () => {
     setUpdating(true)
-    setMessage(null)
     try {
       const response = await ecowattApi.refreshCache()
       if (response.success) {
         const count = response.data?.updated_count || 0
-        setMessage({
-          type: 'success',
-          text: `Cache EcoWatt mis à jour avec ${count} signaux`
-        })
+        toast.success(`Cache EcoWatt mis à jour avec ${count} signaux`)
         fetchEcoWattSignals() // Reload data
         fetchRefreshStatus() // Update next refresh time
       } else {
@@ -79,10 +75,7 @@ export default function AdminEcoWatt() {
           ? "Vous n'avez pas la permission de rafraîchir le cache EcoWatt. Contactez un administrateur pour obtenir la permission 'admin.ecowatt.refresh'."
           : response.error?.message || 'Erreur lors de la mise à jour du cache EcoWatt'
 
-        setMessage({
-          type: 'error',
-          text: errorMsg
-        })
+        toast.error(errorMsg)
       }
     } catch (error: any) {
       console.error('Error updating EcoWatt cache:', error)
@@ -96,10 +89,7 @@ export default function AdminEcoWatt() {
         ? "Vous n'avez pas la permission de rafraîchir le cache EcoWatt. Contactez un administrateur pour obtenir la permission 'admin.ecowatt.refresh'."
         : error?.message || 'Erreur lors de la mise à jour du cache EcoWatt'
 
-      setMessage({
-        type: 'error',
-        text: errorMsg
-      })
+      toast.error(errorMsg)
     } finally {
       setUpdating(false)
     }
@@ -155,29 +145,6 @@ export default function AdminEcoWatt() {
 
   return (
     <div className="space-y-6">
-      {/* Message */}
-      {message && (
-        <div className={`p-4 rounded-lg border-l-4 ${
-          message.type === 'success'
-            ? 'bg-green-50 dark:bg-green-900/20 border-green-500'
-            : 'bg-red-50 dark:bg-red-900/20 border-red-500'
-        }`}>
-          <div className="flex items-center gap-2">
-            {message.type === 'success' ? (
-              <CheckCircle className="text-green-600 dark:text-green-400" size={20} />
-            ) : (
-              <AlertCircle className="text-red-600 dark:text-red-400" size={20} />
-            )}
-            <span className={message.type === 'success'
-              ? 'text-green-800 dark:text-green-200'
-              : 'text-red-800 dark:text-red-200'
-            }>
-              {message.text}
-            </span>
-          </div>
-        </div>
-      )}
-
       {/* Actions */}
       <div className="card p-6">
         <h2 className="text-lg font-semibold mb-4">Actions</h2>

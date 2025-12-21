@@ -1,6 +1,6 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Download } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from '@/stores/notificationStore'
 import { ModernButton } from './ModernButton'
 
 interface YearlyProductionProps {

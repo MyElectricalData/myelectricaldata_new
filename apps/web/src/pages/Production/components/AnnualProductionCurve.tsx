@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea } from 'recharts'
 import { Download, ZoomOut } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from '@/stores/notificationStore'
 import { ModernButton } from './ModernButton'
 
 // Graph colors for production (green-themed to match production)

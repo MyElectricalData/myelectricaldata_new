@@ -4,7 +4,7 @@ import { enedisApi } from '@/api/enedis'
 import { adminApi } from '@/api/admin'
 import { pdlApi } from '@/api/pdl'
 import { logger } from '@/utils/logger'
-import toast from 'react-hot-toast'
+import { toast } from '@/stores/notificationStore'
 import type { PDL } from '@/types/api'
 import type { DateRange, LoadingProgress } from '../types/consumption.types'
 
@@ -225,7 +225,7 @@ export function useConsumptionFetch({
           const errorMsg = batchData.error.message || 'Erreur lors du chargement des données détaillées'
 
           if (batchData.error.code === 'PARTIAL_DATA') {
-            toast.success(errorMsg, { duration: 4000, icon: '⚠️' })
+            toast.warning(errorMsg, { duration: 4000 })
           } else {
             toast.error(errorMsg, { duration: 6000 })
           }

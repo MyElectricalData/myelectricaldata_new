@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { enedisApi } from '@/api/enedis'
 import { logger } from '@/utils/logger'
-import toast from 'react-hot-toast'
+import { toast } from '@/stores/notificationStore'
 import type { PDL } from '@/types/api'
 import { useDataFetchStore } from '@/stores/dataFetchStore'
 import { useCacheBroadcast } from './useCacheBroadcast'
@@ -205,7 +205,7 @@ export function useUnifiedDataFetch({
             } else if (batchData?.error) {
               updateConsumptionStatus({ detail: 'error' })
               if (batchData.error.code === 'PARTIAL_DATA') {
-                toast.success(batchData.error.message, { duration: 4000, icon: '⚠️' })
+                toast.warning(batchData.error.message, { duration: 4000 })
               } else {
                 toast.error(batchData.error.message || 'Erreur données détaillées de consommation')
               }
@@ -322,7 +322,7 @@ export function useUnifiedDataFetch({
             } else if (batchData?.error) {
               updateProductionStatus({ detail: 'error' })
               if (batchData.error.code === 'PARTIAL_DATA') {
-                toast.success(batchData.error.message, { duration: 4000, icon: '⚠️' })
+                toast.warning(batchData.error.message, { duration: 4000 })
               } else {
                 toast.error(batchData.error.message || 'Erreur données détaillées de production')
               }

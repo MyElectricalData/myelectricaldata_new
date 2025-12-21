@@ -71,7 +71,7 @@ export function PDLSelector({
         {/* No active PDL message */}
         {activePdls.length === 0 && (
           <div className="text-sm text-gray-500 dark:text-gray-400">
-            Aucun PDL actif disponible. Veuillez en ajouter un depuis votre{' '}
+            Aucun point de livraison actif disponible. Veuillez en ajouter un depuis votre{' '}
             <a href="/dashboard" className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 underline">
               tableau de bord
             </a>.

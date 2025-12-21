@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
 import { useAuth } from './hooks/useAuth'
 import Layout from './components/Layout'
+import ToastContainer from './components/Toast'
 import PermissionRoute from './components/PermissionRoute'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -75,7 +76,9 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <Routes>
+    <>
+      <ToastContainer />
+      <Routes>
       {/* Public routes */}
       <Route path="/" element={<Landing />} />
       <Route
@@ -410,6 +413,7 @@ function App() {
       {/* 404 - catch all */}
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </>
   )
 }
 

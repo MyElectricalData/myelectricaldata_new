@@ -1238,9 +1238,9 @@ export default function Simulator() {
       <div className="space-y-6">
         <div className="card p-8 text-center">
           <p className="text-gray-600 dark:text-gray-400">
-            Aucun PDL disponible.{' '}
+            Aucun point de livraison disponible.{' '}
             <a href="/dashboard" className="text-primary-600 dark:text-primary-400 hover:underline">
-              Veuillez ajouter un point de livraison depuis votre tableau de bord.
+              Veuillez en ajouter un depuis votre tableau de bord.
             </a>
           </p>
         </div>
@@ -2261,7 +2261,7 @@ export default function Simulator() {
               en haut à droite de la page.
             </p>
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-              <span>Sélectionnez un PDL</span>
+              <span>Sélectionnez un point de livraison</span>
               <ArrowRight className="w-4 h-4" />
               <span>Cliquez sur "Récupérer"</span>
               <ArrowRight className="w-4 h-4" />

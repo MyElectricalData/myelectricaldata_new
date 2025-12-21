@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { adminApi } from '@/api/admin'
-import { Users, Activity, CheckCircle, XCircle, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Trash2, AlertTriangle } from 'lucide-react'
+import { Users, Activity, XCircle, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Trash2, AlertTriangle } from 'lucide-react'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
+import { toast } from '@/stores/notificationStore'
 
 type SortField = 'total' | 'cached' | 'no_cache'
 type SortDirection = 'asc' | 'desc'
 
 export default function Admin() {
-  const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null)
   const [showAllEndpoints, setShowAllEndpoints] = useState(false)
   const [sortField, setSortField] = useState<SortField>('total')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
@@ -38,20 +38,15 @@ export default function Admin() {
     refetchInterval: 30000,
   })
 
-  const showNotification = (type: 'success' | 'error', message: string) => {
-    setNotification({ type, message })
-    setTimeout(() => setNotification(null), 5000)
-  }
-
   const clearAllCacheMutation = useMutation({
     mutationFn: () => adminApi.clearAllCache(),
     onSuccess: (response) => {
       const data = response.data as any
-      showNotification('success', `Cache vidé : ${data.deleted_keys} clés (${data.total_pdls} PDL)`)
+      toast.success(`Cache vidé : ${data.deleted_keys} clés (${data.total_pdls} PDL)`)
       setShowClearCacheModal(false)
     },
     onError: () => {
-      showNotification('error', 'Erreur lors du vidage du cache')
+      toast.error('Erreur lors du vidage du cache')
       setShowClearCacheModal(false)
     }
   })
@@ -61,35 +56,6 @@ export default function Admin() {
   return (
     <div className="w-full">
       <div className="space-y-8 w-full">
-      {/* Notification Toast */}
-      {notification && (
-        <div className={`p-4 rounded-lg flex items-start gap-3 ${
-          notification.type === 'success'
-            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-        }`}>
-          {notification.type === 'success' ? (
-            <CheckCircle className="text-green-600 dark:text-green-400 flex-shrink-0" size={24} />
-          ) : (
-            <XCircle className="text-red-600 dark:text-red-400 flex-shrink-0" size={24} />
-          )}
-          <div className="flex-1">
-            <p className={notification.type === 'success'
-              ? 'text-green-800 dark:text-green-200 font-medium'
-              : 'text-red-800 dark:text-red-200 font-medium'
-            }>
-              {notification.message}
-            </p>
-          </div>
-          <button
-            onClick={() => setNotification(null)}
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
       {/* Clear All Cache Modal */}
       {showClearCacheModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowClearCacheModal(false)}>
