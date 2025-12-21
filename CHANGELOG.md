@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.5.0...1.6.0-dev.1) (2025-12-21)
+
+### Features
+
+* **roles:** add persistent default roles and CRUD operations ([9c56c38](https://github.com/MyElectricalData/myelectricaldata_new/commit/9c56c386701450451e4af7a353ffc7477511ac9e))
+* **web:** unify notification system with custom Zustand toast ([71825f0](https://github.com/MyElectricalData/myelectricaldata_new/commit/71825f044400304767046d41382a73895e8e2ac3))
+
 ## [1.5.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.4.1...1.5.0) (2025-12-21)
 
 ### Features
