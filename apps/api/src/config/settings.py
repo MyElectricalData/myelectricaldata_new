@@ -1,5 +1,7 @@
-from typing import Literal
+import secrets
+from typing import Literal, Self
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,7 +35,9 @@ class Settings(BaseSettings):
     RTE_BASE_URL: str = "https://digital.iservices.rte-france.com"
 
     # API Security
-    SECRET_KEY: str = "dev-secret-key-change-in-production"
+    # SECRET_KEY is required in production (no default value for security)
+    # In DEBUG mode, a random key is generated if not provided
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 43200
 
@@ -93,6 +97,47 @@ class Settings(BaseSettings):
         if self.ENEDIS_ENVIRONMENT == "production":
             return "https://mon-compte-particulier.enedis.fr/dataconnect/v1/oauth2/authorize"
         return f"{self.enedis_base_url}/dataconnect/v1/oauth2/authorize"
+
+    @model_validator(mode="after")
+    def validate_secret_key(self) -> Self:
+        """Validate SECRET_KEY configuration.
+
+        - Production (DEBUG=False): SECRET_KEY is required and must be secure
+        - Development (DEBUG=True): Generate a random key if not provided (with warning)
+        """
+        insecure_patterns = ["dev-", "changeme", "secret", "password", "test", "example"]
+
+        if not self.SECRET_KEY:
+            if self.DEBUG:
+                # Generate random key for development (will change on restart)
+                object.__setattr__(self, "SECRET_KEY", secrets.token_urlsafe(32))
+                import warnings
+                warnings.warn(
+                    "SECRET_KEY not configured - using random key (sessions will be invalidated on restart). "
+                    "Set SECRET_KEY environment variable for persistent sessions.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            else:
+                raise ValueError(
+                    "SECRET_KEY environment variable is required in production (DEBUG=False). "
+                    "Generate a secure key with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
+        elif any(pattern in self.SECRET_KEY.lower() for pattern in insecure_patterns):
+            if not self.DEBUG:
+                raise ValueError(
+                    "SECRET_KEY appears to be insecure (contains common patterns). "
+                    "Generate a secure key with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
+            else:
+                import warnings
+                warnings.warn(
+                    "SECRET_KEY appears to be insecure. Use a strong random key in production.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        return self
 
 
 settings = Settings()
