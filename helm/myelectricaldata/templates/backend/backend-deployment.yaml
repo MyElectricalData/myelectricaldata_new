@@ -214,6 +214,17 @@ spec:
                   name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.turnstile.secretKey "defaultKey" "TURNSTILE_SECRET_KEY") }}
                   key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.turnstile.secretKey "defaultKey" "TURNSTILE_SECRET_KEY") }}
             {{- end }}
+            # SLACK_NOTIFICATIONS_ENABLED
+            - name: SLACK_NOTIFICATIONS_ENABLED
+              value: {{ .Values.secrets.slack.enabled | quote }}
+            # SLACK_WEBHOOK_URL
+            {{- if or .Values.secrets.slack.webhookUrl.value .Values.secrets.slack.webhookUrl.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.slack.webhookUrl "defaultKey" "SLACK_WEBHOOK_URL") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.slack.webhookUrl "defaultKey" "SLACK_WEBHOOK_URL") }}
+            {{- end }}
             # ENEDIS_REDIRECT_URI (from ConfigMap)
             {{- if .Values.config.enedisRedirectUri }}
             - name: ENEDIS_REDIRECT_URI

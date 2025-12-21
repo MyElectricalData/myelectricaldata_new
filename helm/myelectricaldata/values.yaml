@@ -265,6 +265,15 @@ secrets:
         name: ""
         key: ""
 
+  # Slack notifications (for contribution alerts)
+  slack:
+    enabled: false  # Set to true to enable Slack notifications
+    webhookUrl:
+      value: ""  # Slack webhook URL (https://hooks.slack.com/services/...)
+      existingSecretRef:
+        name: ""  # e.g., "slack-webhook"
+        key: ""   # e.g., "webhook-url"
+
 # Valkey configuration (CloudPirates subchart)
 # Repository: oci://registry-1.docker.io/cloudpirates/valkey
 valkey:
