@@ -258,7 +258,7 @@ async def get_token(
     result = await db.execute(select(User).where(User.client_id == client_id))
     user = result.scalar_one_or_none()
 
-    if not user or user.client_secret != client_secret:
+    if not user or not secrets.compare_digest(user.client_secret, client_secret):
         raise HTTPException(status_code=401, detail="Invalid client credentials")
 
     if not user.is_active:

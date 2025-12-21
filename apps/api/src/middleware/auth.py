@@ -1,4 +1,6 @@
+import secrets
 from typing import Optional
+
 from fastapi import Security, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.security import OAuth2
@@ -92,11 +94,16 @@ async def get_current_user(
             else:
                 logger.error("[AUTH] User not found in database")
 
-    # Try API key (client_secret)
+    # Try API key (client_secret) - iterate to use constant-time comparison
     logger.debug("[AUTH] Trying API key authentication")
-    result = await db.execute(select(User).where(User.client_secret == token))
-    user = result.scalar_one_or_none()
-    if user and user.is_active:
+    result = await db.execute(select(User).where(User.is_active == True))  # noqa: E712
+    users = result.scalars().all()
+    user = None
+    for u in users:
+        if secrets.compare_digest(u.client_secret, token):
+            user = u
+            break
+    if user:
         if settings.REQUIRE_EMAIL_VERIFICATION and not user.email_verified:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -145,11 +152,12 @@ async def get_current_user_optional(
             if user and user.is_active:
                 return user
 
-    # Try API key (client_secret)
-    result = await db.execute(select(User).where(User.client_secret == token))
-    user = result.scalar_one_or_none()
-    if user and user.is_active:
-        return user
+    # Try API key (client_secret) - iterate to use constant-time comparison
+    result = await db.execute(select(User).where(User.is_active == True))  # noqa: E712
+    users = result.scalars().all()
+    for u in users:
+        if secrets.compare_digest(u.client_secret, token):
+            return u
 
     return None
 
