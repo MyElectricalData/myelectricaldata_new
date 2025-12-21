@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.5.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.4.1...1.5.0) (2025-12-21)
+
+### Features
+
+* **helm:** add Slack notification configuration ([e1570ad](https://github.com/MyElectricalData/myelectricaldata_new/commit/e1570ad296c8472a492fa1fc389948ddb306bde7))
+
+### Bug Fixes
+
+* **api:** disable redirect_slashes to fix Vite proxy routing ([7fbb6e0](https://github.com/MyElectricalData/myelectricaldata_new/commit/7fbb6e07812af81d3874385c0b03f60b69431df3))
+* **auth:** preserve query params in OAuth callback redirect ([c0b51c0](https://github.com/MyElectricalData/myelectricaldata_new/commit/c0b51c02a6e083c141afde7fad00e3f72d899fb5))
+
 ## [1.5.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.4.1...1.5.0-dev.1) (2025-12-21)
 
 ### Features
