@@ -2,7 +2,7 @@ apiVersion: v2
 name: myelectricaldata
 description: A Helm chart for MyElectricalData - Secure API gateway for Linky electricity data
 type: application
-version: 1.0.0
+version: 1.1.0-dev.1
 appVersion: "1.0.0"
 
 keywords:

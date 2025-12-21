@@ -1,5 +1,15 @@
 # Helm Chart Changelog
 
+## [1.1.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/1.0.0...helm/1.1.0-dev.1) (2025-12-21)
+
+### Features
+
+* **helm:** add Slack notification configuration ([e1570ad](https://github.com/MyElectricalData/myelectricaldata_new/commit/e1570ad296c8472a492fa1fc389948ddb306bde7))
+
+### Bug Fixes
+
+* normalize API base URL to prevent double slashes ([1edeb1d](https://github.com/MyElectricalData/myelectricaldata_new/commit/1edeb1d0ddac287242348d542c16dc7c50f7e954))
+
 ## 1.0.0 (2025-12-21)
 
 ### Features
