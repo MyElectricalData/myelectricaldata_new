@@ -1,5 +1,12 @@
 # Helm Chart Changelog
 
+## [1.0.0-dev.4](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/1.0.0-dev.3...helm/1.0.0-dev.4) (2025-12-21)
+
+### Bug Fixes
+
+* address Copilot code review feedback ([57f4da5](https://github.com/MyElectricalData/myelectricaldata_new/commit/57f4da598a23030b236fe9b0e18fcfd57031c183))
+* **auth:** resolve login bootloop after httpOnly cookie migration ([eb6eff7](https://github.com/MyElectricalData/myelectricaldata_new/commit/eb6eff72c431bea97fcca0fa6a443023b1de44b5))
+
 ## [1.0.0-dev.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/1.0.0-dev.2...helm/1.0.0-dev.3) (2025-12-21)
 
 ### Security
