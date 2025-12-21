@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.1-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.4.0...1.4.1-dev.1) (2025-12-21)
+
+### Bug Fixes
+
+* **auth:** resolve login bootloop after httpOnly cookie migration ([eb6eff7](https://github.com/MyElectricalData/myelectricaldata_new/commit/eb6eff72c431bea97fcca0fa6a443023b1de44b5))
+
 ## [1.4.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.3.0...1.4.0) (2025-12-20)
 
 ### Features
