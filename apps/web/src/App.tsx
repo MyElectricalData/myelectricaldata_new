@@ -61,8 +61,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
-    // Sauvegarder l'URL courante pour y revenir après connexion
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />
+    // Sauvegarder l'URL courante (avec query params) pour y revenir après connexion
+    const fullPath = location.pathname + location.search
+    return <Navigate to="/login" state={{ from: fullPath }} replace />
   }
 
   return <>{children}</>

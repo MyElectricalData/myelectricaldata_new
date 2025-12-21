@@ -104,6 +104,7 @@ services:
       - ./apps/web/tsconfig.node.json:/app/tsconfig.node.json
       - ./apps/web/tailwind.config.js:/app/tailwind.config.js
       - ./apps/web/postcss.config.js:/app/postcss.config.js
+      - ./.env.web:/app/.env:ro
       - /app/node_modules
     ports:
       - "8000:5173"

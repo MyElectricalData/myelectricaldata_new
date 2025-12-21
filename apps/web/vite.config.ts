@@ -8,7 +8,8 @@ const __dirname = dirname(__filename)
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const backendUrl = env.VITE_BACKEND_URL || 'http://127.0.0.1:8000'
+  // Use process.env first (from Docker env_file), then loadEnv, then default
+  const backendUrl = process.env.VITE_BACKEND_URL || env.VITE_BACKEND_URL || 'http://backend:8000'
 
   return {
     plugins: [react()],
@@ -74,6 +75,16 @@ export default defineConfig(({ mode }) => {
       },
       hmr: {
         clientPort: 8000,
+      },
+      // Proxy API requests to backend - ensures same-origin for httpOnly cookies
+      proxy: {
+        '/api': {
+          target: backendUrl,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, ''),
+          // Forward cookies
+          cookieDomainRewrite: 'localhost',
+        },
       },
     },
     test: {
