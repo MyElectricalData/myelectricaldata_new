@@ -2,14 +2,24 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { rolesApi } from '@/api/roles'
-import { Shield, CheckCircle, XCircle, Save } from 'lucide-react'
+import type { CreateRoleRequest } from '@/api/roles'
+import { Shield, CheckCircle, Save, Plus, Trash2, AlertTriangle } from 'lucide-react'
+import { toast } from '@/stores/notificationStore'
 import type { RoleWithPermissions, Permission } from '@/types/api'
 
 export default function AdminRoles() {
   const queryClient = useQueryClient()
-  const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null)
   const [editingRole, setEditingRole] = useState<string | null>(null)
   const [selectedPermissions, setSelectedPermissions] = useState<Set<string>>(new Set())
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState<RoleWithPermissions | null>(null)
+  const [newRole, setNewRole] = useState<CreateRoleRequest>({
+    name: '',
+    display_name: '',
+    description: '',
+    permission_ids: []
+  })
+  const [createPermissions, setCreatePermissions] = useState<Set<string>>(new Set())
 
   const { data: rolesResponse, isLoading: rolesLoading } = useQuery({
     queryKey: ['roles'],
@@ -25,14 +35,40 @@ export default function AdminRoles() {
     mutationFn: ({ roleId, permissionIds }: { roleId: string, permissionIds: string[] }) =>
       rolesApi.updateRolePermissions(roleId, permissionIds),
     onSuccess: () => {
-      setNotification({ type: 'success', message: 'Permissions mises à jour' })
+      toast.success('Permissions mises à jour')
       queryClient.invalidateQueries({ queryKey: ['roles'] })
       setEditingRole(null)
-      setTimeout(() => setNotification(null), 5000)
     },
     onError: () => {
-      setNotification({ type: 'error', message: 'Erreur lors de la mise à jour' })
-      setTimeout(() => setNotification(null), 5000)
+      toast.error('Erreur lors de la mise à jour')
+    }
+  })
+
+  const createRoleMutation = useMutation({
+    mutationFn: (data: CreateRoleRequest) => rolesApi.createRole(data),
+    onSuccess: () => {
+      toast.success('Rôle créé avec succès')
+      queryClient.invalidateQueries({ queryKey: ['roles'] })
+      setShowCreateModal(false)
+      setNewRole({ name: '', display_name: '', description: '', permission_ids: [] })
+      setCreatePermissions(new Set())
+    },
+    onError: (error: Error & { response?: { data?: { error?: { message?: string } } } }) => {
+      const message = error.response?.data?.error?.message || 'Erreur lors de la création du rôle'
+      toast.error(message)
+    }
+  })
+
+  const deleteRoleMutation = useMutation({
+    mutationFn: (roleId: string) => rolesApi.deleteRole(roleId),
+    onSuccess: () => {
+      toast.success('Rôle supprimé avec succès')
+      queryClient.invalidateQueries({ queryKey: ['roles'] })
+      setShowDeleteModal(null)
+    },
+    onError: (error: Error & { response?: { data?: { error?: { message?: string } } } }) => {
+      const message = error.response?.data?.error?.message || 'Erreur lors de la suppression du rôle'
+      toast.error(message)
     }
   })
 
@@ -46,8 +82,7 @@ export default function AdminRoles() {
 
   const startEditing = (role: RoleWithPermissions) => {
     if (role.name === 'admin') {
-      setNotification({ type: 'error', message: 'Le rôle Admin ne peut pas être modifié' })
-      setTimeout(() => setNotification(null), 3000)
+      toast.error('Le rôle Admin ne peut pas être modifié')
       return
     }
     setEditingRole(role.id)
@@ -119,6 +154,13 @@ export default function AdminRoles() {
     }
   }
 
+  const handleCreateRole = () => {
+    createRoleMutation.mutate({
+      ...newRole,
+      permission_ids: Array.from(createPermissions)
+    })
+  }
+
   const getResourceName = (resource: string) => {
     const names: Record<string, string> = {
       'admin_dashboard': 'Tableau de bord',
@@ -126,46 +168,146 @@ export default function AdminRoles() {
       'tempo': 'Tempo',
       'contributions': 'Contributions',
       'offers': 'Offres',
-      'roles': 'Rôles'
+      'roles': 'Rôles',
+      'logs': 'Logs'
     }
     return names[resource] || resource
   }
 
-  const getRoleBadgeColor = (roleName: string) => {
-    switch (roleName) {
-      case 'admin':
-        return 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
-      case 'moderator':
-        return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-      default:
-        return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400'
+  const getRoleBadgeColor = (roleName: string, isSystem: boolean) => {
+    if (isSystem) {
+      switch (roleName) {
+        case 'admin':
+          return 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+        case 'moderator':
+          return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+        default:
+          return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400'
+      }
     }
+    return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
   }
+
+  const renderPermissionsGrid = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {Object.entries(permissionsByResource).map(([resource, permissions]) => {
+        const sortedPermissions = [...permissions].sort((a, b) => {
+          const getOrder = (name: string) => {
+            if (name.endsWith('.view')) return 0
+            if (name.endsWith('.edit')) return 1
+            if (name.endsWith('.delete')) return 2
+            if (name.includes('.review')) return 1.5
+            return 3
+          }
+          return getOrder(a.name) - getOrder(b.name)
+        })
+
+        return (
+          <div key={resource} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+            <h4 className="font-medium text-sm mb-3 text-primary-600 dark:text-primary-400">
+              {getResourceName(resource)}
+            </h4>
+            <div className="space-y-2">
+              {sortedPermissions.map((permission) => {
+                const disabled = isPermissionDisabled(permission.name, resource)
+                return (
+                  <label
+                    key={permission.id}
+                    className={`flex items-start gap-3 p-2 rounded ${
+                      disabled
+                        ? 'opacity-60 cursor-not-allowed'
+                        : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedPermissions.has(permission.id)}
+                      onChange={() => !disabled && togglePermission(permission.id, permission.name, resource)}
+                      disabled={disabled}
+                      className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+                    />
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">{permission.display_name}</div>
+                      {permission.description && (
+                        <div className="text-xs text-gray-600 dark:text-gray-400">{permission.description}</div>
+                      )}
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+
+  const renderCreatePermissionsGrid = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {Object.entries(permissionsByResource).map(([resource, permissions]) => {
+        const sortedPermissions = [...permissions].sort((a, b) => {
+          const getOrder = (name: string) => {
+            if (name.endsWith('.view')) return 0
+            if (name.endsWith('.edit')) return 1
+            if (name.endsWith('.delete')) return 2
+            return 3
+          }
+          return getOrder(a.name) - getOrder(b.name)
+        })
+
+        return (
+          <div key={resource} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+            <h4 className="font-medium text-sm mb-3 text-primary-600 dark:text-primary-400">
+              {getResourceName(resource)}
+            </h4>
+            <div className="space-y-2">
+              {sortedPermissions.map((permission) => (
+                <label
+                  key={permission.id}
+                  className="flex items-start gap-3 p-2 rounded cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={createPermissions.has(permission.id)}
+                    onChange={() => {
+                      const newSet = new Set(createPermissions)
+                      if (newSet.has(permission.id)) {
+                        newSet.delete(permission.id)
+                      } else {
+                        newSet.add(permission.id)
+                      }
+                      setCreatePermissions(newSet)
+                    }}
+                    className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-2 focus:ring-primary-500"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">{permission.display_name}</div>
+                    {permission.description && (
+                      <div className="text-xs text-gray-600 dark:text-gray-400">{permission.description}</div>
+                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
 
   return (
     <div className="w-full">
       <div className="space-y-6 w-full">
-      {/* Notification */}
-      {notification && (
-        <div className={`p-3 rounded-lg flex items-center gap-3 ${
-          notification.type === 'success'
-            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-        }`}>
-          {notification.type === 'success' ? (
-            <CheckCircle className="text-green-600 dark:text-green-400" size={20} />
-          ) : (
-            <XCircle className="text-red-600 dark:text-red-400" size={20} />
-          )}
-          <p className={`text-sm flex-1 ${notification.type === 'success'
-            ? 'text-green-800 dark:text-green-200'
-            : 'text-red-800 dark:text-red-200'
-          }`}>
-            {notification.message}
-          </p>
-          <button onClick={() => setNotification(null)} className="text-gray-500 hover:text-gray-700">✕</button>
-        </div>
-      )}
+      {/* Create Button */}
+      <div className="flex justify-end">
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="btn btn-primary flex items-center gap-2"
+        >
+          <Plus size={16} />
+          Créer un rôle
+        </button>
+      </div>
 
       {rolesLoading || permissionsLoading ? (
         <div className="card p-4">
@@ -180,19 +322,35 @@ export default function AdminRoles() {
                   <Shield size={20} className="text-primary-600 dark:text-primary-400" />
                   <div>
                     <h3 className="font-semibold">{role.display_name}</h3>
-                    <span className={`inline-block px-2 py-0.5 rounded text-xs mt-1 ${getRoleBadgeColor(role.name)}`}>
-                      {role.name}
-                    </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs ${getRoleBadgeColor(role.name, role.is_system)}`}>
+                        {role.name}
+                      </span>
+                      {role.is_system && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400">(système)</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                {role.name !== 'admin' && (
-                  <button
-                    onClick={() => startEditing(role)}
-                    className="text-sm text-primary-600 dark:text-primary-400 hover:underline"
-                  >
-                    Modifier
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {!role.is_system && (
+                    <button
+                      onClick={() => setShowDeleteModal(role)}
+                      className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 p-1"
+                      title="Supprimer ce rôle"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                  {role.name !== 'admin' && (
+                    <button
+                      onClick={() => startEditing(role)}
+                      className="text-sm text-primary-600 dark:text-primary-400 hover:underline"
+                    >
+                      Modifier
+                    </button>
+                  )}
+                </div>
               </div>
 
               <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
@@ -234,71 +392,16 @@ export default function AdminRoles() {
       {editingRole && createPortal(
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={{ zIndex: 9999 }} onClick={() => setEditingRole(null)}>
           <div className="bg-white dark:bg-gray-800 rounded-lg max-w-5xl w-full max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            {/* Header - Fixed */}
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-semibold">
                 Modifier les permissions - {roles.find(r => r.id === editingRole)?.display_name}
               </h3>
             </div>
 
-            {/* Content - Scrollable */}
             <div className="flex-1 overflow-y-auto p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.entries(permissionsByResource).map(([resource, permissions]) => {
-                  // Sort permissions by order: View, Edit, Delete
-                  const sortedPermissions = [...permissions].sort((a, b) => {
-                    const getOrder = (name: string) => {
-                      if (name.endsWith('.view')) return 0
-                      if (name.endsWith('.edit')) return 1
-                      if (name.endsWith('.delete')) return 2
-                      // Special cases (e.g., review, dashboard.view)
-                      if (name.includes('.review')) return 1.5
-                      return 3
-                    }
-                    return getOrder(a.name) - getOrder(b.name)
-                  })
-
-                  return (
-                    <div key={resource} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                      <h4 className="font-medium text-sm mb-3 text-primary-600 dark:text-primary-400">
-                        {getResourceName(resource)}
-                      </h4>
-                      <div className="space-y-2">
-                        {sortedPermissions.map((permission) => {
-                          const disabled = isPermissionDisabled(permission.name, resource)
-                          return (
-                            <label
-                              key={permission.id}
-                              className={`flex items-start gap-3 p-2 rounded ${
-                                disabled
-                                  ? 'opacity-60 cursor-not-allowed'
-                                  : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/50'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedPermissions.has(permission.id)}
-                                onChange={() => !disabled && togglePermission(permission.id, permission.name, resource)}
-                                disabled={disabled}
-                                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
-                              />
-                              <div className="flex-1">
-                                <div className="text-sm font-medium">{permission.display_name}</div>
-                                {permission.description && (
-                                  <div className="text-xs text-gray-600 dark:text-gray-400">{permission.description}</div>
-                                )}
-                              </div>
-                            </label>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+              {renderPermissionsGrid()}
             </div>
 
-            {/* Footer - Fixed */}
             <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
               <div className="flex gap-3">
                 <button
@@ -311,6 +414,135 @@ export default function AdminRoles() {
                 </button>
                 <button
                   onClick={() => setEditingRole(null)}
+                  className="flex-1 btn btn-secondary"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Create Modal */}
+      {showCreateModal && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={{ zIndex: 9999 }} onClick={() => setShowCreateModal(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-5xl w-full max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Plus size={20} className="text-primary-600 dark:text-primary-400" />
+                Créer un nouveau rôle
+              </h3>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Identifiant technique *
+                  </label>
+                  <input
+                    type="text"
+                    value={newRole.name}
+                    onChange={(e) => setNewRole({ ...newRole, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })}
+                    placeholder="ex: editor, reviewer..."
+                    className="w-full px-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Lettres minuscules, chiffres et _ uniquement</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Nom d'affichage *
+                  </label>
+                  <input
+                    type="text"
+                    value={newRole.display_name}
+                    onChange={(e) => setNewRole({ ...newRole, display_name: e.target.value })}
+                    placeholder="ex: Éditeur, Relecteur..."
+                    className="w-full px-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={newRole.description}
+                  onChange={(e) => setNewRole({ ...newRole, description: e.target.value })}
+                  placeholder="Décrivez le rôle et ses responsabilités..."
+                  rows={2}
+                  className="w-full px-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+
+              <div>
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                  Permissions
+                </h4>
+                {renderCreatePermissionsGrid()}
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+              <div className="flex gap-3">
+                <button
+                  onClick={handleCreateRole}
+                  disabled={createRoleMutation.isPending || !newRole.name || !newRole.display_name}
+                  className="flex-1 btn btn-primary flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Plus size={16} />
+                  {createRoleMutation.isPending ? 'Création...' : 'Créer le rôle'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCreateModal(false)
+                    setNewRole({ name: '', display_name: '', description: '', permission_ids: [] })
+                    setCreatePermissions(new Set())
+                  }}
+                  className="flex-1 btn btn-secondary"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={{ zIndex: 9999 }} onClick={() => setShowDeleteModal(null)}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-full">
+                  <AlertTriangle className="text-red-600 dark:text-red-400" size={24} />
+                </div>
+                <h3 className="text-lg font-semibold">Supprimer le rôle</h3>
+              </div>
+
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Êtes-vous sûr de vouloir supprimer le rôle <strong>"{showDeleteModal.display_name}"</strong> ?
+              </p>
+
+              <p className="text-sm text-red-600 dark:text-red-400 mb-6">
+                Cette action est irréversible. Assurez-vous qu'aucun utilisateur n'utilise ce rôle avant de le supprimer.
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => deleteRoleMutation.mutate(showDeleteModal.id)}
+                  disabled={deleteRoleMutation.isPending}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Trash2 size={16} />
+                  {deleteRoleMutation.isPending ? 'Suppression...' : 'Supprimer'}
+                </button>
+                <button
+                  onClick={() => setShowDeleteModal(null)}
                   className="flex-1 btn btn-secondary"
                 >
                   Annuler

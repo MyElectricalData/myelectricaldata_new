@@ -133,56 +133,73 @@ async def init_default_roles_and_permissions(db: AsyncSession) -> None:
     """
     Initialize default roles and permissions in the database.
 
-    This function is idempotent - it only creates entries that don't exist yet.
-    It will not modify existing roles or permissions.
+    This function is truly idempotent - it creates missing permissions and roles
+    without modifying existing ones. Each permission and role is checked individually.
     """
     try:
-        # Check if permissions already exist
-        result = await db.execute(select(Permission).limit(1))
-        existing_permissions = result.scalar_one_or_none()
+        logger.info("[SEED] Checking default permissions and roles...")
 
-        if existing_permissions:
-            logger.info("[SEED] Permissions already exist, skipping seed")
-            return
+        # Get existing permissions by name
+        result = await db.execute(select(Permission))
+        existing_permissions = {p.name: p for p in result.scalars().all()}
 
-        logger.info("[SEED] Initializing default permissions and roles...")
+        # Create missing permissions
+        permission_objects: dict[str, Permission] = dict(existing_permissions)
+        permissions_created = 0
 
-        # Create permissions
-        permission_objects = {}
         for perm_data in DEFAULT_PERMISSIONS:
-            permission = Permission(
-                name=perm_data["name"],
-                display_name=perm_data["display_name"],
-                description=perm_data["description"],
-                resource=perm_data["resource"],
-            )
-            db.add(permission)
-            permission_objects[perm_data["name"]] = permission
-            logger.info(f"[SEED] Created permission: {perm_data['name']}")
+            if perm_data["name"] not in existing_permissions:
+                permission = Permission(
+                    name=perm_data["name"],
+                    display_name=perm_data["display_name"],
+                    description=perm_data["description"],
+                    resource=perm_data["resource"],
+                )
+                db.add(permission)
+                permission_objects[perm_data["name"]] = permission
+                permissions_created += 1
+                logger.info(f"[SEED] Created permission: {perm_data['name']}")
 
-        # Flush to get permission IDs
-        await db.flush()
+        if permissions_created > 0:
+            await db.flush()
+            logger.info(f"[SEED] Created {permissions_created} missing permission(s)")
+        else:
+            logger.info("[SEED] All permissions already exist")
 
-        # Create roles with their permissions
+        # Get existing roles by name
+        result = await db.execute(select(Role))
+        existing_roles = {r.name: r for r in result.scalars().all()}
+
+        # Create missing roles with their permissions
+        roles_created = 0
+
         for role_data in DEFAULT_ROLES:
-            role = Role(
-                name=role_data["name"],
-                display_name=role_data["display_name"],
-                description=role_data["description"],
-                is_system=role_data["is_system"],
-            )
+            if role_data["name"] not in existing_roles:
+                role = Role(
+                    name=role_data["name"],
+                    display_name=role_data["display_name"],
+                    description=role_data["description"],
+                    is_system=role_data["is_system"],
+                )
 
-            # Assign permissions to role
-            permissions_list = cast(list[str], role_data["permissions"])
-            for perm_name in permissions_list:
-                if perm_name in permission_objects:
-                    role.permissions.append(permission_objects[perm_name])
+                # Assign permissions to role
+                permissions_list = cast(list[str], role_data["permissions"])
+                for perm_name in permissions_list:
+                    if perm_name in permission_objects:
+                        role.permissions.append(permission_objects[perm_name])
 
-            db.add(role)
-            logger.info(f"[SEED] Created role: {role_data['name']} with {len(permissions_list)} permissions")
+                db.add(role)
+                roles_created += 1
+                logger.info(f"[SEED] Created role: {role_data['name']} with {len(permissions_list)} permissions")
 
-        await db.commit()
-        logger.info("[SEED] Default roles and permissions initialized successfully")
+        if roles_created > 0:
+            await db.commit()
+            logger.info(f"[SEED] Created {roles_created} missing role(s)")
+        elif permissions_created > 0:
+            await db.commit()
+            logger.info("[SEED] All roles already exist, committed new permissions")
+        else:
+            logger.info("[SEED] All roles and permissions already exist, nothing to do")
 
     except Exception as e:
         logger.error(f"[SEED] Error initializing roles and permissions: {e}")
