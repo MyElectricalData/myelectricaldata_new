@@ -23,7 +23,8 @@ def get_version() -> str:
             if pyproject_path.exists():
                 with open(pyproject_path, "rb") as f:
                     data = tomllib.load(f)
-                    return data.get("project", {}).get("version", "unknown")
+                    version: str = data.get("project", {}).get("version", "unknown")
+                    return version
 
         return "unknown"
     except Exception:
