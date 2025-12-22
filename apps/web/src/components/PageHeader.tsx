@@ -2,7 +2,6 @@ import { useEffect, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { TrendingUp, Sun, Calculator, Download, Lock, LayoutDashboard, Calendar, Zap, Users, AlertCircle, BookOpen, Settings as SettingsIcon, Key, Shield, FileText, Activity, Euro, Scale, UserCheck } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
 import { pdlApi } from '@/api/pdl'
 import { adminApi } from '@/api/admin'
 import { usePdlStore } from '@/stores/pdlStore'
@@ -73,7 +72,7 @@ export default function PageHeader() {
   }, [isAdmin, impersonation, clearImpersonation])
 
   // Récupérer la liste des PDLs de l'utilisateur
-  const { data: pdlsResponse } = useQuery({
+  const { data: pdlsResponse, isLoading: isPdlsLoading } = useQuery({
     queryKey: ['pdls'],
     queryFn: async () => {
       const response = await pdlApi.list()
@@ -85,7 +84,7 @@ export default function PageHeader() {
   })
 
   // Récupérer les PDL partagés (admin only)
-  const { data: sharedPdlsResponse } = useQuery({
+  const { data: sharedPdlsResponse, isLoading: isSharedPdlsLoading } = useQuery({
     queryKey: ['admin-shared-pdls'],
     queryFn: async () => {
       const response = await adminApi.getAllSharedPdls()
@@ -97,6 +96,9 @@ export default function PageHeader() {
     enabled: isAdmin(), // Only fetch if user is admin
     staleTime: 60000, // Cache for 1 minute
   })
+
+  // Determine if initial data is still loading
+  const isInitialDataLoading = isPdlsLoading || (isAdmin() && isSharedPdlsLoading)
 
   const userPdls: PDL[] = Array.isArray(pdlsResponse) ? pdlsResponse : []
   const sharedPdls: SharedPDL[] = Array.isArray(sharedPdlsResponse) ? sharedPdlsResponse : []
@@ -156,10 +158,6 @@ export default function PageHeader() {
   if (!config) return null
 
   const Icon = config.icon
-  const activePdls = pdls.filter((p: PDL) => p.is_active)
-
-  // Check if on a consumption page
-  const isConsumptionPage = location.pathname.startsWith('/consumption')
 
   // Get the set of production PDL IDs that are linked to consumption PDLs
   // These should be hidden from the selector (the consumption PDL will show instead)
@@ -169,47 +167,21 @@ export default function PageHeader() {
       .map((pdl: PDL) => pdl.linked_production_pdl_id)
   )
 
-  // Filter PDLs based on page
-  const displayedPdls = location.pathname === '/production'
-    ? (() => {
-        // Show: consumption PDLs with linked production + standalone production PDLs
-        const consumptionWithProduction = pdls.filter((pdl: PDL) =>
-          pdl.has_consumption &&
-          pdl.is_active &&
-          pdl.linked_production_pdl_id
-        )
+  // Show all active PDLs, hiding only linked production PDLs (they appear via their consumption PDL)
+  const displayedPdls = pdls.filter((p: PDL) => p.is_active && !linkedProductionIds.has(p.id))
 
-        const standaloneProduction = activePdls.filter((pdl: PDL) =>
-          pdl.has_production &&
-          !linkedProductionIds.has(pdl.id) // Use pdl.id (UUID) not usage_point_id
-        )
-
-        return [...consumptionWithProduction, ...standaloneProduction]
-      })()
-    : isConsumptionPage
-    ? activePdls.filter((pdl: PDL) => pdl.has_consumption)
-    : activePdls.filter((pdl: PDL) => !linkedProductionIds.has(pdl.id)) // Hide linked production PDLs globally
-
-  // Auto-select first PDL if none selected OR if current PDL is not in the displayed list
+  // Auto-select first PDL only if none is selected (first load)
+  // IMPORTANT: Wait for initial data to be loaded before auto-selecting to avoid
+  // overriding the persisted selectedPdl from localStorage during hydration
   useEffect(() => {
-    if (displayedPdls.length > 0) {
-      // Check if current PDL is in the displayed list for this page
-      const currentPdlInList = displayedPdls.some(p => p.usage_point_id === selectedPdl)
+    // Don't auto-select while data is still loading
+    if (isInitialDataLoading) return
 
-      if (!selectedPdl || !currentPdlInList) {
-        const newPdl = displayedPdls[0]
-        // Show toast only if we're switching from an incompatible PDL (not on first load)
-        if (selectedPdl && !currentPdlInList) {
-          toast(`PDL changé automatiquement vers "${newPdl.name || newPdl.usage_point_id}"`, {
-            icon: '🔄',
-            duration: 4000,
-          })
-        }
-        // Select the first available PDL for this page
-        setSelectedPdl(newPdl.usage_point_id)
-      }
+    // Only auto-select if no PDL is currently selected
+    if (!selectedPdl && displayedPdls.length > 0) {
+      setSelectedPdl(displayedPdls[0].usage_point_id)
     }
-  }, [displayedPdls, selectedPdl, setSelectedPdl])
+  }, [displayedPdls, selectedPdl, setSelectedPdl, isInitialDataLoading])
 
   return (
     <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
@@ -234,11 +206,7 @@ export default function PageHeader() {
           {showPdlSelector && (
             displayedPdls.length === 0 ? (
               <div className="text-sm text-gray-600 dark:text-gray-400 italic">
-                {location.pathname === '/production'
-                  ? 'Aucun PDL de production non lié trouvé'
-                  : isConsumptionPage
-                  ? 'Aucun PDL avec l\'option consommation activée'
-                  : 'Aucun point de livraison actif trouvé'}
+                Aucun point de livraison actif trouvé
               </div>
             ) : (
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full lg:w-auto">

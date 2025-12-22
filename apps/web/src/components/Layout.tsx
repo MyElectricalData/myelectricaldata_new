@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useThemeStore } from '@/stores/themeStore'
 import { useState, useEffect } from 'react'
-import toast, { Toaster } from 'react-hot-toast'
+import { toast } from '@/stores/notificationStore'
 import AdminTabs from './AdminTabs'
 import ApiDocsTabs from './ApiDocsTabs'
 import ConsumptionTabs from './ConsumptionTabs'
@@ -16,6 +16,7 @@ import { useSEO } from '@/hooks/useSEO'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/api/admin'
 import { energyApi } from '@/api/energy'
+import { infoApi } from '@/api/info'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth()
@@ -56,6 +57,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     enabled: !!user && canAccessAdmin(),
     refetchInterval: 30000,
     staleTime: 0,
+  })
+
+  // Fetch backend version (only for admins)
+  const { data: backendInfo } = useQuery({
+    queryKey: ['backend-info'],
+    queryFn: () => infoApi.getInfo(),
+    enabled: !!user && canAccessAdmin(),
+    staleTime: 60000, // Cache for 1 minute
   })
 
   const unreadContributionsCount = unreadContributionsData?.unread_count || 0
@@ -104,6 +113,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/admin/roles', label: 'Rôles' },
     { to: '/admin/logs', label: 'Logs' },
   ]
+
+  // Application versions
+  const frontendVersion = __APP_VERSION__
+  const backendVersion = backendInfo?.version
 
   // Check if we're on a consumption page (for active state and tabs)
   const isConsumptionPage = location.pathname.startsWith('/consumption')
@@ -181,7 +194,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                      target.closest('div[style*="gradient"]')
 
       if (isToast) {
-        toast.dismiss()
+        toast.clearAll()
       }
     }
 
@@ -382,6 +395,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           )}
                         </Link>
                       ))}
+                      {/* Version display */}
+                      <div className="border-t border-gray-200 dark:border-gray-600 mt-1 pt-1 px-3 py-1.5 space-y-0.5">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          <span className="text-gray-400 dark:text-gray-500">Front:</span> v{frontendVersion}
+                        </div>
+                        {backendVersion && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            <span className="text-gray-400 dark:text-gray-500">Back:</span> v{backendVersion}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -666,6 +690,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           )}
                         </Link>
                       ))}
+                      {/* Version display */}
+                      <div className="border-t border-gray-200 dark:border-gray-600 mt-1 pt-1 px-3 py-1.5 space-y-0.5">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          <span className="text-gray-400 dark:text-gray-500">Front:</span> v{frontendVersion}
+                        </div>
+                        {backendVersion && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            <span className="text-gray-400 dark:text-gray-500">Back:</span> v{backendVersion}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -808,54 +843,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </footer>
       </div>
 
-      {/* Global Toaster */}
-      <Toaster
-        position="top-center"
-        toastOptions={{
-          duration: 5000,
-          style: {
-            background: 'linear-gradient(135deg, #4338ca 0%, #3730a3 100%)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '0.75rem',
-            padding: '1rem 1.5rem',
-            fontSize: '0.875rem',
-            fontWeight: '500',
-            cursor: 'pointer',
-            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2)',
-            minWidth: '400px',
-            maxWidth: '600px',
-          },
-          success: {
-            iconTheme: {
-              primary: '#fff',
-              secondary: '#10b981',
-            },
-            style: {
-              background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
-              minWidth: '400px',
-              maxWidth: '600px',
-            },
-          },
-          error: {
-            iconTheme: {
-              primary: '#fff',
-              secondary: '#ef4444',
-            },
-            style: {
-              background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
-              minWidth: '400px',
-              maxWidth: '600px',
-            },
-          },
-        }}
-        containerStyle={{
-          top: 10,
-          left: '50%',
-          right: 'auto',
-          transform: sidebarCollapsed ? 'translateX(calc(-50% + 2rem))' : 'translateX(calc(-50% + 7rem))',
-        }}
-      />
     </div>
   )
 }

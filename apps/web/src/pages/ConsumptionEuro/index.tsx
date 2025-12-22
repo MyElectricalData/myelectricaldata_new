@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { Euro, BarChart3, Database, ArrowRight, AlertCircle, Tag } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from '@/stores/notificationStore'
 import { usePdlStore } from '@/stores/pdlStore'
 import { useDataFetchStore } from '@/stores/dataFetchStore'
 import { pdlApi } from '@/api/pdl'
@@ -285,7 +285,7 @@ export default function ConsumptionEuro() {
         return Promise.reject(new Error('Modifications désactivées en mode démo'))
       }
       if (!selectedPDLDetails) {
-        return Promise.reject(new Error('Aucun PDL sélectionné'))
+        return Promise.reject(new Error('Aucun point de livraison sélectionné'))
       }
       return pdlApi.updateSelectedOffer(selectedPDLDetails.id, selected_offer_id)
     },

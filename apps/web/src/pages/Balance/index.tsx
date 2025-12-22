@@ -185,11 +185,11 @@ export default function Balance() {
               <AlertTriangle className="w-10 h-10 text-yellow-600 dark:text-yellow-400" />
             </div>
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              Aucun PDL avec production détecté
+              Aucun point de livraison avec production détecté
             </h3>
             <p className="text-gray-600 dark:text-gray-400 max-w-md mb-6">
-              Pour accéder au bilan énergétique, vous devez avoir au moins un PDL avec des données de production.
-              Rendez-vous sur la page <span className="font-semibold text-primary-600 dark:text-primary-400">Production</span> pour configurer votre PDL producteur.
+              Pour accéder au bilan énergétique, vous devez avoir au moins un point de livraison avec des données de production.
+              Rendez-vous sur la page <span className="font-semibold text-primary-600 dark:text-primary-400">Production</span> pour configurer votre compteur producteur.
             </p>
           </div>
         </div>
@@ -207,11 +207,11 @@ export default function Balance() {
               <Info className="w-10 h-10 text-blue-600 dark:text-blue-400" />
             </div>
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              PDL sélectionné sans production
+              Point de livraison sans production
             </h3>
             <p className="text-gray-600 dark:text-gray-400 max-w-md mb-6">
-              Le PDL actuellement sélectionné n'a pas de données de production.
-              Sélectionnez un PDL avec production dans le sélecteur en haut de page.
+              Le point de livraison sélectionné n'a pas de données de production.
+              Sélectionnez un point de livraison avec production dans le sélecteur en haut de page.
             </p>
           </div>
         </div>
@@ -238,7 +238,7 @@ export default function Balance() {
               en haut à droite de la page.
             </p>
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-4">
-              <span>Sélectionnez un PDL</span>
+              <span>Sélectionnez un point de livraison</span>
               <ArrowRight className="w-4 h-4" />
               <span>Cliquez sur "Récupérer"</span>
               <ArrowRight className="w-4 h-4" />
@@ -255,7 +255,7 @@ export default function Balance() {
             )}
             {productionPDL !== selectedPdl && productionPDLDetails && (
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
-                Note: Ce PDL utilise un PDL de production lié ({productionPDLDetails.name || productionPDLDetails.usage_point_id})
+                Note : Ce point de livraison utilise un compteur de production lié ({productionPDLDetails.name || productionPDLDetails.usage_point_id})
               </p>
             )}
           </div>

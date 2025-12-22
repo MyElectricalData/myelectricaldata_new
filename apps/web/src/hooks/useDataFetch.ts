@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { enedisApi } from '@/api/enedis'
 import { logger } from '@/utils/logger'
-import toast from 'react-hot-toast'
+import { toast } from '@/stores/notificationStore'
 import type { PDL } from '@/types/api'
 
 interface UseDataFetchResult {

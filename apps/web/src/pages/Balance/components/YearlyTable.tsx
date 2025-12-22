@@ -1,5 +1,5 @@
 import { Download, TrendingUp, TrendingDown } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from '@/stores/notificationStore'
 import type { BalanceChartData } from '../types/balance.types'
 
 interface YearlyTableProps {

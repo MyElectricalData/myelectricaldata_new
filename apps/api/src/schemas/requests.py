@@ -49,3 +49,18 @@ class AdminPDLCreate(BaseModel):
 class OAuthCallbackRequest(BaseModel):
     code: str
     state: Optional[str] = None
+
+
+class RoleCreate(BaseModel):
+    """Create a new role"""
+    name: str = Field(..., min_length=2, max_length=50, pattern=r"^[a-z][a-z0-9_]*$")
+    display_name: str = Field(..., min_length=2, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    permission_ids: list[str] = Field(default_factory=list)
+
+
+class RoleUpdate(BaseModel):
+    """Update an existing role"""
+    display_name: Optional[str] = Field(None, min_length=2, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    permission_ids: Optional[list[str]] = None

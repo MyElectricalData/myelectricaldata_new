@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle, Clock, XCircle, List, FileJson, ChevronDown, ChevronRight, MessageCircle, ExternalLink, Copy, Plus, Package, Send, X } from 'lucide-react'
 import { energyApi, type EnergyProvider, type ContributionData, type EnergyOffer, type Contribution } from '@/api/energy'
 import ChatWhatsApp, { type ChatMessage } from '@/components/ChatWhatsApp'
+import { toast } from '@/stores/notificationStore'
 
 type TabType = 'new' | 'mine' | 'offers'
 
@@ -14,7 +15,6 @@ interface ContributeProps {
 export default function Contribute({ initialTab = 'new' }: ContributeProps) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null)
   const [showJsonImport, setShowJsonImport] = useState(false)
   const [jsonImportData, setJsonImportData] = useState('')
   const [importProgress, setImportProgress] = useState<{current: number, total: number, errors: string[]} | null>(null)
@@ -265,8 +265,7 @@ export default function Contribute({ initialTab = 'new' }: ContributeProps) {
                 if (p.ejp_peak !== undefined) setEjpPeak(String(p.ejp_peak))
               }
               document.getElementById('contribution-form')?.scrollIntoView({ behavior: 'smooth' })
-              setNotification({ type: 'success', message: 'Mode édition activé.' })
-              setTimeout(() => setNotification(null), 3000)
+              toast.success('Mode édition activé.')
             }}
             className={`w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
               contribution.status === 'rejected'
@@ -467,19 +466,11 @@ export default function Contribute({ initialTab = 'new' }: ContributeProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
-      setNotification({
-        type: 'success',
-        message: 'Contribution soumise avec succès ! Les administrateurs vont la vérifier.'
-      })
-      setTimeout(() => setNotification(null), 5000)
+      toast.success('Contribution soumise avec succès ! Les administrateurs vont la vérifier.')
       resetForm()
     },
     onError: (error: any) => {
-      setNotification({
-        type: 'error',
-        message: `Erreur: ${error.message || 'Une erreur est survenue'}`
-      })
-      setTimeout(() => setNotification(null), 5000)
+      toast.error(`Erreur: ${error.message || 'Une erreur est survenue'}`)
     },
   })
 
@@ -490,20 +481,12 @@ export default function Contribute({ initialTab = 'new' }: ContributeProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
-      setNotification({
-        type: 'success',
-        message: 'Contribution mise à jour avec succès !'
-      })
-      setTimeout(() => setNotification(null), 5000)
+      toast.success('Contribution mise à jour avec succès !')
       resetForm()
       setEditingContributionId(null)
     },
     onError: (error: any) => {
-      setNotification({
-        type: 'error',
-        message: `Erreur: ${error.message || 'Une erreur est survenue'}`
-      })
-      setTimeout(() => setNotification(null), 5000)
+      toast.error(`Erreur: ${error.message || 'Une erreur est survenue'}`)
     },
   })
 
@@ -516,19 +499,11 @@ export default function Contribute({ initialTab = 'new' }: ContributeProps) {
       queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
       setReplyMessages(prev => ({ ...prev, [variables.contributionId]: '' }))
       setSendingReply(null)
-      setNotification({
-        type: 'success',
-        message: 'Réponse envoyée avec succès !'
-      })
-      setTimeout(() => setNotification(null), 3000)
+      toast.success('Réponse envoyée avec succès !')
     },
     onError: (error: any) => {
       setSendingReply(null)
-      setNotification({
-        type: 'error',
-        message: `Erreur: ${error.message || 'Impossible d\'envoyer la réponse'}`
-      })
-      setTimeout(() => setNotification(null), 5000)
+      toast.error(`Erreur: ${error.message || 'Impossible d\'envoyer la réponse'}`)
     },
   })
 
@@ -666,18 +641,11 @@ export default function Contribute({ initialTab = 'new' }: ContributeProps) {
       }
 
       if (errors.length === 0) {
-        setNotification({
-          type: 'success',
-          message: `${contributions.length} contribution(s) importée(s) avec succès !`
-        })
+        toast.success(`${contributions.length} contribution(s) importée(s) avec succès !`)
       } else {
-        setNotification({
-          type: 'error',
-          message: `Import terminé avec ${errors.length} erreur(s). Vérifiez les détails ci-dessous.`
-        })
+        toast.error(`Import terminé avec ${errors.length} erreur(s). Vérifiez les détails ci-dessous.`)
       }
 
-      setTimeout(() => setNotification(null), 5000)
       queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
 
       if (errors.length === 0) {
@@ -685,44 +653,12 @@ export default function Contribute({ initialTab = 'new' }: ContributeProps) {
         setShowJsonImport(false)
       }
     } catch (error: any) {
-      setNotification({
-        type: 'error',
-        message: `Erreur de parsing JSON: ${error.message}`
-      })
-      setTimeout(() => setNotification(null), 5000)
+      toast.error(`Erreur de parsing JSON: ${error.message}`)
     }
   }
 
   return (
     <div className="w-full">
-      {/* Notification Toast */}
-      {notification && (
-        <div className={`mb-6 p-4 rounded-lg flex items-center gap-3 ${
-          notification.type === 'success'
-            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-        }`}>
-          {notification.type === 'success' ? (
-            <CheckCircle className="text-green-600 dark:text-green-400" size={24} />
-          ) : (
-            <XCircle className="text-red-600 dark:text-red-400" size={24} />
-          )}
-          <p className={`flex-1 ${
-            notification.type === 'success'
-              ? 'text-green-800 dark:text-green-200'
-              : 'text-red-800 dark:text-red-200'
-          }`}>
-            {notification.message}
-          </p>
-          <button
-            onClick={() => setNotification(null)}
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
       {/* Tab Content: Mes contributions */}
       {initialTab === 'mine' && (
         <div className="card">
@@ -2072,12 +2008,12 @@ RÈGLES IMPORTANTES :
                 }
 
                 if (successCount > 0) {
-                  setNotification({ type: 'success', message: `${successCount} contribution(s) soumise(s) avec succès !` })
+                  toast.success(`${successCount} contribution(s) soumise(s) avec succès !`)
                   setEditedOffers({})
                   queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
                 }
                 if (errorCount > 0) {
-                  setNotification({ type: 'error', message: `${errorCount} erreur(s) lors de l'envoi` })
+                  toast.error(`${errorCount} erreur(s) lors de l'envoi`)
                 }
                 setSubmittingOffers(false)
               }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useLocation } from 'react-router-dom'
-import toast from 'react-hot-toast'
+import { toast } from '@/stores/notificationStore'
 import { authApi } from '@/api/auth'
 import { useAuth } from '@/hooks/useAuth'
 import { useThemeStore } from '@/stores/themeStore'
@@ -69,8 +69,7 @@ export default function Settings() {
       if (response.success && response.data) {
         setNewSecret(response.data.client_secret)
         toast.success('Nouveau client_secret généré avec succès ! Copiez-le maintenant, il ne sera plus affiché.', {
-          duration: 60000,
-          icon: '🔑'
+          duration: 60000
         })
         setShowRegenerateConfirm(false)
         queryClient.invalidateQueries({ queryKey: ['credentials'] })
@@ -155,7 +154,7 @@ export default function Settings() {
     if (newSecret) {
       navigator.clipboard.writeText(newSecret)
       setCopiedNewSecret(true)
-      toast.success('Client secret copié dans le presse-papier !', { icon: '📋' })
+      toast.success('Client secret copié dans le presse-papier !')
       setTimeout(() => setCopiedNewSecret(false), 2000)
     }
   }
@@ -164,7 +163,7 @@ export default function Settings() {
     if (credentials?.client_id) {
       navigator.clipboard.writeText(credentials.client_id)
       setCopiedClientId(true)
-      toast.success('Client ID copié dans le presse-papier !', { icon: '📋' })
+      toast.success('Client ID copié dans le presse-papier !')
       setTimeout(() => setCopiedClientId(false), 2000)
     }
   }

@@ -260,7 +260,7 @@ export default function Consumption() {
   useEffect(() => {
     if (selectedPDLDetails) {
       if (!selectedPDLDetails.has_consumption) {
-        setDataLimitWarning("Ce PDL n'a pas l'option consommation activée. Seules les données de puissance maximum peuvent être récupérées.")
+        setDataLimitWarning("Ce point de livraison n'a pas l'option consommation activée. Vous pouvez l'activer depuis le tableau de bord.")
       } else {
         setDataLimitWarning(null)
       }
@@ -487,7 +487,7 @@ export default function Consumption() {
               en haut à droite de la page.
             </p>
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-              <span>Sélectionnez un PDL</span>
+              <span>Sélectionnez un point de livraison</span>
               <ArrowRight className="w-4 h-4" />
               <span>Cliquez sur "Récupérer"</span>
               <ArrowRight className="w-4 h-4" />

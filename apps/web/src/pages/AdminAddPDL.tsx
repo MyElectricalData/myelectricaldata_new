@@ -1,9 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  CheckCircle,
-  XCircle,
-  AlertCircle,
   ArrowLeft,
   Search,
   User,
@@ -12,6 +9,7 @@ import {
   Plus,
   Trash2
 } from 'lucide-react'
+import { toast } from '@/stores/notificationStore'
 import { Link, useNavigate } from 'react-router-dom'
 import { pdlApi } from '@/api/pdl'
 import { adminApi } from '@/api/admin'
@@ -59,9 +57,6 @@ export default function AdminAddPDL() {
   const [oldestDataDate, setOldestDataDate] = useState('')
   const [checkExisting, setCheckExisting] = useState(true)
   const [addAnother, setAddAnother] = useState(false)
-
-  // État des notifications
-  const [notification, setNotification] = useState<{type: 'success' | 'error' | 'warning', message: string} | null>(null)
 
   // Récupération de la liste des utilisateurs
   const { data: usersResponse, isLoading: isLoadingUsers, error: usersError } = useQuery({
@@ -186,10 +181,7 @@ export default function AdminAddPDL() {
       const isOwnAccount = !selectedUser || selectedUser.id === user?.id
       const targetUser = isOwnAccount ? 'votre compte' : selectedUser.email
 
-      setNotification({
-        type: 'success',
-        message: `PDL ${usagePointId} ajouté avec succès à ${targetUser}`
-      })
+      toast.success(`PDL ${usagePointId} ajouté avec succès à ${targetUser}`)
 
       // Invalider le cache des PDLs pour forcer le rechargement
       queryClient.invalidateQueries({ queryKey: ['pdls'] })
@@ -215,7 +207,7 @@ export default function AdminAddPDL() {
     },
     onError: (error: any) => {
       const message = error.response?.data?.error?.message || 'Erreur lors de l\'ajout du PDL'
-      setNotification({ type: 'error', message })
+      toast.error(message)
     },
   })
 
@@ -247,12 +239,12 @@ export default function AdminAddPDL() {
 
     // Validation du PDL
     if (!usagePointId) {
-      setNotification({ type: 'error', message: 'Le numéro PDL est requis' })
+      toast.error('Le numéro PDL est requis')
       return
     }
 
     if (usagePointId.length !== 14 || !/^\d{14}$/.test(usagePointId)) {
-      setNotification({ type: 'error', message: 'Le PDL doit contenir exactement 14 chiffres' })
+      toast.error('Le PDL doit contenir exactement 14 chiffres')
       return
     }
 
@@ -260,10 +252,7 @@ export default function AdminAddPDL() {
     if (checkExisting) {
       const exists = await checkPdlExists(usagePointId)
       if (exists) {
-        setNotification({
-          type: 'warning',
-          message: 'Ce PDL existe déjà. Voulez-vous continuer ?'
-        })
+        toast.warning('Ce point de livraison existe déjà. Voulez-vous continuer ?')
         // TODO: Implémenter la boîte de dialogue de confirmation
         return
       }
@@ -273,11 +262,11 @@ export default function AdminAddPDL() {
     if (showAdvanced && offPeakPeriods.length > 0) {
       for (const period of offPeakPeriods) {
         if (!period.start || !period.end) {
-          setNotification({ type: 'error', message: 'Toutes les plages horaires doivent être complètes' })
+          toast.error('Toutes les plages horaires doivent être complètes')
           return
         }
         if (period.start >= period.end) {
-          setNotification({ type: 'error', message: 'L\'heure de fin doit être après l\'heure de début' })
+          toast.error('L\'heure de fin doit être après l\'heure de début')
           return
         }
       }
@@ -317,44 +306,6 @@ export default function AdminAddPDL() {
             Retour à la gestion des utilisateurs
           </Link>
         </div>
-
-        {/* Notification Toast - Fixed overlay */}
-        {notification && (
-          <div className="fixed top-4 right-4 z-50 max-w-md animate-in slide-in-from-top-5 fade-in duration-300">
-            <div className={`p-4 rounded-lg shadow-lg flex items-start gap-3 ${
-              notification.type === 'success'
-                ? 'bg-green-50 dark:bg-green-900/90 border border-green-200 dark:border-green-800'
-                : notification.type === 'warning'
-                ? 'bg-yellow-50 dark:bg-yellow-900/90 border border-yellow-200 dark:border-yellow-800'
-                : 'bg-red-50 dark:bg-red-900/90 border border-red-200 dark:border-red-800'
-            }`}>
-              {notification.type === 'success' ? (
-                <CheckCircle className="text-green-600 dark:text-green-400 flex-shrink-0" size={24} />
-              ) : notification.type === 'warning' ? (
-                <AlertCircle className="text-yellow-600 dark:text-yellow-400 flex-shrink-0" size={24} />
-              ) : (
-                <XCircle className="text-red-600 dark:text-red-400 flex-shrink-0" size={24} />
-              )}
-              <div className="flex-1">
-                <p className={
-                  notification.type === 'success'
-                    ? 'text-green-800 dark:text-green-200 font-medium'
-                    : notification.type === 'warning'
-                    ? 'text-yellow-800 dark:text-yellow-200 font-medium'
-                    : 'text-red-800 dark:text-red-200 font-medium'
-                }>
-                  {notification.message}
-                </p>
-              </div>
-              <button
-                onClick={() => setNotification(null)}
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Warning */}
         <div className="bg-orange-50 dark:bg-orange-900/20 border-l-4 border-orange-500 p-4">

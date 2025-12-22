@@ -205,10 +205,10 @@ export default function Dashboard() {
         errorTitle = 'Utilisateur non trouvé'
         errorMessage = 'Veuillez vous reconnecter.'
       } else if (consentError === 'no_usage_point_id') {
-        errorTitle = 'Aucun PDL détecté'
+        errorTitle = 'Aucun point de livraison détecté'
         errorMessage = 'Aucun point de livraison n\'a été retourné par Enedis.'
       } else if (consentError === 'invalid_pdl_format') {
-        errorTitle = 'Numéro PDL invalide'
+        errorTitle = 'Numéro de point de livraison invalide'
         errorMessage = 'Enedis a transmis un identifiant incorrect. Veuillez réessayer ou contacter le support.'
       }
 

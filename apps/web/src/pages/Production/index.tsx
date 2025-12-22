@@ -366,7 +366,7 @@ export default function Production() {
       })
 
       if (!selectedPDLDetails.has_production && !hasLinkedProduction) {
-        setDataLimitWarning("Ce PDL n'a pas l'option production activée.")
+        setDataLimitWarning("Ce point de livraison n'a pas l'option production activée. Si votre compteur dispose de panneaux solaires, vous pouvez activer cette option ou lier un autre point de livraison producteur depuis le tableau de bord.")
       } else {
         setDataLimitWarning(null)
       }
@@ -493,15 +493,15 @@ export default function Production() {
                 Production liée affichée
               </h3>
               <p className="text-sm text-green-800 dark:text-green-200">
-                Vous consultez les données de production du PDL{' '}
+                Vous consultez les données de production du compteur{' '}
                 <span className="font-mono font-semibold">
                   {linkedProductionPDLDetails.name || linkedProductionPDLDetails.usage_point_id}
                 </span>{' '}
-                lié au PDL de consommation{' '}
+                lié au point de livraison{' '}
                 <span className="font-mono font-semibold">
                   {selectedPDLDetails?.name || selectedPDL}
                 </span>.{' '}
-                Une vue combinée consommation/production est également disponible sur la page Consommation.
+                Une vue combinée consommation/production est également disponible sur la page Bilan.
               </p>
             </div>
           </div>
@@ -525,7 +525,7 @@ export default function Production() {
               en haut à droite de la page.
             </p>
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-              <span>Sélectionnez un PDL</span>
+              <span>Sélectionnez un point de livraison</span>
               <ArrowRight className="w-4 h-4" />
               <span>Cliquez sur "Récupérer"</span>
               <ArrowRight className="w-4 h-4" />
@@ -738,13 +738,6 @@ export default function Production() {
         )}
       </div>
 
-      {dataLimitWarning && (
-        <div className="mt-6 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
-          <p className="text-sm text-orange-800 dark:text-orange-200">
-            <strong>⚠️ Note :</strong> {dataLimitWarning}
-          </p>
-        </div>
-      )}
     </div>
   )
 }

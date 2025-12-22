@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.6.0-dev.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.6.0-dev.1...1.6.0-dev.2) (2025-12-22)
+
+### Features
+
+* **ui:** display frontend and backend versions in admin menu ([350971d](https://github.com/MyElectricalData/myelectricaldata_new/commit/350971d06ecff945a281ad1c53078ae25357ff6b))
+
+### Bug Fixes
+
+* **api:** add type annotation to fix mypy error in version.py ([c09d769](https://github.com/MyElectricalData/myelectricaldata_new/commit/c09d7699e34d8a391d09e6ae222d5f1dbb15b01e))
+
+## [1.6.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.5.0...1.6.0-dev.1) (2025-12-21)
+
+### Features
+
+* **roles:** add persistent default roles and CRUD operations ([9c56c38](https://github.com/MyElectricalData/myelectricaldata_new/commit/9c56c386701450451e4af7a353ffc7477511ac9e))
+* **web:** unify notification system with custom Zustand toast ([71825f0](https://github.com/MyElectricalData/myelectricaldata_new/commit/71825f044400304767046d41382a73895e8e2ac3))
+
 ## [1.5.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.4.1...1.5.0) (2025-12-21)
 
 ### Features

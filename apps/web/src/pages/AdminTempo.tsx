@@ -1,7 +1,7 @@
-import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tempoApi } from '@/api/tempo'
-import { RefreshCw, Calendar, CheckCircle, XCircle, Trash2 } from 'lucide-react'
+import { RefreshCw, Calendar, Trash2 } from 'lucide-react'
+import { toast } from '@/stores/notificationStore'
 
 // Helper to capitalize first letter
 const capitalizeFirstLetter = (str: string) => {
@@ -16,7 +16,6 @@ const formatDate = (dateStr: string, options: Intl.DateTimeFormatOptions) => {
 
 export default function AdminTempo() {
   const queryClient = useQueryClient()
-  const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null)
 
   // Load TEMPO data on mount
   const { data: tempoWeekData } = useQuery({
@@ -33,24 +32,16 @@ export default function AdminTempo() {
     onSuccess: (response) => {
       if (response.success) {
         const data = response.data as any
-        setNotification({
-          type: 'success',
-          message: `Cache TEMPO mis à jour : ${data.updated_count || 0} jours récupérés`
-        })
+        toast.success(`Cache TEMPO mis à jour : ${data.updated_count || 0} jours récupérés`)
         // Invalidate ALL tempo-related queries to refresh all pages
         queryClient.invalidateQueries({ queryKey: ['tempo'] })
         queryClient.invalidateQueries({ queryKey: ['tempo-week'] })
         queryClient.invalidateQueries({ queryKey: ['tempo-all'] })
         queryClient.invalidateQueries({ queryKey: ['tempo-today'] })
-        setTimeout(() => setNotification(null), 5000)
       } else {
         // Handle API errors returned as success: false
         const errorMsg = response.error?.message || 'Erreur lors de la mise à jour du cache TEMPO'
-        setNotification({
-          type: 'error',
-          message: errorMsg
-        })
-        setTimeout(() => setNotification(null), 8000)
+        toast.error(errorMsg)
       }
     },
     onError: (error: any) => {
@@ -63,11 +54,7 @@ export default function AdminTempo() {
         ? "Vous n'avez pas la permission de rafraîchir le cache Tempo. Contactez un administrateur pour obtenir la permission 'admin.tempo.refresh'."
         : error?.message || 'Erreur lors de la mise à jour du cache Tempo'
 
-      setNotification({
-        type: 'error',
-        message: errorMsg
-      })
-      setTimeout(() => setNotification(null), 8000)
+      toast.error(errorMsg)
     }
   })
 
@@ -79,10 +66,7 @@ export default function AdminTempo() {
     onSuccess: (response) => {
       if (response.success) {
         const data = response.data as any
-        setNotification({
-          type: 'success',
-          message: `Cache TEMPO vidé : ${data.count || 0} jours supprimés. Toutes les pages vont se recharger.`
-        })
+        toast.success(`Cache TEMPO vidé : ${data.count || 0} jours supprimés. Toutes les pages vont se recharger.`)
 
         // Clear React Query cache (in-memory)
         queryClient.invalidateQueries({ queryKey: ['tempo'] })
@@ -94,15 +78,9 @@ export default function AdminTempo() {
         queryClient.removeQueries({ queryKey: ['tempo-all'] })
         queryClient.removeQueries({ queryKey: ['tempo-week'] })
         queryClient.removeQueries({ queryKey: ['tempo-today'] })
-
-        setTimeout(() => setNotification(null), 5000)
       } else {
         const errorMsg = response.error?.message || 'Erreur lors du vidage du cache TEMPO'
-        setNotification({
-          type: 'error',
-          message: errorMsg
-        })
-        setTimeout(() => setNotification(null), 8000)
+        toast.error(errorMsg)
       }
     },
     onError: (error: any) => {
@@ -114,11 +92,7 @@ export default function AdminTempo() {
         ? "Vous n'avez pas la permission de vider le cache Tempo. Contactez un administrateur pour obtenir la permission 'admin.tempo.clear'."
         : error?.message || 'Erreur lors du vidage du cache Tempo'
 
-      setNotification({
-        type: 'error',
-        message: errorMsg
-      })
-      setTimeout(() => setNotification(null), 8000)
+      toast.error(errorMsg)
     }
   })
 
@@ -156,35 +130,6 @@ export default function AdminTempo() {
   return (
     <div className="w-full">
       <div className="space-y-8 w-full">
-        {/* Notification Toast */}
-      {notification && (
-        <div className={`p-4 rounded-lg flex items-start gap-3 ${
-          notification.type === 'success'
-            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-        }`}>
-          {notification.type === 'success' ? (
-            <CheckCircle className="text-green-600 dark:text-green-400 flex-shrink-0" size={24} />
-          ) : (
-            <XCircle className="text-red-600 dark:text-red-400 flex-shrink-0" size={24} />
-          )}
-          <div className="flex-1">
-            <p className={notification.type === 'success'
-              ? 'text-green-800 dark:text-green-200 font-medium'
-              : 'text-red-800 dark:text-red-200 font-medium'
-            }>
-              {notification.message}
-            </p>
-          </div>
-          <button
-            onClick={() => setNotification(null)}
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
       {/* Tempo Management */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
