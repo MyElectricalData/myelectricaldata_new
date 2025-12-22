@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .adapters import enedis_adapter
-from .config import settings
+from .config import APP_VERSION, settings
 from .logging_config import setup_logging
 from .models.database import init_db
 from .routers import (
@@ -86,7 +86,7 @@ def get_servers() -> list[dict[str, str]]:
 app = FastAPI(
     title="MyElectricalData API",
     description="API Gateway for Enedis data access",
-    version="1.5.15",
+    version=APP_VERSION,
     lifespan=lifespan,
     docs_url="/docs",  # Use default docs
     root_path="/api",
@@ -259,7 +259,7 @@ async def root() -> dict:
     """API information"""
     return {
         "name": "MyElectricalData API",
-        "version": "1.5.15",
+        "version": APP_VERSION,
         "description": "API Gateway for Enedis Linky data",
         "documentation": "/docs",
     }

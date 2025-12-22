@@ -16,6 +16,7 @@ import { useSEO } from '@/hooks/useSEO'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/api/admin'
 import { energyApi } from '@/api/energy'
+import { infoApi } from '@/api/info'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth()
@@ -56,6 +57,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     enabled: !!user && canAccessAdmin(),
     refetchInterval: 30000,
     staleTime: 0,
+  })
+
+  // Fetch backend version (only for admins)
+  const { data: backendInfo } = useQuery({
+    queryKey: ['backend-info'],
+    queryFn: () => infoApi.getInfo(),
+    enabled: !!user && canAccessAdmin(),
+    staleTime: 60000, // Cache for 1 minute
   })
 
   const unreadContributionsCount = unreadContributionsData?.unread_count || 0
@@ -104,6 +113,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/admin/roles', label: 'Rôles' },
     { to: '/admin/logs', label: 'Logs' },
   ]
+
+  // Application versions
+  const frontendVersion = __APP_VERSION__
+  const backendVersion = backendInfo?.version
 
   // Check if we're on a consumption page (for active state and tabs)
   const isConsumptionPage = location.pathname.startsWith('/consumption')
@@ -382,6 +395,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           )}
                         </Link>
                       ))}
+                      {/* Version display */}
+                      <div className="border-t border-gray-200 dark:border-gray-600 mt-1 pt-1 px-3 py-1.5 space-y-0.5">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          <span className="text-gray-400 dark:text-gray-500">Front:</span> v{frontendVersion}
+                        </div>
+                        {backendVersion && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            <span className="text-gray-400 dark:text-gray-500">Back:</span> v{backendVersion}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -666,6 +690,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           )}
                         </Link>
                       ))}
+                      {/* Version display */}
+                      <div className="border-t border-gray-200 dark:border-gray-600 mt-1 pt-1 px-3 py-1.5 space-y-0.5">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          <span className="text-gray-400 dark:text-gray-500">Front:</span> v{frontendVersion}
+                        </div>
+                        {backendVersion && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            <span className="text-gray-400 dark:text-gray-500">Back:</span> v{backendVersion}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
