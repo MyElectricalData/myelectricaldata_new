@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.7.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.6.0...1.7.0) (2026-01-02)
+
+### Features
+
+* **simulator:** highlight current offer and calculate gap relative to it ([4fc8569](https://github.com/MyElectricalData/myelectricaldata_new/commit/4fc856913e0a7fb470bdea47291b305e36fea617))
+
 ## [1.7.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.6.0...1.7.0-dev.1) (2026-01-02)
 
 ### Features
