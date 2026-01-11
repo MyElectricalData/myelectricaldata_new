@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Calculator, AlertCircle, Loader2, ChevronDown, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info, ArrowRight, ExternalLink } from 'lucide-react'
+import { Calculator, AlertCircle, Loader2, ChevronDown, FileDown, ArrowUpDown, ArrowUp, ArrowDown, Filter, Info, ArrowRight, ExternalLink, Users, X } from 'lucide-react'
 import { useQuery, useQueryClient, useIsRestoring } from '@tanstack/react-query'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
 import { AnimatedSection } from '@/components/AnimatedSection'
 import { PeriodSelector } from '@/components/PeriodSelector'
-import { pdlApi } from '@/api/pdl'
 import { energyApi, type EnergyProvider, type EnergyOffer } from '@/api/energy'
 import { tempoApi, type TempoDay } from '@/api/tempo'
 import type { PDL } from '@/types/api'
@@ -16,6 +15,7 @@ import { useIsDemo } from '@/hooks/useIsDemo'
 import { usePdlStore } from '@/stores/pdlStore'
 import { useDataFetchStore } from '@/stores/dataFetchStore'
 import { useUnifiedDataFetch } from '@/hooks/useUnifiedDataFetch'
+import { useAllPdls } from '@/hooks/useAllPdls'
 
 // Helper function to check if a date is weekend (Saturday or Sunday)
 function isWeekend(dateString: string): boolean {
@@ -148,19 +148,8 @@ export default function Simulator() {
   const { setIsLoading } = useDataFetchStore()
   const demoAutoFetchDone = useRef(false)
 
-  // Fetch user's PDLs - with short staleTime to ensure provider changes are reflected
-  const { data: pdlsData, isLoading: pdlsLoading, error: pdlsError } = useQuery({
-    queryKey: ['pdls'],
-    queryFn: async () => {
-      const response = await pdlApi.list()
-      logger.log('[Simulator] PDL API response:', response)
-      logger.log('[Simulator] response.data type:', typeof response.data, 'isArray:', Array.isArray(response.data))
-      if (response.success && Array.isArray(response.data)) {
-        return response.data as PDL[]
-      }
-      logger.warn('[Simulator] Returning empty array, response was:', response)
-      return []
-    },
+  // Fetch user's PDLs + shared PDLs (for admins) - includes selected_offer_id for shared PDLs
+  const { allPdls: pdlsData, isLoading: pdlsLoading, userPdlsError: pdlsError } = useAllPdls({
     staleTime: 30 * 1000, // 30 seconds - same as Dashboard for consistency
   })
 
@@ -195,8 +184,8 @@ export default function Simulator() {
   // Ensure offersData is always an array
   const offersData = Array.isArray(offersDataRaw) ? offersDataRaw : []
 
-  // Selected PDL from global store
-  const { selectedPdl, setSelectedPdl } = usePdlStore()
+  // Selected PDL from global store + reference offer for shared PDLs
+  const { selectedPdl, setSelectedPdl, impersonation, referenceOffers, setReferenceOffer } = usePdlStore()
 
   // HYBRID APPROACH for consumptionDetail: useQuery creates the cache entry for persistence,
   // but we read data via subscription to avoid race conditions with IndexedDB hydration
@@ -278,6 +267,10 @@ export default function Simulator() {
   const [showOnlyRecent, setShowOnlyRecent] = useState(false)
   const [sortBy, setSortBy] = useState<'total' | 'subscription' | 'energy'>('total')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+
+  // Reference offer selector filters (for shared PDLs)
+  const [refOfferFilterProvider, setRefOfferFilterProvider] = useState<string>('all')
+  const [refOfferFilterType, setRefOfferFilterType] = useState<string>('all')
 
   // Period selection state
   type PeriodOption = 'rolling' | '2025' | '2024' | 'custom'
@@ -1190,17 +1183,37 @@ export default function Simulator() {
     return filtered
   }, [simulationResult, filterType, filterProvider, showOnlyRecent, sortBy, sortOrder])
 
+  // Check if viewing a shared PDL (impersonation mode)
+  const isSharedPdl = !!impersonation
+
+  // Get reference offer for shared PDLs (admin-defined temporary offer)
+  // Note: We subscribe to referenceOffers directly (not via getReferenceOffer function)
+  // to ensure the memo re-evaluates when the store state changes
+  const referenceOffer = useMemo(() => {
+    if (!selectedPdl) return null
+    return referenceOffers[selectedPdl] || null
+  }, [selectedPdl, referenceOffers])
+
   // Find the current offer (the one selected by the user for this PDL)
+  // For shared PDLs: use reference offer if defined, otherwise fall back to owner's selected offer
+  // Note: We search in ALL simulation results (not just filtered) so the reference offer
+  // is found even when table filters (Type, Provider) hide it
   const currentOfferResult = useMemo(() => {
-    if (!filteredAndSortedResults.length) return null
+    if (!simulationResult || !Array.isArray(simulationResult) || !simulationResult.length) return null
+
+    // For shared PDLs, prioritize the reference offer set by admin
+    // Search in ALL results, not just filtered ones
+    if (isSharedPdl && referenceOffer) {
+      return simulationResult.find((r) => r.offerId === referenceOffer.offerId) || null
+    }
 
     // Get the current PDL to find its selected offer
     const currentPdl = Array.isArray(pdlsData) ? pdlsData.find((p) => p.usage_point_id === selectedPdl) : undefined
     if (!currentPdl?.selected_offer_id) return null
 
-    // Find the result matching the selected offer ID
-    return filteredAndSortedResults.find((r) => r.offerId === currentPdl.selected_offer_id) || null
-  }, [filteredAndSortedResults, pdlsData, selectedPdl])
+    // Find the result matching the selected offer ID (search in all results)
+    return simulationResult.find((r) => r.offerId === currentPdl.selected_offer_id) || null
+  }, [simulationResult, pdlsData, selectedPdl, isSharedPdl, referenceOffer])
 
   // Get unique providers and types for filter options
   // IMPORTANT: These hooks must be before any early returns to respect React's rules of hooks
@@ -1215,6 +1228,59 @@ export default function Simulator() {
     const types = new Set(simulationResult.map((r) => r.offerType))
     return Array.from(types).sort()
   }, [simulationResult])
+
+  // Get the subscribed power for the selected PDL (used to filter reference offers)
+  const selectedPdlPower = useMemo(() => {
+    if (!selectedPdl || !Array.isArray(pdlsData)) return null
+    const pdl = pdlsData.find((p) => p.usage_point_id === selectedPdl)
+    return pdl?.subscribed_power || null
+  }, [selectedPdl, pdlsData])
+
+  // Offers filtered by PDL power (only offers matching the PDL's subscribed power)
+  const offersForPdlPower = useMemo(() => {
+    if (!offersData.length || !selectedPdlPower) return offersData
+    return offersData.filter((o) => o.power_kva === selectedPdlPower)
+  }, [offersData, selectedPdlPower])
+
+  // Available providers and types for reference offer selector (from offers matching PDL power)
+  const refOfferProviders = useMemo(() => {
+    if (!offersForPdlPower.length || !providersData.length) return []
+    const providerIds = new Set(offersForPdlPower.map((o) => o.provider_id))
+    return providersData
+      .filter((p) => providerIds.has(p.id))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [offersForPdlPower, providersData])
+
+  const refOfferTypes = useMemo(() => {
+    if (!offersForPdlPower.length) return []
+    const types = new Set(offersForPdlPower.map((o) => o.offer_type))
+    return Array.from(types).sort()
+  }, [offersForPdlPower])
+
+  // Filtered offers for reference offer selector
+  // Only shows offers matching the PDL's subscribed power
+  const filteredRefOffers = useMemo(() => {
+    let filtered = offersForPdlPower
+    if (refOfferFilterProvider !== 'all') {
+      filtered = filtered.filter((o) => o.provider_id === refOfferFilterProvider)
+    }
+    if (refOfferFilterType !== 'all') {
+      filtered = filtered.filter((o) => o.offer_type === refOfferFilterType)
+    }
+
+    // If there's a selected reference offer that's not in the filtered list, add it at the top
+    if (referenceOffer) {
+      const isInFilteredList = filtered.some((o) => o.id === referenceOffer.offerId)
+      if (!isInFilteredList) {
+        const selectedOffer = offersForPdlPower.find((o) => o.id === referenceOffer.offerId)
+        if (selectedOffer) {
+          filtered = [selectedOffer, ...filtered]
+        }
+      }
+    }
+
+    return filtered
+  }, [offersForPdlPower, refOfferFilterProvider, refOfferFilterType, referenceOffer])
 
   // ==================== EARLY RETURNS (after all hooks) ====================
   // These must come AFTER all hooks to respect React's rules of hooks
@@ -1487,30 +1553,65 @@ export default function Simulator() {
     pdf.text(`• Économie potentielle: ${savings.toFixed(2)} € / an`, margin + 3, infoY)
     infoY += 5
     pdf.text(`  (entre la meilleure et la pire offre)`, margin + 3, infoY)
-    infoY += 10
+    infoY += 8
 
-    // Top 10 offers table (compact)
+    // Current offer section (if user has a selected offer)
+    if (currentOfferResult) {
+      const currentOfferRank = simulationResult.findIndex((r: any) => r.offerId === currentOfferResult.offerId) + 1
+      const savingsVsCurrent = currentOfferResult.totalCost - bestOffer.totalCost
+
+      pdf.setFillColor(254, 243, 199) // Yellow background
+      pdf.rect(margin, infoY - 2, pageWidth - 2 * margin, 22, 'F')
+      pdf.setDrawColor(251, 191, 36) // Yellow border
+      pdf.rect(margin, infoY - 2, pageWidth - 2 * margin, 22, 'S')
+
+      pdf.setFont('helvetica', 'bold')
+      pdf.setTextColor(146, 64, 14) // Amber-800
+      pdf.text('>> Votre offre actuelle', margin + 3, infoY + 3)
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(8)
+      pdf.text(`${currentOfferResult.providerName} - ${currentOfferResult.offerName}`, margin + 3, infoY + 8)
+      pdf.text(`Cout: ${currentOfferResult.totalCost.toFixed(2)} EUR / an  |  Rang: ${currentOfferRank}/${simulationResult.length}`, margin + 3, infoY + 13)
+      if (savingsVsCurrent > 0) {
+        pdf.setTextColor(22, 163, 74) // Green
+        pdf.text(`-> Economie possible: ${savingsVsCurrent.toFixed(2)} EUR / an en passant a la meilleure offre`, margin + 3, infoY + 18)
+      } else {
+        pdf.setTextColor(22, 163, 74) // Green
+        pdf.text(`Vous avez deja la meilleure offre !`, margin + 3, infoY + 18)
+      }
+      pdf.setTextColor(0, 0, 0)
+      pdf.setFontSize(9)
+      infoY += 26
+    } else {
+      infoY += 2
+    }
+
+    // All offers table (compact)
     pdf.setFontSize(11)
     pdf.setFont('helvetica', 'bold')
-    pdf.text('Top 10 des meilleures offres', margin, infoY)
+    pdf.text(`Classement des ${simulationResult.length} offres`, margin, infoY)
     infoY += 6
 
     // Table headers
     pdf.setFontSize(7)
     pdf.text('Rang', margin, infoY)
     pdf.text('Fournisseur', margin + 12, infoY)
-    pdf.text('Offre', margin + 45, infoY)
-    pdf.text('Type', margin + 95, infoY)
-    pdf.text('Abo/an', margin + 115, infoY)
-    pdf.text('Énergie/an', margin + 135, infoY)
-    pdf.text('Total/an', margin + 160, infoY)
+    pdf.text('Offre', margin + 40, infoY)
+    pdf.text('Type', margin + 85, infoY)
+    pdf.text('Abo/an', margin + 105, infoY)
+    pdf.text('Énergie/an', margin + 122, infoY)
+    pdf.text('Total/an', margin + 145, infoY)
+    pdf.text(currentOfferResult ? 'Écart (vs actuelle)' : 'Écart', margin + 165, infoY)
     infoY += 4
 
     // Table content
     pdf.setFont('helvetica', 'normal')
     pdf.setFontSize(6.5)
 
-    simulationResult.slice(0, 10).forEach((result: any, index: number) => {
+    // Reference for calculating difference: current offer if exists, otherwise best offer
+    const referenceOffer = currentOfferResult || simulationResult[0]
+
+    simulationResult.forEach((result: any, index: number) => {
       if (infoY > pageHeight - 25) {
         addFooter()
         pdf.addPage()
@@ -1518,32 +1619,77 @@ export default function Simulator() {
         infoY = 20
       }
 
-      if (index === 0) {
+      const isCurrentOffer = currentOfferResult?.offerId === result.offerId
+      const isBestOffer = index === 0
+      const costDifference = result.totalCost - referenceOffer.totalCost
+
+      // Highlight current offer with yellow background
+      if (isCurrentOffer) {
+        pdf.setFillColor(254, 243, 199) // Yellow background
+        pdf.rect(margin - 2, infoY - 2.5, pageWidth - 2 * margin + 4, 4, 'F')
         pdf.setFont('helvetica', 'bold')
-      }
-
-      pdf.text(`${index + 1}${index === 0 ? ' 🏆' : ''}`, margin, infoY)
-      pdf.text(result.providerName.substring(0, 16), margin + 12, infoY)
-      pdf.text(result.offerName.substring(0, 28), margin + 45, infoY)
-      pdf.text(getTypeLabel(result.offerType).substring(0, 10), margin + 95, infoY)
-      pdf.text(`${result.subscriptionCost.toFixed(0)} €`, margin + 115, infoY)
-      pdf.text(`${result.energyCost.toFixed(0)} €`, margin + 135, infoY)
-      pdf.text(`${result.totalCost.toFixed(2)} €`, margin + 160, infoY)
-
-      if (index === 0) {
+        pdf.setTextColor(146, 64, 14) // Amber-800
+      } else if (isBestOffer) {
+        pdf.setFont('helvetica', 'bold')
+        pdf.setTextColor(0, 0, 0)
+      } else {
         pdf.setFont('helvetica', 'normal')
+        pdf.setTextColor(0, 0, 0)
       }
+
+      const rankLabel = isBestOffer ? `${index + 1} *` : isCurrentOffer ? `${index + 1} >>` : `${index + 1}`
+      pdf.text(rankLabel, margin, infoY)
+      pdf.text(result.providerName.substring(0, 14), margin + 12, infoY)
+      pdf.text(result.offerName.substring(0, 24), margin + 40, infoY)
+      pdf.text(getTypeLabel(result.offerType).substring(0, 8), margin + 85, infoY)
+      pdf.text(`${result.subscriptionCost.toFixed(0)} €`, margin + 105, infoY)
+      pdf.text(`${result.energyCost.toFixed(0)} €`, margin + 122, infoY)
+      pdf.text(`${result.totalCost.toFixed(0)} €`, margin + 145, infoY)
+
+      // Écart column with color
+      if (isCurrentOffer) {
+        pdf.text('Actuelle', margin + 165, infoY)
+      } else if (costDifference === 0) {
+        pdf.setTextColor(22, 163, 74) // Green
+        pdf.text('Meilleur', margin + 165, infoY)
+      } else if (costDifference < 0) {
+        pdf.setTextColor(22, 163, 74) // Green for savings
+        pdf.text(`${costDifference.toFixed(0)} €`, margin + 165, infoY)
+      } else {
+        pdf.setTextColor(239, 68, 68) // Red for more expensive
+        pdf.text(`+${costDifference.toFixed(0)} €`, margin + 165, infoY)
+      }
+
+      // Reset styles
+      pdf.setFont('helvetica', 'normal')
+      pdf.setTextColor(0, 0, 0)
 
       infoY += 4
     })
 
     addFooter()
 
-    // ===== PAGE 2+: DETAILED BREAKDOWN FOR TOP 10 =====
-    simulationResult.slice(0, 10).forEach((result: any, index: number) => {
+    // ===== DETAILED BREAKDOWN FOR ALL OFFERS =====
+    simulationResult.forEach((result: any, index: number) => {
       pdf.addPage()
       currentPage++
       let detailY = 20
+
+      const isCurrentOffer = currentOfferResult?.offerId === result.offerId
+
+      // Current offer banner
+      if (isCurrentOffer) {
+        pdf.setFillColor(254, 243, 199) // Yellow background
+        pdf.rect(margin, detailY - 5, pageWidth - 2 * margin, 10, 'F')
+        pdf.setDrawColor(251, 191, 36) // Yellow border
+        pdf.rect(margin, detailY - 5, pageWidth - 2 * margin, 10, 'S')
+        pdf.setFontSize(10)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setTextColor(146, 64, 14) // Amber-800
+        pdf.text('>> VOTRE OFFRE ACTUELLE', margin + 3, detailY + 1)
+        pdf.setTextColor(0, 0, 0)
+        detailY += 12
+      }
 
       // Offer title
       pdf.setFontSize(14)
@@ -1556,7 +1702,7 @@ export default function Simulator() {
       detailY += 10
 
       // Cost summary box
-      pdf.setFillColor(240, 240, 240)
+      pdf.setFillColor(isCurrentOffer ? 254 : 240, isCurrentOffer ? 243 : 240, isCurrentOffer ? 199 : 240)
       pdf.rect(margin, detailY - 3, pageWidth - 2 * margin, 25, 'F')
 
       pdf.setFontSize(10)
@@ -1597,7 +1743,7 @@ export default function Simulator() {
         detailY += 5
       }
 
-      pdf.text(`Abonnement: ${result.offer?.subscription_price?.toFixed(2)} € / mois`, margin + 3, detailY)
+      pdf.text(`Abonnement: ${formatPrice(result.offer?.subscription_price, 2)} € / mois`, margin + 3, detailY)
       detailY += 5
 
       if (result.offer?.valid_from) {
@@ -1615,25 +1761,25 @@ export default function Simulator() {
 
       if (result.offerType === 'BASE' || result.offerType === 'BASE_WEEKEND') {
         if (result.offer?.base_price_weekend) {
-          pdf.text(`Prix Base (semaine): ${result.offer.base_price?.toFixed(5)} € / kWh`, margin + 3, detailY)
+          pdf.text(`Prix Base (semaine): ${formatPrice(result.offer.base_price, 5)} € / kWh`, margin + 3, detailY)
           detailY += 5
-          pdf.text(`Prix Base (week-end): ${result.offer.base_price_weekend?.toFixed(5)} € / kWh`, margin + 3, detailY)
+          pdf.text(`Prix Base (week-end): ${formatPrice(result.offer.base_price_weekend, 5)} € / kWh`, margin + 3, detailY)
           detailY += 5
         } else {
-          pdf.text(`Prix Base: ${result.offer?.base_price?.toFixed(5)} € / kWh`, margin + 3, detailY)
+          pdf.text(`Prix Base: ${formatPrice(result.offer?.base_price, 5)} € / kWh`, margin + 3, detailY)
           detailY += 5
         }
       } else if (result.offerType === 'HC_HP' || result.offerType === 'WEEKEND' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') {
-        pdf.text(`Prix Heures Creuses: ${result.offer?.hc_price?.toFixed(5)} € / kWh`, margin + 3, detailY)
+        pdf.text(`Prix Heures Creuses: ${formatPrice(result.offer?.hc_price, 5)} € / kWh`, margin + 3, detailY)
         detailY += 5
-        pdf.text(`Prix Heures Pleines: ${result.offer?.hp_price?.toFixed(5)} € / kWh`, margin + 3, detailY)
+        pdf.text(`Prix Heures Pleines: ${formatPrice(result.offer?.hp_price, 5)} € / kWh`, margin + 3, detailY)
         detailY += 5
         if (result.offer?.hc_price_weekend) {
-          pdf.text(`Prix HC Week-end: ${result.offer.hc_price_weekend?.toFixed(5)} € / kWh`, margin + 3, detailY)
+          pdf.text(`Prix HC Week-end: ${formatPrice(result.offer.hc_price_weekend, 5)} € / kWh`, margin + 3, detailY)
           detailY += 5
         }
         if (result.offer?.hp_price_weekend) {
-          pdf.text(`Prix HP Week-end: ${result.offer.hp_price_weekend?.toFixed(5)} € / kWh`, margin + 3, detailY)
+          pdf.text(`Prix HP Week-end: ${formatPrice(result.offer.hp_price_weekend, 5)} € / kWh`, margin + 3, detailY)
           detailY += 5
         }
       } else if (result.offerType === 'SEASONAL') {
@@ -1641,24 +1787,24 @@ export default function Simulator() {
         pdf.text('Hiver (nov-mars):', margin + 3, detailY)
         pdf.setFont('helvetica', 'normal')
         detailY += 5
-        pdf.text(`  HC: ${result.offer?.hc_price_winter?.toFixed(5)} € / kWh`, margin + 3, detailY)
+        pdf.text(`  HC: ${formatPrice(result.offer?.hc_price_winter, 5)} € / kWh`, margin + 3, detailY)
         detailY += 5
-        pdf.text(`  HP: ${result.offer?.hp_price_winter?.toFixed(5)} € / kWh`, margin + 3, detailY)
+        pdf.text(`  HP: ${formatPrice(result.offer?.hp_price_winter, 5)} € / kWh`, margin + 3, detailY)
         detailY += 5
         pdf.setFont('helvetica', 'bold')
         pdf.text('Été (avr-oct):', margin + 3, detailY)
         pdf.setFont('helvetica', 'normal')
         detailY += 5
-        pdf.text(`  HC: ${result.offer?.hc_price_summer?.toFixed(5)} € / kWh`, margin + 3, detailY)
+        pdf.text(`  HC: ${formatPrice(result.offer?.hc_price_summer, 5)} € / kWh`, margin + 3, detailY)
         detailY += 5
-        pdf.text(`  HP: ${result.offer?.hp_price_summer?.toFixed(5)} € / kWh`, margin + 3, detailY)
+        pdf.text(`  HP: ${formatPrice(result.offer?.hp_price_summer, 5)} € / kWh`, margin + 3, detailY)
         detailY += 5
         if (result.offer?.peak_day_price) {
           pdf.setFont('helvetica', 'bold')
           pdf.text('Jours de pointe:', margin + 3, detailY)
           pdf.setFont('helvetica', 'normal')
           detailY += 5
-          pdf.text(`  ${result.offer.peak_day_price?.toFixed(5)} € / kWh`, margin + 3, detailY)
+          pdf.text(`  ${formatPrice(result.offer.peak_day_price, 5)} € / kWh`, margin + 3, detailY)
           detailY += 5
         }
       } else if (result.offerType === 'TEMPO') {
@@ -1666,25 +1812,25 @@ export default function Simulator() {
         pdf.text('Jours Bleus:', margin + 3, detailY)
         pdf.setFont('helvetica', 'normal')
         detailY += 5
-        pdf.text(`  HC: ${result.offer?.tempo_blue_hc?.toFixed(5)} € / kWh`, margin + 3, detailY)
+        pdf.text(`  HC: ${formatPrice(result.offer?.tempo_blue_hc, 5)} € / kWh`, margin + 3, detailY)
         detailY += 5
-        pdf.text(`  HP: ${result.offer?.tempo_blue_hp?.toFixed(5)} € / kWh`, margin + 3, detailY)
+        pdf.text(`  HP: ${formatPrice(result.offer?.tempo_blue_hp, 5)} € / kWh`, margin + 3, detailY)
         detailY += 5
         pdf.setFont('helvetica', 'bold')
         pdf.text('Jours Blancs:', margin + 3, detailY)
         pdf.setFont('helvetica', 'normal')
         detailY += 5
-        pdf.text(`  HC: ${result.offer?.tempo_white_hc?.toFixed(5)} € / kWh`, margin + 3, detailY)
+        pdf.text(`  HC: ${formatPrice(result.offer?.tempo_white_hc, 5)} € / kWh`, margin + 3, detailY)
         detailY += 5
-        pdf.text(`  HP: ${result.offer?.tempo_white_hp?.toFixed(5)} € / kWh`, margin + 3, detailY)
+        pdf.text(`  HP: ${formatPrice(result.offer?.tempo_white_hp, 5)} € / kWh`, margin + 3, detailY)
         detailY += 5
         pdf.setFont('helvetica', 'bold')
         pdf.text('Jours Rouges:', margin + 3, detailY)
         pdf.setFont('helvetica', 'normal')
         detailY += 5
-        pdf.text(`  HC: ${result.offer?.tempo_red_hc?.toFixed(5)} € / kWh`, margin + 3, detailY)
+        pdf.text(`  HC: ${formatPrice(result.offer?.tempo_red_hc, 5)} € / kWh`, margin + 3, detailY)
         detailY += 5
-        pdf.text(`  HP: ${result.offer?.tempo_red_hp?.toFixed(5)} € / kWh`, margin + 3, detailY)
+        pdf.text(`  HP: ${formatPrice(result.offer?.tempo_red_hp, 5)} € / kWh`, margin + 3, detailY)
         detailY += 5
       }
 
@@ -1699,12 +1845,12 @@ export default function Simulator() {
 
         if (result.offerType === 'BASE' || result.offerType === 'BASE_WEEKEND') {
           if (result.breakdown.baseWeekendKwh > 0) {
-            pdf.text(`Semaine: ${result.breakdown.baseWeekdayKwh?.toFixed(0)} kWh × ${result.offer.base_price?.toFixed(5)} € = ${(result.breakdown.baseWeekdayKwh * result.offer.base_price).toFixed(2)} €`, margin + 3, detailY)
+            pdf.text(`Semaine: ${result.breakdown.baseWeekdayKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.base_price, 5)} € = ${calcPrice(result.breakdown.baseWeekdayKwh, result.offer.base_price)} €`, margin + 3, detailY)
             detailY += 5
-            pdf.text(`Week-end: ${result.breakdown.baseWeekendKwh?.toFixed(0)} kWh × ${result.offer.base_price_weekend?.toFixed(5)} € = ${(result.breakdown.baseWeekendKwh * result.offer.base_price_weekend).toFixed(2)} €`, margin + 3, detailY)
+            pdf.text(`Week-end: ${result.breakdown.baseWeekendKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.base_price_weekend, 5)} € = ${calcPrice(result.breakdown.baseWeekendKwh, result.offer.base_price_weekend)} €`, margin + 3, detailY)
             detailY += 5
           } else {
-            pdf.text(`Total: ${result.totalKwh?.toFixed(0)} kWh × ${result.offer.base_price?.toFixed(5)} € = ${result.energyCost.toFixed(2)} €`, margin + 3, detailY)
+            pdf.text(`Total: ${result.totalKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.base_price, 5)} € = ${result.energyCost.toFixed(2)} €`, margin + 3, detailY)
             detailY += 5
           }
         } else if (result.offerType === 'HC_HP' || result.offerType === 'WEEKEND' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') {
@@ -1713,20 +1859,21 @@ export default function Simulator() {
             pdf.text('Semaine:', margin + 3, detailY)
             pdf.setFont('helvetica', 'normal')
             detailY += 5
-            pdf.text(`  HC: ${result.breakdown.hcKwh?.toFixed(0)} kWh × ${result.offer.hc_price?.toFixed(5)} € = ${(result.breakdown.hcKwh * result.offer.hc_price).toFixed(2)} €`, margin + 3, detailY)
+            pdf.text(`  HC: ${result.breakdown.hcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price, 5)} € = ${calcPrice(result.breakdown.hcKwh, result.offer.hc_price)} €`, margin + 3, detailY)
             detailY += 5
-            pdf.text(`  HP: ${result.breakdown.hpKwh?.toFixed(0)} kWh × ${result.offer.hp_price?.toFixed(5)} € = ${(result.breakdown.hpKwh * result.offer.hp_price).toFixed(2)} €`, margin + 3, detailY)
+            pdf.text(`  HP: ${result.breakdown.hpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price, 5)} € = ${calcPrice(result.breakdown.hpKwh, result.offer.hp_price)} €`, margin + 3, detailY)
             detailY += 5
             pdf.setFont('helvetica', 'bold')
             pdf.text('Week-end:', margin + 3, detailY)
             pdf.setFont('helvetica', 'normal')
             detailY += 5
-            pdf.text(`  ${result.breakdown.hcWeekendKwh?.toFixed(0)} kWh × ${(result.offer.hc_price_weekend || result.offer.hc_price)?.toFixed(5)} € = ${(result.breakdown.hcWeekendKwh * (result.offer.hc_price_weekend || result.offer.hc_price)).toFixed(2)} €`, margin + 3, detailY)
+            const weekendPrice = result.offer.hc_price_weekend || result.offer.hc_price
+            pdf.text(`  ${result.breakdown.hcWeekendKwh?.toFixed(0)} kWh × ${formatPrice(weekendPrice, 5)} € = ${calcPrice(result.breakdown.hcWeekendKwh, weekendPrice)} €`, margin + 3, detailY)
             detailY += 5
           } else {
-            pdf.text(`HC: ${result.breakdown.hcKwh?.toFixed(0)} kWh × ${result.offer.hc_price?.toFixed(5)} € = ${(result.breakdown.hcKwh * result.offer.hc_price).toFixed(2)} €`, margin + 3, detailY)
+            pdf.text(`HC: ${result.breakdown.hcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price, 5)} € = ${calcPrice(result.breakdown.hcKwh, result.offer.hc_price)} €`, margin + 3, detailY)
             detailY += 5
-            pdf.text(`HP: ${result.breakdown.hpKwh?.toFixed(0)} kWh × ${result.offer.hp_price?.toFixed(5)} € = ${(result.breakdown.hpKwh * result.offer.hp_price).toFixed(2)} €`, margin + 3, detailY)
+            pdf.text(`HP: ${result.breakdown.hpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price, 5)} € = ${calcPrice(result.breakdown.hpKwh, result.offer.hp_price)} €`, margin + 3, detailY)
             detailY += 5
           }
         } else if (result.offerType === 'SEASONAL') {
@@ -1734,24 +1881,24 @@ export default function Simulator() {
           pdf.text('Hiver:', margin + 3, detailY)
           pdf.setFont('helvetica', 'normal')
           detailY += 5
-          pdf.text(`  HC: ${result.breakdown.hcWinterKwh?.toFixed(0)} kWh × ${result.offer.hc_price_winter?.toFixed(5)} € = ${(result.breakdown.hcWinterKwh * result.offer.hc_price_winter).toFixed(2)} €`, margin + 3, detailY)
+          pdf.text(`  HC: ${result.breakdown.hcWinterKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_winter, 5)} € = ${calcPrice(result.breakdown.hcWinterKwh, result.offer.hc_price_winter)} €`, margin + 3, detailY)
           detailY += 5
-          pdf.text(`  HP: ${result.breakdown.hpWinterKwh?.toFixed(0)} kWh × ${result.offer.hp_price_winter?.toFixed(5)} € = ${(result.breakdown.hpWinterKwh * result.offer.hp_price_winter).toFixed(2)} €`, margin + 3, detailY)
+          pdf.text(`  HP: ${result.breakdown.hpWinterKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_winter, 5)} € = ${calcPrice(result.breakdown.hpWinterKwh, result.offer.hp_price_winter)} €`, margin + 3, detailY)
           detailY += 5
           pdf.setFont('helvetica', 'bold')
           pdf.text('Été:', margin + 3, detailY)
           pdf.setFont('helvetica', 'normal')
           detailY += 5
-          pdf.text(`  HC: ${result.breakdown.hcSummerKwh?.toFixed(0)} kWh × ${result.offer.hc_price_summer?.toFixed(5)} € = ${(result.breakdown.hcSummerKwh * result.offer.hc_price_summer).toFixed(2)} €`, margin + 3, detailY)
+          pdf.text(`  HC: ${result.breakdown.hcSummerKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_summer, 5)} € = ${calcPrice(result.breakdown.hcSummerKwh, result.offer.hc_price_summer)} €`, margin + 3, detailY)
           detailY += 5
-          pdf.text(`  HP: ${result.breakdown.hpSummerKwh?.toFixed(0)} kWh × ${result.offer.hp_price_summer?.toFixed(5)} € = ${(result.breakdown.hpSummerKwh * result.offer.hp_price_summer).toFixed(2)} €`, margin + 3, detailY)
+          pdf.text(`  HP: ${result.breakdown.hpSummerKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_summer, 5)} € = ${calcPrice(result.breakdown.hpSummerKwh, result.offer.hp_price_summer)} €`, margin + 3, detailY)
           detailY += 5
           if (result.breakdown.peakDayKwh > 0) {
             pdf.setFont('helvetica', 'bold')
             pdf.text('Jours de pointe:', margin + 3, detailY)
             pdf.setFont('helvetica', 'normal')
             detailY += 5
-            pdf.text(`  ${result.breakdown.peakDayKwh?.toFixed(0)} kWh × ${result.offer.peak_day_price?.toFixed(5)} € = ${(result.breakdown.peakDayKwh * result.offer.peak_day_price).toFixed(2)} €`, margin + 3, detailY)
+            pdf.text(`  ${result.breakdown.peakDayKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.peak_day_price, 5)} € = ${calcPrice(result.breakdown.peakDayKwh, result.offer.peak_day_price)} €`, margin + 3, detailY)
             detailY += 5
           }
         } else if (result.offerType === 'TEMPO') {
@@ -1759,25 +1906,25 @@ export default function Simulator() {
           pdf.text('Jours Bleus:', margin + 3, detailY)
           pdf.setFont('helvetica', 'normal')
           detailY += 5
-          pdf.text(`  HC: ${result.breakdown.blueHcKwh?.toFixed(0)} kWh × ${result.offer.tempo_blue_hc?.toFixed(5)} € = ${(result.breakdown.blueHcKwh * result.offer.tempo_blue_hc).toFixed(2)} €`, margin + 3, detailY)
+          pdf.text(`  HC: ${result.breakdown.blueHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_blue_hc, 5)} € = ${calcPrice(result.breakdown.blueHcKwh, result.offer.tempo_blue_hc)} €`, margin + 3, detailY)
           detailY += 5
-          pdf.text(`  HP: ${result.breakdown.blueHpKwh?.toFixed(0)} kWh × ${result.offer.tempo_blue_hp?.toFixed(5)} € = ${(result.breakdown.blueHpKwh * result.offer.tempo_blue_hp).toFixed(2)} €`, margin + 3, detailY)
+          pdf.text(`  HP: ${result.breakdown.blueHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_blue_hp, 5)} € = ${calcPrice(result.breakdown.blueHpKwh, result.offer.tempo_blue_hp)} €`, margin + 3, detailY)
           detailY += 5
           pdf.setFont('helvetica', 'bold')
           pdf.text('Jours Blancs:', margin + 3, detailY)
           pdf.setFont('helvetica', 'normal')
           detailY += 5
-          pdf.text(`  HC: ${result.breakdown.whiteHcKwh?.toFixed(0)} kWh × ${result.offer.tempo_white_hc?.toFixed(5)} € = ${(result.breakdown.whiteHcKwh * result.offer.tempo_white_hc).toFixed(2)} €`, margin + 3, detailY)
+          pdf.text(`  HC: ${result.breakdown.whiteHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_white_hc, 5)} € = ${calcPrice(result.breakdown.whiteHcKwh, result.offer.tempo_white_hc)} €`, margin + 3, detailY)
           detailY += 5
-          pdf.text(`  HP: ${result.breakdown.whiteHpKwh?.toFixed(0)} kWh × ${result.offer.tempo_white_hp?.toFixed(5)} € = ${(result.breakdown.whiteHpKwh * result.offer.tempo_white_hp).toFixed(2)} €`, margin + 3, detailY)
+          pdf.text(`  HP: ${result.breakdown.whiteHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_white_hp, 5)} € = ${calcPrice(result.breakdown.whiteHpKwh, result.offer.tempo_white_hp)} €`, margin + 3, detailY)
           detailY += 5
           pdf.setFont('helvetica', 'bold')
           pdf.text('Jours Rouges:', margin + 3, detailY)
           pdf.setFont('helvetica', 'normal')
           detailY += 5
-          pdf.text(`  HC: ${result.breakdown.redHcKwh?.toFixed(0)} kWh × ${result.offer.tempo_red_hc?.toFixed(5)} € = ${(result.breakdown.redHcKwh * result.offer.tempo_red_hc).toFixed(2)} €`, margin + 3, detailY)
+          pdf.text(`  HC: ${result.breakdown.redHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_red_hc, 5)} € = ${calcPrice(result.breakdown.redHcKwh, result.offer.tempo_red_hc)} €`, margin + 3, detailY)
           detailY += 5
-          pdf.text(`  HP: ${result.breakdown.redHpKwh?.toFixed(0)} kWh × ${result.offer.tempo_red_hp?.toFixed(5)} € = ${(result.breakdown.redHpKwh * result.offer.tempo_red_hp).toFixed(2)} €`, margin + 3, detailY)
+          pdf.text(`  HP: ${result.breakdown.redHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_red_hp, 5)} € = ${calcPrice(result.breakdown.redHpKwh, result.offer.tempo_red_hp)} €`, margin + 3, detailY)
           detailY += 5
         }
       }
@@ -1847,7 +1994,7 @@ export default function Simulator() {
       pdf.text(`Puissance souscrite: ${currentPdl.subscribed_power} kVA`, margin, y)
       y += 4
     }
-    pdf.text(`Période analysée: ${simulationStartDate} → ${simulationEndDate}`, margin, y)
+    pdf.text(`Periode analysee: ${simulationStartDate} - ${simulationEndDate}`, margin, y)
     y += 4
     pdf.text(`Date de génération: ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, margin, y)
     y += 8
@@ -1918,11 +2065,11 @@ export default function Simulator() {
           y += 6
 
           const weekdayCost = result.breakdown.baseWeekdayKwh * result.offer.base_price
-          pdf.text(`  → Semaine: ${result.breakdown.baseWeekdayKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.base_price, 5)} €/kWh = ${weekdayCost.toFixed(2)} €`, margin + 3, y)
+          pdf.text(`  -> Semaine: ${result.breakdown.baseWeekdayKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.base_price, 5)} €/kWh = ${weekdayCost.toFixed(2)} €`, margin + 3, y)
           y += 5
 
           const weekendCost = result.breakdown.baseWeekendKwh * result.offer.base_price_weekend
-          pdf.text(`  → Week-end: ${result.breakdown.baseWeekendKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.base_price_weekend, 5)} €/kWh = ${weekendCost.toFixed(2)} €`, margin + 3, y)
+          pdf.text(`  -> Week-end: ${result.breakdown.baseWeekendKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.base_price_weekend, 5)} €/kWh = ${weekendCost.toFixed(2)} €`, margin + 3, y)
           y += 5
 
           pdf.setFont('helvetica', 'bold')
@@ -1935,7 +2082,7 @@ export default function Simulator() {
           pdf.setFont('helvetica', 'normal')
           y += 6
 
-          pdf.text(`  → ${result.totalKwh?.toFixed(0)} kWh × ${formatPrice(result.offer?.base_price, 5)} €/kWh = ${result.energyCost.toFixed(2)} €`, margin + 3, y)
+          pdf.text(`  -> ${result.totalKwh?.toFixed(0)} kWh × ${formatPrice(result.offer?.base_price, 5)} €/kWh = ${result.energyCost.toFixed(2)} €`, margin + 3, y)
           y += 8
         }
       } else if (result.offerType === 'HC_HP' || result.offerType === 'WEEKEND' || result.offerType === 'HC_NUIT_WEEKEND' || result.offerType === 'HC_WEEKEND') {
@@ -1950,11 +2097,11 @@ export default function Simulator() {
           y += 5
 
           const hcCost = result.breakdown.hcKwh * result.offer.hc_price
-          pdf.text(`    → Heures Creuses: ${result.breakdown.hcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price, 5)} €/kWh = ${hcCost.toFixed(2)} €`, margin + 3, y)
+          pdf.text(`    -> Heures Creuses: ${result.breakdown.hcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price, 5)} €/kWh = ${hcCost.toFixed(2)} €`, margin + 3, y)
           y += 5
 
           const hpCost = result.breakdown.hpKwh * result.offer.hp_price
-          pdf.text(`    → Heures Pleines: ${result.breakdown.hpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price, 5)} €/kWh = ${hpCost.toFixed(2)} €`, margin + 3, y)
+          pdf.text(`    -> Heures Pleines: ${result.breakdown.hpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price, 5)} €/kWh = ${hpCost.toFixed(2)} €`, margin + 3, y)
           y += 6
 
           pdf.text('  🌴 WEEK-END (tout en HC):', margin + 3, y)
@@ -1962,7 +2109,7 @@ export default function Simulator() {
 
           const weekendPrice = result.offer.hc_price_weekend || result.offer.hc_price
           const weekendCost = result.breakdown.hcWeekendKwh * weekendPrice
-          pdf.text(`    → ${result.breakdown.hcWeekendKwh?.toFixed(0)} kWh × ${formatPrice(weekendPrice, 5)} €/kWh = ${weekendCost.toFixed(2)} €`, margin + 3, y)
+          pdf.text(`    -> ${result.breakdown.hcWeekendKwh?.toFixed(0)} kWh × ${formatPrice(weekendPrice, 5)} €/kWh = ${weekendCost.toFixed(2)} €`, margin + 3, y)
           y += 6
 
           pdf.setFont('helvetica', 'bold')
@@ -1971,11 +2118,11 @@ export default function Simulator() {
           y += 8
         } else {
           const hcCost = result.breakdown.hcKwh * result.offer.hc_price
-          pdf.text(`  → Heures Creuses: ${result.breakdown.hcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price, 5)} €/kWh = ${hcCost.toFixed(2)} €`, margin + 3, y)
+          pdf.text(`  -> Heures Creuses: ${result.breakdown.hcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price, 5)} €/kWh = ${hcCost.toFixed(2)} €`, margin + 3, y)
           y += 5
 
           const hpCost = result.breakdown.hpKwh * result.offer.hp_price
-          pdf.text(`  → Heures Pleines: ${result.breakdown.hpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price, 5)} €/kWh = ${hpCost.toFixed(2)} €`, margin + 3, y)
+          pdf.text(`  -> Heures Pleines: ${result.breakdown.hpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price, 5)} €/kWh = ${hpCost.toFixed(2)} €`, margin + 3, y)
           y += 6
 
           pdf.setFont('helvetica', 'bold')
@@ -1993,31 +2140,31 @@ export default function Simulator() {
         y += 5
 
         const hcWinterCost = result.breakdown.hcWinterKwh * result.offer.hc_price_winter
-        pdf.text(`    → HC: ${result.breakdown.hcWinterKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_winter, 5)} €/kWh = ${hcWinterCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HC: ${result.breakdown.hcWinterKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_winter, 5)} €/kWh = ${hcWinterCost.toFixed(2)} €`, margin + 3, y)
         y += 5
 
         const hpWinterCost = result.breakdown.hpWinterKwh * result.offer.hp_price_winter
-        pdf.text(`    → HP: ${result.breakdown.hpWinterKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_winter, 5)} €/kWh = ${hpWinterCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HP: ${result.breakdown.hpWinterKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_winter, 5)} €/kWh = ${hpWinterCost.toFixed(2)} €`, margin + 3, y)
         y += 6
 
         pdf.text('  ☀️ ÉTÉ (avril à octobre):', margin + 3, y)
         y += 5
 
         const hcSummerCost = result.breakdown.hcSummerKwh * result.offer.hc_price_summer
-        pdf.text(`    → HC: ${result.breakdown.hcSummerKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_summer, 5)} €/kWh = ${hcSummerCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HC: ${result.breakdown.hcSummerKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_summer, 5)} €/kWh = ${hcSummerCost.toFixed(2)} €`, margin + 3, y)
         y += 5
 
         const hpSummerCost = result.breakdown.hpSummerKwh * result.offer.hp_price_summer
-        pdf.text(`    → HP: ${result.breakdown.hpSummerKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_summer, 5)} €/kWh = ${hpSummerCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HP: ${result.breakdown.hpSummerKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_summer, 5)} €/kWh = ${hpSummerCost.toFixed(2)} €`, margin + 3, y)
         y += 6
 
         let totalEnergy = hcWinterCost + hpWinterCost + hcSummerCost + hpSummerCost
         let peakCost = 0
         if (result.breakdown.peakDayKwh > 0 && result.offer.peak_day_price) {
-          pdf.text('  ⚡ JOURS DE POINTE:', margin + 3, y)
+          pdf.text('  ** JOURS DE POINTE:', margin + 3, y)
           y += 5
           peakCost = result.breakdown.peakDayKwh * result.offer.peak_day_price
-          pdf.text(`    → ${result.breakdown.peakDayKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.peak_day_price, 5)} €/kWh = ${peakCost.toFixed(2)} €`, margin + 3, y)
+          pdf.text(`    -> ${result.breakdown.peakDayKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.peak_day_price, 5)} €/kWh = ${peakCost.toFixed(2)} €`, margin + 3, y)
           y += 6
           totalEnergy += peakCost
         }
@@ -2037,28 +2184,28 @@ export default function Simulator() {
         pdf.text('  🔵 JOURS BLEUS (~300 jours/an - les moins chers):', margin + 3, y)
         y += 5
         const blueHcCost = result.breakdown.blueHcKwh * result.offer.tempo_blue_hc
-        pdf.text(`    → HC: ${result.breakdown.blueHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_blue_hc, 5)} €/kWh = ${blueHcCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HC: ${result.breakdown.blueHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_blue_hc, 5)} €/kWh = ${blueHcCost.toFixed(2)} €`, margin + 3, y)
         y += 5
         const blueHpCost = result.breakdown.blueHpKwh * result.offer.tempo_blue_hp
-        pdf.text(`    → HP: ${result.breakdown.blueHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_blue_hp, 5)} €/kWh = ${blueHpCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HP: ${result.breakdown.blueHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_blue_hp, 5)} €/kWh = ${blueHpCost.toFixed(2)} €`, margin + 3, y)
         y += 6
 
         pdf.text('  ⚪ JOURS BLANCS (~43 jours/an - tarif intermédiaire):', margin + 3, y)
         y += 5
         const whiteHcCost = result.breakdown.whiteHcKwh * result.offer.tempo_white_hc
-        pdf.text(`    → HC: ${result.breakdown.whiteHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_white_hc, 5)} €/kWh = ${whiteHcCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HC: ${result.breakdown.whiteHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_white_hc, 5)} €/kWh = ${whiteHcCost.toFixed(2)} €`, margin + 3, y)
         y += 5
         const whiteHpCost = result.breakdown.whiteHpKwh * result.offer.tempo_white_hp
-        pdf.text(`    → HP: ${result.breakdown.whiteHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_white_hp, 5)} €/kWh = ${whiteHpCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HP: ${result.breakdown.whiteHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_white_hp, 5)} €/kWh = ${whiteHpCost.toFixed(2)} €`, margin + 3, y)
         y += 6
 
         pdf.text('  🔴 JOURS ROUGES (22 jours/an - les plus chers):', margin + 3, y)
         y += 5
         const redHcCost = result.breakdown.redHcKwh * result.offer.tempo_red_hc
-        pdf.text(`    → HC: ${result.breakdown.redHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_red_hc, 5)} €/kWh = ${redHcCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HC: ${result.breakdown.redHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_red_hc, 5)} €/kWh = ${redHcCost.toFixed(2)} €`, margin + 3, y)
         y += 5
         const redHpCost = result.breakdown.redHpKwh * result.offer.tempo_red_hp
-        pdf.text(`    → HP: ${result.breakdown.redHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_red_hp, 5)} €/kWh = ${redHpCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HP: ${result.breakdown.redHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.tempo_red_hp, 5)} €/kWh = ${redHpCost.toFixed(2)} €`, margin + 3, y)
         y += 6
 
         pdf.setFont('helvetica', 'bold')
@@ -2074,19 +2221,19 @@ export default function Simulator() {
         pdf.text('  🌿 JOURS ÉCO (~345 jours/an - tarif normal):', margin + 3, y)
         y += 5
         const ecoHcCost = result.breakdown.zenFlexEcoHcKwh * result.offer.hc_price_winter
-        pdf.text(`    → HC: ${result.breakdown.zenFlexEcoHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_winter, 5)} €/kWh = ${ecoHcCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HC: ${result.breakdown.zenFlexEcoHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_winter, 5)} €/kWh = ${ecoHcCost.toFixed(2)} €`, margin + 3, y)
         y += 5
         const ecoHpCost = result.breakdown.zenFlexEcoHpKwh * result.offer.hp_price_winter
-        pdf.text(`    → HP: ${result.breakdown.zenFlexEcoHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_winter, 5)} €/kWh = ${ecoHpCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HP: ${result.breakdown.zenFlexEcoHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_winter, 5)} €/kWh = ${ecoHpCost.toFixed(2)} €`, margin + 3, y)
         y += 6
 
-        pdf.text('  ⚡ JOURS SOBRIÉTÉ (~20 jours/an - tarif majoré):', margin + 3, y)
+        pdf.text('  ** JOURS SOBRIETE (~20 jours/an - tarif majore):', margin + 3, y)
         y += 5
         const sobrietyHcCost = result.breakdown.zenFlexSobrietyHcKwh * result.offer.hc_price_summer
-        pdf.text(`    → HC: ${result.breakdown.zenFlexSobrietyHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_summer, 5)} €/kWh = ${sobrietyHcCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HC: ${result.breakdown.zenFlexSobrietyHcKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hc_price_summer, 5)} €/kWh = ${sobrietyHcCost.toFixed(2)} €`, margin + 3, y)
         y += 5
         const sobrietyHpCost = result.breakdown.zenFlexSobrietyHpKwh * result.offer.hp_price_summer
-        pdf.text(`    → HP: ${result.breakdown.zenFlexSobrietyHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_summer, 5)} €/kWh = ${sobrietyHpCost.toFixed(2)} €`, margin + 3, y)
+        pdf.text(`    -> HP: ${result.breakdown.zenFlexSobrietyHpKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.hp_price_summer, 5)} €/kWh = ${sobrietyHpCost.toFixed(2)} €`, margin + 3, y)
         y += 6
 
         pdf.setFont('helvetica', 'bold')
@@ -2243,6 +2390,134 @@ export default function Simulator() {
             <strong>Mode Démo :</strong> Le compte démo dispose déjà de 3 ans de données fictives pré-chargées.
             Le simulateur fonctionne avec ces données.
           </p>
+        </div>
+      )}
+
+      {/* Shared PDL info with reference offer selector */}
+      {isSharedPdl && (
+        <div className="mb-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
+          <div className="flex items-start gap-3">
+            <Users className="text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" size={20} />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-indigo-800 dark:text-indigo-200 mb-3">
+                PDL partagé par {impersonation?.ownerEmail}
+              </p>
+
+              {/* All filters and selector on one line in desktop */}
+              <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+                {/* Fournisseur filter */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                    Fournisseur :
+                  </label>
+                  <select
+                    value={refOfferFilterProvider}
+                    onChange={(e) => setRefOfferFilterProvider(e.target.value)}
+                    className="text-sm px-2 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="all">Tous</option>
+                    {refOfferProviders.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Type filter */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                    Type :
+                  </label>
+                  <select
+                    value={refOfferFilterType}
+                    onChange={(e) => setRefOfferFilterType(e.target.value)}
+                    className="text-sm px-2 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="all">Tous</option>
+                    {refOfferTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type === 'BASE' ? 'Base' :
+                         type === 'HC_HP' ? 'HC/HP' :
+                         type === 'TEMPO' ? 'Tempo' :
+                         type === 'EJP' ? 'EJP' :
+                         type === 'ZEN_FLEX' ? 'Zen Flex' :
+                         type === 'HC_WEEKEND' ? 'HC Week-end' :
+                         type === 'HC_NUIT_WEEKEND' ? 'HC Nuit & Week-end' :
+                         type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Offer selector */}
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <label className="text-xs text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                    Offre de référence :
+                  </label>
+                  <select
+                    value={referenceOffer?.offerId || ''}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      const selectedOffer = offersData.find((o) => o.id === value)
+                      if (selectedOffer) {
+                        setReferenceOffer(selectedPdl, {
+                          offerId: selectedOffer.id,
+                          offerName: selectedOffer.name,
+                        })
+                      } else {
+                        setReferenceOffer(selectedPdl, null)
+                      }
+                    }}
+                    className="text-sm px-2 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 flex-1 min-w-0"
+                  >
+                    <option value="">Sélectionner ({filteredRefOffers.length})...</option>
+                    {filteredRefOffers.map((offer) => {
+                      const provider = providersData.find((p) => p.id === offer.provider_id)
+                      return (
+                        <option key={offer.id} value={offer.id}>
+                          {provider?.name ? `${provider.name} - ` : ''}{offer.name}
+                        </option>
+                      )
+                    })}
+                  </select>
+                  {referenceOffer && (
+                    <button
+                      onClick={() => setReferenceOffer(selectedPdl, null)}
+                      className="p-1.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded-lg transition-colors flex-shrink-0"
+                      title="Supprimer l'offre de référence"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Reset button */}
+                {(refOfferFilterProvider !== 'all' || refOfferFilterType !== 'all') && (
+                  <button
+                    onClick={() => {
+                      setRefOfferFilterProvider('all')
+                      setRefOfferFilterType('all')
+                    }}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 underline whitespace-nowrap"
+                  >
+                    Réinitialiser
+                  </button>
+                )}
+              </div>
+
+              {referenceOffer && (
+                <p className="mt-2 text-xs text-indigo-600 dark:text-indigo-400">
+                  ✓ L'offre « {referenceOffer.offerName} » sera utilisée comme référence pour calculer les écarts.
+                </p>
+              )}
+              {!referenceOffer && (
+                <p className="mt-2 text-xs text-indigo-600 dark:text-indigo-400">
+                  💡 Sélectionnez une offre pour comparer les résultats par rapport à cette référence.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

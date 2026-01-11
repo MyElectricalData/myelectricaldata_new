@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.8.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.7.0...1.8.0-dev.1) (2026-01-10)
+
+### Features
+
+* **simulator:** amelioration export PDF et offre de reference ([b872ed0](https://github.com/MyElectricalData/myelectricaldata_new/commit/b872ed02ce0dce0997ad7694110b430b411b02a0))
+
+### Bug Fixes
+
+* add missing useAllPdls hook ([85e31d6](https://github.com/MyElectricalData/myelectricaldata_new/commit/85e31d6f62b045224776c0a9cc928817ecd88c33))
+
 ## [1.7.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.6.0...1.7.0) (2026-01-02)
 
 ### Features
