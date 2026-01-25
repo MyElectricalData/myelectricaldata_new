@@ -1,19 +1,19 @@
 # Modes d'exécution : Serveur vs Client
 
-**IMPORTANT : Ce projet supporte DEUX modes d'exécution distincts. Toute modification doit prendre en compte l'impact sur les deux modes.**
+**IMPORTANT : Ce projet supporte DEUX modes d'exécution distincts. Le mode Client est le défaut. Toute modification doit prendre en compte l'impact sur les deux modes.**
 
 ## Vue d'ensemble
 
-| Aspect              | Mode Serveur                  | Mode Client                      |
-| ------------------- | ----------------------------- | -------------------------------- |
-| **Fichier compose** | `docker-compose.yml`          | `docker-compose.client.yml`      |
-| **Config env**      | `.env.api`                    | `.env.client`                    |
-| **Ports**           | Frontend: 8000, Backend: 8081 | Frontend: 8100, Backend: 8181    |
-| **Source données**  | Enedis API direct             | API v2.myelectricaldata.fr       |
-| **Stockage**        | Cache Valkey (24h)            | PostgreSQL (indéfini)            |
-| **Multi-users**     | Oui                           | Non (mono-user)                  |
-| **Administration**  | Complète                      | Aucune                           |
-| **Exports**         | Non                           | Home Assistant, MQTT, VM, Jeedom |
+| Aspect              | Mode Client (défaut)                     | Mode Serveur                  |
+| ------------------- | ---------------------------------------- | ----------------------------- |
+| **Fichier compose** | `docker-compose.yml`                     | `docker-compose.server.yml`   |
+| **Config env**      | `.env.local-client`                      | `.env.api`                    |
+| **Ports**           | Frontend: 8100, Backend: 8181            | Frontend: 8000, Backend: 8081 |
+| **Source données**  | API v2.myelectricaldata.fr               | Enedis API direct             |
+| **Stockage**        | PostgreSQL (indéfini)                    | Cache Valkey (24h)            |
+| **Multi-users**     | Non (mono-user)                          | Oui                           |
+| **Administration**  | Aucune                                   | Complète                      |
+| **Exports**         | Home Assistant, MQTT, VM, Jeedom         | Non                           |
 
 ## Règles de développement
 
@@ -29,11 +29,13 @@
 # Pattern pour code conditionnel
 from config.settings import settings
 
+# Le mode client est le défaut (SERVER_MODE=False)
+# CLIENT_MODE est une propriété calculée : return not SERVER_MODE
 if settings.CLIENT_MODE:
-    # Code spécifique mode client
+    # Code spécifique mode client (défaut)
     adapter = MyElectricalDataAdapter()
 else:
-    # Code spécifique mode serveur
+    # Code spécifique mode serveur (SERVER_MODE=True)
     adapter = EnedisAdapter()
 ```
 
@@ -47,9 +49,10 @@ else:
 
 ```typescript
 // Pattern pour routes conditionnelles
-const isClientMode = import.meta.env.VITE_CLIENT_MODE === "true";
+// Le mode client est le défaut (VITE_SERVER_MODE not set or false)
+const isServerMode = import.meta.env.VITE_SERVER_MODE === "true";
 
-const routes = isClientMode ? clientRoutes : serverRoutes;
+const routes = isServerMode ? serverRoutes : clientRoutes;
 ```
 
 ### Pages par mode

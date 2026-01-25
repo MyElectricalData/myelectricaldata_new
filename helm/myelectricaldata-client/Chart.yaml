@@ -1,0 +1,32 @@
+apiVersion: v2
+name: myelectricaldata-client
+description: "MyElectricalData Client Mode - Local installation with MyElectricalData API gateway"
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+keywords:
+  - energy
+  - linky
+  - enedis
+  - electricity
+  - monitoring
+  - home-assistant
+  - local
+  - mono-user
+
+home: https://github.com/MyElectricalData/myelectricaldata
+
+maintainers:
+  - name: MyElectricalData Team
+
+dependencies:
+  - name: postgres
+    version: "0.12.2"
+    repository: oci://registry-1.docker.io/cloudpirates
+    condition: postgres.enabled
+
+  - name: victoria-metrics-single
+    version: "0.13.0"
+    repository: https://victoriametrics.github.io/helm-charts/
+    condition: victoriametrics.enabled

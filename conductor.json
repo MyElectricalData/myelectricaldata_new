@@ -1,6 +1,0 @@
-{
-  "scripts": {
-    "setup": "./scripts/conductor-start.sh",
-    "run": "docker compose -f docker-compose.conductor.yml -f docker-compose.override.yml logs -f frontend backend"
-  }
-}

@@ -1,0 +1,259 @@
+{{- if .Values.backend.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "myelectricaldata.backend.fullname" . }}
+  labels:
+    {{- include "myelectricaldata.backend.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.backend.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "myelectricaldata.backend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/common/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/common/secrets.yaml") . | sha256sum }}
+      {{- with .Values.backend.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "myelectricaldata.backend.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- include "myelectricaldata.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "myelectricaldata.serviceAccountName" . }}
+      {{- with .Values.backend.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # Wait for PostgreSQL to be ready
+        {{- if .Values.postgres.enabled }}
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z {{ .Release.Name }}-postgres {{ .Values.postgres.service.port | default 5432 }}; do echo "Waiting for PostgreSQL..."; sleep 2; done; echo "PostgreSQL is ready!"']
+        {{- end }}
+        {{- if .Values.devMode.enabled }}
+        # Install Python dependencies in dev mode using uv
+        - name: uv-sync
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          workingDir: /workspace
+          env:
+            - name: UV_CACHE_DIR
+              value: "/workspace/.cache"
+          command: ['sh', '-c', 'cp /host-app/pyproject.toml /host-app/uv.lock /host-app/README.md /workspace/ && uv sync --frozen']
+          volumeMounts:
+            - name: host-backend-files
+              mountPath: /host-app
+              readOnly: true
+            - name: workspace
+              mountPath: /workspace
+            - name: dev-src
+              mountPath: /workspace/src
+              readOnly: true
+        {{- end }}
+      containers:
+        - name: backend
+          {{- with .Values.backend.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          {{- if .Values.devMode.enabled }}
+          workingDir: /workspace
+          command: ["uv"]
+          args: ["run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/workspace/src"]
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          {{- if .Values.devMode.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ include "myelectricaldata.backend.fullname" . }}-env
+                optional: true
+          {{- end }}
+          env:
+            - name: TZ
+              value: {{ .Values.backend.env.TZ | quote }}
+            - name: PYTHONUNBUFFERED
+              value: {{ .Values.backend.env.PYTHONUNBUFFERED | quote }}
+            {{- if .Values.devMode.enabled }}
+            - name: WATCHFILES_FORCE_POLLING
+              value: "true"
+            - name: WATCHFILES_POLL_INTERVAL
+              value: "1000"
+            - name: UV_CACHE_DIR
+              value: "/tmp/uv-cache"
+            {{- end }}
+            # PostgreSQL password MUST be defined before DATABASE_URL for $(POSTGRES_PASSWORD) substitution
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.postgres.secretName" . | trim }}
+                  key: {{ include "myelectricaldata.postgres.secretKey" . | trim }}
+            - name: DATABASE_URL
+              value: {{ include "myelectricaldata.databaseUrl" . | quote }}
+            # --- MyElectricalData API Credentials (Client Mode) ---
+            - name: MED_API_URL
+              value: {{ .Values.secrets.med.apiUrl | quote }}
+            # MED_CLIENT_ID
+            {{- if or .Values.secrets.med.clientId.value .Values.secrets.med.clientId.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: MED_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.med.clientId "defaultKey" "MED_CLIENT_ID") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.med.clientId "defaultKey" "MED_CLIENT_ID") }}
+            {{- end }}
+            # MED_CLIENT_SECRET
+            {{- if or .Values.secrets.med.clientSecret.value .Values.secrets.med.clientSecret.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: MED_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.med.clientSecret "defaultKey" "MED_CLIENT_SECRET") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.med.clientSecret "defaultKey" "MED_CLIENT_SECRET") }}
+            {{- end }}
+            # --- VictoriaMetrics URL ---
+            {{- if .Values.victoriametrics.enabled }}
+            - name: VICTORIAMETRICS_URL
+              value: {{ include "myelectricaldata.victoriametrics.url" . | quote }}
+            {{- else if .Values.externalVictoriametrics.url }}
+            - name: VICTORIAMETRICS_URL
+              value: {{ .Values.externalVictoriametrics.url | quote }}
+            {{- end }}
+            # --- Application Secrets ---
+            # SECRET_KEY (optional in client mode)
+            {{- if or .Values.secrets.secretKey.value .Values.secrets.secretKey.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.secretKey "defaultKey" "SECRET_KEY") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.secretKey "defaultKey" "SECRET_KEY") }}
+            {{- end }}
+            # FRONTEND_URL (from ConfigMap)
+            {{- if .Values.config.frontendUrl }}
+            - name: FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}
+                  key: FRONTEND_URL
+            {{- end }}
+            # --- Export Configuration ---
+            {{- if .Values.exports.homeAssistant.enabled }}
+            - name: HA_ENABLED
+              value: "true"
+            - name: HA_URL
+              value: {{ .Values.exports.homeAssistant.url | quote }}
+            {{- if .Values.exports.homeAssistant.token }}
+            - name: HA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}-exports
+                  key: HA_TOKEN
+            {{- end }}
+            {{- end }}
+            {{- if .Values.exports.mqtt.enabled }}
+            - name: MQTT_ENABLED
+              value: "true"
+            - name: MQTT_HOST
+              value: {{ .Values.exports.mqtt.host | quote }}
+            - name: MQTT_PORT
+              value: {{ .Values.exports.mqtt.port | quote }}
+            - name: MQTT_TOPIC
+              value: {{ .Values.exports.mqtt.topic | quote }}
+            {{- if .Values.exports.mqtt.username }}
+            - name: MQTT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}-exports
+                  key: MQTT_USERNAME
+            - name: MQTT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}-exports
+                  key: MQTT_PASSWORD
+            {{- end }}
+            {{- end }}
+            {{- if .Values.exports.jeedom.enabled }}
+            - name: JEEDOM_ENABLED
+              value: "true"
+            - name: JEEDOM_URL
+              value: {{ .Values.exports.jeedom.url | quote }}
+            {{- if .Values.exports.jeedom.apiKey }}
+            - name: JEEDOM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}-exports
+                  key: JEEDOM_API_KEY
+            {{- end }}
+            {{- end }}
+          {{- with .Values.backend.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: logs
+              mountPath: /logs
+            {{- if .Values.devMode.enabled }}
+            - name: workspace
+              mountPath: /workspace
+            - name: dev-src
+              mountPath: /workspace/src
+            - name: dev-static
+              mountPath: /app/static
+            {{- end }}
+      volumes:
+        - name: data
+          {{- /* Client mode uses PVC for permanent data storage */ -}}
+          {{- if .Values.backend.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "myelectricaldata.backend.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: logs
+          emptyDir: {}
+        {{- if .Values.devMode.enabled }}
+        - name: dev-src
+          hostPath:
+            path: {{ .Values.devMode.hostPath }}/{{ .Values.devMode.backend.srcPath }}
+            type: Directory
+        - name: dev-static
+          hostPath:
+            path: {{ .Values.devMode.hostPath }}/{{ .Values.devMode.backend.staticPath }}
+            type: DirectoryOrCreate
+        - name: host-backend-files
+          hostPath:
+            path: {{ .Values.devMode.hostPath }}/apps/api
+            type: Directory
+        - name: workspace
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

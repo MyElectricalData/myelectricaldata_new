@@ -1,0 +1,322 @@
+# Default values for myelectricaldata-client
+# Client Mode - Local installation with MyElectricalData API gateway
+# This is a YAML-formatted file.
+
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# Development mode configuration
+# Mounts local source code into pods for hot-reload development
+devMode:
+  enabled: false
+  # Base path on the host machine where the project is located
+  # This path will be used to mount source code into containers
+  hostPath: "/path/to/myelectricaldata"
+  # Backend source code mount (relative to hostPath)
+  backend:
+    # Mount path for source code inside container
+    srcPath: "apps/api/src"
+    dataPath: "apps/api/data"
+    staticPath: "apps/api/static"
+  # Frontend source code mount (relative to hostPath)
+  frontend:
+    srcPath: "apps/web/src"
+    publicPath: "apps/web/public"
+
+# Backend (FastAPI) configuration - CLIENT MODE (default)
+backend:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/myelectricaldata/myelectricaldata_new/backend
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8000
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1024Mi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+  # Environment variables
+  env:
+    TZ: "Europe/Paris"
+    PYTHONUNBUFFERED: "1"
+
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /ping
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 6
+
+  readinessProbe:
+    httpGet:
+      path: /ping
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # Persistent storage for local data
+  persistence:
+    enabled: true
+    size: 5Gi
+    accessMode: ReadWriteOnce
+    storageClass: ""
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+  podSecurityContext:
+    fsGroup: 1000
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+
+# Frontend (React/Nginx) configuration - CLIENT MODE
+frontend:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/myelectricaldata/myelectricaldata_new/frontend
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  resources:
+    limits:
+      cpu: 300m
+      memory: 384Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Environment variables for the frontend
+  env:
+    VITE_API_BASE_URL: "/api"
+    VITE_BACKEND_URL: "/api"
+
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+  hosts:
+    - host: myelectricaldata-client.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+        - path: /api
+          pathType: Prefix
+          service: backend
+        - path: /docs
+          pathType: Prefix
+          service: backend
+
+  tls: []
+
+# Application configuration (non-sensitive values)
+# Note: Client mode doesn't need most server-mode settings
+config:
+  # Frontend URL for links
+  frontendUrl: ""
+
+# Application secrets - CLIENT MODE
+# Uses MyElectricalData API instead of direct Enedis access
+secrets:
+  # Use a single existing secret for ALL secrets (legacy mode)
+  existingSecret: ""
+
+  # JWT secret key for local authentication (optional in client mode)
+  secretKey:
+    value: ""
+    existingSecretRef:
+      name: ""
+      key: ""
+
+  # MyElectricalData API credentials (REQUIRED for client mode)
+  # Get these from your MyElectricalData account at v2.myelectricaldata.fr
+  med:
+    apiUrl: "https://www.v2.myelectricaldata.fr/api"
+    clientId:
+      value: ""  # Your MyElectricalData client_id
+      existingSecretRef:
+        name: ""
+        key: ""
+    clientSecret:
+      value: ""  # Your MyElectricalData client_secret
+      existingSecretRef:
+        name: ""
+        key: ""
+
+# VictoriaMetrics configuration (for metrics export)
+# Repository: https://victoriametrics.github.io/helm-charts/
+victoriametrics:
+  enabled: true
+
+  server:
+    image:
+      repository: victoriametrics/victoria-metrics
+      tag: "v1.108.1"
+
+    retentionPeriod: "365d"
+
+    service:
+      type: ClusterIP
+      servicePort: 8428
+
+    persistentVolume:
+      enabled: true
+      size: 10Gi
+      storageClass: ""
+
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+# PostgreSQL configuration (CloudPirates subchart)
+# Stores consumption data permanently (unlike server mode's Valkey cache)
+postgres:
+  enabled: true
+
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+
+  auth:
+    database: myelectricaldata_client
+    username: myelectricaldata
+    password: ""
+    existingSecret: ""
+    existingSecretKey: "password"
+
+  service:
+    type: ClusterIP
+    port: 5432
+
+  persistence:
+    enabled: true
+    size: 10Gi  # More storage for permanent data
+    storageClass: ""
+    annotations:
+      helm.sh/resource-policy: keep
+
+  persistentVolumeClaimRetentionPolicy:
+    enabled: true
+    whenScaled: Retain
+    whenDeleted: Retain
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# External database configuration (if postgres.enabled is false)
+externalDatabase:
+  host: ""
+  port: 5432
+  database: myelectricaldata_client
+  username: myelectricaldata
+  password: ""
+  existingSecret: ""
+
+# External VictoriaMetrics (if victoriametrics.enabled is false)
+externalVictoriametrics:
+  url: ""
+
+# Service Account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Autoscaling (disabled for client mode - single user)
+autoscaling:
+  enabled: false
+
+# Network policies
+networkPolicy:
+  enabled: false
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Export configuration (client mode specific)
+# These settings control data export to external systems
+exports:
+  # Home Assistant integration
+  homeAssistant:
+    enabled: false
+    url: ""
+    token: ""
+
+  # MQTT integration
+  mqtt:
+    enabled: false
+    host: ""
+    port: 1883
+    username: ""
+    password: ""
+    topic: "myelectricaldata"
+
+  # Jeedom integration
+  jeedom:
+    enabled: false
+    url: ""
+    apiKey: ""

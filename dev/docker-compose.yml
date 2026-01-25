@@ -1,10 +1,10 @@
-# MyElectricalData - Client Mode
+# MyElectricalData - Client Mode (DEVELOPMENT)
 #
-# This configuration runs alongside the server mode (docker-compose.yml)
-# using different ports and isolated PostgreSQL volume.
+# Configuration de développement avec hot-reload et services satellites.
+# Pour la production, utiliser docker-compose.yml à la racine.
 #
 # Usage:
-#   docker compose -f docker-compose.client.yml up -d
+#   docker compose -f dev/docker-compose.yml up -d
 #
 # Ports:
 #   - Frontend: http://localhost:8100
@@ -75,33 +75,31 @@ services:
   # Backend FastAPI - Client Mode
   backend-client:
     build:
-      context: ./apps/api
+      context: ../apps/api
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "8181:8000"
     env_file:
-      - ./.env.local-client
+      - ../.env.local-client
     environment:
       - PYTHONUNBUFFERED=1
       - WATCHFILES_FORCE_POLLING=true
       - WATCHFILES_POLL_INTERVAL=1000
       - TZ=Europe/Paris
-      - CLIENT_MODE=true
       - DATABASE_URL=postgresql+asyncpg://myelectricaldata:${POSTGRES_PASSWORD:-clientSecurePassword2025}@postgres-client:5432/myelectricaldata_client
       - VICTORIAMETRICS_URL=http://victoriametrics:8428
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./apps/api/data:/app/data
-      - ./apps/api/src:/app/src
-      - ./apps/api/static:/app/static
-      - ./apps/api/alembic:/app/alembic
+      - ../apps/api/data:/app/data
+      - ../apps/api/src:/app/src
+      - ../apps/api/static:/app/static
+      - ../apps/api/alembic:/app/alembic
       - backend_client_logs:/logs
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
     networks:
       - myelectricaldata-client
-      - myelectricaldata_new_myelectricaldata  # Access server mode backend
     depends_on:
       postgres-client:
         condition: service_healthy
@@ -117,26 +115,25 @@ services:
   # Frontend React/Vite - Client Mode
   frontend-client:
     build:
-      context: ./apps/web
+      context: ../apps/web
       dockerfile: Dockerfile.dev
     restart: unless-stopped
     environment:
       - VITE_API_BASE_URL=/api
-      - VITE_CLIENT_MODE=true
       - VITE_BACKEND_URL=http://backend-client:8000
       # BACKEND_URL is for Vite server proxy (not client-side code)
       - BACKEND_URL=http://backend-client:8000
       # HMR client port for hot reload (must match the exposed port)
       - HMR_CLIENT_PORT=8100
     volumes:
-      - ./apps/web/src:/app/src
-      - ./apps/web/public:/app/public
-      - ./apps/web/index.html:/app/index.html
-      - ./apps/web/vite.config.ts:/app/vite.config.ts
-      - ./apps/web/tsconfig.json:/app/tsconfig.json
-      - ./apps/web/tsconfig.node.json:/app/tsconfig.node.json
-      - ./apps/web/tailwind.config.js:/app/tailwind.config.js
-      - ./apps/web/postcss.config.js:/app/postcss.config.js
+      - ../apps/web/src:/app/src
+      - ../apps/web/public:/app/public
+      - ../apps/web/index.html:/app/index.html
+      - ../apps/web/vite.config.ts:/app/vite.config.ts
+      - ../apps/web/tsconfig.json:/app/tsconfig.json
+      - ../apps/web/tsconfig.node.json:/app/tsconfig.node.json
+      - ../apps/web/tailwind.config.js:/app/tailwind.config.js
+      - ../apps/web/postcss.config.js:/app/postcss.config.js
       - /app/node_modules
     ports:
       - "8100:5173"
@@ -158,6 +155,3 @@ volumes:
 networks:
   myelectricaldata-client:
     driver: bridge
-  # Join the server mode network to access backend service
-  myelectricaldata_new_myelectricaldata:
-    external: true

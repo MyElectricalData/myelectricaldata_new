@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "myelectricaldata.fullname" . }}
+  labels:
+    {{- include "myelectricaldata.labels" . | nindent 4 }}
+data:
+  # Backend configuration
+  TZ: {{ .Values.backend.env.TZ | quote }}
+  PYTHONUNBUFFERED: {{ .Values.backend.env.PYTHONUNBUFFERED | quote }}
+
+  # MyElectricalData API configuration
+  MED_API_URL: {{ include "myelectricaldata.med.apiUrl" . | quote }}
+
+  # Database configuration
+  {{- if .Values.postgres.enabled }}
+  DATABASE_HOST: {{ .Release.Name }}-postgres
+  DATABASE_PORT: {{ .Values.postgres.service.port | default 5432 | quote }}
+  DATABASE_NAME: {{ .Values.postgres.auth.database | quote }}
+  DATABASE_USER: {{ .Values.postgres.auth.username | quote }}
+  {{- else }}
+  DATABASE_HOST: {{ .Values.externalDatabase.host | quote }}
+  DATABASE_PORT: {{ .Values.externalDatabase.port | quote }}
+  DATABASE_NAME: {{ .Values.externalDatabase.database | quote }}
+  DATABASE_USER: {{ .Values.externalDatabase.username | quote }}
+  {{- end }}
+
+  # VictoriaMetrics configuration
+  {{- if .Values.victoriametrics.enabled }}
+  VICTORIAMETRICS_URL: {{ include "myelectricaldata.victoriametrics.url" . | quote }}
+  {{- else if .Values.externalVictoriametrics.url }}
+  VICTORIAMETRICS_URL: {{ .Values.externalVictoriametrics.url | quote }}
+  {{- end }}
+
+  # Application configuration (non-sensitive values)
+  {{- if .Values.config }}
+  {{- if .Values.config.frontendUrl }}
+  FRONTEND_URL: {{ .Values.config.frontendUrl | quote }}
+  {{- end }}
+  {{- end }}
+
+  # Export configuration
+  {{- if .Values.exports }}
+  {{- if .Values.exports.homeAssistant.enabled }}
+  HA_ENABLED: "true"
+  HA_URL: {{ .Values.exports.homeAssistant.url | quote }}
+  {{- end }}
+  {{- if .Values.exports.mqtt.enabled }}
+  MQTT_ENABLED: "true"
+  MQTT_HOST: {{ .Values.exports.mqtt.host | quote }}
+  MQTT_PORT: {{ .Values.exports.mqtt.port | quote }}
+  MQTT_TOPIC: {{ .Values.exports.mqtt.topic | quote }}
+  {{- end }}
+  {{- if .Values.exports.jeedom.enabled }}
+  JEEDOM_ENABLED: "true"
+  JEEDOM_URL: {{ .Values.exports.jeedom.url | quote }}
+  {{- end }}
+  {{- end }}

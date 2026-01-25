@@ -267,19 +267,45 @@ async def check_rate_limit(user_id: str, use_cache: bool, is_admin: bool = False
     return True, None
 
 
-async def get_valid_token(usage_point_id: str, user: User, db: AsyncSession) -> str | None:
-    """Get valid Client Credentials token for Enedis API. Returns access_token string."""
+class TokenError:
+    """Classe pour distinguer les types d'erreur de token"""
+    PDL_NOT_FOUND = "PDL_NOT_FOUND"
+    ENEDIS_UNAVAILABLE = "ENEDIS_UNAVAILABLE"
+
+
+def make_token_error_response(error: str) -> APIResponse:
+    """Génère une réponse d'erreur appropriée selon le type d'erreur de token"""
+    if error == TokenError.ENEDIS_UNAVAILABLE:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="ENEDIS_UNAVAILABLE",
+                message="L'API Enedis est temporairement indisponible. Veuillez réessayer dans quelques minutes."
+            )
+        )
+    else:  # PDL_NOT_FOUND
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(
+                code="ACCESS_DENIED",
+                message="Accès refusé : PDL introuvable ou non associé à votre compte. Vérifiez que le PDL existe et que le consentement Enedis est valide."
+            )
+        )
+
+
+async def get_valid_token(usage_point_id: str, user: User, db: AsyncSession) -> str | TokenError:
+    """Get valid Client Credentials token for Enedis API. Returns access_token string or TokenError."""
     # Skip token validation for demo users
     if await demo_adapter.is_demo_user(user.email):
         logger.info(f"[DEMO MODE] Skipping token validation for demo user {user.email}")
         # Still verify PDL ownership
         if not await verify_pdl_ownership(usage_point_id, user, db):
-            return None
+            return TokenError.PDL_NOT_FOUND
         return "demo_token"  # Return dummy token for demo users
 
     # First, verify PDL ownership
     if not await verify_pdl_ownership(usage_point_id, user, db):
-        return None
+        return TokenError.PDL_NOT_FOUND
 
     # Get global client credentials token (stored with user_id=None, usage_point_id='__global__')
     result = await db.execute(
@@ -342,12 +368,12 @@ async def get_valid_token(usage_point_id: str, user: User, db: AsyncSession) -> 
                     token = result.scalar_one_or_none()
                     if not token:
                         logger.error("[TOKEN ERROR] Failed to fetch token after race condition")
-                        return None
+                        return TokenError.ENEDIS_UNAVAILABLE
         except Exception as e:
             logger.error(f"[TOKEN ERROR] Failed to get client credentials token: {str(e)}")
             import traceback
             traceback.print_exc()
-            return None
+            return TokenError.ENEDIS_UNAVAILABLE
 
     return token.access_token
 
@@ -452,15 +478,11 @@ async def get_consumption_daily(
     access_token = None
 
     if not is_demo:
-        access_token = await get_valid_token(usage_point_id, effective_user, db)
-        if not access_token:
-            return APIResponse(
-                success=False,
-                error=ErrorDetail(
-                    code="ACCESS_DENIED",
-                    message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent."
-                )
-            )
+        token_result = await get_valid_token(usage_point_id, effective_user, db)
+        if isinstance(token_result, str):
+            access_token = token_result
+        else:
+            return make_token_error_response(token_result)
 
     # Check rate limit - use route path template instead of actual path
     route = request.scope.get("route")
@@ -699,15 +721,11 @@ async def get_consumption_detail(
         date_list.append(current_date.strftime("%Y-%m-%d"))
         current_date += timedelta(days=1)
 
-    access_token = await get_valid_token(usage_point_id, effective_user, db)
-    if not access_token:
-        return APIResponse(
-            success=False,
-            error=ErrorDetail(
-                code="ACCESS_DENIED",
-                message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent."
-            )
-        )
+    token_result = await get_valid_token(usage_point_id, effective_user, db)
+    if isinstance(token_result, str):
+        access_token = token_result
+    else:
+        return make_token_error_response(token_result)
 
     # Check rate limit - use route path template instead of actual path
     route = request.scope.get("route")
@@ -979,15 +997,11 @@ async def get_consumption_detail_batch(
     # Get valid token
     access_token = None
     if not is_demo:
-        access_token = await get_valid_token(usage_point_id, effective_user, db)
-        if not access_token:
-            return APIResponse(
-                success=False,
-                error=ErrorDetail(
-                    code="ACCESS_DENIED",
-                    message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent."
-                )
-            )
+        token_result = await get_valid_token(usage_point_id, effective_user, db)
+        if isinstance(token_result, str):
+            access_token = token_result
+        else:
+            return make_token_error_response(token_result)
 
     # Generate list of all dates in range
     start_date = datetime.strptime(start, "%Y-%m-%d")
@@ -1372,11 +1386,11 @@ async def get_max_power(
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
 
-    access_token = await get_valid_token(usage_point_id, effective_user, db)
-    if not access_token:
-        return APIResponse(
-            success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
-        )
+    token_result = await get_valid_token(usage_point_id, effective_user, db)
+    if isinstance(token_result, str):
+        access_token = token_result
+    else:
+        return make_token_error_response(token_result)
 
     # Check rate limit - use route path template instead of actual path
     route = request.scope.get("route")
@@ -1426,11 +1440,11 @@ async def get_production_daily(
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
 
-    access_token = await get_valid_token(usage_point_id, effective_user, db)
-    if not access_token:
-        return APIResponse(
-            success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
-        )
+    token_result = await get_valid_token(usage_point_id, effective_user, db)
+    if isinstance(token_result, str):
+        access_token = token_result
+    else:
+        return make_token_error_response(token_result)
 
     # Check rate limit - use route path template instead of actual path
     route = request.scope.get("route")
@@ -1480,11 +1494,11 @@ async def get_production_detail(
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
 
-    access_token = await get_valid_token(usage_point_id, effective_user, db)
-    if not access_token:
-        return APIResponse(
-            success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
-        )
+    token_result = await get_valid_token(usage_point_id, effective_user, db)
+    if isinstance(token_result, str):
+        access_token = token_result
+    else:
+        return make_token_error_response(token_result)
 
     # Check rate limit - use route path template instead of actual path
     route = request.scope.get("route")
@@ -1625,15 +1639,11 @@ async def get_production_detail_batch(
     # Get valid token
     access_token = None
     if not is_demo:
-        access_token = await get_valid_token(usage_point_id, effective_user, db)
-        if not access_token:
-            return APIResponse(
-                success=False,
-                error=ErrorDetail(
-                    code="ACCESS_DENIED",
-                    message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent."
-                )
-            )
+        token_result = await get_valid_token(usage_point_id, effective_user, db)
+        if isinstance(token_result, str):
+            access_token = token_result
+        else:
+            return make_token_error_response(token_result)
 
     # Generate list of all dates in range
     start_date = datetime.strptime(start, "%Y-%m-%d")
@@ -2013,11 +2023,11 @@ async def get_contract(
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
 
-    access_token = await get_valid_token(usage_point_id, effective_user, db)
-    if not access_token:
-        return APIResponse(
-            success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
-        )
+    token_result = await get_valid_token(usage_point_id, effective_user, db)
+    if isinstance(token_result, str):
+        access_token = token_result
+    else:
+        return make_token_error_response(token_result)
 
     # Check rate limit - use route path template instead of actual path
     route = request.scope.get("route")
@@ -2072,11 +2082,11 @@ async def get_address(
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
 
-    access_token = await get_valid_token(usage_point_id, effective_user, db)
-    if not access_token:
-        return APIResponse(
-            success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
-        )
+    token_result = await get_valid_token(usage_point_id, effective_user, db)
+    if isinstance(token_result, str):
+        access_token = token_result
+    else:
+        return make_token_error_response(token_result)
 
     # Check rate limit - use route path template instead of actual path
     route = request.scope.get("route")
@@ -2124,11 +2134,11 @@ async def get_customer(
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
 
-    access_token = await get_valid_token(usage_point_id, effective_user, db)
-    if not access_token:
-        return APIResponse(
-            success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
-        )
+    token_result = await get_valid_token(usage_point_id, effective_user, db)
+    if isinstance(token_result, str):
+        access_token = token_result
+    else:
+        return make_token_error_response(token_result)
 
     # Check rate limit - use route path template instead of actual path
     route = request.scope.get("route")
@@ -2176,11 +2186,11 @@ async def get_contact(
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
 
-    access_token = await get_valid_token(usage_point_id, effective_user, db)
-    if not access_token:
-        return APIResponse(
-            success=False, error=ErrorDetail(code="ACCESS_DENIED", message="Access denied: PDL not found or no valid token. Please verify PDL ownership and consent.")
-        )
+    token_result = await get_valid_token(usage_point_id, effective_user, db)
+    if isinstance(token_result, str):
+        access_token = token_result
+    else:
+        return make_token_error_response(token_result)
 
     # Check rate limit - use route path template instead of actual path
     route = request.scope.get("route")

@@ -4,7 +4,7 @@ from .pdl import PDL
 from .token import Token
 from .email_verification import EmailVerificationToken
 from .password_reset import PasswordResetToken
-from .energy_provider import EnergyProvider, EnergyOffer, OfferContribution, ContributionMessage
+from .energy_provider import PricingType, EnergyProvider, EnergyOffer, OfferContribution, ContributionMessage
 from .tempo_day import TempoDay, TempoColor
 from .ecowatt import EcoWatt
 from .role import Role, Permission, role_permissions
@@ -30,6 +30,7 @@ __all__ = [
     "Token",
     "EmailVerificationToken",
     "PasswordResetToken",
+    "PricingType",
     "EnergyProvider",
     "EnergyOffer",
     "OfferContribution",

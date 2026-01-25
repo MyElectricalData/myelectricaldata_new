@@ -9,7 +9,8 @@ interface Tab {
 
 const tabs: Tab[] = [
   { name: 'Toutes les offres', path: '/contribute/offers', icon: Package },
-  { name: 'Nouvelle contribution', path: '/contribute/new', icon: Plus },
+  // Onglet désactivé temporairement - fonctionnalité intégrée dans /contribute/offers
+  // { name: 'Nouvelle contribution', path: '/contribute/new', icon: Plus },
   { name: 'Mes contributions', path: '/contribute/mine', icon: List },
 ]
 

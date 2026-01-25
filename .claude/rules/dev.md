@@ -2,6 +2,7 @@
 globs:
   - apps/**/*
   - docker-compose*.yml
+  - dev/**/*
   - Makefile
 ---
 
@@ -14,23 +15,34 @@ globs:
 - **Frontend** (`apps/web/`) : Utiliser l'agent `frontend-specialist`
 - **Backend** (`apps/api/`) : Utiliser l'agent `backend-specialist`
 
+## Structure Docker Compose
+
+**Ce projet separe production et developpement :**
+
+| Fichier | Usage | Services inclus |
+|---------|-------|-----------------|
+| `docker-compose.yml` (racine) | **Production Client** | Backend, Frontend uniquement (images GHCR) |
+| `docker-compose.server.yml` (racine) | **Production Serveur** | Backend, Frontend uniquement (images GHCR) |
+| `dev/docker-compose.yml` | Developpement Client | Backend, Frontend, PostgreSQL, VictoriaMetrics, pgAdmin |
+| `dev/docker-compose.server.yml` | Developpement Serveur | Backend, Frontend, PostgreSQL, Valkey, pgAdmin, Docs |
+
 ## Modes d'execution
 
-**Ce projet supporte deux modes qui peuvent tourner en parallele.**
+**Ce projet supporte deux modes qui peuvent tourner en parallele. Le mode Client est le defaut.**
 
-| Mode       | Docker Compose               | Ports           | Description                       |
-| ---------- | ---------------------------- | --------------- | --------------------------------- |
-| **Serveur** | `docker-compose.yml`         | 8000 / 8081     | Gateway multi-users, Enedis direct |
-| **Client** | `docker-compose.client.yml`  | 8100 / 8181     | Installation locale mono-user     |
+| Mode        | Dev Docker Compose             | Prod Docker Compose           | Ports           |
+| ----------- | ------------------------------ | ----------------------------- | --------------- |
+| **Client**  | `dev/docker-compose.yml`       | `docker-compose.yml`          | 8100 / 8181     |
+| **Serveur** | `dev/docker-compose.server.yml`| `docker-compose.server.yml`   | 8000 / 8081     |
 
-### Demarrage par mode
+### Demarrage par mode (Developpement)
 
 ```bash
-# Mode Serveur (defaut)
-make up                    # ou docker compose up -d
+# Mode Client (defaut)
+make up                    # ou docker compose -f dev/docker-compose.yml up -d
 
-# Mode Client
-docker compose -f docker-compose.client.yml up -d
+# Mode Serveur
+make server-up             # ou docker compose -f dev/docker-compose.server.yml up -d
 ```
 
 ### Logs par mode
@@ -38,20 +50,28 @@ docker compose -f docker-compose.client.yml up -d
 **En developpement local, les logs Docker sont facilement accessibles :**
 
 ```bash
-# Mode Serveur
+# Mode Client (defaut)
 make logs                  # Tous les services
 make backend-logs          # Backend uniquement
-docker compose logs -f     # Equivalent
+docker compose -f dev/docker-compose.yml logs -f     # Equivalent
 
-# Mode Client
-docker compose -f docker-compose.client.yml logs -f
-docker compose -f docker-compose.client.yml logs -f backend
-docker compose -f docker-compose.client.yml logs -f frontend
+# Mode Serveur
+make server-logs
+docker compose -f dev/docker-compose.server.yml logs -f
 ```
 
 **Astuce** : Les logs sont en temps reel grace au flag `-f` (follow). Tres utile pour debugger car les erreurs Python/TypeScript apparaissent instantanement.
 
 ## Acces par mode
+
+### Mode Client (defaut)
+
+| Service     | URL                          |
+| ----------- | ---------------------------- |
+| Frontend    | <http://localhost:8100>      |
+| Backend API | <http://localhost:8181>      |
+| API Docs    | <http://localhost:8181/docs> |
+| pgAdmin     | <http://localhost:5051>      |
 
 ### Mode Serveur
 
@@ -62,17 +82,9 @@ docker compose -f docker-compose.client.yml logs -f frontend
 | API Docs    | <http://localhost:8081/docs> |
 | pgAdmin     | <http://localhost:5050>      |
 
-### Mode Client
+## Auto-reload actif (Developpement)
 
-| Service     | URL                          |
-| ----------- | ---------------------------- |
-| Frontend    | <http://localhost:8100>      |
-| Backend API | <http://localhost:8181>      |
-| API Docs    | <http://localhost:8181/docs> |
-
-## Auto-reload actif
-
-**Les services sont en auto-reload. NE PAS redemarrer apres modification de code.**
+**Les services de dev sont en auto-reload. NE PAS redemarrer apres modification de code.**
 
 - **Backend** : Uvicorn `--reload` detecte les changements Python
 - **Frontend** : Vite HMR recharge instantanement les composants React
@@ -81,11 +93,11 @@ docker compose -f docker-compose.client.yml logs -f frontend
 
 - Modification `.env.api`, `.env.client` ou `.env`
 - Ajout dependances (`pyproject.toml`, `package.json`)
-- Modification `docker-compose*.yml` ou `Dockerfile`
+- Modification `dev/docker-compose*.yml` ou `Dockerfile`
 
 ## Commandes principales
 
-### Mode Serveur (Makefile)
+### Mode Client (Makefile - defaut)
 
 ```bash
 # Demarrage
@@ -111,20 +123,24 @@ npm run lint          # ESLint
 npm run build         # Build production
 ```
 
-### Mode Client (commandes directes)
+### Mode Serveur (commandes server-*)
 
 ```bash
 # Demarrage
-docker compose -f docker-compose.client.yml up -d
+make server-up        # ou docker compose -f dev/docker-compose.server.yml up -d
 
 # Arret
-docker compose -f docker-compose.client.yml down
+make server-down
 
 # Logs
-docker compose -f docker-compose.client.yml logs -f
+make server-logs
+
+# Database
+make server-migrate
+make server-db-shell
 
 # Rebuild apres modification Dockerfile
-docker compose -f docker-compose.client.yml up -d --build
+make server-rebuild
 ```
 
 ## Validation
@@ -132,11 +148,11 @@ docker compose -f docker-compose.client.yml up -d --build
 **En fin de traitement, toujours verifier les logs Docker pour valider que tout est OK :**
 
 ```bash
-# Mode Serveur
+# Mode Client (defaut)
 make backend-logs     # Verifier pas d'erreurs backend
 
-# Mode Client
-docker compose -f docker-compose.client.yml logs -f backend
+# Mode Serveur
+make server-backend-logs
 
 # Verifier les conteneurs actifs
 docker ps             # Liste tous les conteneurs

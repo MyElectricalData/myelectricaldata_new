@@ -1,0 +1,421 @@
+# Default values for myelectricaldata
+# This is a YAML-formatted file.
+
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# Development mode configuration
+# Mounts local source code into pods for hot-reload development
+devMode:
+  enabled: false
+  # Base path on the host machine where the project is located
+  # This path will be used to mount source code into containers
+  hostPath: "/path/to/myelectricaldata"
+  # Backend source code mount (relative to hostPath)
+  backend:
+    # Mount path for source code inside container
+    srcPath: "apps/api/src"
+    dataPath: "apps/api/data"
+    staticPath: "apps/api/static"
+  # Frontend source code mount (relative to hostPath)
+  frontend:
+    srcPath: "apps/web/src"
+    publicPath: "apps/web/public"
+
+# Backend (FastAPI) configuration - SERVER MODE
+backend:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/myelectricaldata/myelectricaldata_new/backend
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8000
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2048Mi
+    requests:
+      cpu: 500m
+      memory: 768Mi
+
+  # Environment variables
+  env:
+    TZ: "Europe/Paris"
+    PYTHONUNBUFFERED: "1"
+    # SERVER_MODE is required for this chart (multi-user gateway with Enedis direct access)
+    SERVER_MODE: "true"
+
+  # Health checks
+  # IMPORTANT: timeouts augmentés pour supporter les opérations longues (scraping PDF)
+  livenessProbe:
+    httpGet:
+      path: /ping
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 6
+
+  readinessProbe:
+    httpGet:
+      path: /ping
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # Persistent storage for SQLite database (only used when postgres.enabled is false)
+  # When using PostgreSQL, this PVC is automatically disabled
+  persistence:
+    enabled: true
+    size: 1Gi
+    accessMode: ReadWriteOnce
+    storageClass: ""
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+  podSecurityContext:
+    fsGroup: 1000
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+
+# Frontend (React/Nginx) configuration
+frontend:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/myelectricaldata/myelectricaldata_new/frontend
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  resources:
+    limits:
+      cpu: 300m
+      memory: 384Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Environment variables for the frontend - SERVER MODE
+  # These are injected at runtime via env.js
+  env:
+    VITE_API_BASE_URL: "/api"
+    VITE_BACKEND_URL: "/api"
+    VITE_SERVER_MODE: "true"
+
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+  hosts:
+    - host: myelectricaldata.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+        - path: /api
+          pathType: Prefix
+          service: backend
+        - path: /docs
+          pathType: Prefix
+          service: backend
+
+  tls: []
+  # - secretName: myelectricaldata-tls
+  #   hosts:
+  #     - myelectricaldata.local
+
+# Application configuration (non-sensitive values)
+config:
+  adminEmails: ""           # Comma-separated list of admin emails
+  mailgunDomain: ""         # Mailgun domain
+  mailgunFromEmail: ""      # Mailgun from email address
+  enedisRedirectUri: ""     # Enedis OAuth callback URL (e.g., https://example.com/consent)
+  frontendUrl: ""           # Frontend URL for redirects (e.g., https://example.com)
+
+  # Cookie settings for httpOnly JWT authentication
+  cookie:
+    secure: true            # true for HTTPS (production), false for HTTP (local dev)
+    sameSite: "lax"         # "lax", "strict", or "none" (lax recommended)
+    domain: ""              # Cookie domain (empty = current domain only)
+
+# Application secrets
+# You can configure secrets in 3 ways:
+# 1. Use a single existing Kubernetes Secret by setting existingSecret (legacy)
+# 2. Use per-secret external references with existingSecretRef.name and existingSecretRef.key
+# 3. Provide values directly below (a Secret will be created by Helm)
+secrets:
+  # Use a single existing secret for ALL secrets (legacy mode)
+  # The secret must contain these keys: SECRET_KEY, ADMIN_EMAILS, ENEDIS_CLIENT_ID, etc.
+  existingSecret: ""
+
+  # --- Per-secret configuration ---
+  # Each secret can be configured with:
+  #   - value: The secret value (Helm creates the secret)
+  #   - existingSecretRef.name: Name of an existing Kubernetes Secret
+  #   - existingSecretRef.key: Key within that secret
+  # Priority: existingSecretRef > existingSecret > value
+
+  # JWT secret key for authentication
+  secretKey:
+    value: ""  # Required - generate with: openssl rand -hex 32
+    existingSecretRef:
+      name: ""  # e.g., "my-app-secrets"
+      key: ""   # e.g., "jwt-secret-key"
+
+  # Admin emails (comma-separated)
+  adminEmails:
+    value: ""
+    existingSecretRef:
+      name: ""
+      key: ""
+
+  # Enedis API credentials
+  enedis:
+    environment: "sandbox"  # sandbox or production
+    clientId:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
+    clientSecret:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
+
+  # RTE API credentials (for Tempo calendar)
+  rte:
+    clientId:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
+    clientSecret:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
+
+  # Mailgun email service
+  mailgun:
+    apiKey:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
+    domain:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
+    fromEmail:
+      value: "MyElectricalData <noreply@myelectricaldata.fr>"
+      existingSecretRef:
+        name: ""
+        key: ""
+
+  # Cloudflare Turnstile (anti-spam)
+  turnstile:
+    secretKey:
+      value: ""
+      existingSecretRef:
+        name: ""
+        key: ""
+
+  # Slack notifications (for contribution alerts)
+  slack:
+    enabled: false  # Set to true to enable Slack notifications
+    webhookUrl:
+      value: ""  # Slack webhook URL (https://hooks.slack.com/services/...)
+      existingSecretRef:
+        name: ""  # e.g., "slack-webhook"
+        key: ""   # e.g., "webhook-url"
+
+# Valkey configuration (CloudPirates subchart)
+# Repository: oci://registry-1.docker.io/cloudpirates/valkey
+valkey:
+  enabled: true
+
+  # Valkey image configuration
+  image:
+    repository: valkey/valkey
+    tag: "8-alpine"
+    pullPolicy: IfNotPresent
+
+  # Valkey authentication
+  auth:
+    # Option 1: Set password directly (Helm creates the secret)
+    password: ""
+    # Option 2: Use an existing secret with a generated password
+    # The secret must contain the key specified in existingSecretPasswordKey
+    existingSecret: ""                      # e.g., "valkey-credentials"
+    existingSecretPasswordKey: "password"   # Key containing the password in the secret
+
+  # Valkey configuration
+  config:
+    maxmemory: "256mb"
+    maxmemory-policy: "allkeys-lru"
+
+  # Valkey service
+  service:
+    type: ClusterIP
+    port: 6379
+
+  # Persistence
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: ""
+    annotations:
+      helm.sh/resource-policy: keep
+
+  # PVC retention policy (keeps data when StatefulSet is deleted/scaled)
+  persistentVolumeClaimRetentionPolicy:
+    enabled: true
+    whenScaled: Retain
+    whenDeleted: Retain
+
+  # Resources
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# PostgreSQL configuration (CloudPirates subchart)
+# Repository: oci://registry-1.docker.io/cloudpirates/postgres
+postgres:
+  enabled: true
+
+  # PostgreSQL image configuration
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+
+  # Database configuration
+  auth:
+    database: myelectricaldata
+    username: myelectricaldata
+    # Option 1: Set password directly (Helm creates the secret)
+    password: ""
+    # Option 2: Use an existing secret with a generated password
+    # The secret must contain the key specified in existingSecretKey
+    existingSecret: ""           # e.g., "my-postgres-credentials"
+    existingSecretKey: "password"  # Key containing the password in the secret
+
+  # PostgreSQL service
+  service:
+    type: ClusterIP
+    port: 5432
+
+  # Persistence
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+    annotations:
+      helm.sh/resource-policy: keep
+
+  # PVC retention policy (keeps data when StatefulSet is deleted/scaled)
+  persistentVolumeClaimRetentionPolicy:
+    enabled: true
+    whenScaled: Retain
+    whenDeleted: Retain
+
+  # Resources
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# External database configuration (if postgres.enabled is false)
+externalDatabase:
+  host: ""
+  port: 5432
+  database: myelectricaldata
+  username: myelectricaldata
+  password: ""
+  # Use an existing secret for the password (key: password)
+  existingSecret: ""
+
+# External Valkey configuration (if valkey.enabled is false)
+externalValkey:
+  host: ""
+  port: 6379
+  password: ""
+  existingSecret: ""  # Name of existing secret containing 'password' key
+
+# Service Account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Autoscaling (optional)
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Network policies
+networkPolicy:
+  enabled: false
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1

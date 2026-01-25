@@ -1,0 +1,159 @@
+# MyElectricalData - Server Mode (DEVELOPMENT)
+#
+# Configuration de développement avec hot-reload et services satellites.
+# Pour la production, utiliser docker-compose.server.yml à la racine.
+#
+# Usage:
+#   docker compose -f dev/docker-compose.server.yml up -d
+#
+# Ports:
+#   - Frontend: http://localhost:8000
+#   - Backend API: http://localhost:8081
+#   - pgAdmin: http://localhost:5050
+
+services:
+
+  # Valkey (Redis-compatible cache)
+  valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    command: valkey-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - valkey_data:/data
+    networks:
+      - myelectricaldata
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: myelectricaldata
+      POSTGRES_USER: myelectricaldata
+      POSTGRES_PASSWORD: mySecurePassword2025
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - myelectricaldata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myelectricaldata"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # pgAdmin - Interface web PostgreSQL
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@localhost.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "5050:80"
+    networks:
+      - myelectricaldata
+    depends_on:
+      - postgres
+
+  # Backend FastAPI
+  backend:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8081:8000"
+    env_file:
+      - ../.env.api
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WATCHFILES_FORCE_POLLING=true
+      - WATCHFILES_POLL_INTERVAL=1000
+      - TZ=Europe/Paris
+      - SERVER_MODE=true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../apps/api/data:/app/data
+      - ../apps/api/src:/app/src
+      - ../apps/api/static:/app/static
+      - ../apps/api/alembic:/app/alembic
+      - backend_logs:/logs
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
+    networks:
+      - myelectricaldata
+    depends_on:
+      - valkey
+    # ports définis dans docker-compose.override.yml pour support multi-instances
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend React/Vite - SERVER MODE
+  frontend:
+    build:
+      context: ../apps/web
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    env_file:
+      - ../.env.web
+    environment:
+      - VITE_SERVER_MODE=true
+    volumes:
+      - ../apps/web/src:/app/src
+      - ../apps/web/public:/app/public
+      - ../apps/web/index.html:/app/index.html
+      - ../apps/web/vite.config.ts:/app/vite.config.ts
+      - ../apps/web/tsconfig.json:/app/tsconfig.json
+      - ../apps/web/tsconfig.node.json:/app/tsconfig.node.json
+      - ../apps/web/tailwind.config.js:/app/tailwind.config.js
+      - ../apps/web/postcss.config.js:/app/postcss.config.js
+      - ../.env.web:/app/.env:ro
+      - /app/node_modules
+    ports:
+      - "8000:5173"
+    networks:
+      - myelectricaldata
+    depends_on:
+      - backend
+
+  # Documentation Docusaurus
+  docs:
+    build:
+      context: ../apps/docs
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - ../docs:/app/docs:ro
+    ports:
+      - "8002:3000"
+    networks:
+      - myelectricaldata
+    profiles:
+      - docs
+
+volumes:
+  valkey_data:
+    driver: local
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  backend_logs:
+    driver: local
+
+networks:
+  myelectricaldata:
+    driver: bridge

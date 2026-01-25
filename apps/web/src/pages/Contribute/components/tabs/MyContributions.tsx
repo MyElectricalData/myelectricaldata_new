@@ -261,9 +261,8 @@ export default function MyContributions({ onEditContribution }: MyContributionsP
                 type="button"
                 onClick={() => {
                   onEditContribution(contribution)
-                  navigate('/contribute/new')
-                  document.getElementById('contribution-form')?.scrollIntoView({ behavior: 'smooth' })
-                  toast.success('Mode édition activé.')
+                  navigate('/contribute/offers')
+                  toast.success('Mode édition activé - allez sur l\'onglet "Toutes les offres" pour modifier.')
                 }}
                 className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors focus:outline-none focus:ring-2 ${
                   contribution.status === 'rejected'
@@ -454,10 +453,10 @@ export default function MyContributions({ onEditContribution }: MyContributionsP
           <p className="text-gray-500 dark:text-gray-400 mb-2">Vous n'avez pas encore de contributions</p>
           <button
             type="button"
-            onClick={() => navigate('/contribute/new')}
+            onClick={() => navigate('/contribute/offers')}
             className="text-primary-600 dark:text-primary-400 hover:underline font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 rounded"
           >
-            Proposer une nouvelle offre
+            Consulter les offres et proposer des modifications
           </button>
         </div>
       )}

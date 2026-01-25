@@ -14,6 +14,10 @@ LOG_FILE="$LOG_DIR/watch-backend.log"
 WATCH_PID_FILE="$LOG_DIR/watch-backend.pid"
 WATCH_SCRIPT="./watch-backend.sh"
 
+# Docker Compose files (development in dev/ folder)
+COMPOSE_CLIENT="docker compose -f dev/docker-compose.yml"
+COMPOSE_SERVER="docker compose -f dev/docker-compose.server.yml"
+
 echo -e "${GREEN}🚀 Starting development environment...${NC}"
 
 # Créer le dossier de logs
@@ -70,33 +74,40 @@ export FORCE_COLOR=1
 export DOCKER_CLI_HINTS=false
 export COMPOSE_ANSI=always
 
-# Démarrer les services client si .env.local-client existe
-if [ -f ".env.local-client" ]; then
-    echo -e "${GREEN}🏠 Starting Client Mode services (background)...${NC}"
-    docker compose -f docker-compose.client.yml up -d
-    echo -e "${GREEN}✅ Client Mode started${NC}"
-else
-    echo -e "${YELLOW}⚠️  Client Mode not started (.env.local-client not found)${NC}"
+# Vérifier que .env.local-client existe (requis pour le mode client par défaut)
+if [ ! -f ".env.local-client" ]; then
+    echo -e "${RED}❌ Error: .env.local-client not found${NC}"
+    echo -e "${YELLOW}Copy .env.local-client.example to .env.local-client and configure your credentials${NC}"
+    exit 1
 fi
 
-echo -e "${GREEN}🌐 Starting Server Mode services (foreground)...${NC}"
+# Démarrer les services serveur si .env.api existe (optionnel)
+if [ -f ".env.api" ]; then
+    echo -e "${GREEN}🌐 Starting Server Mode services (background)...${NC}"
+    $COMPOSE_SERVER up -d
+    echo -e "${GREEN}✅ Server Mode started${NC}"
+else
+    echo -e "${YELLOW}⚠️  Server Mode not started (.env.api not found)${NC}"
+fi
+
+echo -e "${GREEN}🏠 Starting Client Mode services (foreground)...${NC}"
 echo ""
 echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
 echo -e "${GREEN}                    📍 ACCESS POINTS                        ${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  Server Mode:${NC}"
-echo -e "    Frontend:        http://localhost:8000"
-echo -e "    Backend API:     http://localhost:8081"
-echo -e "    API Docs:        http://localhost:8081/docs"
-echo -e "    pgAdmin:         http://localhost:5050"
-if [ -f ".env.local-client" ]; then
-echo -e ""
-echo -e "${GREEN}  Client Mode:${NC}"
+echo -e "${GREEN}  Client Mode (default):${NC}"
 echo -e "    Frontend:        http://localhost:8100"
 echo -e "    Backend API:     http://localhost:8181"
 echo -e "    API Docs:        http://localhost:8181/docs"
 echo -e "    VictoriaMetrics: http://localhost:8428"
 echo -e "    pgAdmin Client:  http://localhost:5051"
+if [ -f ".env.api" ]; then
+echo -e ""
+echo -e "${GREEN}  Server Mode:${NC}"
+echo -e "    Frontend:        http://localhost:8000"
+echo -e "    Backend API:     http://localhost:8081"
+echo -e "    API Docs:        http://localhost:8081/docs"
+echo -e "    pgAdmin:         http://localhost:5050"
 fi
 if [ -d "apps/docs" ]; then
 echo -e ""
@@ -107,26 +118,26 @@ echo -e "${GREEN}═════════════════════
 echo ""
 
 # Lancer les deux modes avec logs combinés
-if [ -f ".env.local-client" ]; then
+if [ -f ".env.api" ]; then
     # Les deux modes sont actifs : combiner les logs
     # Utiliser docker compose logs -f pour les deux en parallèle
-    docker compose up -d
-    echo -e "${GREEN}🔄 Showing combined logs (Server + Client)...${NC}"
+    $COMPOSE_CLIENT up -d
+    echo -e "${GREEN}🔄 Showing combined logs (Client + Server)...${NC}"
     echo -e "${YELLOW}Press Ctrl+C to stop viewing logs (services will keep running)${NC}"
     echo ""
 
     # Trap pour cleanup propre
-    trap 'echo -e "\n${YELLOW}Stopping all services...${NC}"; docker compose down; docker compose -f docker-compose.client.yml down; exit 0' INT
+    trap 'echo -e "\n${YELLOW}Stopping all services...${NC}"; $COMPOSE_CLIENT down; $COMPOSE_SERVER down; exit 0' INT
 
     # Afficher les logs des deux modes en parallèle
-    docker compose logs -f --tail=100 &
-    SERVER_LOGS_PID=$!
-    docker compose -f docker-compose.client.yml logs -f --tail=100 &
+    $COMPOSE_CLIENT logs -f --tail=100 &
     CLIENT_LOGS_PID=$!
+    $COMPOSE_SERVER logs -f --tail=100 &
+    SERVER_LOGS_PID=$!
 
     # Attendre les deux processus
-    wait $SERVER_LOGS_PID $CLIENT_LOGS_PID
+    wait $CLIENT_LOGS_PID $SERVER_LOGS_PID
 else
-    # Mode serveur uniquement
-    exec docker compose up
+    # Mode client uniquement (défaut)
+    exec $COMPOSE_CLIENT up
 fi

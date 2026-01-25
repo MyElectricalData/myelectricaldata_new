@@ -1,0 +1,9 @@
+dependencies:
+- name: postgres
+  repository: oci://registry-1.docker.io/cloudpirates
+  version: 0.12.2
+- name: victoria-metrics-single
+  repository: https://victoriametrics.github.io/helm-charts/
+  version: 0.13.0
+digest: sha256:30b4b3705b0fbeaf51b08875c20d939da20ab92be285b808dc5ad977f3bbbc35
+generated: "2026-01-25T22:25:46.419063+01:00"

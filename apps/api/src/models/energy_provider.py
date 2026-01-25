@@ -6,6 +6,43 @@ import uuid
 from .base import Base
 
 
+class PricingType(Base):
+    """
+    Type d'offre tarifaire (BASE, HC_HP, TEMPO, EJP, etc.)
+
+    Centralise les types d'offres qui peuvent être proposées par plusieurs fournisseurs.
+    Chaque type définit quels champs de prix sont requis/optionnels.
+    """
+
+    __tablename__ = "pricing_types"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)  # BASE, HC_HP, TEMPO, EJP, HC_WEEKEND
+    name: Mapped[str] = mapped_column(String(100), nullable=False)  # Nom affiché (ex: "Base", "Heures Creuses / Heures Pleines")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)  # Description du type d'offre
+
+    # Champs de prix requis pour ce type (JSON array)
+    # Ex: ["base_price"] pour BASE, ["hc_price", "hp_price"] pour HC_HP
+    required_price_fields: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+    # Champs de prix optionnels pour ce type (JSON array)
+    # Ex: ["hc_schedules"] pour HC_HP
+    optional_price_fields: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    # Icône ou couleur pour l'affichage (optionnel)
+    icon: Mapped[str | None] = mapped_column(String(50), nullable=True)  # Ex: "zap", "clock", "sun"
+    color: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Ex: "#3B82F6", "blue"
+
+    # Ordre d'affichage
+    display_order: Mapped[int] = mapped_column(default=0, nullable=False)
+
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+
 class EnergyProvider(Base):
     """Energy provider (Fournisseur d'énergie)"""
 
@@ -31,7 +68,8 @@ class EnergyOffer(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     provider_id: Mapped[str] = mapped_column(String(36), ForeignKey("energy_providers.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    offer_type: Mapped[str] = mapped_column(String(50), nullable=False)  # BASE, HC_HP, TEMPO, EJP, etc.
+    offer_type: Mapped[str] = mapped_column(String(50), nullable=False)  # BASE, HC_HP, TEMPO, EJP, etc. (legacy, kept for compatibility)
+    pricing_type_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("pricing_types.id", ondelete="SET NULL"), nullable=True)  # Référence vers le type d'offre centralisé
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Pricing - Using Numeric(10,5) for exact decimal precision (no float rounding)

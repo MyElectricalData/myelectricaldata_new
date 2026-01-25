@@ -1,0 +1,183 @@
+{{- if .Values.frontend.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "myelectricaldata.frontend.fullname" . }}
+  labels:
+    {{- include "myelectricaldata.frontend.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "myelectricaldata.frontend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.frontend.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "myelectricaldata.frontend.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- include "myelectricaldata.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "myelectricaldata.serviceAccountName" . }}
+      {{- with .Values.frontend.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # Wait for backend to be ready
+        {{- if .Values.backend.enabled }}
+        - name: wait-for-backend
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z {{ include "myelectricaldata.backend.fullname" . }} {{ .Values.backend.service.port | default 8000 }}; do echo "Waiting for Backend..."; sleep 2; done; echo "Backend is ready!"']
+        {{- end }}
+        {{- if .Values.devMode.enabled }}
+        # Install npm dependencies in dev mode
+        - name: npm-install
+          image: node:20-alpine
+          workingDir: /app
+          command: ['sh', '-c', 'cp /host-app/package*.json /app/ && npm ci']
+          volumeMounts:
+            - name: host-package-files
+              mountPath: /host-app
+              readOnly: true
+            - name: node-modules
+              mountPath: /app/node_modules
+        {{- end }}
+      containers:
+        - name: frontend
+          {{- with .Values.frontend.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.devMode.enabled }}
+          image: "node:20-alpine"
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command: ["sh", "-c"]
+          args:
+            - |
+              # Create a vite config that allows all hosts in K8s
+              cat > /app/vite.config.k8s.mjs << 'VITECONFIG'
+              import { defineConfig, loadEnv } from 'vite'
+              import react from '@vitejs/plugin-react'
+              import { resolve } from 'path'
+
+              export default defineConfig(({ mode }) => {
+                const env = loadEnv(mode, process.cwd(), '')
+                return {
+                  plugins: [react()],
+                  resolve: { alias: { '@': resolve(process.cwd(), './src') } },
+                  server: {
+                    port: 5173,
+                    host: '0.0.0.0',
+                    allowedHosts: true,
+                    watch: { usePolling: true, interval: 1000 },
+                  },
+                }
+              })
+              VITECONFIG
+              exec npx vite --config vite.config.k8s.mjs
+          {{- else }}
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          {{- end }}
+          ports:
+            - name: http
+              {{- if .Values.devMode.enabled }}
+              containerPort: 5173
+              {{- else }}
+              containerPort: 80
+              {{- end }}
+              protocol: TCP
+          {{- if .Values.devMode.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ include "myelectricaldata.frontend.fullname" . }}-env
+                optional: true
+          {{- end }}
+          {{- if .Values.frontend.env }}
+          env:
+            {{- range $key, $value := .Values.frontend.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- end }}
+          {{- if not .Values.devMode.enabled }}
+          {{- with .Values.frontend.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.frontend.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- end }}
+          {{- with .Values.frontend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.devMode.enabled }}
+          volumeMounts:
+            - name: dev-src
+              mountPath: /app/src
+            - name: dev-public
+              mountPath: /app/public
+            - name: node-modules
+              mountPath: /app/node_modules
+            - name: host-package-files
+              mountPath: /app/package.json
+              subPath: package.json
+            - name: host-package-files
+              mountPath: /app/package-lock.json
+              subPath: package-lock.json
+            - name: host-package-files
+              mountPath: /app/vite.config.ts
+              subPath: vite.config.ts
+            - name: host-package-files
+              mountPath: /app/tsconfig.json
+              subPath: tsconfig.json
+            - name: host-package-files
+              mountPath: /app/tsconfig.node.json
+              subPath: tsconfig.node.json
+            - name: host-package-files
+              mountPath: /app/tailwind.config.js
+              subPath: tailwind.config.js
+            - name: host-package-files
+              mountPath: /app/postcss.config.js
+              subPath: postcss.config.js
+            - name: host-package-files
+              mountPath: /app/index.html
+              subPath: index.html
+          {{- end }}
+      {{- if .Values.devMode.enabled }}
+      volumes:
+        - name: dev-src
+          hostPath:
+            path: {{ .Values.devMode.hostPath }}/{{ .Values.devMode.frontend.srcPath }}
+            type: Directory
+        - name: dev-public
+          hostPath:
+            path: {{ .Values.devMode.hostPath }}/{{ .Values.devMode.frontend.publicPath }}
+            type: Directory
+        - name: host-package-files
+          hostPath:
+            path: {{ .Values.devMode.hostPath }}/apps/web
+            type: Directory
+        - name: node-modules
+          emptyDir: {}
+      {{- end }}
+      {{- with .Values.frontend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

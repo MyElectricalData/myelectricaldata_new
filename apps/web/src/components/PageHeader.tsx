@@ -23,7 +23,7 @@ interface SharedPDL extends PDL {
 // Pages qui affichent le sélecteur de PDL avec bouton "Récupérer"
 const PDL_SELECTOR_PAGES = [
   '/consumption_kwh', '/consumption_euro', '/production', '/balance', '/simulator', '/dashboard', '/tempo', '/ecowatt', '/france',
-  '/contribute', '/contribute/new', '/contribute/mine', '/contribute/offers',
+  '/contribute', '/contribute/mine', '/contribute/offers',
   '/faq', '/api-docs', '/api-docs/auth', '/settings',
   '/admin', '/admin/users', '/admin/tempo', '/admin/ecowatt', '/admin/contributions', '/admin/offers', '/admin/roles', '/admin/logs', '/admin/add-pdl', '/admin/rte',
   '/home-assistant', '/mqtt', '/victoriametrics'
@@ -40,7 +40,8 @@ const PAGE_CONFIG: Record<string, { title: string; icon: typeof TrendingUp; subt
   '/tempo': { title: 'Calendrier Tempo', icon: Calendar, subtitle: 'Historique des jours Tempo bleus, blancs et rouges fourni par RTE' },
   '/ecowatt': { title: 'EcoWatt - Signal RTE', icon: Zap, subtitle: 'Suivez en temps réel l\'état du réseau électrique français' },
   '/contribute': { title: 'Contribuer', icon: Users, subtitle: 'Aidez la communauté en ajoutant des offres tarifaires' },
-  '/contribute/new': { title: 'Contribuer', icon: Users, subtitle: 'Proposer une nouvelle offre ou un nouveau fournisseur' },
+  // Route désactivée temporairement - fonctionnalité intégrée dans /contribute/offers
+  // '/contribute/new': { title: 'Contribuer', icon: Users, subtitle: 'Proposer une nouvelle offre ou un nouveau fournisseur' },
   '/contribute/mine': { title: 'Contribuer', icon: Users, subtitle: 'Suivez l\'état de vos contributions' },
   '/contribute/offers': { title: 'Contribuer', icon: Users, subtitle: 'Consultez les offres disponibles dans la base de données' },
   '/faq': { title: 'FAQ - Questions fréquentes Enedis', icon: AlertCircle, subtitle: 'Réponses aux questions courantes et solutions aux erreurs de l\'API Enedis' },

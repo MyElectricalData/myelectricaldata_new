@@ -257,7 +257,8 @@ function App() {
         path="/contribute"
         element={<Navigate to="/contribute/offers" replace />}
       />
-      <Route
+      {/* Route désactivée temporairement - fonctionnalité intégrée dans /contribute/offers */}
+      {/* <Route
         path="/contribute/new"
         element={
           <ProtectedRoute>
@@ -266,7 +267,7 @@ function App() {
             </Layout>
           </ProtectedRoute>
         }
-      />
+      /> */}
       <Route
         path="/contribute/mine"
         element={

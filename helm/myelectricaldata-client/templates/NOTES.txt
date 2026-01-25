@@ -1,0 +1,74 @@
+
+********************************************************************************
+*                                                                              *
+*       MyElectricalData Client - Local Installation with API Gateway         *
+*                                                                              *
+********************************************************************************
+
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+
+{{- if .Values.ingress.enabled }}
+=== Access Information ===
+
+The application is accessible at:
+{{- range .Values.ingress.hosts }}
+  - http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+
+{{- else }}
+=== Access Information ===
+
+To access the application, you can use port-forwarding:
+
+  # Frontend (Web UI)
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "myelectricaldata.frontend.fullname" . }} 8080:{{ .Values.frontend.service.port }}
+
+  # Backend (API)
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "myelectricaldata.backend.fullname" . }} 8081:{{ .Values.backend.service.port }}
+
+Then access:
+  - Frontend: http://localhost:8080
+  - Backend API: http://localhost:8081
+  - API Docs: http://localhost:8081/docs
+{{- end }}
+
+=== Useful Commands ===
+
+# Check the status of pods
+kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+# View backend logs
+kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/component=backend -f
+
+# View frontend logs
+kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/component=frontend -f
+
+{{- if .Values.postgres.enabled }}
+# Access PostgreSQL
+kubectl exec -it -n {{ .Release.Namespace }} $(kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name=postgres -o jsonpath='{.items[0].metadata.name}') -- psql -U {{ .Values.postgres.auth.username }} -d {{ .Values.postgres.auth.database }}
+{{- end }}
+
+{{- if .Values.victoriametrics.enabled }}
+# Access VictoriaMetrics UI
+kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "myelectricaldata.victoriametrics.fullname" . }} 8428:8428
+# Then open: http://localhost:8428/vmui/
+{{- end }}
+
+=== Important Notes ===
+
+1. CLIENT MODE: This chart runs in client mode, connecting to the MyElectricalData API gateway
+2. You MUST configure your MED_CLIENT_ID and MED_CLIENT_SECRET from your v2.myelectricaldata.fr account
+3. Data is stored permanently in PostgreSQL (not cached like server mode)
+4. For production, enable TLS in the ingress configuration
+
+{{- if .Values.exports.homeAssistant.enabled }}
+5. Home Assistant integration is enabled - make sure HA_URL is accessible from the cluster
+{{- end }}
+{{- if .Values.exports.mqtt.enabled }}
+5. MQTT integration is enabled - data will be published to {{ .Values.exports.mqtt.host }}:{{ .Values.exports.mqtt.port }}
+{{- end }}
+
+For more information, visit: https://github.com/MyElectricalData/myelectricaldata

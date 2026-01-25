@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, UTC
-from ..models import User, EnergyProvider, EnergyOffer, OfferContribution, ContributionMessage
+from ..models import User, PricingType, EnergyProvider, EnergyOffer, OfferContribution, ContributionMessage
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
 from ..middleware import get_current_user, require_permission, require_action, require_not_demo
@@ -28,7 +28,40 @@ def parse_iso_datetime(value: str | None) -> datetime | None:
         return None
 
 
-# Public endpoints - Get providers and offers
+# Public endpoints - Get pricing types, providers and offers
+@router.get("/pricing-types", response_model=APIResponse)
+async def list_pricing_types(db: AsyncSession = Depends(get_db)) -> APIResponse:
+    """List all active pricing types (BASE, HC_HP, TEMPO, etc.)
+
+    Returns centralized pricing type definitions that can be used by any energy provider.
+    Each type includes required and optional price fields for validation.
+    """
+    result = await db.execute(
+        select(PricingType)
+        .where(PricingType.is_active.is_(True))
+        .order_by(PricingType.display_order)
+    )
+    pricing_types = result.scalars().all()
+
+    return APIResponse(
+        success=True,
+        data=[
+            {
+                "id": pt.id,
+                "code": pt.code,
+                "name": pt.name,
+                "description": pt.description,
+                "required_price_fields": pt.required_price_fields,
+                "optional_price_fields": pt.optional_price_fields,
+                "icon": pt.icon,
+                "color": pt.color,
+                "display_order": pt.display_order,
+            }
+            for pt in pricing_types
+        ],
+    )
+
+
 @router.get("/providers", response_model=APIResponse)
 async def list_providers(db: AsyncSession = Depends(get_db)) -> APIResponse:
     """List all active energy providers"""
@@ -142,7 +175,11 @@ async def create_contribution(
     power_variants = contribution_data.get("power_variants")
     power_kva_legacy = contribution_data.get("power_kva")
 
-    if not power_variants and not power_kva_legacy:
+    # Les suppressions de fournisseur n'ont pas besoin de puissance
+    offer_name = contribution_data.get("offer_name", "")
+    is_provider_deletion = "[SUPPRESSION FOURNISSEUR]" in offer_name or "[SUPPRESSION_FOURNISSEUR]" in offer_name
+
+    if not power_variants and not power_kva_legacy and not is_provider_deletion:
         return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="Au moins une puissance (kVA) est obligatoire"))
 
     # Validate power_variants format if provided
@@ -242,7 +279,11 @@ async def update_contribution(
     power_variants = contribution_data.get("power_variants")
     power_kva_legacy = contribution_data.get("power_kva")
 
-    if not power_variants and not power_kva_legacy:
+    # Les suppressions de fournisseur n'ont pas besoin de puissance
+    offer_name = contribution_data.get("offer_name", "")
+    is_provider_deletion = "[SUPPRESSION FOURNISSEUR]" in offer_name or "[SUPPRESSION_FOURNISSEUR]" in offer_name
+
+    if not power_variants and not power_kva_legacy and not is_provider_deletion:
         return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="Au moins une puissance (kVA) est obligatoire"))
 
     # Validate power_variants format if provided
@@ -820,8 +861,37 @@ async def approve_contribution(
                 db.add(offer)
 
         elif contribution.contribution_type == "UPDATE_OFFER":
+            # Check if this is a provider deletion request (offer_name contains [SUPPRESSION FOURNISSEUR])
+            if contribution.offer_name and "[SUPPRESSION FOURNISSEUR]" in contribution.offer_name:
+                # Delete provider and all its offers
+                if contribution.existing_provider_id:
+                    # First delete all offers for this provider
+                    offers_result = await db.execute(
+                        select(EnergyOffer).where(EnergyOffer.provider_id == contribution.existing_provider_id)
+                    )
+                    offers_to_delete = offers_result.scalars().all()
+
+                    for offer in offers_to_delete:
+                        await db.delete(offer)
+
+                    # Then delete the provider
+                    provider_result = await db.execute(
+                        select(EnergyProvider).where(EnergyProvider.id == contribution.existing_provider_id)
+                    )
+                    provider_to_delete = provider_result.scalar_one_or_none()
+
+                    if provider_to_delete:
+                        await db.delete(provider_to_delete)
+                        logger.info(
+                            f"[CONTRIBUTION] Deleted provider: {provider_to_delete.name} (id={contribution.existing_provider_id}), "
+                            f"with {len(offers_to_delete)} offers"
+                        )
+                    else:
+                        logger.warning(
+                            f"[CONTRIBUTION] Provider to delete not found: id={contribution.existing_provider_id}"
+                        )
             # Check if this is a deletion request (offer_name starts with [SUPPRESSION])
-            if contribution.offer_name and contribution.offer_name.startswith("[SUPPRESSION]"):
+            elif contribution.offer_name and contribution.offer_name.startswith("[SUPPRESSION]"):
                 # Delete offer by provider_id, offer_type and power_kva
                 if contribution.existing_provider_id and contribution.offer_type and contribution.power_kva:
                     # First try to find by power_kva field
@@ -982,11 +1052,23 @@ async def bulk_approve_contributions(
             provider_id = contribution.existing_provider_id
 
             if contribution.contribution_type == "NEW_PROVIDER" and contribution.provider_name:
-                # Create new provider
-                provider = EnergyProvider(name=contribution.provider_name, website=contribution.provider_website)
-                db.add(provider)
-                await db.flush()
-                provider_id = provider.id
+                # Check if provider already exists (may have been created by a previous contribution in this batch)
+                existing_provider_result = await db.execute(
+                    select(EnergyProvider).where(EnergyProvider.name == contribution.provider_name)
+                )
+                existing_provider = existing_provider_result.scalar_one_or_none()
+
+                if existing_provider:
+                    # Reuse existing provider
+                    provider_id = existing_provider.id
+                    logger.info(f"[BULK APPROVE] Reusing existing provider: {contribution.provider_name} (id={provider_id})")
+                else:
+                    # Create new provider
+                    provider = EnergyProvider(name=contribution.provider_name, website=contribution.provider_website)
+                    db.add(provider)
+                    await db.flush()
+                    provider_id = provider.id
+                    logger.info(f"[BULK APPROVE] Created new provider: {contribution.provider_name} (id={provider_id})")
 
             if not provider_id:
                 skipped += 1
@@ -1020,8 +1102,53 @@ async def bulk_approve_contributions(
                 db.add(offer)
 
             elif contribution.contribution_type == "UPDATE_OFFER":
+                # Check if this is a provider deletion request (offer_name contains [SUPPRESSION FOURNISSEUR])
+                if contribution.offer_name and "[SUPPRESSION FOURNISSEUR]" in contribution.offer_name:
+                    # Delete provider and all its offers
+                    if contribution.existing_provider_id:
+                        # First delete all offers for this provider
+                        offers_result = await db.execute(
+                            select(EnergyOffer).where(EnergyOffer.provider_id == contribution.existing_provider_id)
+                        )
+                        offers_to_delete = offers_result.scalars().all()
+
+                        for offer in offers_to_delete:
+                            await db.delete(offer)
+
+                        # Then delete the provider
+                        provider_result = await db.execute(
+                            select(EnergyProvider).where(EnergyProvider.id == contribution.existing_provider_id)
+                        )
+                        provider_to_delete = provider_result.scalar_one_or_none()
+
+                        if provider_to_delete:
+                            await db.delete(provider_to_delete)
+                            logger.info(
+                                f"[BULK APPROVE] Deleted provider: {provider_to_delete.name} (id={contribution.existing_provider_id}), "
+                                f"with {len(offers_to_delete)} offers"
+                            )
+                        else:
+                            logger.warning(
+                                f"[BULK APPROVE] Provider to delete not found: id={contribution.existing_provider_id}"
+                            )
+                # Check if this is a rename request (offer_name starts with [RENOMMAGE])
+                elif contribution.offer_name and contribution.offer_name.startswith("[RENOMMAGE]"):
+                    if contribution.existing_offer_id:
+                        offer_result = await db.execute(select(EnergyOffer).where(EnergyOffer.id == contribution.existing_offer_id))
+                        offer_maybe = offer_result.scalar_one_or_none()
+
+                        if offer_maybe:
+                            # Extract new name from "[RENOMMAGE] NewName"
+                            new_name = contribution.offer_name.replace("[RENOMMAGE] ", "")
+                            old_name = offer_maybe.name
+                            offer_maybe.name = new_name
+                            offer_maybe.updated_at = datetime.now(UTC)
+                            logger.info(f"[BULK APPROVE] Renamed offer: '{old_name}' → '{new_name}'")
+                        else:
+                            logger.warning(f"[BULK APPROVE] Offer not found for rename: {contribution.existing_offer_id}")
+
                 # Check if this is a deletion request (offer_name starts with [SUPPRESSION])
-                if contribution.offer_name and contribution.offer_name.startswith("[SUPPRESSION]"):
+                elif contribution.offer_name and contribution.offer_name.startswith("[SUPPRESSION]"):
                     # Delete offer by provider_id, offer_type and power_kva
                     if contribution.existing_provider_id and contribution.offer_type and contribution.power_kva:
                         # First try to find by power_kva field

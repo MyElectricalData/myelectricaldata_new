@@ -10,12 +10,12 @@ MyElectricalData is a secure API gateway that enables French individuals to acce
 
 ## Modes d'exécution
 
-**IMPORTANT : Ce projet supporte DEUX modes. Voir `.claude/rules/modes.md` pour les règles détaillées.**
+**IMPORTANT : Ce projet supporte DEUX modes. Le mode Client est le défaut. Voir `.claude/rules/modes.md` pour les règles détaillées.**
 
-| Mode | Description | Docker Compose | Ports |
-|------|-------------|----------------|-------|
-| **Serveur** | Gateway complet avec admin, multi-users, Enedis direct | `docker-compose.yml` | 8000/8081 |
-| **Client** | Installation locale, mono-user, API MyElectricalData, exports | `docker-compose.client.yml` | 8100/8181 |
+| Mode        | Description                                                   | Docker Compose              | Ports     | Défaut |
+| ----------- | ------------------------------------------------------------- | --------------------------- | --------- | ------ |
+| **Client**  | Installation locale, mono-user, API MyElectricalData, exports | `docker-compose.yml`        | 8100/8181 | ✅     |
+| **Serveur** | Gateway complet avec admin, multi-users, Enedis direct        | `docker-compose.server.yml` | 8000/8081 |        |
 
 Les deux modes peuvent tourner en parallèle. Documentation mode client : `docs/local-client/`
 
@@ -54,9 +54,16 @@ make rebuild          # Rebuild all containers
 make help             # Show all available commands
 ```
 
-**Access Points:**
+**Access Points (Client Mode - Default):**
 
-- Frontend: <http://localhost:8000> (via Vite dev server)
+- Frontend: <http://localhost:8100>
+- Backend API: <http://localhost:8181>
+- API Docs: <http://localhost:8181/docs>
+- pgAdmin: <http://localhost:5051>
+
+**Access Points (Server Mode):**
+
+- Frontend: <http://localhost:8000>
 - Backend API: <http://localhost:8081>
 - API Docs: <http://localhost:8081/docs>
 - pgAdmin: <http://localhost:5050>
@@ -64,15 +71,18 @@ make help             # Show all available commands
 ### Docker (Manual Alternative)
 
 ```bash
-# Start all services
+# Start client mode services (default)
 docker compose up -d
 
 # View logs
-docker compose logs -f backend
-docker compose logs -f frontend
+docker compose logs -f backend-client
+docker compose logs -f frontend-client
 
 # Stop services
 docker compose down
+
+# Start server mode services
+docker compose -f docker-compose.server.yml up -d
 ```
 
 ### Backend (apps/api/)
@@ -122,20 +132,23 @@ uv run ruff check --fix src tests
 # SQLite: sqlite+aiosqlite:///./data/myelectricaldata.db
 # PostgreSQL: postgresql+asyncpg://user:pass@postgres:5432/db
 
-# Apply all pending migrations
-docker compose exec backend alembic upgrade head
+# Apply all pending migrations (client mode - default)
+docker compose exec backend-client alembic upgrade head
 
 # Rollback last migration
-docker compose exec backend alembic downgrade -1
+docker compose exec backend-client alembic downgrade -1
 
 # Show migration history
-docker compose exec backend alembic history
+docker compose exec backend-client alembic history
 
 # Generate a new migration (after modifying models)
-docker compose exec backend alembic revision --autogenerate -m "Description"
+docker compose exec backend-client alembic revision --autogenerate -m "Description"
 
 # For existing databases, stamp with current revision
-docker compose exec backend alembic stamp head
+docker compose exec backend-client alembic stamp head
+
+# Server mode migrations
+docker compose -f docker-compose.server.yml exec backend alembic upgrade head
 
 # Local development (from apps/api/)
 cd apps/api
@@ -238,6 +251,7 @@ Key relationships:
 - **Admin interface**: `/admin/offers` with logo display, URL management, preview/refresh actions
 
 **Scraper types**:
+
 - PDF parsing (EDF, Enercoop, TotalEnergies, Priméo)
 - Fallback data for all providers
 - ~133 total offers across 4 providers
@@ -335,7 +349,8 @@ VITE_API_BASE_URL=/api  # In Docker, or http://localhost:8081 for local
 ### Creating Demo Account
 
 ```bash
-docker compose exec backend python scripts/create_demo_account.py
+# Server mode only (demo accounts are for the gateway)
+docker compose -f docker-compose.server.yml exec backend python scripts/create_demo_account.py
 # Creates: demo@myelectricaldata.fr / DemoPassword123!
 # With 2 PDLs and 365 days of mock consumption/production data
 ```

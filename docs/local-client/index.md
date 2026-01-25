@@ -85,7 +85,8 @@ Le **mode client** de MyElectricalData est une version allégée de l'applicatio
 | **Home Assistant** | Intégration directe via REST API |
 | **MQTT** | Publication vers broker MQTT |
 | **VictoriaMetrics** | Push vers base time-series |
-| **Jeedom** | Intégration via API Jeedom |
+
+➡️ [Voir les intégrations planifiées](./integrations/autres.md) (Jeedom, InfluxDB, Domoticz...)
 
 ---
 
@@ -137,8 +138,8 @@ docker compose -f docker-compose.client.yml up -d    # Mode client
 
 ## Documentation
 
+- [Installation](./installation/) (Docker, Helm)
 - [Architecture technique](./architecture.md)
-- [Installation détaillée](./installation.md)
 - [Configuration](./configuration.md)
 - [Page Exporter](./exporters.md)
 - [Interface utilisateur](./interface.md)
@@ -148,4 +149,4 @@ docker compose -f docker-compose.client.yml up -d    # Mode client
 - [Home Assistant](./integrations/home-assistant.md)
 - [MQTT](./integrations/mqtt.md)
 - [VictoriaMetrics](./integrations/victoriametrics.md)
-- [Jeedom](./integrations/jeedom.md)
+- [Autres intégrations planifiées](./integrations/autres.md) (Jeedom, InfluxDB...)

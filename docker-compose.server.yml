@@ -1,0 +1,97 @@
+# MyElectricalData - Server Mode (Production)
+#
+# Déploiement production du mode serveur (gateway multi-utilisateurs).
+# Démarre uniquement le backend et frontend.
+# Les services externes (PostgreSQL, Valkey) doivent être fournis.
+#
+# Usage:
+#   docker compose -f docker-compose.server.yml up -d
+#
+# Prérequis:
+#   - PostgreSQL accessible
+#   - Valkey/Redis accessible
+#
+# Ports:
+#   - Frontend: http://localhost:8000
+#   - Backend API: http://localhost:8081
+
+services:
+  # Backend FastAPI - Server Mode
+  backend:
+    image: ghcr.io/myelectricaldata/myelectricaldata/backend:latest
+    restart: unless-stopped
+    ports:
+      - "${SERVER_BACKEND_PORT:-8081}:8000"
+    environment:
+      # === System ===
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-Europe/Paris}
+      - SERVER_MODE=true
+
+      # === Database (REQUIRED) ===
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://myelectricaldata:password@postgres:5432/myelectricaldata}
+
+      # === Cache Valkey/Redis (REQUIRED) ===
+      - REDIS_URL=${REDIS_URL:-redis://valkey:6379/0}
+      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-86400}
+
+      # === Enedis API (REQUIRED) ===
+      - ENEDIS_CLIENT_ID=${ENEDIS_CLIENT_ID}
+      - ENEDIS_CLIENT_SECRET=${ENEDIS_CLIENT_SECRET}
+      - ENEDIS_ENVIRONMENT=${ENEDIS_ENVIRONMENT:-production}
+      - ENEDIS_REDIRECT_URI=${ENEDIS_REDIRECT_URI}
+
+      # === RTE API (REQUIRED for Tempo/EcoWatt) ===
+      - RTE_CLIENT_ID=${RTE_CLIENT_ID}
+      - RTE_CLIENT_SECRET=${RTE_CLIENT_SECRET}
+
+      # === Security ===
+      # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - ALGORITHM=${ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-43200}
+
+      # === Rate Limiting ===
+      - ENEDIS_RATE_LIMIT=${ENEDIS_RATE_LIMIT:-5}
+      - USER_DAILY_LIMIT_NO_CACHE=${USER_DAILY_LIMIT_NO_CACHE:-50}
+      - USER_DAILY_LIMIT_WITH_CACHE=${USER_DAILY_LIMIT_WITH_CACHE:-1000}
+
+      # === Application ===
+      - DEBUG=${DEBUG:-false}
+      - API_HOST=${API_HOST:-0.0.0.0}
+      - API_PORT=${API_PORT:-8000}
+      - FRONTEND_URL=${FRONTEND_URL:-https://myelectricaldata.fr}
+      - BACKEND_URL=${BACKEND_URL:-https://myelectricaldata.fr/api}
+
+      # === Email (optional) ===
+      - MAILGUN_API_KEY=${MAILGUN_API_KEY:-}
+      - MAILGUN_DOMAIN=${MAILGUN_DOMAIN:-}
+      - MAILGUN_FROM_EMAIL=${MAILGUN_FROM_EMAIL:-}
+      - REQUIRE_EMAIL_VERIFICATION=${REQUIRE_EMAIL_VERIFICATION:-false}
+
+      # === Captcha (optional) ===
+      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY:-}
+      - REQUIRE_CAPTCHA=${REQUIRE_CAPTCHA:-false}
+
+      # === Admin ===
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend React - Server Mode
+  frontend:
+    image: ghcr.io/myelectricaldata/myelectricaldata/frontend:latest
+    restart: unless-stopped
+    ports:
+      - "${SERVER_FRONTEND_PORT:-8000}:80"
+    environment:
+      - VITE_API_BASE_URL=/api
+      - VITE_BACKEND_URL=http://backend:8000
+      - VITE_SERVER_MODE=true
+    depends_on:
+      backend:
+        condition: service_healthy

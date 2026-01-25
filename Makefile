@@ -2,7 +2,12 @@
 # Usage: make [target]
 
 # Variables
-COMPOSE = docker compose
+# Development uses dev/ folder, production uses root
+COMPOSE = docker compose -f dev/docker-compose.yml
+COMPOSE_SERVER = docker compose -f dev/docker-compose.server.yml
+# Production compose files (at root)
+COMPOSE_PROD = docker compose
+COMPOSE_PROD_SERVER = docker compose -f docker-compose.server.yml
 WATCH_SCRIPT = ./watch-backend.sh
 LOG_DIR = ./tmp
 LOG_FILE = $(LOG_DIR)/watch-backend.log
@@ -89,14 +94,14 @@ help:
 	@echo "  REGISTRY=$(REGISTRY)"
 	@echo "  GITHUB_ORG=$(GITHUB_ORG)"
 	@echo ""
-	@echo "$(YELLOW)Client Mode (local installation):$(NC)"
-	@echo "  make client-up        - Start client mode services"
-	@echo "  make client-down      - Stop client mode services"
-	@echo "  make client-logs      - Show client mode logs"
-	@echo "  make client-restart   - Restart client mode services"
-	@echo "  make client-rebuild   - Rebuild client mode containers"
-	@echo "  make client-migrate   - Apply migrations for client database"
-	@echo "  make client-db-shell  - Access client PostgreSQL shell"
+	@echo "$(YELLOW)Server Mode (gateway multi-users):$(NC)"
+	@echo "  make server-up        - Start server mode services"
+	@echo "  make server-down      - Stop server mode services"
+	@echo "  make server-logs      - Show server mode logs"
+	@echo "  make server-restart   - Restart server mode services"
+	@echo "  make server-rebuild   - Rebuild server mode containers"
+	@echo "  make server-migrate   - Apply migrations for server database"
+	@echo "  make server-db-shell  - Access server PostgreSQL shell"
 	@echo ""
 	@echo "$(YELLOW)Kubernetes (rancher-desktop):$(NC)"
 	@echo "  make k8s-deploy       - Deploy to K8s in dev mode (volume mounts)"
@@ -111,15 +116,28 @@ help:
 dev: check-deps
 	@./dev.sh
 
-## Start all services (without hot reload)
+## Start all services (without hot reload) - Client mode by default
 up:
-	@echo "$(GREEN)Starting all services...$(NC)"
+	@echo "$(GREEN)Starting client mode services...$(NC)"
+	@if [ ! -f .env.local-client ]; then \
+		echo "$(RED)Error: .env.local-client not found$(NC)"; \
+		echo "$(YELLOW)Copy .env.client.example to .env.local-client and configure your credentials$(NC)"; \
+		exit 1; \
+	fi
 	$(COMPOSE) up -d
-	@echo "$(GREEN)Services started! Access the app at http://localhost:8000$(NC)"
+	@echo "$(GREEN)Services started!$(NC)"
+	@echo "  Frontend: http://localhost:8100"
+	@echo "  Backend:  http://localhost:8181"
+	@echo "  API Docs: http://localhost:8181/docs"
 
-## Start services in foreground
+## Start services in foreground - Client mode by default
 up-fg:
-	@echo "$(GREEN)Starting all services in foreground...$(NC)"
+	@echo "$(GREEN)Starting client mode services in foreground...$(NC)"
+	@if [ ! -f .env.local-client ]; then \
+		echo "$(RED)Error: .env.local-client not found$(NC)"; \
+		echo "$(YELLOW)Copy .env.client.example to .env.local-client and configure your credentials$(NC)"; \
+		exit 1; \
+	fi
 	$(COMPOSE) up
 
 ## Stop all services
@@ -128,9 +146,9 @@ down:
 	@make stop-watch
 	@make stop-docs
 	$(COMPOSE) down
-	@if [ -f .env.local-client ]; then \
-		echo "$(YELLOW)Stopping client mode services...$(NC)"; \
-		$(COMPOSE_CLIENT) down; \
+	@if [ -f .env.api ]; then \
+		echo "$(YELLOW)Stopping server mode services...$(NC)"; \
+		$(COMPOSE_SERVER) down 2>/dev/null || true; \
 	fi
 	@echo "$(GREEN)All services stopped$(NC)"
 
@@ -179,65 +197,65 @@ stop-watch:
 		echo "$(YELLOW)No watcher running$(NC)"; \
 	fi
 
-## Show backend logs
+## Show backend logs (client mode)
 backend-logs:
 	@if [ "$$(uname)" = "Darwin" ]; then \
-		script -q /dev/null $(COMPOSE) logs -f backend; \
+		script -q /dev/null $(COMPOSE) logs -f backend-client; \
 	else \
-		script -q -c "$(COMPOSE) logs -f backend" /dev/null; \
+		script -q -c "$(COMPOSE) logs -f backend-client" /dev/null; \
 	fi
 
-## Restart backend container
+## Restart backend container (client mode)
 backend-restart:
-	@echo "$(YELLOW)Restarting backend...$(NC)"
-	$(COMPOSE) restart backend
+	@echo "$(YELLOW)Restarting backend (client)...$(NC)"
+	$(COMPOSE) restart backend-client
 	@echo "$(GREEN)Backend restarted$(NC)"
 
-## Access PostgreSQL shell
+## Access PostgreSQL shell (client mode)
 db-shell:
-	@echo "$(GREEN)Connecting to PostgreSQL...$(NC)"
-	$(COMPOSE) exec postgres psql -U myelectricaldata -d myelectricaldata
+	@echo "$(GREEN)Connecting to PostgreSQL (client)...$(NC)"
+	$(COMPOSE) exec postgres-client psql -U myelectricaldata -d myelectricaldata_client
 
-## Backup database
+## Backup database (client mode)
 db-backup:
-	@echo "$(GREEN)Creating database backup...$(NC)"
+	@echo "$(GREEN)Creating database backup (client)...$(NC)"
 	@mkdir -p $(LOG_DIR)/backups
-	$(COMPOSE) exec -T postgres pg_dump -U myelectricaldata myelectricaldata > $(LOG_DIR)/backups/backup_$$(date +%Y%m%d_%H%M%S).sql
+	$(COMPOSE) exec -T postgres-client pg_dump -U myelectricaldata myelectricaldata_client > $(LOG_DIR)/backups/backup_$$(date +%Y%m%d_%H%M%S).sql
 	@echo "$(GREEN)Backup saved to $(LOG_DIR)/backups/$(NC)"
 
-## Apply database migrations (Alembic)
+## Apply database migrations (Alembic) - client mode
 migrate:
-	@echo "$(GREEN)Applying database migrations...$(NC)"
-	$(COMPOSE) exec backend alembic upgrade head
+	@echo "$(GREEN)Applying database migrations (client)...$(NC)"
+	$(COMPOSE) exec backend-client alembic upgrade head
 	@echo "$(GREEN)Migrations applied$(NC)"
 
-## Rollback last migration
+## Rollback last migration - client mode
 migrate-downgrade:
-	@echo "$(YELLOW)Rolling back last migration...$(NC)"
-	$(COMPOSE) exec backend alembic downgrade -1
+	@echo "$(YELLOW)Rolling back last migration (client)...$(NC)"
+	$(COMPOSE) exec backend-client alembic downgrade -1
 	@echo "$(GREEN)Rollback complete$(NC)"
 
-## Show migration history
+## Show migration history - client mode
 migrate-history:
-	@echo "$(GREEN)Migration history:$(NC)"
-	$(COMPOSE) exec backend alembic history
+	@echo "$(GREEN)Migration history (client):$(NC)"
+	$(COMPOSE) exec backend-client alembic history
 
-## Show current migration revision
+## Show current migration revision - client mode
 migrate-current:
-	@echo "$(GREEN)Current migration revision:$(NC)"
-	$(COMPOSE) exec backend alembic current
+	@echo "$(GREEN)Current migration revision (client):$(NC)"
+	$(COMPOSE) exec backend-client alembic current
 
-## Generate a new migration (autogenerate)
+## Generate a new migration (autogenerate) - client mode
 migrate-revision:
-	@echo "$(GREEN)Creating new migration...$(NC)"
+	@echo "$(GREEN)Creating new migration (client)...$(NC)"
 	@read -p "Enter migration message: " msg; \
-	$(COMPOSE) exec backend alembic revision --autogenerate -m "$$msg"
+	$(COMPOSE) exec backend-client alembic revision --autogenerate -m "$$msg"
 	@echo "$(GREEN)Migration created$(NC)"
 
-## Stamp the database with current revision (for existing databases)
+## Stamp the database with current revision (for existing databases) - client mode
 migrate-stamp:
-	@echo "$(YELLOW)Stamping database with head revision...$(NC)"
-	$(COMPOSE) exec backend alembic stamp head
+	@echo "$(YELLOW)Stamping database with head revision (client)...$(NC)"
+	$(COMPOSE) exec backend-client alembic stamp head
 	@echo "$(GREEN)Database stamped$(NC)"
 
 ## Show all logs
@@ -529,74 +547,67 @@ k8s-logs-frontend:
 	@$(K8S_DEPLOY_SCRIPT) logs frontend
 
 # =============================================================================
-# Client Mode Commands (local installation)
+# Server Mode Commands (gateway multi-users)
 # =============================================================================
 
-COMPOSE_CLIENT = docker compose -f docker-compose.client.yml
+## Start server mode services
+server-up:
+	@echo "$(GREEN)Starting server mode services...$(NC)"
+	$(COMPOSE_SERVER) up -d
+	@echo "$(GREEN)Server mode started!$(NC)"
+	@echo "  Frontend: http://localhost:8000"
+	@echo "  Backend:  http://localhost:8081"
+	@echo "  API Docs: http://localhost:8081/docs"
 
-## Start client mode services
-client-up:
-	@echo "$(GREEN)Starting client mode services...$(NC)"
-	@if [ ! -f .env.local-client ]; then \
-		echo "$(RED)Error: .env.local-client not found$(NC)"; \
-		echo "$(YELLOW)Copy .env.client.example to .env.local-client and configure your credentials$(NC)"; \
-		exit 1; \
-	fi
-	$(COMPOSE_CLIENT) up -d
-	@echo "$(GREEN)Client mode started!$(NC)"
-	@echo "  Frontend: http://localhost:8100"
-	@echo "  Backend:  http://localhost:8181"
-	@echo "  API Docs: http://localhost:8181/docs"
+## Stop server mode services
+server-down:
+	@echo "$(YELLOW)Stopping server mode services...$(NC)"
+	$(COMPOSE_SERVER) down
+	@echo "$(GREEN)Server mode stopped$(NC)"
 
-## Stop client mode services
-client-down:
-	@echo "$(YELLOW)Stopping client mode services...$(NC)"
-	$(COMPOSE_CLIENT) down
-	@echo "$(GREEN)Client mode stopped$(NC)"
-
-## Show client mode logs
-client-logs:
+## Show server mode logs
+server-logs:
 	@if [ "$$(uname)" = "Darwin" ]; then \
-		script -q /dev/null $(COMPOSE_CLIENT) logs -f; \
+		script -q /dev/null $(COMPOSE_SERVER) logs -f; \
 	else \
-		script -q -c "$(COMPOSE_CLIENT) logs -f" /dev/null; \
+		script -q -c "$(COMPOSE_SERVER) logs -f" /dev/null; \
 	fi
 
-## Restart client mode services
-client-restart:
-	@echo "$(YELLOW)Restarting client mode services...$(NC)"
-	$(COMPOSE_CLIENT) restart
-	@echo "$(GREEN)Client mode restarted$(NC)"
+## Restart server mode services
+server-restart:
+	@echo "$(YELLOW)Restarting server mode services...$(NC)"
+	$(COMPOSE_SERVER) restart
+	@echo "$(GREEN)Server mode restarted$(NC)"
 
-## Rebuild client mode containers
-client-rebuild:
-	@echo "$(YELLOW)Rebuilding client mode containers...$(NC)"
-	$(COMPOSE_CLIENT) down
-	$(COMPOSE_CLIENT) build --no-cache
-	$(COMPOSE_CLIENT) up -d
-	@echo "$(GREEN)Client mode rebuild complete$(NC)"
+## Rebuild server mode containers
+server-rebuild:
+	@echo "$(YELLOW)Rebuilding server mode containers...$(NC)"
+	$(COMPOSE_SERVER) down
+	$(COMPOSE_SERVER) build --no-cache
+	$(COMPOSE_SERVER) up -d
+	@echo "$(GREEN)Server mode rebuild complete$(NC)"
 
-## Apply migrations for client database
-client-migrate:
-	@echo "$(GREEN)Applying migrations to client database...$(NC)"
-	$(COMPOSE_CLIENT) exec backend-client alembic upgrade head
-	@echo "$(GREEN)Client migrations applied$(NC)"
+## Apply migrations for server database
+server-migrate:
+	@echo "$(GREEN)Applying migrations to server database...$(NC)"
+	$(COMPOSE_SERVER) exec backend alembic upgrade head
+	@echo "$(GREEN)Server migrations applied$(NC)"
 
-## Access client PostgreSQL shell
-client-db-shell:
-	@echo "$(GREEN)Connecting to client PostgreSQL...$(NC)"
-	$(COMPOSE_CLIENT) exec postgres-client psql -U myelectricaldata -d myelectricaldata_client
+## Access server PostgreSQL shell
+server-db-shell:
+	@echo "$(GREEN)Connecting to server PostgreSQL...$(NC)"
+	$(COMPOSE_SERVER) exec postgres psql -U myelectricaldata -d myelectricaldata
 
-## Show client mode container status
-client-ps:
-	$(COMPOSE_CLIENT) ps
+## Show server mode container status
+server-ps:
+	$(COMPOSE_SERVER) ps
 
-## Show client backend logs only
-client-backend-logs:
+## Show server backend logs only
+server-backend-logs:
 	@if [ "$$(uname)" = "Darwin" ]; then \
-		script -q /dev/null $(COMPOSE_CLIENT) logs -f backend-client; \
+		script -q /dev/null $(COMPOSE_SERVER) logs -f backend; \
 	else \
-		script -q -c "$(COMPOSE_CLIENT) logs -f backend-client" /dev/null; \
+		script -q -c "$(COMPOSE_SERVER) logs -f backend" /dev/null; \
 	fi
 
-.PHONY: help dev up up-fg down restart watch stop-watch stop-docs backend-logs backend-restart db-shell db-backup migrate migrate-downgrade migrate-history migrate-current migrate-revision migrate-stamp logs ps clean rebuild check-deps install-fswatch docs docs-build docs-dev docs-down docker-login docker-build docker-build-backend docker-build-frontend docker-push docker-push-backend docker-push-frontend docker-release docker-release-native docker-release-multiarch docker-release-amd64 docker-release-arm64 docker-release-ci docker-buildx-setup docker-info k8s-deploy k8s-deploy-prod k8s-delete k8s-status k8s-logs-backend k8s-logs-frontend client-up client-down client-logs client-restart client-rebuild client-migrate client-db-shell client-ps client-backend-logs
+.PHONY: help dev up up-fg down restart watch stop-watch stop-docs backend-logs backend-restart db-shell db-backup migrate migrate-downgrade migrate-history migrate-current migrate-revision migrate-stamp logs ps clean rebuild check-deps install-fswatch docs docs-build docs-dev docs-down docker-login docker-build docker-build-backend docker-build-frontend docker-push docker-push-backend docker-push-frontend docker-release docker-release-native docker-release-multiarch docker-release-amd64 docker-release-arm64 docker-release-ci docker-buildx-setup docker-info k8s-deploy k8s-deploy-prod k8s-delete k8s-status k8s-logs-backend k8s-logs-frontend server-up server-down server-logs server-restart server-rebuild server-migrate server-db-shell server-ps server-backend-logs

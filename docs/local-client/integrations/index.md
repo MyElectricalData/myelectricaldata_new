@@ -9,7 +9,8 @@ Le mode client de MyElectricalData supporte l'export vers plusieurs plateformes 
 | [Home Assistant](./home-assistant.md) | Domotique | Plateforme domotique open-source |
 | [MQTT](./mqtt.md) | Protocole | Broker de messages IoT |
 | [VictoriaMetrics](./victoriametrics.md) | Time-series DB | Base de données métriques |
-| [Jeedom](./jeedom.md) | Domotique | Solution domotique française |
+
+➡️ Voir aussi : [Autres intégrations planifiées](./autres.md) (Jeedom, InfluxDB, Domoticz...)
 
 ## Architecture commune
 
@@ -20,7 +21,7 @@ Le mode client de MyElectricalData supporte l'export vers plusieurs plateformes 
 │                                                                             │
 │  ┌─────────────┐     ┌─────────────┐     ┌─────────────────┐               │
 │  │ PostgreSQL  │────▶│ Exporter    │────▶│ Destination     │               │
-│  │ (données)   │     │ Service     │     │ (HA/MQTT/VM/JD) │               │
+│  │ (données)   │     │ Service     │     │ (HA/MQTT/VM)    │               │
 │  └─────────────┘     └─────────────┘     └─────────────────┘               │
 │                            │                                                │
 │                            ▼                                                │
@@ -42,41 +43,3 @@ Le mode client de MyElectricalData supporte l'export vers plusieurs plateformes 
 | Tempo J+1 | BLEU/BLANC/ROUGE | Quotidien (après 11h) |
 | EcoWatt niveau | 1/2/3 | Horaire |
 
-## Configuration commune
-
-Toutes les intégrations partagent les paramètres suivants :
-
-```bash
-# Activer/désactiver l'export automatique
-{DESTINATION}_ENABLED=true
-
-# Intervalle d'export en minutes (défaut: 60)
-{DESTINATION}_INTERVAL=60
-
-# Données à exporter (liste séparée par virgules)
-{DESTINATION}_EXPORT_DATA=consumption_daily,production_daily,tempo,ecowatt
-```
-
-## Test de connexion
-
-Chaque intégration peut être testée avant activation :
-
-```bash
-# Via API
-curl -X POST http://localhost:8181/api/export/configs/{destination}/test
-
-# Via CLI
-docker compose -f docker-compose.client.yml exec backend-client \
-  python -m scripts.test_export --destination home_assistant
-```
-
-## Logs et debugging
-
-```bash
-# Voir les logs d'export
-docker compose -f docker-compose.client.yml logs backend-client | grep export
-
-# Historique des exports en base
-docker compose -f docker-compose.client.yml exec postgres-client \
-  psql -U client -c "SELECT * FROM export_logs ORDER BY started_at DESC LIMIT 10;"
-```

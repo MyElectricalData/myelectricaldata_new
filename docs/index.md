@@ -16,33 +16,56 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 <Tabs>
-  <TabItem value="docker" label="Docker (recommandé)" default>
+  <TabItem value="client" label="Mode Client (recommandé)" default>
 
 ```bash
 # Cloner le repository
 git clone https://github.com/MyElectricalData/myelectricaldata.git
 cd myelectricaldata
 
+# Configurer les identifiants MyElectricalData API
+cp .env.client.example .env.client
+nano .env.client
+
 # Démarrer les services
-make up
+docker compose -f docker-compose.client.yml up -d
+
+# Accéder à l'application
+open http://localhost:8100
+```
+
+  </TabItem>
+  <TabItem value="server" label="Mode Serveur">
+
+```bash
+# Cloner le repository
+git clone https://github.com/MyElectricalData/myelectricaldata.git
+cd myelectricaldata
+
+# Configurer les identifiants Enedis/RTE
+cp apps/api/.env.example apps/api/.env.docker
+nano apps/api/.env.docker
+
+# Démarrer les services
+docker compose up -d
 
 # Accéder à l'application
 open http://localhost:8000
 ```
 
   </TabItem>
-  <TabItem value="manual" label="Installation manuelle">
+  <TabItem value="helm" label="Kubernetes (Helm)">
 
 ```bash
-# Backend (FastAPI)
-cd apps/api
-uv sync
-uv run uvicorn src.main:app --reload
+# Mode Client
+helm install myelectricaldata ./helm/myelectricaldata-client \
+  --set secrets.med.clientId.value=xxx \
+  --set secrets.med.clientSecret.value=xxx
 
-# Frontend (React/Vite)
-cd apps/web
-npm install
-npm run dev
+# Mode Serveur
+helm install myelectricaldata ./helm/myelectricaldata-server \
+  --set secrets.enedis.clientId.value=xxx \
+  --set secrets.enedis.clientSecret.value=xxx
 ```
 
   </TabItem>
@@ -52,7 +75,9 @@ npm run dev
 
 | Section | Description |
 |---------|-------------|
-| [**Installation**](/setup/docker) | Guides d'installation et de configuration |
+| [**Guide d'installation**](/setup/installation) | Choisir entre Docker ou Helm, mode Client ou Serveur |
+| [**Docker Compose**](/setup/docker) | Installation Docker pour les deux modes |
+| [**Helm Charts**](/setup/helm) | Déploiement Kubernetes |
 | [**Client Local**](/local-client) | Client domotique pour Home Assistant, MQTT, Jeedom, etc. |
 | [**Fonctionnalités**](/features-spec/simulator) | Spécifications des fonctionnalités |
 | [**Architecture**](/architecture/summary) | Vue d'ensemble technique et [chiffrement](/architecture/encryption) |
@@ -109,13 +134,14 @@ Installez le **Client Local** chez vous pour intégrer vos données Linky dans v
 - **Home Assistant** : Energy Dashboard, entités automatiques
 - **MQTT** : Compatible avec tout broker MQTT
 - **VictoriaMetrics** : Métriques Prometheus pour Grafana
-- **Jeedom** : Plugin et widgets dédiés
 
 ➡️ [Documentation du Client Local](/local-client)
 
 ## 📖 Ressources
 
-- [Guide d'installation Docker](/setup/docker)
+- [Guide d'installation](/setup/installation)
+- [Installation Docker](/setup/docker)
+- [Installation Helm (Kubernetes)](/setup/helm)
 - [Configuration de la base de données](/setup/database)
 - [Client Local domotique](/local-client)
 - [Création d'un compte démo](/demo)

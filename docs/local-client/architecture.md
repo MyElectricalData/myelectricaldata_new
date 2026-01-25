@@ -508,8 +508,8 @@ class SyncScheduler:
 ## Variables d'environnement spécifiques
 
 ```bash
-# Mode client activé
-CLIENT_MODE=true
+# Le mode client est le défaut (pas de variable à définir)
+# Pour le mode serveur, il faut définir SERVER_MODE=true
 
 # Credentials API MyElectricalData
 MED_API_URL=https://www.v2.myelectricaldata.fr/api

@@ -1192,8 +1192,7 @@ export default function Contributions() {
                                 ) : null}
                                 {contribution.existing_offer && contribution.contribution_type === 'UPDATE_OFFER' && (
                                   <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-xs">
-                                    <div className="font-medium mb-1">Offre à modifier :</div>
-                                    <div>{contribution.existing_offer.name}</div>
+                                    <div className="font-medium mb-1">Offre à modifier : {contribution.existing_offer.name}</div>
                                   </div>
                                 )}
                                 {contribution.power_kva && (
@@ -1212,7 +1211,7 @@ export default function Contributions() {
                             <div>
                               <h3 className="font-semibold mb-3 flex items-center gap-2 text-sm">
                                 <DollarSign size={16} />
-                                Tarification
+                                {contribution.contribution_type === 'UPDATE_OFFER' && contribution.existing_offer ? 'Nouveaux tarifs proposés' : 'Tarification'}
                               </h3>
                               <div className="space-y-1 text-sm">
                                 {/* Abonnement */}
@@ -1264,6 +1263,197 @@ export default function Contributions() {
                               </div>
                             </div>
                           </div>
+
+                          {/* Comparaison des tarifs pour UPDATE_OFFER */}
+                          {contribution.contribution_type === 'UPDATE_OFFER' && contribution.existing_offer && (
+                            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                              <h3 className="font-semibold mb-3 flex items-center gap-2 text-sm">
+                                <ArrowUpDown size={16} className="text-orange-500" />
+                                Comparaison des tarifs (Ancien → Nouveau)
+                              </h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Colonne Ancien tarif */}
+                                <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
+                                  <div className="text-xs font-semibold text-red-700 dark:text-red-400 mb-2 flex items-center gap-1">
+                                    <XCircle size={12} />
+                                    Tarifs actuels
+                                  </div>
+                                  <div className="space-y-1 text-xs">
+                                    {contribution.existing_offer.subscription_price !== undefined && (
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600 dark:text-gray-400">Abonnement</span>
+                                        <span className="font-medium">{formatSubscription(contribution.existing_offer.subscription_price)}</span>
+                                      </div>
+                                    )}
+                                    {contribution.existing_offer.base_price !== undefined && (
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600 dark:text-gray-400">BASE</span>
+                                        <span className="font-medium">{formatPrice(contribution.existing_offer.base_price)}</span>
+                                      </div>
+                                    )}
+                                    {contribution.existing_offer.hc_price !== undefined && (
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600 dark:text-gray-400">HC</span>
+                                        <span className="font-medium">{formatPrice(contribution.existing_offer.hc_price)}</span>
+                                      </div>
+                                    )}
+                                    {contribution.existing_offer.hp_price !== undefined && (
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600 dark:text-gray-400">HP</span>
+                                        <span className="font-medium">{formatPrice(contribution.existing_offer.hp_price)}</span>
+                                      </div>
+                                    )}
+                                    {contribution.offer_type === 'TEMPO' && (
+                                      <>
+                                        {contribution.existing_offer.tempo_blue_hc !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">Bleu HC</span>
+                                            <span className="font-medium">{formatPrice(contribution.existing_offer.tempo_blue_hc)}</span>
+                                          </div>
+                                        )}
+                                        {contribution.existing_offer.tempo_blue_hp !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">Bleu HP</span>
+                                            <span className="font-medium">{formatPrice(contribution.existing_offer.tempo_blue_hp)}</span>
+                                          </div>
+                                        )}
+                                        {contribution.existing_offer.tempo_white_hc !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">Blanc HC</span>
+                                            <span className="font-medium">{formatPrice(contribution.existing_offer.tempo_white_hc)}</span>
+                                          </div>
+                                        )}
+                                        {contribution.existing_offer.tempo_white_hp !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">Blanc HP</span>
+                                            <span className="font-medium">{formatPrice(contribution.existing_offer.tempo_white_hp)}</span>
+                                          </div>
+                                        )}
+                                        {contribution.existing_offer.tempo_red_hc !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">Rouge HC</span>
+                                            <span className="font-medium">{formatPrice(contribution.existing_offer.tempo_red_hc)}</span>
+                                          </div>
+                                        )}
+                                        {contribution.existing_offer.tempo_red_hp !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">Rouge HP</span>
+                                            <span className="font-medium">{formatPrice(contribution.existing_offer.tempo_red_hp)}</span>
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                    {contribution.offer_type === 'EJP' && (
+                                      <>
+                                        {contribution.existing_offer.ejp_normal !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">EJP Normal</span>
+                                            <span className="font-medium">{formatPrice(contribution.existing_offer.ejp_normal)}</span>
+                                          </div>
+                                        )}
+                                        {contribution.existing_offer.ejp_peak !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">EJP Pointe</span>
+                                            <span className="font-medium">{formatPrice(contribution.existing_offer.ejp_peak)}</span>
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Colonne Nouveau tarif */}
+                                <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                                  <div className="text-xs font-semibold text-green-700 dark:text-green-400 mb-2 flex items-center gap-1">
+                                    <CheckCircle size={12} />
+                                    Nouveaux tarifs proposés
+                                  </div>
+                                  <div className="space-y-1 text-xs">
+                                    {pricing.subscription_price !== undefined && (
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600 dark:text-gray-400">Abonnement</span>
+                                        <span className="font-medium">{formatSubscription(pricing.subscription_price)}</span>
+                                      </div>
+                                    )}
+                                    {pricing.base_price !== undefined && (
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600 dark:text-gray-400">BASE</span>
+                                        <span className="font-medium">{formatPrice(pricing.base_price)}</span>
+                                      </div>
+                                    )}
+                                    {pricing.hc_price !== undefined && (
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600 dark:text-gray-400">HC</span>
+                                        <span className="font-medium">{formatPrice(pricing.hc_price)}</span>
+                                      </div>
+                                    )}
+                                    {pricing.hp_price !== undefined && (
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600 dark:text-gray-400">HP</span>
+                                        <span className="font-medium">{formatPrice(pricing.hp_price)}</span>
+                                      </div>
+                                    )}
+                                    {contribution.offer_type === 'TEMPO' && (
+                                      <>
+                                        {pricing.tempo_blue_hc !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">Bleu HC</span>
+                                            <span className="font-medium">{formatPrice(pricing.tempo_blue_hc)}</span>
+                                          </div>
+                                        )}
+                                        {pricing.tempo_blue_hp !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">Bleu HP</span>
+                                            <span className="font-medium">{formatPrice(pricing.tempo_blue_hp)}</span>
+                                          </div>
+                                        )}
+                                        {pricing.tempo_white_hc !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">Blanc HC</span>
+                                            <span className="font-medium">{formatPrice(pricing.tempo_white_hc)}</span>
+                                          </div>
+                                        )}
+                                        {pricing.tempo_white_hp !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">Blanc HP</span>
+                                            <span className="font-medium">{formatPrice(pricing.tempo_white_hp)}</span>
+                                          </div>
+                                        )}
+                                        {pricing.tempo_red_hc !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">Rouge HC</span>
+                                            <span className="font-medium">{formatPrice(pricing.tempo_red_hc)}</span>
+                                          </div>
+                                        )}
+                                        {pricing.tempo_red_hp !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">Rouge HP</span>
+                                            <span className="font-medium">{formatPrice(pricing.tempo_red_hp)}</span>
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                    {contribution.offer_type === 'EJP' && (
+                                      <>
+                                        {pricing.ejp_normal !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">EJP Normal</span>
+                                            <span className="font-medium">{formatPrice(pricing.ejp_normal)}</span>
+                                          </div>
+                                        )}
+                                        {pricing.ejp_peak !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-600 dark:text-gray-400">EJP Pointe</span>
+                                            <span className="font-medium">{formatPrice(pricing.ejp_peak)}</span>
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
 
                           {/* Documentation */}
                           <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">

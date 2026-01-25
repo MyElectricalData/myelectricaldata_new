@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any, Optional, cast
@@ -244,8 +245,9 @@ class EnedisAdapter:
                     # For other errors, raise exception
                     error_msg = f"{error_json.get('error')}: {error_json.get('error_description', 'Unknown error')}"
                     raise ValueError(error_msg) from e
-            except (KeyError, TypeError):
-                # Failed to parse JSON, continue with original exception
+            except (json.JSONDecodeError, KeyError, TypeError):
+                # Failed to parse JSON (empty response, invalid JSON, etc.)
+                # Continue with original exception
                 pass
 
             raise

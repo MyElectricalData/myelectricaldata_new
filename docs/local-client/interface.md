@@ -342,11 +342,11 @@ Le mode client supporte le dark mode avec les mêmes variables CSS.
 Le frontend peut être buildé en mode client ou serveur :
 
 ```bash
-# Build mode serveur (défaut)
+# Build mode client (défaut)
 npm run build
 
-# Build mode client
-CLIENT_MODE=true npm run build
+# Build mode serveur
+VITE_SERVER_MODE=true npm run build
 ```
 
 Le tree-shaking supprime automatiquement les composants non utilisés (admin, auth, etc.).

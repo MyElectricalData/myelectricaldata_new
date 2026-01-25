@@ -1,19 +1,5 @@
 # Autres intégrations
 
-## Intégrations planifiées
-
-Les intégrations suivantes sont prévues pour de futures versions :
-
-| Destination | Statut | Description |
-|-------------|--------|-------------|
-| InfluxDB | 🔜 Planifié | Base time-series alternative |
-| Domoticz | 🔜 Planifié | Solution domotique open-source |
-| OpenHAB | 🔜 Planifié | Plateforme domotique Java |
-| Prometheus | 🔜 Planifié | Scraping metrics (pull) |
-| Webhook | 🔜 Planifié | Appels HTTP personnalisés |
-
----
-
 ## Créer une intégration personnalisée
 
 ### Structure d'un exportateur

@@ -1,0 +1,317 @@
+{{- if .Values.backend.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "myelectricaldata.backend.fullname" . }}
+  labels:
+    {{- include "myelectricaldata.backend.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.backend.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "myelectricaldata.backend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/common/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/common/secrets.yaml") . | sha256sum }}
+      {{- with .Values.backend.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "myelectricaldata.backend.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- include "myelectricaldata.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "myelectricaldata.serviceAccountName" . }}
+      {{- with .Values.backend.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # Wait for PostgreSQL to be ready
+        {{- if .Values.postgres.enabled }}
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z {{ .Release.Name }}-postgres {{ .Values.postgres.service.port | default 5432 }}; do echo "Waiting for PostgreSQL..."; sleep 2; done; echo "PostgreSQL is ready!"']
+        {{- end }}
+        # Wait for Valkey to be ready
+        {{- if .Values.valkey.enabled }}
+        - name: wait-for-valkey
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z {{ .Release.Name }}-valkey {{ .Values.valkey.service.port | default 6379 }}; do echo "Waiting for Valkey..."; sleep 2; done; echo "Valkey is ready!"']
+        {{- end }}
+        {{- if .Values.devMode.enabled }}
+        # Install Python dependencies in dev mode using uv
+        - name: uv-sync
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          workingDir: /workspace
+          env:
+            - name: UV_CACHE_DIR
+              value: "/workspace/.cache"
+          command: ['sh', '-c', 'cp /host-app/pyproject.toml /host-app/uv.lock /host-app/README.md /workspace/ && uv sync --frozen']
+          volumeMounts:
+            - name: host-backend-files
+              mountPath: /host-app
+              readOnly: true
+            - name: workspace
+              mountPath: /workspace
+            - name: dev-src
+              mountPath: /workspace/src
+              readOnly: true
+        {{- end }}
+      containers:
+        - name: backend
+          {{- with .Values.backend.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          {{- if .Values.devMode.enabled }}
+          workingDir: /workspace
+          command: ["uv"]
+          args: ["run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/workspace/src"]
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          {{- if .Values.devMode.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ include "myelectricaldata.backend.fullname" . }}-env
+                optional: true
+          {{- end }}
+          env:
+            - name: TZ
+              value: {{ .Values.backend.env.TZ | quote }}
+            - name: PYTHONUNBUFFERED
+              value: {{ .Values.backend.env.PYTHONUNBUFFERED | quote }}
+            {{- if .Values.devMode.enabled }}
+            - name: WATCHFILES_FORCE_POLLING
+              value: "true"
+            - name: WATCHFILES_POLL_INTERVAL
+              value: "1000"
+            - name: UV_CACHE_DIR
+              value: "/tmp/uv-cache"
+            {{- end }}
+            # PostgreSQL password MUST be defined before DATABASE_URL for $(POSTGRES_PASSWORD) substitution
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.postgres.secretName" . | trim }}
+                  key: {{ include "myelectricaldata.postgres.secretKey" . | trim }}
+            - name: DATABASE_URL
+              value: {{ include "myelectricaldata.databaseUrl" . | quote }}
+            # Valkey password MUST be defined before REDIS_URL for $(VALKEY_PASSWORD) substitution
+            - name: VALKEY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.valkey.secretName" . | trim }}
+                  key: {{ include "myelectricaldata.valkey.secretKey" . | trim }}
+            - name: REDIS_URL
+              value: {{ include "myelectricaldata.valkeyUrl" . | quote }}
+            - name: ENEDIS_ENVIRONMENT
+              value: {{ .Values.secrets.enedis.environment | quote }}
+            # --- Application Secrets ---
+            # SECRET_KEY
+            {{- if or .Values.secrets.secretKey.value .Values.secrets.secretKey.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.secretKey "defaultKey" "SECRET_KEY") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.secretKey "defaultKey" "SECRET_KEY") }}
+            {{- end }}
+            # ADMIN_EMAILS (from ConfigMap or Secret)
+            {{- if .Values.config.adminEmails }}
+            - name: ADMIN_EMAILS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}
+                  key: ADMIN_EMAILS
+            {{- else if or .Values.secrets.adminEmails.value .Values.secrets.adminEmails.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: ADMIN_EMAILS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.adminEmails "defaultKey" "ADMIN_EMAILS") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.adminEmails "defaultKey" "ADMIN_EMAILS") }}
+            {{- end }}
+            # ENEDIS_CLIENT_ID
+            {{- if or .Values.secrets.enedis.clientId.value .Values.secrets.enedis.clientId.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: ENEDIS_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.enedis.clientId "defaultKey" "ENEDIS_CLIENT_ID") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.enedis.clientId "defaultKey" "ENEDIS_CLIENT_ID") }}
+            {{- end }}
+            # ENEDIS_CLIENT_SECRET
+            {{- if or .Values.secrets.enedis.clientSecret.value .Values.secrets.enedis.clientSecret.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: ENEDIS_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.enedis.clientSecret "defaultKey" "ENEDIS_CLIENT_SECRET") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.enedis.clientSecret "defaultKey" "ENEDIS_CLIENT_SECRET") }}
+            {{- end }}
+            # RTE_CLIENT_ID
+            {{- if or .Values.secrets.rte.clientId.value .Values.secrets.rte.clientId.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: RTE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.rte.clientId "defaultKey" "RTE_CLIENT_ID") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.rte.clientId "defaultKey" "RTE_CLIENT_ID") }}
+            {{- end }}
+            # RTE_CLIENT_SECRET
+            {{- if or .Values.secrets.rte.clientSecret.value .Values.secrets.rte.clientSecret.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: RTE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.rte.clientSecret "defaultKey" "RTE_CLIENT_SECRET") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.rte.clientSecret "defaultKey" "RTE_CLIENT_SECRET") }}
+            {{- end }}
+            # MAILGUN_API_KEY
+            {{- if or .Values.secrets.mailgun.apiKey.value .Values.secrets.mailgun.apiKey.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: MAILGUN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.mailgun.apiKey "defaultKey" "MAILGUN_API_KEY") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.mailgun.apiKey "defaultKey" "MAILGUN_API_KEY") }}
+            {{- end }}
+            # MAILGUN_DOMAIN (from ConfigMap or Secret)
+            {{- if .Values.config.mailgunDomain }}
+            - name: MAILGUN_DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}
+                  key: MAILGUN_DOMAIN
+            {{- else if or .Values.secrets.mailgun.domain.value .Values.secrets.mailgun.domain.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: MAILGUN_DOMAIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.mailgun.domain "defaultKey" "MAILGUN_DOMAIN") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.mailgun.domain "defaultKey" "MAILGUN_DOMAIN") }}
+            {{- end }}
+            # MAILGUN_FROM_EMAIL (from ConfigMap or Secret)
+            {{- if .Values.config.mailgunFromEmail }}
+            - name: MAILGUN_FROM_EMAIL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}
+                  key: MAILGUN_FROM_EMAIL
+            {{- else if or .Values.secrets.mailgun.fromEmail.value .Values.secrets.mailgun.fromEmail.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: MAILGUN_FROM_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.mailgun.fromEmail "defaultKey" "MAILGUN_FROM_EMAIL") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.mailgun.fromEmail "defaultKey" "MAILGUN_FROM_EMAIL") }}
+            {{- end }}
+            # TURNSTILE_SECRET_KEY
+            {{- if or .Values.secrets.turnstile.secretKey.value .Values.secrets.turnstile.secretKey.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: TURNSTILE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.turnstile.secretKey "defaultKey" "TURNSTILE_SECRET_KEY") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.turnstile.secretKey "defaultKey" "TURNSTILE_SECRET_KEY") }}
+            {{- end }}
+            # SLACK_NOTIFICATIONS_ENABLED
+            - name: SLACK_NOTIFICATIONS_ENABLED
+              value: {{ .Values.secrets.slack.enabled | quote }}
+            # SLACK_WEBHOOK_URL
+            {{- if or .Values.secrets.slack.webhookUrl.value .Values.secrets.slack.webhookUrl.existingSecretRef.name .Values.secrets.existingSecret }}
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myelectricaldata.secretRef.name" (dict "root" . "secretConfig" .Values.secrets.slack.webhookUrl "defaultKey" "SLACK_WEBHOOK_URL") }}
+                  key: {{ include "myelectricaldata.secretRef.key" (dict "secretConfig" .Values.secrets.slack.webhookUrl "defaultKey" "SLACK_WEBHOOK_URL") }}
+            {{- end }}
+            # ENEDIS_REDIRECT_URI (from ConfigMap)
+            {{- if .Values.config.enedisRedirectUri }}
+            - name: ENEDIS_REDIRECT_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}
+                  key: ENEDIS_REDIRECT_URI
+            {{- end }}
+            # FRONTEND_URL (from ConfigMap)
+            {{- if .Values.config.frontendUrl }}
+            - name: FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}
+                  key: FRONTEND_URL
+            {{- end }}
+            # Cookie settings for httpOnly JWT authentication
+            - name: COOKIE_SECURE
+              value: {{ .Values.config.cookie.secure | quote }}
+            - name: COOKIE_SAMESITE
+              value: {{ .Values.config.cookie.sameSite | quote }}
+            {{- if .Values.config.cookie.domain }}
+            - name: COOKIE_DOMAIN
+              value: {{ .Values.config.cookie.domain | quote }}
+            {{- end }}
+          {{- with .Values.backend.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: logs
+              mountPath: /logs
+            {{- if .Values.devMode.enabled }}
+            - name: workspace
+              mountPath: /workspace
+            - name: dev-src
+              mountPath: /workspace/src
+            - name: dev-static
+              mountPath: /app/static
+            {{- end }}
+      volumes:
+        - name: data
+          {{- /* Use PVC only for SQLite mode (postgres.enabled is false) */ -}}
+          {{- if and .Values.backend.persistence.enabled (not .Values.postgres.enabled) }}
+          persistentVolumeClaim:
+            claimName: {{ include "myelectricaldata.backend.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: logs
+          emptyDir: {}
+        {{- if .Values.devMode.enabled }}
+        - name: dev-src
+          hostPath:
+            path: {{ .Values.devMode.hostPath }}/{{ .Values.devMode.backend.srcPath }}
+            type: Directory
+        - name: dev-static
+          hostPath:
+            path: {{ .Values.devMode.hostPath }}/{{ .Values.devMode.backend.staticPath }}
+            type: DirectoryOrCreate
+        - name: host-backend-files
+          hostPath:
+            path: {{ .Values.devMode.hostPath }}/apps/api
+            type: Directory
+        - name: workspace
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
