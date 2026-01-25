@@ -1,5 +1,17 @@
 import { apiClient } from './client'
 
+// Type d'offre tarifaire (auto-découvert depuis le backend via OfferRegistry)
+export interface OfferType {
+  code: string  // BASE, HC_HP, TEMPO, EJP, SEASONAL, HC_NUIT_WEEKEND, WEEKEND
+  name: string  // Nom affiché
+  description: string
+  icon: string  // Icône Lucide (zap, clock, palette, etc.)
+  color: string  // Couleur hex (#3B82F6, etc.)
+  required_price_fields: string[]
+  optional_price_fields: string[]
+  display_order: number
+}
+
 export interface EnergyProvider {
   id: string
   name: string
@@ -224,6 +236,12 @@ export interface SyncStatus {
 
 export const energyApi = {
   // Public endpoints
+
+  // Récupère les types d'offres disponibles (auto-discovery depuis OfferRegistry)
+  getOfferTypes: async () => {
+    return apiClient.get<OfferType[]>('energy/offer-types')
+  },
+
   getProviders: async () => {
     return apiClient.get<EnergyProvider[]>('energy/providers')
   },

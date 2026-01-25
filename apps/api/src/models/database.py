@@ -24,16 +24,14 @@ async def init_db() -> None:
     # Seed default roles and permissions
     from .seed import (
         init_default_roles_and_permissions,
-        init_default_pricing_types,
         init_default_energy_offers,
         sync_admin_users,
     )
     async with async_session_maker() as session:
         await init_default_roles_and_permissions(session)
 
-    # Seed default pricing types (BASE, HC_HP, TEMPO, etc.)
-    async with async_session_maker() as session:
-        await init_default_pricing_types(session)
+    # NOTE: Les types d'offres (PricingType) sont maintenant gérés via OfferRegistry
+    # dans services/offers/registry.py (auto-discovery des calculateurs Python)
 
     # Seed default energy provider (EDF) and offers
     async with async_session_maker() as session:

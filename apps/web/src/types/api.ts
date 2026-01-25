@@ -66,7 +66,9 @@ export interface TokenResponse {
 }
 
 // Pricing option types for electricity tariffs
-export type PricingOption = 'BASE' | 'HC_HP' | 'TEMPO' | 'EJP' | 'WEEKEND' | 'SEASONAL'
+// NOTE: Ces types sont maintenant définis dynamiquement via l'API /energy/offer-types
+// Ce type reste pour la compatibilité TypeScript mais les valeurs sont validées côté serveur
+export type PricingOption = 'BASE' | 'HC_HP' | 'TEMPO' | 'EJP' | 'WEEKEND' | 'SEASONAL' | 'HC_NUIT_WEEKEND' | string
 
 export interface PDL {
   id: string

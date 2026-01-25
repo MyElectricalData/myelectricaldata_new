@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, UTC
-from ..models import User, PricingType, EnergyProvider, EnergyOffer, OfferContribution, ContributionMessage
+from ..models import User, EnergyProvider, EnergyOffer, OfferContribution, ContributionMessage
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
 from ..middleware import get_current_user, require_permission, require_action, require_not_demo
 from ..services.email import email_service
 from ..services.slack import slack_service
+from ..services.offers import get_all_offer_types
 from ..config import settings
 import logging
 
@@ -28,37 +29,41 @@ def parse_iso_datetime(value: str | None) -> datetime | None:
         return None
 
 
-# Public endpoints - Get pricing types, providers and offers
-@router.get("/pricing-types", response_model=APIResponse)
-async def list_pricing_types(db: AsyncSession = Depends(get_db)) -> APIResponse:
-    """List all active pricing types (BASE, HC_HP, TEMPO, etc.)
+# Public endpoints - Get offer types (auto-discovery), providers and offers
+@router.get("/offer-types", response_model=APIResponse)
+async def list_offer_types() -> APIResponse:
+    """List all available offer types via auto-discovery.
 
-    Returns centralized pricing type definitions that can be used by any energy provider.
-    Each type includes required and optional price fields for validation.
+    Returns offer type definitions discovered from calculator classes.
+    Each type includes required/optional price fields, icons, and colors.
+
+    This endpoint uses the OfferRegistry which auto-discovers all
+    BaseOfferCalculator subclasses (BASE, HC_HP, TEMPO, EJP, etc.).
     """
-    result = await db.execute(
-        select(PricingType)
-        .where(PricingType.is_active.is_(True))
-        .order_by(PricingType.display_order)
-    )
-    pricing_types = result.scalars().all()
+    offer_types = get_all_offer_types()
 
     return APIResponse(
         success=True,
-        data=[
-            {
-                "id": pt.id,
-                "code": pt.code,
-                "name": pt.name,
-                "description": pt.description,
-                "required_price_fields": pt.required_price_fields,
-                "optional_price_fields": pt.optional_price_fields,
-                "icon": pt.icon,
-                "color": pt.color,
-                "display_order": pt.display_order,
-            }
-            for pt in pricing_types
-        ],
+        data=offer_types,
+    )
+
+
+@router.get("/pricing-types", response_model=APIResponse)
+async def list_pricing_types() -> APIResponse:
+    """List all active pricing types via auto-discovery.
+
+    DEPRECATED: Use /offer-types instead. This endpoint is kept for backward
+    compatibility but now uses the same OfferRegistry as /offer-types.
+
+    Returns pricing type definitions discovered from calculator classes.
+    Each type includes required and optional price fields for validation.
+    """
+    # Utilise OfferRegistry au lieu de la table PricingType (supprimée)
+    offer_types = get_all_offer_types()
+
+    return APIResponse(
+        success=True,
+        data=offer_types,
     )
 
 
