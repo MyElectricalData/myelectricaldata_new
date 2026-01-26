@@ -4,17 +4,7 @@ import { logger, isDebugEnabled } from '@/utils/logger'
 import { usePdlStore } from '@/stores/pdlStore'
 import { isClientMode } from '@/hooks/useAppMode'
 
-// Runtime environment from env.js (generated at container startup)
-// Falls back to build-time env or default
-declare global {
-  interface Window {
-    __ENV__?: {
-      VITE_API_BASE_URL?: string
-      VITE_BACKEND_URL?: string
-    }
-  }
-}
-
+// Window.__ENV__ is declared globally in vite-env.d.ts
 const API_BASE_URL = window.__ENV__?.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || '/api'
 
 class APIClient {

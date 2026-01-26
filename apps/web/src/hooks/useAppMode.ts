@@ -25,16 +25,7 @@ export interface AppModeInfo {
   isServerMode: boolean
 }
 
-// Extend window type for runtime env
-declare global {
-  interface Window {
-    __ENV__?: {
-      VITE_API_BASE_URL?: string
-      VITE_BACKEND_URL?: string
-      VITE_SERVER_MODE?: string
-    }
-  }
-}
+// Window.__ENV__ is declared globally in vite-env.d.ts
 
 /**
  * Get VITE_SERVER_MODE from runtime env (window.__ENV__) or build-time env

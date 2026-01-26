@@ -4,16 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle, XCircle } from 'lucide-react'
 import { logger } from '@/utils/logger'
 
-// Runtime environment from env.js (generated at container startup)
-declare global {
-  interface Window {
-    __ENV__?: {
-      VITE_API_BASE_URL?: string
-      VITE_BACKEND_URL?: string
-    }
-  }
-}
-
+// Window.__ENV__ is declared globally in vite-env.d.ts
 // Use runtime config first, then build-time env, then default
 // Remove trailing slash to avoid double slashes in URLs
 const rawApiBaseUrl = window.__ENV__?.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || '/api'

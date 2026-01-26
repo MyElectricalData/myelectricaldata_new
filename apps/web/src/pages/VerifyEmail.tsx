@@ -1,15 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
-// Runtime environment from env.js (generated at container startup)
-declare global {
-  interface Window {
-    __ENV__?: {
-      VITE_API_BASE_URL?: string
-      VITE_BACKEND_URL?: string
-    }
-  }
-}
+// Window.__ENV__ is declared globally in vite-env.d.ts
 
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams()
