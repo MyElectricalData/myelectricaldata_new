@@ -1,5 +1,14 @@
 # Helm Charts Changelog
 
+## [1.2.0-dev.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/1.2.0-dev.1...helm/1.2.0-dev.2) (2026-01-26)
+
+### Features
+
+* mise à jour de la version du chart et ajout de la variable d'environnement SERVER_MODE pour le déploiement ([829025e](https://github.com/MyElectricalData/myelectricaldata_new/commit/829025e4ea32fbc3544e8e852747672d199b8abb))
+* mise à jour des configurations mypy et ESLint, amélioration de la gestion des erreurs de token et refactorisation des appels d'API ([431145e](https://github.com/MyElectricalData/myelectricaldata_new/commit/431145e5e05362228ce747df8f214a1bcfc0262c))
+* refactor global environment declaration for runtime configuration in vite-env.d.ts ([2cb1870](https://github.com/MyElectricalData/myelectricaldata_new/commit/2cb1870b39d40078ef347aa49645d69c5fe00657))
+* **web:** support runtime VITE_SERVER_MODE via env.js ([811ec6b](https://github.com/MyElectricalData/myelectricaldata_new/commit/811ec6b6537a5bc33a354b6bb076ca87797d52d1))
+
 ## [1.2.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/1.1.0...helm/1.2.0-dev.1) (2026-01-26)
 
 ### Features
