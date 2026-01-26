@@ -379,7 +379,6 @@ All docs now in `docs/`:
 - `docs/features-spec/`: Common features specifications (cache, database)
 - `docs/specs/design/`: UI design system with component guidelines
 - `docs/server-mode/demo/`: Demo account implementation
-- `docs/architecture/`: System architecture overview
 - `docs/external-apis/`: External APIs documentation (Enedis, RTE)
 
 ## Security Considerations

@@ -340,7 +340,7 @@ def validate_url(url: str) -> bool:
 
 ```bash
 # Voir les logs d'export
-docker compose -f docker-compose.client.yml logs backend-client | grep -i export
+docker compose -f docker-compose.yml logs backend | grep -i export
 ```
 
 ### Métriques (optionnel)

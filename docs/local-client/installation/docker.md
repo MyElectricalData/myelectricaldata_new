@@ -26,13 +26,13 @@ cd myelectricaldata
 
 ```bash
 # Copier le template
-cp .env.client.example .env.client
+cp .env.local-client.example .env.local-client
 
 # Éditer avec vos credentials
-nano .env.client
+nano .env.local-client
 ```
 
-**Contenu minimum de `.env.client`** :
+**Contenu minimum de `.env.local-client`** :
 
 ```bash
 # === OBLIGATOIRE ===
@@ -49,14 +49,14 @@ CLIENT_BACKEND_PORT=8181
 ### Étape 3 : Démarrer
 
 ```bash
-docker compose -f docker-compose.client.yml up -d
+docker compose -f docker-compose.yml up -d
 ```
 
 ### Étape 4 : Vérifier
 
 ```bash
 # Logs
-docker compose -f docker-compose.client.yml logs -f
+docker compose -f docker-compose.yml logs -f
 
 # Accéder à l'interface
 open http://localhost:8100
@@ -86,7 +86,7 @@ Le mode client est optimisé pour Raspberry Pi 3B+ ou supérieur.
 
 ### Configuration spécifique
 
-Ajouter dans `.env.client` :
+Ajouter dans `.env.local-client` :
 
 ```bash
 # Réduire l'utilisation mémoire
@@ -110,17 +110,17 @@ uname -m
 
 ```bash
 # Démarrer
-docker compose -f docker-compose.client.yml up -d
+docker compose -f docker-compose.yml up -d
 
 # Arrêter
-docker compose -f docker-compose.client.yml down
+docker compose -f docker-compose.yml down
 
 # Logs
-docker compose -f docker-compose.client.yml logs -f
-docker compose -f docker-compose.client.yml logs -f backend
+docker compose -f docker-compose.yml logs -f
+docker compose -f docker-compose.yml logs -f backend
 
 # Redémarrer
-docker compose -f docker-compose.client.yml restart backend
+docker compose -f docker-compose.yml restart backend
 ```
 
 ---
@@ -129,13 +129,13 @@ docker compose -f docker-compose.client.yml restart backend
 
 ```bash
 # Arrêter
-docker compose -f docker-compose.client.yml down
+docker compose -f docker-compose.yml down
 
 # Mettre à jour
 git pull
 
 # Redémarrer
-docker compose -f docker-compose.client.yml up -d --build
+docker compose -f docker-compose.yml up -d --build
 ```
 
 ---
@@ -145,14 +145,14 @@ docker compose -f docker-compose.client.yml up -d --build
 ### PostgreSQL
 
 ```bash
-docker compose -f docker-compose.client.yml exec postgres \
+docker compose -f docker-compose.yml exec postgres \
   pg_dump -U myelectricaldata myelectricaldata_client > backup.sql
 ```
 
 ### Restauration
 
 ```bash
-docker compose -f docker-compose.client.yml exec -T postgres \
+docker compose -f docker-compose.yml exec -T postgres \
   psql -U myelectricaldata myelectricaldata_client < backup.sql
 ```
 
@@ -164,21 +164,21 @@ docker compose -f docker-compose.client.yml exec -T postgres \
 
 ```bash
 # Vérifier les logs
-docker compose -f docker-compose.client.yml logs frontend
+docker compose -f docker-compose.yml logs frontend
 
 # Port déjà utilisé ? Modifier CLIENT_FRONTEND_PORT
 ```
 
 ### Erreur de connexion API
 
-Vérifier que `MED_CLIENT_ID` et `MED_CLIENT_SECRET` sont corrects dans `.env.client`.
+Vérifier que `MED_CLIENT_ID` et `MED_CLIENT_SECRET` sont corrects dans `.env.local-client`.
 
 ### Réinitialiser la base
 
 ```bash
 # ATTENTION : perte de données
-docker compose -f docker-compose.client.yml down -v
-docker compose -f docker-compose.client.yml up -d
+docker compose -f docker-compose.yml down -v
+docker compose -f docker-compose.yml up -d
 ```
 
 ---
@@ -187,8 +187,8 @@ docker compose -f docker-compose.client.yml up -d
 
 ```bash
 # Arrêter et supprimer
-docker compose -f docker-compose.client.yml down
+docker compose -f docker-compose.yml down
 
 # Supprimer les données
-docker compose -f docker-compose.client.yml down -v
+docker compose -f docker-compose.yml down -v
 ```

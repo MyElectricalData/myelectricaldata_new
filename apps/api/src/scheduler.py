@@ -178,7 +178,7 @@ class SyncScheduler:
         try:
             from sqlalchemy import select
 
-            from .models.client_mode import ExportConfig, ExportType
+            from .models.client_mode import ExportConfig
             from .models.database import async_session_maker
 
             now = datetime.now(UTC)

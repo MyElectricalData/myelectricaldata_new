@@ -106,13 +106,13 @@ git clone https://github.com/MyElectricalData/myelectricaldata.git
 cd myelectricaldata
 
 # Configurer les variables d'environnement
-cp .env.client.example .env.client
+cp .env.local-client.example .env.local-client
 
-# Éditer .env.client avec vos credentials API
-vim .env.client
+# Éditer .env.local-client avec vos credentials API
+vim .env.local-client
 
 # Démarrer le mode client
-docker compose -f docker-compose.client.yml up -d
+docker compose up -d
 ```
 
 **Accès** : http://localhost:8100 (port différent du mode serveur)
@@ -130,8 +130,8 @@ Les deux modes peuvent tourner en parallèle sur la même machine :
 
 ```bash
 # Démarrer les deux modes simultanément
-docker compose -f docker-compose.yml up -d           # Mode serveur
-docker compose -f docker-compose.client.yml up -d    # Mode client
+docker compose -f docker-compose.server.yml up -d    # Mode serveur
+docker compose up -d                                  # Mode client
 ```
 
 ---

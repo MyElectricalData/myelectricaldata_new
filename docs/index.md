@@ -24,11 +24,11 @@ git clone https://github.com/MyElectricalData/myelectricaldata.git
 cd myelectricaldata
 
 # Configurer les identifiants MyElectricalData API
-cp .env.client.example .env.client
-nano .env.client
+cp .env.local-client.example .env.local-client
+nano .env.local-client
 
 # Démarrer les services
-docker compose -f docker-compose.client.yml up -d
+docker compose up -d
 
 # Accéder à l'application
 open http://localhost:8100
@@ -85,7 +85,7 @@ helm install myelectricaldata ./helm/myelectricaldata-server \
 | Section | Description |
 |---------|-------------|
 | [**APIs Externes**](/external-apis) | Documentation des API Enedis DataHub et RTE |
-| [**Design System**](/design) | Règles de design et composants UI |
+| [**Design System**](/specs/design) | Règles de design et composants UI |
 | [**Pages**](/pages/dashboard) | Guide de conception des pages de l'application |
 
 ## ✨ Fonctionnalités principales
@@ -157,8 +157,8 @@ Déployez votre propre gateway multi-utilisateurs avec accès direct aux API Ene
 - [Client Local domotique](/local-client)
 - [Mode Serveur (Gateway)](/server-mode)
 - [APIs Externes](/external-apis)
-- [Design System](/design)
+- [Design System](/specs/design)
 
 ## 🤝 Contribution
 
-Le projet est open-source. Consultez le [guide de contribution](/pages/contribute) pour participer.
+Le projet est open-source. Les contributions sont les bienvenues sur [GitHub](https://github.com/MyElectricalData/myelectricaldata).

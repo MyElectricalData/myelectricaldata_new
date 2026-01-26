@@ -137,8 +137,8 @@ Les deux modes peuvent tourner en parallèle sur la même machine :
 
 ```bash
 # Démarrer les deux modes simultanément
-docker compose up -d                              # Mode serveur
-docker compose -f docker-compose.client.yml up -d # Mode client
+docker compose -f docker-compose.server.yml up -d # Mode serveur
+docker compose up -d                              # Mode client
 ```
 
 ---
@@ -166,4 +166,4 @@ docker compose -f docker-compose.client.yml up -d # Mode client
 ### API
 
 - [Documentation API Enedis](/enedis-api/endpoint)
-- [Documentation API RTE](/rte-api/overview)
+- [Documentation API RTE](/external-apis/rte-api)

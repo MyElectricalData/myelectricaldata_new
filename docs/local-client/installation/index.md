@@ -38,11 +38,11 @@ git clone https://github.com/MyElectricalData/myelectricaldata.git
 cd myelectricaldata
 
 # Configurer
-cp .env.client.example .env.client
-nano .env.client  # Renseigner MED_CLIENT_ID et MED_CLIENT_SECRET
+cp .env.local-client.example .env.local-client
+nano .env.local-client  # Renseigner MED_CLIENT_ID et MED_CLIENT_SECRET
 
 # Démarrer
-docker compose -f docker-compose.client.yml up -d
+docker compose -f docker-compose.yml up -d
 
 # Accéder
 open http://localhost:8100

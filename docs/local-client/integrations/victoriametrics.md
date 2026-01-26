@@ -41,7 +41,7 @@ docker run -d -p 8428:8428 \
   victoriametrics/victoria-metrics
 
 # Docker Compose (avec rétention 1 an)
-# Voir docker-compose.client.yml
+# Voir docker-compose.yml
 ```
 
 ---

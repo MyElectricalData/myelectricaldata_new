@@ -182,7 +182,7 @@ Le mode client utilise l'**API MyElectricalData** (v2.myelectricaldata.fr) qui a
 Frontend → Backend → API MyElectricalData → Enedis/RTE APIs
 ```
 
-Configuration dans `.env.client` :
+Configuration dans `.env.local-client` :
 ```bash
 MED_CLIENT_ID=xxx
 MED_CLIENT_SECRET=xxx

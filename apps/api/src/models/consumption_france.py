@@ -4,7 +4,7 @@ Consumption France data model for storing RTE national consumption data
 
 from datetime import datetime
 from typing import List, Optional
-from sqlalchemy import Column, String, DateTime, Integer, Float, JSON, Index
+from sqlalchemy import Column, String, DateTime, Integer, Float, Index
 from pydantic import BaseModel
 
 from .base import Base

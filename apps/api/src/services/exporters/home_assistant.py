@@ -2576,7 +2576,6 @@ class HomeAssistantExporter(BaseExporter):
             interval_length = raw_data.get("interval_length", "PT30M")
 
             # Parse interval_length (e.g., "PT30M" → 30)
-            import re
             match = re.match(r"PT(\d+)M", interval_length)
             if match:
                 interval_minutes = int(match.group(1))
@@ -2603,7 +2602,7 @@ class HomeAssistantExporter(BaseExporter):
                 hour, minute = map(int, record.interval_start.split(":"))
             else:
                 # Daily data: split into 24 hourly entries
-                hour, minute = 0, 0
+                hour = 0
 
             # Determine tariff tag based on the hour (not the minute)
             # The tariff is determined by the START of the hour
@@ -2722,7 +2721,6 @@ class HomeAssistantExporter(BaseExporter):
             Dict of tariff_tag -> list of cost statistics in EUR
             Example: {"blue_hc": [{start, state, sum}, ...], ...}
         """
-        from decimal import Decimal
 
         from ...models.energy_provider import EnergyOffer
         from ...models.pdl import PDL
@@ -2895,7 +2893,6 @@ class HomeAssistantExporter(BaseExporter):
             interval_length = raw_data.get("interval_length", "PT30M")
 
             # Parse interval_length (e.g., "PT30M" → 30)
-            import re
             match = re.match(r"PT(\d+)M", interval_length)
             if match:
                 interval_minutes = int(match.group(1))

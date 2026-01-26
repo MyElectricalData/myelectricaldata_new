@@ -5,14 +5,14 @@ Provides minimal account endpoints for client mode (local installation).
 Only includes endpoints that the frontend expects to exist.
 """
 
-from fastapi import APIRouter, Depends, Response, Request
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import User
 from ..models.database import get_db
 from ..middleware import get_current_user
 from ..schemas import APIResponse
-from ..services.client_auth import get_or_create_local_user, LOCAL_USER_EMAIL
+from ..services.client_auth import get_or_create_local_user
 import logging
 
 logger = logging.getLogger(__name__)

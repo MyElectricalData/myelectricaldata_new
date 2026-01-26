@@ -7,7 +7,7 @@ Only available when CLIENT_MODE is enabled.
 import asyncio
 import json
 import logging
-from typing import Any, AsyncGenerator, Callable, Optional
+from typing import Any, AsyncGenerator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
