@@ -86,7 +86,7 @@ export function useConsumptionFetch({
     )
 
     // Start date: 1095 days before yesterday (Enedis API max limit for daily data - 3 years)
-    let startDate_obj = new Date(
+    const startDate_obj = new Date(
       yesterday.getFullYear(),
       yesterday.getMonth(),
       yesterday.getDate() - 1095,

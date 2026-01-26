@@ -11,9 +11,13 @@ Uses APScheduler for task scheduling.
 
 import logging
 from datetime import datetime, UTC, timedelta
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from .config import settings
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from .models.client_mode import ExportConfig
 
 logger = logging.getLogger(__name__)
 
@@ -201,12 +205,15 @@ class SyncScheduler:
                     # Export is due (or first run)
                     logger.info(f"[SCHEDULER] Running scheduled export: {config.name}")
 
+                    # export_interval_minutes is guaranteed non-None by the query filter
+                    interval = config.export_interval_minutes or 60  # Fallback should never be used
+
                     try:
                         # Run export
                         await self._run_export(db, config)
 
                         # Schedule next run
-                        config.next_export_at = now + timedelta(minutes=config.export_interval_minutes)
+                        config.next_export_at = now + timedelta(minutes=interval)
                         await db.commit()
 
                     except Exception as e:
@@ -214,13 +221,13 @@ class SyncScheduler:
                         config.last_export_status = "failed"
                         config.last_export_error = str(e)[:500]
                         # Still schedule next run to avoid being stuck
-                        config.next_export_at = now + timedelta(minutes=config.export_interval_minutes)
+                        config.next_export_at = now + timedelta(minutes=interval)
                         await db.commit()
 
         except Exception as e:
             logger.error(f"[SCHEDULER] Scheduled exports check failed: {e}")
 
-    async def _run_export(self, db: object, config: object) -> None:
+    async def _run_export(self, db: "AsyncSession", config: "ExportConfig") -> None:
         """Run a single export configuration
 
         For Home Assistant:
@@ -300,73 +307,73 @@ class SyncScheduler:
 
         # VictoriaMetrics handling
         elif config.export_type == ExportType.VICTORIAMETRICS:
-            exporter = VictoriaMetricsExporter(config.config)
+            vm_exporter = VictoriaMetricsExporter(config.config)
 
             for pdl in usage_point_ids:
                 # Export consumption daily
                 if config.export_consumption:
-                    stmt = select(ConsumptionData).where(
+                    cons_daily_stmt = select(ConsumptionData).where(
                         ConsumptionData.usage_point_id == pdl,
                         ConsumptionData.granularity == DataGranularity.DAILY,
                     )
-                    result = await db.execute(stmt)
+                    cons_daily_result = await db.execute(cons_daily_stmt)
                     data = [
                         {"date": r.date.isoformat(), "value": r.value}
-                        for r in result.scalars().all()
+                        for r in cons_daily_result.scalars().all()
                     ]
                     if data:
-                        count = await exporter.export_consumption(pdl, data, "daily")
+                        count = await vm_exporter.export_consumption(pdl, data, "daily")
                         total_exported += count
 
                 # Export consumption detailed (if enabled)
                 if config.export_consumption and config.export_detailed:
-                    stmt = select(ConsumptionData).where(
+                    cons_detail_stmt = select(ConsumptionData).where(
                         ConsumptionData.usage_point_id == pdl,
                         ConsumptionData.granularity == DataGranularity.DETAILED,
                     )
-                    result = await db.execute(stmt)
+                    cons_detail_result = await db.execute(cons_detail_stmt)
                     data = [
                         {
                             "date": f"{r.date.isoformat()}T{r.interval_start}:00" if r.interval_start else r.date.isoformat(),
                             "value": r.value,
                         }
-                        for r in result.scalars().all()
+                        for r in cons_detail_result.scalars().all()
                     ]
                     if data:
-                        count = await exporter.export_consumption(pdl, data, "detailed")
+                        count = await vm_exporter.export_consumption(pdl, data, "detailed")
                         total_exported += count
 
                 # Export production daily
                 if config.export_production:
-                    stmt = select(ProductionData).where(
+                    prod_daily_stmt = select(ProductionData).where(
                         ProductionData.usage_point_id == pdl,
                         ProductionData.granularity == DataGranularity.DAILY,
                     )
-                    result = await db.execute(stmt)
+                    prod_daily_result = await db.execute(prod_daily_stmt)
                     data = [
                         {"date": r.date.isoformat(), "value": r.value}
-                        for r in result.scalars().all()
+                        for r in prod_daily_result.scalars().all()
                     ]
                     if data:
-                        count = await exporter.export_production(pdl, data, "daily")
+                        count = await vm_exporter.export_production(pdl, data, "daily")
                         total_exported += count
 
                 # Export production detailed (if enabled)
                 if config.export_production and config.export_detailed:
-                    stmt = select(ProductionData).where(
+                    prod_detail_stmt = select(ProductionData).where(
                         ProductionData.usage_point_id == pdl,
                         ProductionData.granularity == DataGranularity.DETAILED,
                     )
-                    result = await db.execute(stmt)
+                    prod_detail_result = await db.execute(prod_detail_stmt)
                     data = [
                         {
                             "date": f"{r.date.isoformat()}T{r.interval_start}:00" if r.interval_start else r.date.isoformat(),
                             "value": r.value,
                         }
-                        for r in result.scalars().all()
+                        for r in prod_detail_result.scalars().all()
                     ]
                     if data:
-                        count = await exporter.export_production(pdl, data, "detailed")
+                        count = await vm_exporter.export_production(pdl, data, "detailed")
                         total_exported += count
         else:
             raise ValueError(f"Unknown export type: {config.export_type}")

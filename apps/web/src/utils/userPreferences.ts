@@ -198,7 +198,7 @@ export function clearAllPreferences(): void {
 
 // Make it available globally in development
 if (import.meta.env.DEV) {
-  ;(window as any).clearOnboarding = clearAllPreferences
+  (window as any).clearOnboarding = clearAllPreferences
   ;(window as any).getOnboardingState = getUserPreferences
   console.log('🛠️ Debug helpers available:')
   console.log('  - window.clearOnboarding() : Clear onboarding state')

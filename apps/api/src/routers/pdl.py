@@ -153,9 +153,9 @@ async def create_pdl(
 
     # Try to fetch contract info from Enedis automatically
     try:
-        access_token = await get_valid_token(pdl.usage_point_id, current_user, db)
-        if access_token:
-            contract_data = await enedis_adapter.get_contract(pdl.usage_point_id, access_token)
+        token_result = await get_valid_token(pdl.usage_point_id, current_user, db)
+        if isinstance(token_result, str):
+            contract_data = await enedis_adapter.get_contract(pdl.usage_point_id, token_result)
 
             if contract_data and "customer" in contract_data and "usage_points" in contract_data["customer"]:
                 usage_points = contract_data["customer"]["usage_points"]
@@ -260,7 +260,7 @@ async def create_pdl(
             # Test consumption endpoint
             try:
                 consumption_test = await enedis_adapter.get_consumption_daily(
-                    pdl.usage_point_id, yesterday, today, access_token
+                    pdl.usage_point_id, yesterday, today, token_result
                 )
                 if consumption_test and "meter_reading" in consumption_test:
                     has_consumption = True
@@ -271,7 +271,7 @@ async def create_pdl(
             # Test production endpoint
             try:
                 production_test = await enedis_adapter.get_production_daily(
-                    pdl.usage_point_id, yesterday, today, access_token
+                    pdl.usage_point_id, yesterday, today, token_result
                 )
                 if production_test and "meter_reading" in production_test:
                     has_production = True
@@ -868,8 +868,8 @@ async def fetch_contract_from_enedis(
         return APIResponse(success=False, error=ErrorDetail(code="PDL_NOT_FOUND", message="PDL not found"))
 
     # Get access token
-    access_token = await get_valid_token(pdl.usage_point_id, current_user, db)
-    if not access_token:
+    token_result = await get_valid_token(pdl.usage_point_id, current_user, db)
+    if not isinstance(token_result, str):
         return APIResponse(
             success=False,
             error=ErrorDetail(code="ACCESS_DENIED", message="Cannot access Enedis API. Please verify consent."),
@@ -877,7 +877,7 @@ async def fetch_contract_from_enedis(
 
     try:
         # Fetch contract data from Enedis
-        contract_data = await enedis_adapter.get_contract(pdl.usage_point_id, access_token)
+        contract_data = await enedis_adapter.get_contract(pdl.usage_point_id, token_result)
 
         # Log the structure for debugging
         logger.info(f"[FETCH CONTRACT] Raw contract data: {contract_data}")
@@ -994,7 +994,7 @@ async def fetch_contract_from_enedis(
         # Test consumption endpoint
         try:
             consumption_test = await enedis_adapter.get_consumption_daily(
-                pdl.usage_point_id, yesterday, today, access_token
+                pdl.usage_point_id, yesterday, today, token_result
             )
             if consumption_test and "meter_reading" in consumption_test:
                 has_consumption = True
@@ -1005,7 +1005,7 @@ async def fetch_contract_from_enedis(
         # Test production endpoint
         try:
             production_test = await enedis_adapter.get_production_daily(
-                pdl.usage_point_id, yesterday, today, access_token
+                pdl.usage_point_id, yesterday, today, token_result
             )
             if production_test and "meter_reading" in production_test:
                 has_production = True

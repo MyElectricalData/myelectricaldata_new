@@ -874,7 +874,7 @@ export default function Simulator() {
         })
 
         // Calculate energy cost with weekend pricing if available
-        let weekdayCost = (hcKwh * offer.hc_price) + (hpKwh * offer.hp_price)
+        const weekdayCost = (hcKwh * offer.hc_price) + (hpKwh * offer.hp_price)
         let weekendCost = 0
 
         // For HC_NUIT_WEEKEND and WEEKEND offers, weekend kWh are stored in hcWeekendKwh
@@ -910,7 +910,7 @@ export default function Simulator() {
         })
       } else if (offer.offer_type === 'TEMPO') {
         // TEMPO calculation with real colors from RTE
-        let colorStats = { BLUE: 0, WHITE: 0, RED: 0, UNKNOWN: 0 }
+        const colorStats = { BLUE: 0, WHITE: 0, RED: 0, UNKNOWN: 0 }
 
         allConsumptionFinal.forEach((item, index) => {
           const hour = item.hour || 0

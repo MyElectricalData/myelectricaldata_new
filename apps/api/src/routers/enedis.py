@@ -272,10 +272,20 @@ class TokenError:
     PDL_NOT_FOUND = "PDL_NOT_FOUND"
     ENEDIS_UNAVAILABLE = "ENEDIS_UNAVAILABLE"
 
+    def __init__(self, error_type: str) -> None:
+        self.error_type = error_type
 
-def make_token_error_response(error: str) -> APIResponse:
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, str):
+            return self.error_type == other
+        if isinstance(other, TokenError):
+            return self.error_type == other.error_type
+        return False
+
+
+def make_token_error_response(error: TokenError) -> APIResponse:
     """Génère une réponse d'erreur appropriée selon le type d'erreur de token"""
-    if error == TokenError.ENEDIS_UNAVAILABLE:
+    if error.error_type == TokenError.ENEDIS_UNAVAILABLE:
         return APIResponse(
             success=False,
             error=ErrorDetail(
@@ -300,12 +310,12 @@ async def get_valid_token(usage_point_id: str, user: User, db: AsyncSession) -> 
         logger.info(f"[DEMO MODE] Skipping token validation for demo user {user.email}")
         # Still verify PDL ownership
         if not await verify_pdl_ownership(usage_point_id, user, db):
-            return TokenError.PDL_NOT_FOUND
+            return TokenError(TokenError.PDL_NOT_FOUND)
         return "demo_token"  # Return dummy token for demo users
 
     # First, verify PDL ownership
     if not await verify_pdl_ownership(usage_point_id, user, db):
-        return TokenError.PDL_NOT_FOUND
+        return TokenError(TokenError.PDL_NOT_FOUND)
 
     # Get global client credentials token (stored with user_id=None, usage_point_id='__global__')
     result = await db.execute(
@@ -368,12 +378,12 @@ async def get_valid_token(usage_point_id: str, user: User, db: AsyncSession) -> 
                     token = result.scalar_one_or_none()
                     if not token:
                         logger.error("[TOKEN ERROR] Failed to fetch token after race condition")
-                        return TokenError.ENEDIS_UNAVAILABLE
+                        return TokenError(TokenError.ENEDIS_UNAVAILABLE)
         except Exception as e:
             logger.error(f"[TOKEN ERROR] Failed to get client credentials token: {str(e)}")
             import traceback
             traceback.print_exc()
-            return TokenError.ENEDIS_UNAVAILABLE
+            return TokenError(TokenError.ENEDIS_UNAVAILABLE)
 
     return token.access_token
 

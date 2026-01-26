@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Package, Send, X, Link, AlertCircle, Plus, Trash2, Undo2, Eye, Pencil, Info, Building2 } from 'lucide-react'
 import { energyApi, type EnergyProvider, type ContributionData, type EnergyOffer } from '@/api/energy'
@@ -24,7 +24,6 @@ export default function AllOffers() {
   const [editedOffers, setEditedOffers] = useState<Record<string, Record<string, string>>>({})
   const [submittingOffers, setSubmittingOffers] = useState(false)
   const [priceSheetUrl, setPriceSheetUrl] = useState('')
-  const recapRef = useRef<HTMLDivElement>(null)
 
   // State pour les propositions d'ajout/suppression de puissances
   const [powersToRemove, setPowersToRemove] = useState<number[]>([])

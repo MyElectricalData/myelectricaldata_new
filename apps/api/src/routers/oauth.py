@@ -182,9 +182,9 @@ async def oauth_callback(
             try:
                 from ..routers.enedis import get_valid_token
 
-                access_token = await get_valid_token(pdl_usage_point_id, user, db)
-                if access_token:
-                    contract_data = await enedis_adapter.get_contract(pdl_usage_point_id, access_token)
+                token_result = await get_valid_token(pdl_usage_point_id, user, db)
+                if isinstance(token_result, str):
+                    contract_data = await enedis_adapter.get_contract(pdl_usage_point_id, token_result)
 
                     if (
                         contract_data
