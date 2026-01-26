@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.9.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.8.0...1.9.0-dev.1) (2026-01-26)
+
+### Features
+
+* Add backend and frontend Helm chart templates with configuration ([b6d263a](https://github.com/MyElectricalData/myelectricaldata_new/commit/b6d263a9c544d41434e2653bb1ab03198e998ce0))
+* add consumption euro page with detailed features and implementation ([2902470](https://github.com/MyElectricalData/myelectricaldata_new/commit/290247055268633bbfdf438c4c7399dad8be0ad8))
+* Add new pricing calculators for various offers ([72e47ad](https://github.com/MyElectricalData/myelectricaldata_new/commit/72e47ad284218550f18c29c37ed997d2dc12831a))
+* mettre à jour le package valkey à la version 0.13.0 ([2bcfe80](https://github.com/MyElectricalData/myelectricaldata_new/commit/2bcfe80e4a641680a9665857c361028360bdcb65))
+* mise à jour des configurations mypy et ESLint, amélioration de la gestion des erreurs de token et refactorisation des appels d'API ([431145e](https://github.com/MyElectricalData/myelectricaldata_new/commit/431145e5e05362228ce747df8f214a1bcfc0262c))
+* mise à jour des fichiers de configuration et des instructions Docker pour le mode client ([9dd2bc7](https://github.com/MyElectricalData/myelectricaldata_new/commit/9dd2bc7f39846affc20e6b8895d08403a90d4c16))
+
+## [1.8.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.7.0...1.8.0) (2026-01-11)
+
+### Features
+
+* **simulator:** amelioration export PDF et offre de reference ([b872ed0](https://github.com/MyElectricalData/myelectricaldata_new/commit/b872ed02ce0dce0997ad7694110b430b411b02a0))
+
+### Bug Fixes
+
+* add missing useAllPdls hook ([85e31d6](https://github.com/MyElectricalData/myelectricaldata_new/commit/85e31d6f62b045224776c0a9cc928817ecd88c33))
+
 ## [1.8.0-dev.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.7.0...1.8.0-dev.1) (2026-01-10)
 
 ### Features
