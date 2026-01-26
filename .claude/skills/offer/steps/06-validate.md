@@ -63,7 +63,7 @@ Si le type d'offre est significatif, mettre a jour la documentation :
 | Document                                        | Section a mettre a jour               |
 | ----------------------------------------------- | ------------------------------------- |
 | `.claude/skills/new_offer/SKILL.md`             | Tableau "Types d'offres existants"    |
-| `docs/features-spec/energy-providers-scrapers.md` | Si scraper associe                  |
+| `docs/server-mode/features/energy-providers-scrapers.md` | Si scraper associe                  |
 
 ## Etape 4 : Resume des modifications
 

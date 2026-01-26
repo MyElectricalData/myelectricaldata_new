@@ -16,7 +16,7 @@ next_step: steps/02-plan.md
 
 ## Etape 1 : Charger la documentation
 
-Lire la documentation de la page dans `docs/pages/<page_name>.md` ou `docs/pages/<page_name>/`.
+Lire la documentation de la page dans `docs/specs/pages/<page_name>.md` ou `docs/specs/pages/<page_name>/`.
 
 ### Detection du type de page
 
@@ -28,13 +28,13 @@ Lire la documentation de la page dans `docs/pages/<page_name>.md` ou `docs/pages
 **Exemple page simple :**
 
 ```text
-docs/pages/tempo.md        → Page Tempo (pas d'onglets)
+docs/specs/pages/tempo.md        → Page Tempo (pas d'onglets)
 ```
 
 **Exemple page avec onglets :**
 
 ```text
-docs/pages/consumption/
+docs/specs/pages/consumption/
 ├── 00-index.md            → Description generale (toujours en premier)
 ├── 01-kwh.md              → Onglet 1 : kWh
 ├── 02-euro.md             → Onglet 2 : Euro
@@ -51,7 +51,7 @@ docs/pages/consumption/
 
 Chaque fichier `.md` contient un header YAML avec les metadonnees. Extraire les champs suivants :
 
-- `slug` : Route de la page
+- `path` : Route de la page
 - `mode_client` / `mode_server` : Modes d'execution
 - `menu` / `subMenu` : Navigation
 - `tab` : Label d'onglet (si applicable)
@@ -91,11 +91,11 @@ Si elle existe, la lire pour obtenir des instructions supplementaires.
 
 **IMPORTANT : Comprendre le code actuel AVANT de planifier les modifications.**
 
-### 5.1 Verification des routes (`slug` → `App.tsx`)
+### 5.1 Verification des routes (`path` → `App.tsx`)
 
-1. Lire le frontmatter pour extraire le `slug`
+1. Lire le frontmatter pour extraire le `path`
 2. Chercher dans `apps/web/src/App.tsx` :
-   - La route doit exister : `<Route path="<slug>" ...`
+   - La route doit exister : `<Route path="<path>" ...`
    - Ou une redirection vers cette route
 
 ### 5.2 Verification de la navigation (`menu` / `subMenu` → `Layout.tsx`)
@@ -111,7 +111,7 @@ Si elle existe, la lire pour obtenir des instructions supplementaires.
 | ----------- | --------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `menu`      | Doit exister un lien avec `label: "<menu>"`                           | Rechercher dans `menuItems` ou dans les sections de sous-menu |
 | `subMenu`   | Si present, doit exister dans `xxxSubItems` avec `label: "<subMenu>"` | Le label doit correspondre **exactement**                     |
-| `slug`      | Le `to:` du sous-item doit correspondre au slug                       | `{ to: '<slug>', label: '<subMenu>' }`                        |
+| `path`      | Le `to:` du sous-item doit correspondre au path                       | `{ to: '<path>', label: '<subMenu>' }`                        |
 
 ### 5.3 Verification des modes (`mode_client` / `mode_server`)
 
@@ -151,7 +151,7 @@ Documentation :
 - Mode client : [oui/non]
 
 Routes :
-- slug : <slug> → [✅ OK / ❌ MANQUANT dans App.tsx]
+- path : <path> → [✅ OK / ❌ MANQUANT dans App.tsx]
 
 Navigation :
 - menu : <menu> → [✅ OK / ❌ MANQUANT dans Layout.tsx]

@@ -39,7 +39,7 @@ make logs
 Utiliser `AskUserQuestion` pour demander a l'utilisateur de verifier :
 
 ```text
-Question : "La page <slug> fonctionne-t-elle correctement ?"
+Question : "La page <path> fonctionne-t-elle correctement ?"
 
 Options :
 - "Oui, tout fonctionne" → Passer a l'etape suivante
@@ -63,7 +63,7 @@ Si des modifications UI ont ete faites :
 /check_design
 ```
 
-Ou verifier manuellement avec : `docs/design/checklist.md`
+Ou verifier manuellement avec : `docs/specs/design/checklist.md`
 
 ## Recap Step 5
 

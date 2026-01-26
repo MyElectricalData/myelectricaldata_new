@@ -16,8 +16,8 @@ file_patterns:
   - "apps/web/src/pages/**/*"
   - "apps/web/src/api/**/*"
   - "apps/api/src/routers/**/*"
-  - "docs/pages/**/*"
-  - "docs/design/**/*"
+  - "docs/specs/pages/**/*"
+  - "docs/specs/design/**/*"
 ---
 
 # Skill Web - Gestion des pages
@@ -53,36 +53,36 @@ Skill generique pour travailler sur **n'importe quelle page web** du projet. Det
 
 | Page               | Fichier(s)                        | Documentation                    | Mode               |
 | ------------------ | --------------------------------- | -------------------------------- | ------------------ |
-| `dashboard`        | `pages/Dashboard.tsx`             | `docs/pages/dashboard.md`        | Serveur + Client   |
-| `consumption`      | `pages/Consumption/index.tsx`     | `docs/pages/consumption.md`      | Serveur + Client   |
-| `consumption-kwh`  | `pages/ConsumptionKwh/index.tsx`  | `docs/pages/consumption.md`      | Serveur + Client   |
-| `consumption-euro` | `pages/ConsumptionEuro/index.tsx` | `docs/pages/consumption-euro.md` | Serveur + Client   |
-| `production`       | `pages/Production/index.tsx`      | `docs/pages/production.md`       | Serveur + Client   |
-| `balance`          | `pages/Balance/index.tsx`         | `docs/pages/balance.md`          | Serveur + Client   |
-| `tempo`            | `pages/Tempo.tsx`                 | `docs/pages/tempo.md`            | Serveur + Client   |
-| `ecowatt`          | `pages/EcoWatt.tsx`               | `docs/pages/ecowatt.md`          | Serveur + Client   |
-| `france`           | `pages/France.tsx`                | `docs/pages/france.md`           | Serveur + Client   |
-| `contribute`       | `pages/Contribute/index.tsx`      | `docs/pages/contributes/`        | Serveur uniquement |
-| `simulator`        | `pages/Simulator.tsx`             | `docs/pages/simulator.md`        | Serveur uniquement |
-| `faq`              | `pages/FAQ.tsx`                   | `docs/pages/faq.md`              | Serveur uniquement |
-| `settings`         | `pages/Settings.tsx`              | `docs/pages/settings.md`         | Serveur uniquement |
-| `landing`          | `pages/Landing.tsx`               | `docs/pages/root.md`             | Serveur uniquement |
-| `signup`           | `pages/Signup.tsx`                | `docs/pages/signup.md`           | Serveur uniquement |
-| `api-docs`         | `pages/ApiDocs.tsx`               | `docs/pages/api-docs.md`         | Serveur uniquement |
+| `dashboard`        | `pages/Dashboard.tsx`             | `docs/specs/pages/dashboard.md`        | Serveur + Client   |
+| `consumption`      | `pages/Consumption/index.tsx`     | `docs/specs/pages/consumption.md`      | Serveur + Client   |
+| `consumption-kwh`  | `pages/ConsumptionKwh/index.tsx`  | `docs/specs/pages/consumption.md`      | Serveur + Client   |
+| `consumption-euro` | `pages/ConsumptionEuro/index.tsx` | `docs/specs/pages/consumption-euro.md` | Serveur + Client   |
+| `production`       | `pages/Production/index.tsx`      | `docs/specs/pages/production.md`       | Serveur + Client   |
+| `balance`          | `pages/Balance/index.tsx`         | `docs/specs/pages/balance.md`          | Serveur + Client   |
+| `tempo`            | `pages/Tempo.tsx`                 | `docs/specs/pages/tempo.md`            | Serveur + Client   |
+| `ecowatt`          | `pages/EcoWatt.tsx`               | `docs/specs/pages/ecowatt.md`          | Serveur + Client   |
+| `france`           | `pages/France.tsx`                | `docs/specs/pages/france.md`           | Serveur + Client   |
+| `contribute`       | `pages/Contribute/index.tsx`      | `docs/specs/pages/contributes/`        | Serveur uniquement |
+| `simulator`        | `pages/Simulator.tsx`             | `docs/specs/pages/simulator.md`        | Serveur uniquement |
+| `faq`              | `pages/FAQ.tsx`                   | `docs/specs/pages/faq.md`              | Serveur uniquement |
+| `settings`         | `pages/Settings.tsx`              | `docs/specs/pages/settings.md`         | Serveur uniquement |
+| `landing`          | `pages/Landing.tsx`               | `docs/specs/pages/root.md`             | Serveur uniquement |
+| `signup`           | `pages/Signup.tsx`                | `docs/specs/pages/signup.md`           | Serveur uniquement |
+| `api-docs`         | `pages/ApiDocs.tsx`               | `docs/specs/pages/api-docs.md`         | Serveur uniquement |
 
 ### Pages Administration (Serveur uniquement)
 
 | Page                  | Fichier                         | Documentation                       |
 | --------------------- | ------------------------------- | ----------------------------------- |
-| `admin`               | `pages/Admin/Dashboard.tsx`     | `docs/pages/admin.md`               |
-| `admin-users`         | `pages/Admin/Users.tsx`         | `docs/pages/admin-users.md`         |
-| `admin-roles`         | `pages/Admin/Roles.tsx`         | `docs/pages/admin-roles.md`         |
-| `admin-offers`        | `pages/Admin/Offers.tsx`        | `docs/pages/admin-offers.md`        |
-| `admin-contributions` | `pages/Admin/Contributions.tsx` | `docs/pages/admin-contributions.md` |
-| `admin-tempo`         | `pages/Admin/Tempo.tsx`         | `docs/pages/admin-tempo.md`         |
-| `admin-ecowatt`       | `pages/Admin/EcoWatt.tsx`       | `docs/pages/admin-ecowatt.md`       |
-| `admin-logs`          | `pages/Admin/Logs.tsx`          | `docs/pages/admin-logs.md`          |
-| `admin-add-pdl`       | `pages/Admin/AddPDL.tsx`        | `docs/pages/admin-add-pdl.md`       |
+| `admin`               | `pages/Admin/Dashboard.tsx`     | `docs/specs/pages/admin.md`               |
+| `admin-users`         | `pages/Admin/Users.tsx`         | `docs/specs/pages/admin-users.md`         |
+| `admin-roles`         | `pages/Admin/Roles.tsx`         | `docs/specs/pages/admin-roles.md`         |
+| `admin-offers`        | `pages/Admin/Offers.tsx`        | `docs/specs/pages/admin-offers.md`        |
+| `admin-contributions` | `pages/Admin/Contributions.tsx` | `docs/specs/pages/admin-contributions.md` |
+| `admin-tempo`         | `pages/Admin/Tempo.tsx`         | `docs/specs/pages/admin-tempo.md`         |
+| `admin-ecowatt`       | `pages/Admin/EcoWatt.tsx`       | `docs/specs/pages/admin-ecowatt.md`       |
+| `admin-logs`          | `pages/Admin/Logs.tsx`          | `docs/specs/pages/admin-logs.md`          |
+| `admin-add-pdl`       | `pages/Admin/AddPDL.tsx`        | `docs/specs/pages/admin-add-pdl.md`       |
 
 ### Pages Exporters (Client uniquement)
 
@@ -110,19 +110,19 @@ La documentation des pages suit deux formats selon la complexite :
 ### Page simple (fichier `.md`)
 
 ```text
-docs/pages/<order>-<page>.md
+docs/specs/pages/<order>-<page>.md
 ```
 
 **Caracteristiques** :
 
 - Page sans onglets
 - Un seul fichier de documentation
-- Exemple : `docs/pages/dashboard.md`, `docs/pages/tempo.md`
+- Exemple : `docs/specs/pages/dashboard.md`, `docs/specs/pages/tempo.md`
 
 ### Page avec onglets (dossier)
 
 ```text
-docs/pages/<page>/
+docs/specs/pages/<page>/
   ├── <order1>-<onglet1>.md
   ├── <order2>-<onglet2>.md
   └── <order3>-<onglet3>.md
@@ -133,7 +133,7 @@ docs/pages/<page>/
 - Page avec plusieurs onglets/sous-pages
 - Un fichier `.md` par onglet, prefixe numerique pour l'ordre
 - Chaque fichier a un frontmatter YAML (voir ci-dessous)
-- Exemple : `docs/pages/contributes/` avec `01-offers.md`, `02-new-offers.md`, `03-my-offers.md`
+- Exemple : `docs/specs/pages/contributes/` avec `01-offers.md`, `02-new-offers.md`, `03-my-offers.md`
 
 ### Frontmatter YAML
 
@@ -142,7 +142,7 @@ Chaque fichier de documentation doit avoir un frontmatter YAML :
 ```yaml
 ---
 name: 01-offers
-slug: /contribute/offers
+path: /contribute/offers
 description: Onglet des offres disponibles
 mode_client: false
 mode_server: true
@@ -155,7 +155,7 @@ tab: Toutes les offres
 | Champ         | Obligatoire | Description                                                   |
 | ------------- | ----------- | ------------------------------------------------------------- |
 | `name`        | Oui         | Identifiant unique de l'onglet                                |
-| `slug`        | Oui         | Route de l'onglet (ex: `/contribute/offers`)                  |
+| `path`        | Oui         | Route de l'onglet (ex: `/contribute/offers`)                  |
 | `description` | Oui         | Description courte de l'onglet                                |
 | `mode_client` | Oui         | `true` si disponible en mode client                           |
 | `mode_server` | Oui         | `true` si disponible en mode serveur                          |
@@ -191,9 +191,9 @@ Menu lateral
 
 Pour determiner le type de documentation :
 
-1. Verifier si `docs/pages/<page>/` existe (dossier)
+1. Verifier si `docs/specs/pages/<page>/` existe (dossier)
 2. Si oui → page avec onglets, lire tous les fichiers `.md` du dossier
-3. Sinon → verifier si `docs/pages/<page>.md` existe (fichier)
+3. Sinon → verifier si `docs/specs/pages/<page>.md` existe (fichier)
 4. Si oui → page simple, lire le fichier unique
 
 ## Workflow
@@ -229,8 +229,8 @@ Proposer les valeurs de la colonne `Page` comme options.
 ### Etape 2 : Chargement du contexte
 
 1. **Detecter le type de documentation** :
-   - Si `docs/pages/<page>/` existe → page avec onglets → lire tous les `.md` du dossier
-   - Sinon si `docs/pages/<page>.md` existe → page simple → lire le fichier
+   - Si `docs/specs/pages/<page>/` existe → page avec onglets → lire tous les `.md` du dossier
+   - Sinon si `docs/specs/pages/<page>.md` existe → page simple → lire le fichier
 2. Lire la commande existante si elle existe (`.claude/commands/web_<page>.md`)
 3. Identifier les fichiers de la page
 4. Verifier le mode d'execution (Serveur/Client/Les deux)
@@ -242,7 +242,7 @@ Proposer les valeurs de la colonne `Page` comme options.
 | Normal       | Suivre les specifications de la documentation                    |
 | `--bug`      | Analyser et corriger le bug decrit                               |
 | `--new`      | Ajouter la feature dans la documentation et implementer          |
-| `--design`   | Verifier la conformite avec `docs/design/checklist.md`           |
+| `--design`   | Verifier la conformite avec `docs/specs/design/checklist.md`           |
 | `--validate` | Executer steps 01 → 04 → 05 en mode verification (sans modifier) |
 
 #### Mode `--validate` : Workflow complet de verification
@@ -259,7 +259,7 @@ Proposer les valeurs de la colonne `Page` comme options.
 
 3. **Step 05 - Validate** : Executer les verifications runtime
    - Logs Docker : `make logs`
-   - Design : `/check_design` ou `docs/design/checklist.md`
+   - Design : `/check_design` ou `docs/specs/design/checklist.md`
    - **NE PAS demander validation utilisateur** (mode automatique)
 
 4. **Rapport final** : Afficher un resume global
@@ -292,8 +292,8 @@ Utiliser `AskUserQuestion` pour demander validation.
 
 Mettre a jour la documentation si necessaire :
 
-- **Page simple** : modifier `docs/pages/<page>.md`
-- **Page avec onglets** : modifier le fichier `.md` correspondant a l'onglet dans `docs/pages/<page>/`
+- **Page simple** : modifier `docs/specs/pages/<page>.md`
+- **Page avec onglets** : modifier le fichier `.md` correspondant a l'onglet dans `docs/specs/pages/<page>/`
 
 ### Etape 7 : Commit (si demande)
 
@@ -323,8 +323,8 @@ Respecter `.claude/rules/commits.md` (Semantic Release).
 
 ## References
 
-- **Design system** : `docs/design/`
-- **Ordre du menu** : `docs/pages/_menu.md`
+- **Design system** : `docs/specs/design/`
+- **Ordre du menu** : `docs/specs/pages/_menu.md`
 - **Regles modes** : `.claude/rules/modes.md`
 - **Regles commits** : `.claude/rules/commits.md`
 - **Regles pages** : `.claude/rules/pages.md`

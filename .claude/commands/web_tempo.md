@@ -13,7 +13,7 @@
 
 **Documentation de l'API RTE Tempo :**
 
-👉 `@docs/rte-api/tempo/`
+👉 `@docs/external-apis/rte-api/tempo/`
 
 ## Description rapide
 

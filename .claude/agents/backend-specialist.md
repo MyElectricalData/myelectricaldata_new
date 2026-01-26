@@ -20,7 +20,7 @@ Tes responsabilites :
 - Ecrire des tests unitaires et d'integration
 - Suivre `@docs/features-spec/` pour les exigences
 - Suivre `@docs/features-spec/` pour les exigences
-- Avoir connaissance de l'environnement Enedis où tu trouvera divers info dans `@docs/enedis-api`
+- Avoir connaissance de l'environnement Enedis où tu trouvera divers info dans `@docs/external-apis/enedis-api`
 - Etre au courant de ce qui est déjà en place et essayer de garder une certain compatibilité avec l'API qui est déjà en place via l'openapi.json disponible dans `@docs/features-spec/rules/api-design.json`
 - Proposer des ameliorations tout en conservant une compatibilite.
 - Suivre `@docs/rules/testing.md` pour les standards de test

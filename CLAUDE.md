@@ -256,17 +256,17 @@ Key relationships:
 - Fallback data for all providers
 - ~133 total offers across 4 providers
 
-See `docs/features-spec/energy-providers-scrapers.md` for detailed documentation.
+See `docs/server-mode/features/energy-providers-scrapers.md` for detailed documentation.
 
 ## Design System
 
 **Regles critiques** : `.claude/rules/design.md` (injecte automatiquement pour `apps/web/**`)
 
-**Documentation complete** : `docs/design/`
+**Documentation complete** : `docs/specs/design/`
 
 **Pour toute modification UI** : Utiliser l'agent `frontend-specialist`
 
-**Verification** : `/check_design` ou `docs/design/checklist.md`
+**Verification** : `/check_design` ou `docs/specs/design/checklist.md`
 
 ## Agent System
 
@@ -274,7 +274,7 @@ Project uses specialized Claude Code agents defined in `.claude/agents/`:
 
 - **`frontend-specialist.md`**: React/TypeScript, must check `@docs/design` before UI work
 - **`backend-specialist.md`**: Python/FastAPI, must follow API design rules
-- **`enedis-specialist.md`**: Expert API Enedis Data Connect, must check `@docs/enedis-api` before any Enedis integration
+- **`enedis-specialist.md`**: Expert API Enedis Data Connect, must check `@docs/external-apis/enedis-api` before any Enedis integration
 - **`devops-specialist.md`**: Kubernetes/Helm for deployment
 
 When agents generate code:
@@ -340,7 +340,7 @@ VITE_API_BASE_URL=/api  # In Docker, or http://localhost:8081 for local
 ### Adding a New Page
 
 1. Create component in `apps/web/src/pages/`
-2. Follow design checklist: `docs/design/checklist.md`
+2. Follow design checklist: `docs/specs/design/checklist.md`
 3. Add route in `apps/web/src/App.tsx`
 4. Add navigation link in `apps/web/src/components/Layout.tsx` if needed
 5. Ensure `pt-6` on root container and H1 icon pattern
@@ -355,7 +355,7 @@ docker compose -f docker-compose.server.yml exec backend python scripts/create_d
 # With 2 PDLs and 365 days of mock consumption/production data
 ```
 
-See `docs/demo/` for detailed implementation guide.
+See `docs/server-mode/demo/` for detailed implementation guide.
 
 ## Production Deployment
 
@@ -365,18 +365,22 @@ See `docs/demo/` for detailed implementation guide.
 - PostgreSQL recommended over SQLite
 - Valkey required for caching
 
-Deployment docs: `docs/setup/docker.md`
+Deployment docs:
+- Server mode: `docs/server-mode/installation/docker.md`
+- Client mode: `docs/local-client/installation/docker.md`
 
 ## Documentation Structure
 
 All docs now in `docs/`:
 
-- `docs/setup/`: Installation, Docker, database, dev-mode
-- `docs/features-spec/`: Functional specifications
-- `docs/design/`: UI design system with component guidelines
-- `docs/demo/`: Demo account implementation
+- `docs/local-client/`: Client mode documentation (installation, integrations, exports)
+- `docs/server-mode/`: Server mode documentation (installation, administration, architecture, features)
+- `docs/specs/pages/`: Page-specific guides for Claude (UI implementation guidelines)
+- `docs/features-spec/`: Common features specifications (cache, database)
+- `docs/specs/design/`: UI design system with component guidelines
+- `docs/server-mode/demo/`: Demo account implementation
 - `docs/architecture/`: System architecture overview
-- `docs/enedis-api/`: Enedis API reference
+- `docs/external-apis/`: External APIs documentation (Enedis, RTE)
 
 ## Security Considerations
 
@@ -392,7 +396,7 @@ See `apps/api/SECURITY.md` for detailed security model.
 
 - `docs/features-spec/rules/api-design.json`: API response format standard
 - `docs/features-spec/rules/testing.md`: Testing requirements
-- `docs/design/checklist.md`: UI compliance checklist
+- `docs/specs/design/checklist.md`: UI compliance checklist
 - `.claude/agents/*.md`: Agent-specific instructions
 - `.claude/rules/modes.md`: Règles pour les modes serveur/client
 - `docs/local-client/`: Documentation complète du mode client

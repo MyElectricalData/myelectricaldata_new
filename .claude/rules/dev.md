@@ -19,21 +19,21 @@ globs:
 
 **Ce projet separe production et developpement :**
 
-| Fichier | Usage | Services inclus |
-|---------|-------|-----------------|
-| `docker-compose.yml` (racine) | **Production Client** | Backend, Frontend uniquement (images GHCR) |
-| `docker-compose.server.yml` (racine) | **Production Serveur** | Backend, Frontend uniquement (images GHCR) |
-| `dev/docker-compose.yml` | Developpement Client | Backend, Frontend, PostgreSQL, VictoriaMetrics, pgAdmin |
-| `dev/docker-compose.server.yml` | Developpement Serveur | Backend, Frontend, PostgreSQL, Valkey, pgAdmin, Docs |
+| Fichier                              | Usage                  | Services inclus                                         |
+| ------------------------------------ | ---------------------- | ------------------------------------------------------- |
+| `docker-compose.yml` (racine)        | **Production Client**  | Backend, Frontend uniquement (images GHCR)              |
+| `docker-compose.server.yml` (racine) | **Production Serveur** | Backend, Frontend uniquement (images GHCR)              |
+| `dev/docker-compose.yml`             | Developpement Client   | Backend, Frontend, PostgreSQL, VictoriaMetrics, pgAdmin |
+| `dev/docker-compose.server.yml`      | Developpement Serveur  | Backend, Frontend, PostgreSQL, Valkey, pgAdmin, Docs    |
 
 ## Modes d'execution
 
 **Ce projet supporte deux modes qui peuvent tourner en parallele. Le mode Client est le defaut.**
 
-| Mode        | Dev Docker Compose             | Prod Docker Compose           | Ports           |
-| ----------- | ------------------------------ | ----------------------------- | --------------- |
-| **Client**  | `dev/docker-compose.yml`       | `docker-compose.yml`          | 8100 / 8181     |
-| **Serveur** | `dev/docker-compose.server.yml`| `docker-compose.server.yml`   | 8000 / 8081     |
+| Mode        | Dev Docker Compose              | Prod Docker Compose         | Ports       |
+| ----------- | ------------------------------- | --------------------------- | ----------- |
+| **Client**  | `dev/docker-compose.yml`        | `docker-compose.yml`        | 8100 / 8181 |
+| **Serveur** | `dev/docker-compose.server.yml` | `docker-compose.server.yml` | 8000 / 8081 |
 
 ### Demarrage par mode (Developpement)
 
@@ -123,7 +123,7 @@ npm run lint          # ESLint
 npm run build         # Build production
 ```
 
-### Mode Serveur (commandes server-*)
+### Mode Serveur (commandes server-\*)
 
 ```bash
 # Demarrage
@@ -168,10 +168,10 @@ docker ps             # Liste tous les conteneurs
 
 **En cas de changement de fonctionnement, mettre a jour la documentation :**
 
-| Scope        | Emplacement                  |
-| ------------ | ---------------------------- |
-| Mode Serveur | `docs/`                      |
-| Mode Client  | `docs/local-client/`         |
-| Pages UI     | `docs/pages/`                |
-| Design       | `docs/design/`               |
-| API Enedis   | `docs/enedis-api/`           |
+| Scope        | Emplacement                      |
+| ------------ | -------------------------------- |
+| Mode Serveur | `docs/`                          |
+| Mode Client  | `docs/local-client/`             |
+| Pages UI     | `docs/specs/pages/`              |
+| Design       | `docs/specs/design/`             |
+| API Enedis   | `docs/external-apis/enedis-api/` |

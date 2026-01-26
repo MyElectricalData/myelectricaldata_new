@@ -15,7 +15,7 @@ allowed_tools:
 file_patterns:
   - "apps/api/src/services/offers/**/*"
   - "apps/api/src/models/seed.py"
-  - "docs/features-spec/energy-providers-scrapers.md"
+  - "docs/server-mode/features/energy-providers-scrapers.md"
 ---
 
 # Skill Offer - Gestion des types d'offres tarifaires

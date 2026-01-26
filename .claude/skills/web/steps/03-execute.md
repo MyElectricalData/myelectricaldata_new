@@ -69,11 +69,11 @@ next_step: steps/04-lint.md
 
 ## Regles importantes
 
-1. **Design** : Respecter `docs/design/checklist.md`
+1. **Design** : Respecter `docs/specs/design/checklist.md`
 2. **Notifications** : Utiliser `toast.*` de `@/stores/notificationStore`
 3. **Modes** : Verifier compatibilite serveur/client si applicable (voir frontmatter)
 4. **Types** : Mettre a jour `apps/web/src/types/api.ts` si nouveau type API
-5. **Enedis** : Consulter `docs/enedis-api/` avant toute modification liee a Enedis
+5. **Enedis** : Consulter `docs/external-apis/enedis-api/` avant toute modification liee a Enedis
 
 ## Recap Step 3
 

@@ -18,4 +18,4 @@ globs:
 
 ## Documentation
 
-`docs/enedis-api/` contient la documentation complete (endpoints, erreurs, OpenAPI).
+`docs/external-apis/enedis-api/` contient la documentation complete (endpoints, erreurs, OpenAPI).

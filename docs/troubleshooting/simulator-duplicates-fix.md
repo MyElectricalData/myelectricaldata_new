@@ -239,5 +239,5 @@ Object.entries(dataByDate).forEach(([date, pointsMap]) => {
 ## Références
 
 - [Documentation initiale](simulator-consumption-calculation.md) : Problèmes 1-3
-- [Spécification du simulateur](../features-spec/simulator.md)
+- [Spécification du simulateur](../server-mode/features/simulator.md)
 - [Code source](../../apps/web/src/pages/Simulator.tsx)

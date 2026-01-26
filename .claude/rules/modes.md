@@ -140,10 +140,55 @@ for range_start, range_end in missing_ranges:
 - [ ] Les tests couvrent-ils les deux modes si applicable ?
 - [ ] La documentation a-t-elle été mise à jour (`docs/` et `docs/local-client/`) ?
 
-## Documentation
+## Documentation par mode
 
-- **Mode Serveur** : `CLAUDE.md` et `docs/`
-- **Mode Client** : `docs/local-client/`
+### Mode Serveur
+
+**Documentation principale** : `docs/server-mode/`
+
+| Type                      | Emplacement                           | Contenu                                                   |
+| ------------------------- | ------------------------------------- | --------------------------------------------------------- |
+| Introduction              | `docs/server-mode/index.md`           | Vue d'ensemble du mode serveur                            |
+| Architecture              | `docs/server-mode/architecture.md`    | Architecture système, flux de données                     |
+| Authentification          | `docs/server-mode/authentication.md`  | OAuth2, JWT, gestion des tokens                           |
+| Chiffrement               | `docs/server-mode/encryption.md`      | Fernet, chiffrement des données utilisateur               |
+| Installation              | `docs/server-mode/installation/`      | Docker, Helm, configuration                               |
+| Administration            | `docs/server-mode/administration/`    | Gestion users, offers, logs, database, Slack              |
+| Fonctionnalités           | `docs/server-mode/features/`          | Frontend, account, gateway, cache, database, simulator... |
+| Offres & Scrapers         | `docs/server-mode/offers/`            | Documentation des scrapers de prix par fournisseur        |
+| Compte de Démonstration   | `docs/server-mode/demo/`              | Création et gestion des comptes demo                      |
+
+### Mode Client
+
+**Documentation principale** : `docs/local-client/`
+
+| Type           | Emplacement                           | Contenu                                           |
+| -------------- | ------------------------------------- | ------------------------------------------------- |
+| Introduction   | `docs/local-client/index.md`          | Vue d'ensemble du mode client local               |
+| Installation   | `docs/local-client/installation/`     | Docker, Helm, configuration                       |
+| Configuration  | `docs/local-client/configuration.md`  | Variables d'environnement, réglages               |
+| Interface Web  | `docs/local-client/interface.md`      | Guide d'utilisation de l'interface                |
+| Exporteurs     | `docs/local-client/exporters.md`      | Vue d'ensemble des exporteurs disponibles         |
+| Intégrations   | `docs/local-client/integrations/`     | Home Assistant, MQTT, VictoriaMetrics, etc.       |
+| Architecture   | `docs/local-client/architecture.md`   | Architecture local-first, sync avec gateway       |
+
+### Documentation commune (les deux modes)
+
+| Type               | Emplacement                  | Contenu                                                |
+| ------------------ | ---------------------------- | ------------------------------------------------------ |
+| Pages UI           | `docs/specs/pages/`          | Spécifications des pages web (Dashboard, Tempo, etc.)  |
+| Design System      | `docs/specs/design/`         | Guidelines UI, composants, couleurs, typographie       |
+| API Enedis         | `docs/external-apis/enedis-api/` | Documentation complète API Enedis DataHub          |
+| API RTE            | `docs/external-apis/rte-api/`    | Documentation API RTE (Tempo, EcoWatt, etc.)       |
+
+### Règle de consultation
+
+**Avant toute modification, consulter la documentation du mode concerné :**
+
+- Modification backend/frontend → Vérifier `docs/specs/pages/` pour la page concernée
+- Modification mode serveur → Consulter `docs/server-mode/`
+- Modification mode client → Consulter `docs/local-client/`
+- Intégration API externe → Consulter `docs/external-apis/`
 
 ## Questions à poser
 

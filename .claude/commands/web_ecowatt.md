@@ -13,7 +13,7 @@
 
 **Documentation de l'API RTE Ecowatt :**
 
-👉 `@docs/rte-api/ecowatt/`
+👉 `@docs/external-apis/rte-api/ecowatt/`
 
 ## Description rapide
 

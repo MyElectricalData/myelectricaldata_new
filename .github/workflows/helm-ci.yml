@@ -16,13 +16,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  CHART_PATH: helm/myelectricaldata
-
 jobs:
   validate:
-    name: Validate Chart
+    name: Validate Charts
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        chart:
+          - name: myelectricaldata-server
+            path: helm/myelectricaldata-server
+          - name: myelectricaldata-client
+            path: helm/myelectricaldata-client
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,35 +37,26 @@ jobs:
           version: 'v3.14.0'
 
       - name: Update dependencies
-        run: helm dependency update ${{ env.CHART_PATH }}
+        run: helm dependency update ${{ matrix.chart.path }}
 
       - name: Lint chart
-        run: helm lint ${{ env.CHART_PATH }}
+        run: helm lint ${{ matrix.chart.path }}
 
       - name: Template chart (default values)
         run: |
-          helm template myelectricaldata ${{ env.CHART_PATH }} \
+          helm template ${{ matrix.chart.name }} ${{ matrix.chart.path }} \
             --debug \
             > /dev/null
           echo "✅ Template with default values succeeded"
 
-      - name: Template chart (example values)
-        if: hashFiles('helm/values-dev.yaml') != ''
-        run: |
-          helm template myelectricaldata ${{ env.CHART_PATH }} \
-            -f helm/values-dev.yaml \
-            --debug \
-            > /dev/null
-          echo "✅ Template with dev values succeeded"
-
       - name: Validate Chart.yaml
         run: |
           # Check required fields
-          if ! grep -q "^version:" ${{ env.CHART_PATH }}/Chart.yaml; then
+          if ! grep -q "^version:" ${{ matrix.chart.path }}/Chart.yaml; then
             echo "❌ Missing version in Chart.yaml"
             exit 1
           fi
-          if ! grep -q "^appVersion:" ${{ env.CHART_PATH }}/Chart.yaml; then
+          if ! grep -q "^appVersion:" ${{ matrix.chart.path }}/Chart.yaml; then
             echo "❌ Missing appVersion in Chart.yaml"
             exit 1
           fi
@@ -69,13 +64,14 @@ jobs:
 
       - name: Summary
         run: |
-          VERSION=$(grep '^version:' ${{ env.CHART_PATH }}/Chart.yaml | awk '{print $2}')
-          APP_VERSION=$(grep '^appVersion:' ${{ env.CHART_PATH }}/Chart.yaml | awk '{print $2}' | tr -d '"')
+          VERSION=$(grep '^version:' ${{ matrix.chart.path }}/Chart.yaml | awk '{print $2}')
+          APP_VERSION=$(grep '^appVersion:' ${{ matrix.chart.path }}/Chart.yaml | awk '{print $2}' | tr -d '"')
 
-          echo "## Helm Chart Validation ✅" >> $GITHUB_STEP_SUMMARY
+          echo "## Helm Chart Validation ✅ - ${{ matrix.chart.name }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Chart | \`${{ matrix.chart.name }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Chart Version | \`$VERSION\` |" >> $GITHUB_STEP_SUMMARY
           echo "| App Version | \`$APP_VERSION\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

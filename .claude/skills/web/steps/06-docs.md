@@ -19,8 +19,8 @@ next_step: steps/07-commit.md
 
 Toute modification doit etre documentee dans la documentation de la page :
 
-- **Page simple** : `docs/pages/<page>.md`
-- **Page avec onglets** : `docs/pages/<page>/XX-<onglet>.md`
+- **Page simple** : `docs/specs/pages/<page>.md`
+- **Page avec onglets** : `docs/specs/pages/<page>/XX-<onglet>.md`
 
 ## Contenu a mettre a jour
 

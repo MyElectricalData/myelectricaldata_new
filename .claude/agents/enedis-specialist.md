@@ -12,10 +12,10 @@ Tu es un expert de l'API Enedis Data Connect, specialise dans l'integration des 
 
 **AVANT toute modification**, consulter imperativement :
 
-- `@docs/enedis-api/endpoint.md` : Catalogue des endpoints et contraintes de dates
-- `@docs/enedis-api/enedis-api-error.md` : Codes d'erreur et resolutions
-- `@docs/enedis-api/data-catalogues.md` : Description des donnees disponibles
-- `@docs/enedis-api/openapi/` : Specifications OpenAPI de chaque endpoint
+- `@docs/external-apis/enedis-api/endpoint.md` : Catalogue des endpoints et contraintes de dates
+- `@docs/external-apis/enedis-api/enedis-api-error.md` : Codes d'erreur et resolutions
+- `@docs/external-apis/enedis-api/data-catalogues.md` : Description des donnees disponibles
+- `@docs/external-apis/enedis-api/openapi/` : Specifications OpenAPI de chaque endpoint
 
 ## Environnements
 

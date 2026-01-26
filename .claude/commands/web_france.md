@@ -13,8 +13,8 @@
 
 **Documentation des APIs RTE utilisées :**
 
-👉 `@docs/rte-api/consumption/consumption-api.md` (Consommation nationale)
-👉 `@docs/rte-api/generation/generation-forecast-api.md` (Production renouvelable)
+👉 `@docs/external-apis/rte-api/consumption/consumption-api.md` (Consommation nationale)
+👉 `@docs/external-apis/rte-api/generation/generation-forecast-api.md` (Production renouvelable)
 
 ## Description rapide
 

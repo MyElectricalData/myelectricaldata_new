@@ -197,35 +197,40 @@ Voir [SECURITY.md](apps/api/SECURITY.md) pour plus de détails.
 
 ## 📚 Documentation
 
-### 🚀 Setup & Configuration
+### 🖥️ Mode Client (Domotique)
 
-- [Docker Setup](docs/setup/docker.md) : Déploiement Docker complet avec Caddy
-- [Database Configuration](docs/setup/database.md) : Configuration SQLite et PostgreSQL
-- [Dev Mode](docs/setup/dev-mode.md) : Mode développement avec hot-reload
-- [Authentication](docs/setup/authentication.md) : Guide d'authentification OAuth2 et quotas
-- [Admin Panel](docs/setup/admin.md) : Panel administrateur et gestion des utilisateurs
+- [Documentation Client](docs/local-client/) : Installation locale mono-utilisateur
+- [Installation Docker](docs/local-client/installation/docker.md) : Docker Compose
+- [Installation Helm](docs/local-client/installation/helm.md) : Kubernetes/Helm
+- [Intégrations](docs/local-client/integrations/) : Home Assistant, MQTT, VictoriaMetrics
+
+### 🌐 Mode Serveur (Gateway)
+
+- [Documentation Serveur](docs/server-mode/) : Gateway multi-utilisateurs
+- [Installation Docker](docs/server-mode/installation/docker.md) : Docker Compose
+- [Installation Helm](docs/server-mode/installation/helm.md) : Kubernetes/Helm
+- [Administration](docs/server-mode/administration/) : Users, Offers, Logs, Database, Slack
 
 ### 📋 Spécifications Fonctionnelles
 
-- [Account Management](docs/features-spec/02-account.md) : Gestion des comptes et authentification
-- [API Gateway](docs/features-spec/05-gateway.md) : Passerelle API et consentement Enedis
-- [Cache System](docs/features-spec/10-cache.md) : Système de cache et rate limiting
-- [Database](docs/features-spec/11-database.md) : Support multi-database (SQLite/PostgreSQL)
+- [Account Management](docs/features-spec/account.md) : Gestion des comptes et authentification
+- [API Gateway](docs/features-spec/gateway.md) : Passerelle API et consentement Enedis
+- [Cache System](docs/features-spec/cache.md) : Système de cache et rate limiting
+- [Database](docs/features-spec/database.md) : Support multi-database (SQLite/PostgreSQL)
 
 ### 🏗️ Architecture
 
 - [Architecture Summary](docs/architecture/summary.md) : Vue d'ensemble de l'architecture
 - [Design System](docs/design/README.md) : Guide de design des composants UI
 
-### 🎭 Demo Account
+### 📖 APIs Externes
 
-- [Demo Guide](docs/demo/README.md) : Guide complet pour créer un compte démo
-- [Demo Architecture](docs/demo/architecture.md) : Architecture détaillée du système de démo
-- [Demo Implementation](docs/demo/implementation.md) : Guide d'implémentation étape par étape
+- [APIs Externes](docs/external-apis/) : Vue d'ensemble Enedis et RTE
+- [API Enedis DataHub](docs/enedis-api/) : Documentation complète Enedis
+- [API RTE](docs/rte-api/) : Tempo, EcoWatt, Consumption, Generation Forecast
 
-### 📖 Références Techniques
+### Autres
 
-- [Enedis API Documentation](docs/enedis-api/) : Documentation des API Enedis
 - [API Security](apps/api/SECURITY.md) : Sécurité et isolation des données
 - **API Documentation** : Swagger UI disponible à `/docs` avec support OAuth2 Client Credentials
 

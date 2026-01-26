@@ -322,6 +322,6 @@ console.log("Total kWh for year:", totalKwh);
 
 ## Références
 
-- [Documentation API Enedis - Catalogue des données](../enedis-api/data-catalogues.md)
-- [Spécification du simulateur](../features-spec/simulator.md)
+- [Documentation API Enedis - Catalogue des données](../external-apis/enedis-api/data-catalogues.md)
+- [Spécification du simulateur](../server-mode/features/simulator.md)
 - [Code source du simulateur](/apps/web/src/pages/Simulator.tsx)

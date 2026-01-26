@@ -285,4 +285,4 @@ Si aucune des solutions ne fonctionne :
 
 - [Guide utilisateur](/docs/pages/consumption.md)
 - [Architecture du cache](/docs/architecture/cache.md)
-- [API Enedis](/docs/enedis-api/)
+- [API Enedis](/docs/external-apis/enedis-api/)

@@ -10,12 +10,12 @@ globs: apps/web/**/*
 
 **Avant toute modification de design ou creation de composant UI :**
 
-1. **Lire OBLIGATOIREMENT** : `docs/design/` (documentation complete du design system)
-2. **Verifier la conformite** avec `docs/design/checklist.md`
-3. **Consulter les exemples** : `docs/design/examples.md`
+1. **Lire OBLIGATOIREMENT** : `docs/specs/design/` (documentation complete du design system)
+2. **Verifier la conformite** avec `docs/specs/design/checklist.md`
+3. **Consulter les exemples** : `docs/specs/design/examples.md`
 4. **Page de reference** : `apps/web/src/pages/Consumption/index.tsx`
 
-**NE JAMAIS improviser le design. Toujours se baser sur `docs/design/`.**
+**NE JAMAIS improviser le design. Toujours se baser sur `docs/specs/design/`.**
 
 ## 🎯 Header Centralise
 
@@ -27,9 +27,9 @@ globs: apps/web/**/*
 
 ## Documentation
 
-Toute la documentation de design se trouve dans `docs/design/` :
+Toute la documentation de design se trouve dans `docs/specs/design/` :
 
-- **Regles generales** : `docs/design/README.md`
-- **Checklist** : `docs/design/checklist.md`
-- **Composants** : `docs/design/components/`
-- **Exemples** : `docs/design/examples.md`
+- **Regles generales** : `docs/specs/design/README.md`
+- **Checklist** : `docs/specs/design/checklist.md`
+- **Composants** : `docs/specs/design/components/`
+- **Exemples** : `docs/specs/design/examples.md`

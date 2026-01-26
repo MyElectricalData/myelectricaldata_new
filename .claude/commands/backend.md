@@ -9,9 +9,9 @@ allowed-tools: Bash(npm:*), Bash(pip:*), Bash(sbt:*), Bash(npx:*), Bash(mkdir:*)
 
 - `@docs/features-spec/05-gateway.md`
 - `@docs/features-spec/02-account.md`
-- `@docs/features-spec/10-cache.md`
+- `@docs/server-mode/features/cache.md`
 - `@docs/features-spec/rules/api-design.json`
-- `@docs/enedis-api/endpoint.md`
+- `@docs/external-apis/enedis-api/endpoint.md`
 
 Ces documents remplacent les informations precedemment integrees ici. Respecte leurs exigences fonctionnelles, de securite et de presentation des erreurs.
 
@@ -24,8 +24,8 @@ Ces documents remplacent les informations precedemment integrees ici. Respecte l
 
 ## Provider Enedis
 
-- Generer les clients a partir des fichiers OpenAPI disponibles dans `@docs/enedis-api/openapi` (01-authorize.json, 02-token.json, etc.)
-- Centraliser les URL, scopes OAuth et versions d'API selon `@docs/enedis-api/endpoint.md`
+- Generer les clients a partir des fichiers OpenAPI disponibles dans `@docs/external-apis/enedis-api/openapi` (01-authorize.json, 02-token.json, etc.)
+- Centraliser les URL, scopes OAuth et versions d'API selon `@docs/external-apis/enedis-api/endpoint.md`
 - Ajouter une couche de journalisation et de retries (limite 5 requetes/seconde)
 
 ## Gestion des comptes et de l'authentification
@@ -36,13 +36,13 @@ Ces documents remplacent les informations precedemment integrees ici. Respecte l
 
 ## Flux OAuth Enedis
 
-- Mettre a disposition l'URL d'autorisation (redirection front) et l'endpoint backend d'echange de code via `@docs/enedis-api/openapi/01-authorize.json` et `02-token.json`
+- Mettre a disposition l'URL d'autorisation (redirection front) et l'endpoint backend d'echange de code via `@docs/external-apis/enedis-api/openapi/01-authorize.json` et `02-token.json`
 - Persister les tokens et leur metadonnee (expiration, scopes, status consentement)
 - Prevoir les mecanismes de refresh et de revocation
 
 ## Cache et quotas
 
-- Implementer le cache conforme a `@docs/features-spec/10-cache.md`
+- Implementer le cache conforme a `@docs/server-mode/features/cache.md`
 - TTL configurable via variable d'environnement (`CACHE_TTL_SECONDS`, default 86400)
 - Chiffrer les donnees en cache avec la cle API utilisateur (`client_secret`) ou un derive equivalent
 - Throttler les appels sortants a 5 req/sec maximum

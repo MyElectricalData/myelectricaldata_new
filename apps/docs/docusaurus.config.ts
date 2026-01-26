@@ -78,27 +78,32 @@ const config: Config = {
         },
         {
           type: "docSidebar",
-          sidebarId: "setupSidebar",
+          sidebarId: "serverModeSidebar",
           position: "left",
-          label: "Installation",
+          label: "Mode Serveur",
         },
         {
           type: "docSidebar",
-          sidebarId: "featuresSidebar",
+          sidebarId: "externalApisSidebar",
           position: "left",
-          label: "Fonctionnalités",
+          label: "APIs Externes",
         },
         {
-          type: "docSidebar",
-          sidebarId: "designSidebar",
+          type: "dropdown",
+          label: "Specs",
           position: "left",
-          label: "Design System",
-        },
-        {
-          type: "docSidebar",
-          sidebarId: "apiSidebar",
-          position: "left",
-          label: "API",
+          items: [
+            {
+              type: "docSidebar",
+              sidebarId: "pagesSidebar",
+              label: "Pages",
+            },
+            {
+              type: "docSidebar",
+              sidebarId: "designSidebar",
+              label: "Design System",
+            },
+          ],
         },
         {
           href: "https://github.com/MyElectricalData/myelectricaldata_new",
@@ -118,16 +123,16 @@ const config: Config = {
               to: "/local-client",
             },
             {
-              label: "Installation",
-              to: "/setup/docker",
+              label: "Mode Serveur",
+              to: "/server-mode",
             },
             {
-              label: "Design System",
-              to: "/design",
+              label: "APIs Externes",
+              to: "/external-apis",
             },
             {
-              label: "API Enedis",
-              to: "/enedis-api/endpoint",
+              label: "Architecture",
+              to: "/server-mode/data-flow",
             },
           ],
         },
@@ -135,8 +140,8 @@ const config: Config = {
           title: "Ressources",
           items: [
             {
-              label: "Fonctionnalités",
-              to: "/features-spec/simulator",
+              label: "Simulateur",
+              to: "/server-mode/features/simulator",
             },
             {
               label: "Troubleshooting",
@@ -144,7 +149,7 @@ const config: Config = {
             },
             {
               label: "FAQ",
-              to: "/pages/faq",
+              to: "/specs/pages/faq",
             },
           ],
         },

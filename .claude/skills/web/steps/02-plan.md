@@ -19,8 +19,8 @@ next_step: steps/03-execute.md
 
 Les specifications sont dans la documentation de la page :
 
-- **Page simple** : `docs/pages/<page>.md`
-- **Page avec onglets** : `docs/pages/<page>/XX-<onglet>.md`
+- **Page simple** : `docs/specs/pages/<page>.md`
+- **Page avec onglets** : `docs/specs/pages/<page>/XX-<onglet>.md`
 
 ## Structure de la documentation
 
@@ -51,7 +51,7 @@ Chaque fichier `XX-<onglet>.md` contient :
 | Champ         | Description                            | Impact sur l'implementation        |
 | ------------- | -------------------------------------- | ---------------------------------- |
 | `name`        | Identifiant de la page/onglet          | Nom des composants et fichiers     |
-| `slug`        | Route URL (ex: `/contribute/mine`)     | Configuration du router React      |
+| `path`        | Route URL (ex: `/contribute/mine`)     | Configuration du router React      |
 | `description` | Description courte                     | Documentation et commentaires      |
 | `mode_client` | `true` si disponible en mode client    | Conditionner le code si necessaire |
 | `mode_server` | `true` si disponible en mode serveur   | Conditionner le code si necessaire |

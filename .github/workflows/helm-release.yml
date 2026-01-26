@@ -1,4 +1,4 @@
-name: Release Helm Chart
+name: Release Helm Charts
 
 on:
   push:
@@ -6,7 +6,8 @@ on:
       - main
       - develop
     paths:
-      - 'helm/myelectricaldata/**'
+      - 'helm/myelectricaldata-server/**'
+      - 'helm/myelectricaldata-client/**'
   workflow_dispatch:
 
 # Prevent concurrent releases
@@ -16,15 +17,21 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  CHART_PATH: helm/myelectricaldata
 
 jobs:
   # ===========================================
-  # STEP 1: Validate Chart
+  # STEP 1: Validate Both Charts
   # ===========================================
   validate:
-    name: Validate Chart
+    name: Validate Charts
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        chart:
+          - name: myelectricaldata-server
+            path: helm/myelectricaldata-server
+          - name: myelectricaldata-client
+            path: helm/myelectricaldata-client
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,16 +42,16 @@ jobs:
           version: 'v3.14.0'
 
       - name: Update dependencies
-        run: helm dependency update ${{ env.CHART_PATH }}
+        run: helm dependency update ${{ matrix.chart.path }}
 
       - name: Lint chart
-        run: helm lint ${{ env.CHART_PATH }}
+        run: helm lint ${{ matrix.chart.path }}
 
       - name: Template chart
-        run: helm template myelectricaldata ${{ env.CHART_PATH }} --debug > /dev/null
+        run: helm template ${{ matrix.chart.name }} ${{ matrix.chart.path }} --debug > /dev/null
 
   # ===========================================
-  # STEP 2: Semantic Release for Helm Chart
+  # STEP 2: Semantic Release for Helm Charts
   # ===========================================
   release:
     name: Semantic Release
@@ -105,11 +112,15 @@ jobs:
       - name: Release info
         if: steps.semantic.outputs.new_release_published == 'true'
         run: |
-          echo "## Helm Chart Release 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "## Helm Charts Release 🎉" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** \`${{ steps.semantic.outputs.new_release_version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Tag:** \`helm/${{ steps.semantic.outputs.new_release_version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Charts Updated" >> $GITHUB_STEP_SUMMARY
+          echo "- myelectricaldata-server" >> $GITHUB_STEP_SUMMARY
+          echo "- myelectricaldata-client" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================
   # STEP 3: Package and Push to GHCR
@@ -122,6 +133,13 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      matrix:
+        chart:
+          - name: myelectricaldata-server
+            path: helm/myelectricaldata-server
+          - name: myelectricaldata-client
+            path: helm/myelectricaldata-client
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -148,24 +166,24 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
 
       - name: Update Helm dependencies
-        run: helm dependency update ${{ env.CHART_PATH }}
+        run: helm dependency update ${{ matrix.chart.path }}
 
       - name: Get chart version
         id: chart_version
         run: |
-          VERSION=$(grep '^version:' ${{ env.CHART_PATH }}/Chart.yaml | awk '{print $2}')
+          VERSION=$(grep '^version:' ${{ matrix.chart.path }}/Chart.yaml | awk '{print $2}')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Chart version: $VERSION"
 
       - name: Package Helm chart
         run: |
-          helm package ${{ env.CHART_PATH }} --destination ./packages
+          helm package ${{ matrix.chart.path }} --destination ./packages
 
       - name: Push to GHCR
         run: |
-          CHART_PACKAGE=$(ls ./packages/*.tgz)
+          CHART_PACKAGE=$(ls ./packages/${{ matrix.chart.name }}-*.tgz)
           helm push $CHART_PACKAGE oci://${{ env.REGISTRY }}/${{ steps.repo.outputs.owner }}/charts
-          echo "Chart pushed to: oci://${{ env.REGISTRY }}/${{ steps.repo.outputs.owner }}/charts/myelectricaldata:${{ steps.chart_version.outputs.version }}"
+          echo "Chart pushed to: oci://${{ env.REGISTRY }}/${{ steps.repo.outputs.owner }}/charts/${{ matrix.chart.name }}:${{ steps.chart_version.outputs.version }}"
 
       - name: Summary
         run: |
@@ -177,15 +195,15 @@ jobs:
             RELEASE_TYPE="🚀 Production"
           fi
 
-          echo "## Helm Chart Published 📦" >> $GITHUB_STEP_SUMMARY
+          echo "## Helm Chart Published 📦 - ${{ matrix.chart.name }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Release Type:** $RELEASE_TYPE" >> $GITHUB_STEP_SUMMARY
-          echo "**Chart:** myelectricaldata" >> $GITHUB_STEP_SUMMARY
+          echo "**Chart:** ${{ matrix.chart.name }}" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
           echo "**Tag:** \`helm/$VERSION\`" >> $GITHUB_STEP_SUMMARY
           echo "**Registry:** oci://${{ env.REGISTRY }}/${{ steps.repo.outputs.owner }}/charts" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Installation" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "helm install myelectricaldata oci://${{ env.REGISTRY }}/${{ steps.repo.outputs.owner }}/charts/myelectricaldata --version $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "helm install ${{ matrix.chart.name }} oci://${{ env.REGISTRY }}/${{ steps.repo.outputs.owner }}/charts/${{ matrix.chart.name }} --version $VERSION" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

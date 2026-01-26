@@ -73,16 +73,20 @@ helm install myelectricaldata ./helm/myelectricaldata-server \
 
 ## 📚 Documentation
 
+### Guides par mode
+
+| Mode | Description | Documentation |
+|------|-------------|---------------|
+| **Mode Client** | Installation locale mono-utilisateur | [Documentation Client](/local-client) |
+| **Mode Serveur** | Gateway multi-utilisateurs avec API Enedis | [Documentation Serveur](/server-mode) |
+
+### Ressources générales
+
 | Section | Description |
 |---------|-------------|
-| [**Guide d'installation**](/setup/installation) | Choisir entre Docker ou Helm, mode Client ou Serveur |
-| [**Docker Compose**](/setup/docker) | Installation Docker pour les deux modes |
-| [**Helm Charts**](/setup/helm) | Déploiement Kubernetes |
-| [**Client Local**](/local-client) | Client domotique pour Home Assistant, MQTT, Jeedom, etc. |
-| [**Fonctionnalités**](/features-spec/simulator) | Spécifications des fonctionnalités |
-| [**Architecture**](/architecture/summary) | Vue d'ensemble technique et [chiffrement](/architecture/encryption) |
+| [**APIs Externes**](/external-apis) | Documentation des API Enedis DataHub et RTE |
 | [**Design System**](/design) | Règles de design et composants UI |
-| [**API**](/enedis-api/endpoint) | Documentation des API Enedis et RTE |
+| [**Pages**](/pages/dashboard) | Guide de conception des pages de l'application |
 
 ## ✨ Fonctionnalités principales
 
@@ -123,7 +127,7 @@ helm install myelectricaldata ./helm/myelectricaldata-server \
 ## 🔐 Sécurité
 
 - **Isolation des données** : Chaque utilisateur n'accède qu'à ses propres PDL
-- **[Chiffrement Fernet](/architecture/encryption)** : Données en cache chiffrées avec la clé secrète de l'utilisateur
+- **[Chiffrement Fernet](/server-mode/encryption)** : Données en cache chiffrées avec la clé secrète de l'utilisateur
 - **OAuth2** : Flux de consentement Enedis sécurisé
 - **Rate limiting** : Protection contre les abus
 
@@ -137,15 +141,23 @@ Installez le **Client Local** chez vous pour intégrer vos données Linky dans v
 
 ➡️ [Documentation du Client Local](/local-client)
 
+## 🖥️ Mode Serveur (Gateway)
+
+Déployez votre propre gateway multi-utilisateurs avec accès direct aux API Enedis :
+
+- **Multi-utilisateurs** : Gestion complète des comptes et rôles
+- **OAuth2 Enedis** : Consentement et tokens automatiques
+- **Administration** : Interface complète (users, offres, logs)
+- **Simulateur** : Comparaison de 130+ offres tarifaires
+
+➡️ [Documentation du Mode Serveur](/server-mode)
+
 ## 📖 Ressources
 
-- [Guide d'installation](/setup/installation)
-- [Installation Docker](/setup/docker)
-- [Installation Helm (Kubernetes)](/setup/helm)
-- [Configuration de la base de données](/setup/database)
 - [Client Local domotique](/local-client)
-- [Création d'un compte démo](/demo)
-- [FAQ](/pages/faq)
+- [Mode Serveur (Gateway)](/server-mode)
+- [APIs Externes](/external-apis)
+- [Design System](/design)
 
 ## 🤝 Contribution
 
