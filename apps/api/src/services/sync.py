@@ -8,11 +8,12 @@ It runs every 30 minutes and fetches:
 Data is stored permanently in PostgreSQL for local analysis and export.
 """
 
+import asyncio
 import logging
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, and_, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +36,9 @@ logger = logging.getLogger(__name__)
 # Maximum history to fetch
 MAX_DETAILED_DAYS = 730  # 2 years
 MAX_DAILY_DAYS = 1095  # 3 years
+
+# Verrous globaux pour éviter les syncs concurrentes
+_energy_sync_lock = asyncio.Lock()
 
 
 class SyncService:
@@ -390,6 +394,60 @@ class SyncService:
             model_class=ProductionData,
         )
 
+    async def _find_missing_ranges(
+        self,
+        model_class: type[ConsumptionData | ProductionData],
+        usage_point_id: str,
+        start_date: date,
+        end_date: date,
+        granularity: DataGranularity,
+    ) -> list[tuple[date, date]]:
+        """Détecte les dates manquantes dans la base locale et les regroupe en plages.
+
+        Interroge les dates distinctes existantes, puis identifie les trous.
+        Retourne des tuples (start, end) avec end exclusif.
+        """
+        result = await self.db.execute(
+            select(func.distinct(model_class.date)).where(
+                and_(
+                    model_class.usage_point_id == usage_point_id,
+                    model_class.granularity == granularity,
+                    model_class.date >= start_date,
+                    model_class.date < end_date,
+                )
+            )
+        )
+        existing_dates = {row[0] for row in result.fetchall()}
+
+        # Générer toutes les dates attendues
+        all_dates = set()
+        current = start_date
+        while current < end_date:
+            all_dates.add(current)
+            current += timedelta(days=1)
+
+        missing_dates = sorted(all_dates - existing_dates)
+
+        if not missing_dates:
+            return []
+
+        # Regrouper les dates consécutives en plages
+        ranges: list[tuple[date, date]] = []
+        range_start = missing_dates[0]
+        range_end = missing_dates[0]
+
+        for d in missing_dates[1:]:
+            if d == range_end + timedelta(days=1):
+                range_end = d
+            else:
+                ranges.append((range_start, range_end + timedelta(days=1)))
+                range_start = d
+                range_end = d
+
+        ranges.append((range_start, range_end + timedelta(days=1)))
+
+        return ranges
+
     async def _sync_energy_data(
         self,
         usage_point_id: str,
@@ -400,6 +458,9 @@ class SyncService:
         model_class: type[ConsumptionData | ProductionData],
     ) -> int:
         """Generic method to sync energy data (consumption or production)
+
+        Stratégie local-first : détecte les trous dans la base locale
+        et ne fetch que les plages manquantes depuis la passerelle.
 
         Args:
             usage_point_id: PDL number
@@ -417,21 +478,26 @@ class SyncService:
             usage_point_id, data_type, granularity
         )
 
-        # Calculate date range
-        end_date = date.today() - timedelta(days=1)  # Yesterday (data available J-1)
+        # Plage totale : du plus ancien possible à J-1
+        end_date = date.today() - timedelta(days=1)
+        start_date = end_date - timedelta(days=max_days)
 
-        # If we have previous data, start from there, otherwise go back max_days
-        if sync_status.newest_data_date:
-            # Start from day after newest data
-            start_date = sync_status.newest_data_date + timedelta(days=1)
-        else:
-            # First sync: go back max_days
-            start_date = end_date - timedelta(days=max_days)
+        # Détecter les trous dans la base locale
+        missing_ranges = await self._find_missing_ranges(
+            model_class, usage_point_id, start_date, end_date, granularity
+        )
 
-        # Nothing to sync if start > end
-        if start_date > end_date:
-            logger.debug(f"[SYNC] {data_type}/{granularity.value} up to date for {usage_point_id}")
+        if not missing_ranges:
+            logger.debug(
+                f"[SYNC] {data_type}/{granularity.value} complet pour {usage_point_id}, "
+                f"aucune donnée manquante"
+            )
             return 0
+
+        logger.info(
+            f"[SYNC] {data_type}/{granularity.value} pour {usage_point_id}: "
+            f"{len(missing_ranges)} plage(s) manquante(s) détectée(s)"
+        )
 
         # Update sync status to running
         sync_status.status = SyncStatusType.RUNNING
@@ -442,42 +508,46 @@ class SyncService:
         errors = []
 
         try:
-            # Fetch data in chunks (API may have limits)
-            # For detailed data, limit to 7 days per request
             chunk_size = 7 if granularity == DataGranularity.DETAILED else 365
 
-            current_start = start_date
-            while current_start <= end_date:
-                current_end = min(current_start + timedelta(days=chunk_size - 1), end_date)
-
-                try:
-                    response = await fetch_func(
-                        usage_point_id,
-                        current_start.isoformat(),
-                        current_end.isoformat(),
+            for range_start, range_end in missing_ranges:
+                # Découper chaque plage manquante en chunks compatibles API
+                current_start = range_start
+                while current_start < range_end:
+                    current_end = min(
+                        current_start + timedelta(days=chunk_size),
+                        range_end,
                     )
 
-                    # Parse and store data
-                    records = self._parse_meter_reading(
-                        response, usage_point_id, granularity
-                    )
-                    if records:
-                        await self._upsert_energy_records(records, model_class)
-                        total_synced += len(records)
+                    try:
+                        response = await fetch_func(
+                            usage_point_id,
+                            current_start.isoformat(),
+                            current_end.isoformat(),
+                        )
 
-                except Exception as e:
-                    logger.warning(
-                        f"[SYNC] Error fetching {data_type}/{granularity.value} "
-                        f"for {usage_point_id} ({current_start} - {current_end}): {e}"
-                    )
-                    errors.append(str(e))
+                        # Parse and store data
+                        records = self._parse_meter_reading(
+                            response, usage_point_id, granularity
+                        )
+                        if records:
+                            await self._upsert_energy_records(records, model_class)
+                            total_synced += len(records)
 
-                current_start = current_end + timedelta(days=1)
+                    except Exception as e:
+                        await self.db.rollback()
+                        logger.warning(
+                            f"[SYNC] Erreur fetch {data_type}/{granularity.value} "
+                            f"pour {usage_point_id} ({current_start} - {current_end}): {e}"
+                        )
+                        errors.append(str(e))
+
+                    current_start = current_end
 
             # Update sync status
             if errors:
                 sync_status.status = SyncStatusType.PARTIAL
-                sync_status.error_message = "; ".join(errors[:5])  # Keep first 5 errors
+                sync_status.error_message = "; ".join(errors[:5])
                 sync_status.error_count += len(errors)
             else:
                 sync_status.status = SyncStatusType.SUCCESS
@@ -487,7 +557,6 @@ class SyncService:
             sync_status.total_records += total_synced
 
             if total_synced > 0:
-                # Update date range
                 if not sync_status.oldest_data_date or start_date < sync_status.oldest_data_date:
                     sync_status.oldest_data_date = start_date
                 sync_status.newest_data_date = end_date
@@ -496,11 +565,12 @@ class SyncService:
             await self.db.commit()
 
             logger.info(
-                f"[SYNC] {data_type}/{granularity.value} for {usage_point_id}: "
-                f"synced {total_synced} records"
+                f"[SYNC] {data_type}/{granularity.value} pour {usage_point_id}: "
+                f"{total_synced} enregistrements synchronisés"
             )
 
         except Exception as e:
+            await self.db.rollback()
             sync_status.status = SyncStatusType.FAILED
             sync_status.error_message = str(e)
             sync_status.error_count += 1
@@ -590,6 +660,25 @@ class SyncService:
         if not records:
             return
 
+        # Dédupliquer les records par clé naturelle avant l'INSERT.
+        # Nécessaire car l'API peut renvoyer des doublons (ex: changement d'heure d'hiver,
+        # l'heure 01:30 existe deux fois le jour du passage). PostgreSQL refuse un
+        # ON CONFLICT DO UPDATE si le même batch contient deux lignes en conflit.
+        seen: dict[tuple, int] = {}
+        for idx, record in enumerate(records):
+            key = (
+                record["usage_point_id"],
+                record["date"],
+                record["granularity"],
+                record.get("interval_start"),
+            )
+            seen[key] = idx  # Le dernier doublon gagne
+        if len(seen) < len(records):
+            logger.debug(
+                f"[SYNC] Dédupliqué {len(records) - len(seen)} enregistrements en double dans le batch"
+            )
+            records = [records[i] for i in sorted(seen.values())]
+
         # Use PostgreSQL upsert (INSERT ... ON CONFLICT UPDATE)
         stmt = pg_insert(model_class).values(records)
 
@@ -673,14 +762,17 @@ class SyncService:
     async def sync_energy_providers(self) -> dict[str, Any]:
         """Sync energy providers from remote MyElectricalData gateway
 
+        Full mirror sync: creates, updates, and DELETES local providers to match remote.
+
         Returns:
-            Dict with sync results (created, updated, unchanged counts)
+            Dict with sync results (created, updated, unchanged, deleted counts)
         """
         logger.info("[SYNC] Syncing energy providers from remote gateway...")
         result: dict[str, Any] = {
             "created": 0,
             "updated": 0,
             "unchanged": 0,
+            "deleted": 0,
             "errors": [],
         }
 
@@ -695,26 +787,28 @@ class SyncService:
 
             logger.info(f"[SYNC] Found {len(remote_providers)} providers in remote gateway")
 
+            # Track synced provider names to detect deletions
+            synced_provider_names: set[str] = set()
+
             for remote_provider in remote_providers:
+                provider_name = remote_provider.get("name", "?")
                 try:
                     provider_id = remote_provider.get("id")
-                    provider_name = remote_provider.get("name")
 
                     if not provider_id or not provider_name:
                         continue
 
-                    # Check if provider exists locally
+                    synced_provider_names.add(provider_name)
+
+                    # Check if provider exists locally by NAME (unique constraint)
                     existing = await self.db.execute(
-                        select(EnergyProvider).where(EnergyProvider.id == provider_id)
+                        select(EnergyProvider).where(EnergyProvider.name == provider_name)
                     )
                     existing_provider = existing.scalar_one_or_none()
 
                     if existing_provider:
-                        # Update existing provider
+                        # Update existing provider (keep local ID)
                         changed = False
-                        if existing_provider.name != provider_name:
-                            existing_provider.name = provider_name
-                            changed = True
                         if existing_provider.logo_url != remote_provider.get("logo_url"):
                             existing_provider.logo_url = remote_provider.get("logo_url")
                             changed = True
@@ -728,30 +822,48 @@ class SyncService:
                         else:
                             result["unchanged"] += 1
                     else:
-                        # Create new provider
-                        new_provider = EnergyProvider(
-                            id=provider_id,
-                            name=provider_name,
-                            logo_url=remote_provider.get("logo_url"),
-                            website=remote_provider.get("website"),
-                            is_active=True,
-                        )
-                        self.db.add(new_provider)
+                        # Savepoint pour isoler l'insertion
+                        async with self.db.begin_nested():
+                            new_provider = EnergyProvider(
+                                id=provider_id,
+                                name=provider_name,
+                                logo_url=remote_provider.get("logo_url"),
+                                website=remote_provider.get("website"),
+                                is_active=True,
+                            )
+                            self.db.add(new_provider)
                         result["created"] += 1
                         logger.info(f"[SYNC] Created provider: {provider_name}")
 
                 except Exception as e:
-                    logger.error(f"[SYNC] Error syncing provider: {e}")
+                    logger.warning(f"[SYNC] Error syncing provider {provider_name}: {e}")
                     result["errors"].append(str(e))
+
+            # Delete local providers that no longer exist on remote
+            local_providers_result = await self.db.execute(select(EnergyProvider))
+            local_providers = local_providers_result.scalars().all()
+
+            for local_provider in local_providers:
+                if local_provider.name not in synced_provider_names:
+                    # Delete associated offers first (cascade)
+                    await self.db.execute(
+                        EnergyOffer.__table__.delete().where(
+                            EnergyOffer.provider_id == local_provider.id
+                        )
+                    )
+                    await self.db.delete(local_provider)
+                    result["deleted"] += 1
+                    logger.info(f"[SYNC] Deleted provider: {local_provider.name}")
 
             await self.db.commit()
             logger.info(
                 f"[SYNC] Providers sync complete: "
                 f"{result['created']} created, {result['updated']} updated, "
-                f"{result['unchanged']} unchanged"
+                f"{result['unchanged']} unchanged, {result['deleted']} deleted"
             )
 
         except Exception as e:
+            await self.db.rollback()
             logger.error(f"[SYNC] Failed to sync providers: {e}")
             result["errors"].append(str(e))
 
@@ -760,15 +872,17 @@ class SyncService:
     async def sync_energy_offers(self) -> dict[str, Any]:
         """Sync energy offers from remote MyElectricalData gateway
 
+        Full mirror sync: creates, updates, and DELETES local offers to match remote.
+
         Returns:
-            Dict with sync results (created, updated, unchanged counts)
+            Dict with sync results (created, updated, unchanged, deleted counts)
         """
         logger.info("[SYNC] Syncing energy offers from remote gateway...")
         result: dict[str, Any] = {
             "created": 0,
             "updated": 0,
             "unchanged": 0,
-            "deactivated": 0,
+            "deleted": 0,
             "errors": [],
         }
 
@@ -783,20 +897,41 @@ class SyncService:
 
             logger.info(f"[SYNC] Found {len(remote_offers)} offers in remote gateway")
 
-            # Get existing offer IDs to detect deactivated offers
-            existing_result = await self.db.execute(
-                select(EnergyOffer.id).where(EnergyOffer.is_active.is_(True))
-            )
+            # Build mapping from remote provider_id to local provider_id via provider name
+            # This is needed because local providers have different IDs than remote ones
+            remote_to_local_provider: dict[str, str] = {}
+            remote_providers_response = await self.adapter.get_energy_providers()
+            remote_providers = remote_providers_response.get("data", [])
+            for rp in remote_providers:
+                remote_id = rp.get("id")
+                remote_name = rp.get("name")
+                if remote_id and remote_name:
+                    # Find local provider with same name
+                    local_result = await self.db.execute(
+                        select(EnergyProvider.id).where(EnergyProvider.name == remote_name)
+                    )
+                    local_id = local_result.scalar_one_or_none()
+                    if local_id:
+                        remote_to_local_provider[remote_id] = local_id
+
+            # Get ALL existing offer IDs (not just active) to detect deletions
+            existing_result = await self.db.execute(select(EnergyOffer.id))
             existing_offer_ids = set(row[0] for row in existing_result.all())
-            synced_offer_ids = set()
+            synced_offer_ids: set[str] = set()
 
             for remote_offer in remote_offers:
+                offer_name = remote_offer.get("name", "?")
                 try:
                     offer_id = remote_offer.get("id")
-                    offer_name = remote_offer.get("name")
-                    provider_id = remote_offer.get("provider_id")
+                    remote_provider_id = remote_offer.get("provider_id")
 
-                    if not offer_id or not offer_name or not provider_id:
+                    if not offer_id or not offer_name or not remote_provider_id:
+                        continue
+
+                    # Map remote provider_id to local provider_id
+                    local_provider_id = remote_to_local_provider.get(remote_provider_id)
+                    if not local_provider_id:
+                        logger.warning(f"[SYNC] No local provider found for offer {offer_name}, skipping")
                         continue
 
                     synced_offer_ids.add(offer_id)
@@ -808,7 +943,8 @@ class SyncService:
                     existing_offer = existing.scalar_one_or_none()
 
                     if existing_offer:
-                        # Update existing offer
+                        # Update existing offer (including provider_id mapping)
+                        existing_offer.provider_id = local_provider_id
                         changed = self._update_offer_fields(existing_offer, remote_offer)
                         if changed:
                             result["updated"] += 1
@@ -816,39 +952,41 @@ class SyncService:
                         else:
                             result["unchanged"] += 1
                     else:
-                        # Create new offer
-                        new_offer = self._create_offer_from_remote(remote_offer)
-                        self.db.add(new_offer)
+                        # Savepoint pour isoler l'insertion et permettre un rollback partiel
+                        async with self.db.begin_nested():
+                            new_offer = self._create_offer_from_remote(remote_offer, local_provider_id)
+                            self.db.add(new_offer)
                         result["created"] += 1
                         logger.info(f"[SYNC] Created offer: {offer_name}")
 
                 except Exception as e:
-                    logger.error(f"[SYNC] Error syncing offer: {e}")
+                    logger.warning(f"[SYNC] Error syncing offer {offer_name}: {e}")
                     result["errors"].append(str(e))
 
-            # Deactivate offers that no longer exist in remote
-            offers_to_deactivate = existing_offer_ids - synced_offer_ids
-            for offer_id in offers_to_deactivate:
+            # DELETE offers that no longer exist in remote (full mirror)
+            offers_to_delete = existing_offer_ids - synced_offer_ids
+            for offer_id in offers_to_delete:
                 try:
                     offer_result = await self.db.execute(
                         select(EnergyOffer).where(EnergyOffer.id == offer_id)
                     )
                     offer = offer_result.scalar_one_or_none()
                     if offer:
-                        offer.is_active = False
-                        result["deactivated"] += 1
-                        logger.info(f"[SYNC] Deactivated offer: {offer.name}")
+                        await self.db.delete(offer)
+                        result["deleted"] += 1
+                        logger.info(f"[SYNC] Deleted offer: {offer.name}")
                 except Exception as e:
-                    logger.error(f"[SYNC] Error deactivating offer {offer_id}: {e}")
+                    logger.error(f"[SYNC] Error deleting offer {offer_id}: {e}")
 
             await self.db.commit()
             logger.info(
                 f"[SYNC] Offers sync complete: "
                 f"{result['created']} created, {result['updated']} updated, "
-                f"{result['unchanged']} unchanged, {result['deactivated']} deactivated"
+                f"{result['unchanged']} unchanged, {result['deleted']} deleted"
             )
 
         except Exception as e:
+            await self.db.rollback()
             logger.error(f"[SYNC] Failed to sync offers: {e}")
             result["errors"].append(str(e))
 
@@ -947,11 +1085,14 @@ class SyncService:
 
         return changed
 
-    def _create_offer_from_remote(self, remote_data: dict[str, Any]) -> EnergyOffer:
+    def _create_offer_from_remote(
+        self, remote_data: dict[str, Any], local_provider_id: str | None = None
+    ) -> EnergyOffer:
         """Create a new EnergyOffer from remote data
 
         Args:
             remote_data: Remote offer data
+            local_provider_id: Local provider ID (if different from remote)
 
         Returns:
             New EnergyOffer object
@@ -986,7 +1127,7 @@ class SyncService:
 
         return EnergyOffer(
             id=remote_data["id"],
-            provider_id=remote_data["provider_id"],
+            provider_id=local_provider_id or remote_data["provider_id"],
             name=remote_data["name"],
             offer_type=remote_data["offer_type"],
             description=remote_data.get("description"),
@@ -1258,9 +1399,25 @@ class SyncService:
     async def sync_all_energy_data(self) -> dict[str, Any]:
         """Sync all energy providers and offers from remote gateway
 
+        Protégé par un verrou pour éviter les exécutions concurrentes.
+
         Returns:
             Dict with combined sync results
         """
+        if _energy_sync_lock.locked():
+            logger.info("[SYNC] Sync énergie déjà en cours, requête ignorée")
+            return {
+                "providers": {},
+                "offers": {},
+                "success": True,
+                "skipped": True,
+            }
+
+        async with _energy_sync_lock:
+            return await self._sync_all_energy_data_impl()
+
+    async def _sync_all_energy_data_impl(self) -> dict[str, Any]:
+        """Implémentation interne de la sync énergie (protégée par verrou)."""
         logger.info("[SYNC] Starting full energy data sync...")
         result: dict[str, Any] = {
             "providers": {},

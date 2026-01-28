@@ -84,13 +84,21 @@ class SyncScheduler:
         )
 
         # Add Tempo sync job - runs every 15 minutes from 6h to 23h
-        # Only syncs if tomorrow's color is not yet known
+        # + run immédiat au démarrage pour remplir l'historique si absent
         self._scheduler.add_job(
             self._run_tempo_sync,
             trigger=CronTrigger(minute="*/15", hour="6-23"),
             id="sync_tempo",
             name="Sync Tempo calendar from gateway",
             replace_existing=True,
+        )
+        # Sync initiale Tempo au démarrage (indépendante du cron)
+        self._scheduler.add_job(
+            self._run_tempo_sync,
+            id="sync_tempo_startup",
+            name="Sync Tempo calendar (startup)",
+            replace_existing=True,
+            next_run_time=datetime.now(UTC),
         )
 
         # Add EcoWatt sync jobs
@@ -117,6 +125,7 @@ class SyncScheduler:
             id="sync_ecowatt_fallback",
             name="Sync EcoWatt if incomplete",
             replace_existing=True,
+            next_run_time=datetime.now(UTC),  # Run au démarrage
         )
 
         # Add Consumption France sync job - runs every 15 minutes
@@ -127,6 +136,7 @@ class SyncScheduler:
             id="sync_consumption_france",
             name="Sync Consumption France from gateway",
             replace_existing=True,
+            next_run_time=datetime.now(UTC),  # Run au démarrage
         )
 
         # Add Generation Forecast sync job - runs every 30 minutes
@@ -137,6 +147,7 @@ class SyncScheduler:
             id="sync_generation_forecast",
             name="Sync Generation Forecast from gateway",
             replace_existing=True,
+            next_run_time=datetime.now(UTC),  # Run au démarrage
         )
 
         self._scheduler.start()
@@ -390,19 +401,36 @@ class SyncScheduler:
     async def _run_tempo_sync(self) -> None:
         """Run Tempo sync job
 
-        Only syncs if tomorrow's color is not yet stored locally.
-        RTE publishes tomorrow's color around 6h (or later).
+        Sync si :
+        - La table est vide (première exécution → sync historique complet)
+        - La couleur de demain n'est pas encore connue
         """
         logger.debug("[SCHEDULER] Checking if Tempo sync is needed...")
 
         try:
-            from sqlalchemy import select
+            from sqlalchemy import select, func
 
             from .models.database import async_session_maker
             from .models.tempo_day import TempoDay
             from .services.sync import SyncService
 
             async with async_session_maker() as db:
+                # Vérifier si la table est vide (sync initiale nécessaire)
+                count_result = await db.execute(select(func.count()).select_from(TempoDay))
+                total_days = count_result.scalar() or 0
+
+                if total_days == 0:
+                    logger.info("[SCHEDULER] Table Tempo vide, sync initiale depuis la passerelle...")
+                    sync_service = SyncService(db)
+                    sync_result = await sync_service.sync_tempo()
+                    created = sync_result.get('created', 0)
+                    updated = sync_result.get('updated', 0)
+                    if sync_result.get("errors"):
+                        logger.warning(f"[SCHEDULER] Tempo sync initiale avec erreurs: {sync_result['errors']}")
+                    else:
+                        logger.info(f"[SCHEDULER] Tempo sync initiale: {created} créés, {updated} mis à jour")
+                    return
+
                 # Check if tomorrow's color is already known
                 tomorrow = (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d")
 

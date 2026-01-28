@@ -60,7 +60,10 @@ class ConsumptionData(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     usage_point_id: Mapped[str] = mapped_column(String(14), nullable=False, index=True)
     date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    granularity: Mapped[DataGranularity] = mapped_column(SQLEnum(DataGranularity), nullable=False)
+    granularity: Mapped[DataGranularity] = mapped_column(
+        SQLEnum(DataGranularity, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
 
     # For detailed data: start time of the 30-min interval (e.g., "00:00", "00:30")
     # For daily data: NULL
@@ -93,7 +96,10 @@ class ProductionData(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     usage_point_id: Mapped[str] = mapped_column(String(14), nullable=False, index=True)
     date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    granularity: Mapped[DataGranularity] = mapped_column(SQLEnum(DataGranularity), nullable=False)
+    granularity: Mapped[DataGranularity] = mapped_column(
+        SQLEnum(DataGranularity, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
 
     # For detailed data: start time of the 30-min interval
     interval_start: Mapped[str | None] = mapped_column(String(5), nullable=True)
@@ -138,10 +144,16 @@ class SyncStatus(Base, TimestampMixin):
     data_type: Mapped[str] = mapped_column(String(20), nullable=False)
 
     # Granularity: daily or detailed
-    granularity: Mapped[DataGranularity] = mapped_column(SQLEnum(DataGranularity), nullable=False)
+    granularity: Mapped[DataGranularity] = mapped_column(
+        SQLEnum(DataGranularity, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
 
     # Current sync status
-    status: Mapped[SyncStatusType] = mapped_column(SQLEnum(SyncStatusType), default=SyncStatusType.PENDING)
+    status: Mapped[SyncStatusType] = mapped_column(
+        SQLEnum(SyncStatusType, values_callable=lambda x: [e.value for e in x]),
+        default=SyncStatusType.PENDING,
+    )
 
     # Sync progress
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -185,7 +197,10 @@ class ExportConfig(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
 
     # Export type
-    export_type: Mapped[ExportType] = mapped_column(SQLEnum(ExportType), nullable=False)
+    export_type: Mapped[ExportType] = mapped_column(
+        SQLEnum(ExportType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
 
     # Type-specific configuration stored as JSON
     # Home Assistant: {mqtt_broker, mqtt_port, mqtt_username, mqtt_password, mqtt_use_tls,

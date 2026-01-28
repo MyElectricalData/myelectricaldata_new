@@ -292,11 +292,12 @@ async def get_renewable_mix(
     """
     Récupérer le mix renouvelable prévu (solaire + éolien).
 
-    Retourne les prévisions combinées pour aujourd'hui et demain.
+    Retourne les prévisions combinées pour la veille, aujourd'hui et demain.
     Par défaut, utilise les prévisions intraday (ID) qui sont mises à jour chaque heure.
     """
     try:
         now = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_dt = now - timedelta(days=1)  # Inclure la veille
         end_dt = now + timedelta(days=2)
 
         # Récupérer solaire et éolien avec le type de prévision demandé
@@ -304,7 +305,7 @@ async def get_renewable_mix(
             db,
             production_type="SOLAR",
             forecast_type=forecast_type,
-            start_date=now,
+            start_date=start_dt,
             end_date=end_dt,
         )
 
@@ -312,7 +313,7 @@ async def get_renewable_mix(
             db,
             production_type="WIND",
             forecast_type=forecast_type,
-            start_date=now,
+            start_date=start_dt,
             end_date=end_dt,
         )
 
@@ -341,7 +342,7 @@ async def get_renewable_mix(
                 "forecast_type": forecast_type,
                 "mix": mix_data,
                 "period": {
-                    "start": now.isoformat(),
+                    "start": start_dt.isoformat(),
                     "end": end_dt.isoformat(),
                 },
             },
