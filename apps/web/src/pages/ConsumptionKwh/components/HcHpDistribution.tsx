@@ -92,11 +92,12 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
 
         {/* Export button on the right */}
         <ModernButton
-          variant="gradient"
+          variant="primary"
           size="sm"
           icon={Download}
           iconPosition="left"
           onClick={handleExportAll}
+          className="min-w-[130px]"
         >
           Export JSON
         </ModernButton>
@@ -125,15 +126,13 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
                   {yearData.year}
                 </h4>
               </div>
-              <ModernButton
-                variant="gradient"
-                size="sm"
-                icon={Download}
+              <button
                 onClick={() => handleExportPeriod(yearData)}
-                className="!px-2 !py-1.5"
+                className="flex items-center justify-center w-9 h-9 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+                title="Export période"
               >
-                <span className="sr-only">Export période</span>
-              </ModernButton>
+                <Download size={16} />
+              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

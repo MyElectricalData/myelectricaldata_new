@@ -44,15 +44,10 @@ export const ModernButton = forwardRef<HTMLButtonElement, ModernButtonProps>(
     // Variant styles with glassmorphism and gradients
     const variantStyles = {
       primary: `
-        bg-gradient-to-r from-primary-500 via-primary-600 to-primary-700
-        hover:from-primary-600 hover:via-primary-700 hover:to-primary-800
-        text-white shadow-lg shadow-primary-500/50 dark:shadow-primary-500/30
-        hover:shadow-xl hover:shadow-primary-600/60 dark:hover:shadow-primary-600/40
+        bg-primary-600 hover:bg-primary-700
+        text-white
         hover:scale-[1.01] active:scale-[0.99]
-        disabled:from-gray-400 disabled:via-gray-500 disabled:to-gray-600
-        disabled:shadow-none disabled:cursor-not-allowed disabled:hover:scale-100
-        before:absolute before:inset-0 before:bg-gradient-to-r before:from-white/0 before:via-white/20 before:to-white/0
-        before:translate-x-[-200%] hover:before:translate-x-[200%] before:transition-transform before:duration-700
+        disabled:bg-gray-400 disabled:cursor-not-allowed disabled:hover:scale-100
       `,
       secondary: `
         bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm

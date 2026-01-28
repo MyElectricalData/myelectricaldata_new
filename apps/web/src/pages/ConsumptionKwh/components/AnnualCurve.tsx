@@ -197,7 +197,7 @@ export function AnnualCurve({ chartData, isDarkMode }: AnnualCurveProps) {
         <div className="flex gap-2">
           {zoomDomain && (
             <ModernButton
-              variant="gradient"
+              variant="primary"
               size="sm"
               icon={ZoomOut}
               iconPosition="left"
@@ -209,11 +209,12 @@ export function AnnualCurve({ chartData, isDarkMode }: AnnualCurveProps) {
             </ModernButton>
           )}
           <ModernButton
-            variant="gradient"
+            variant="primary"
             size="sm"
             icon={Download}
             iconPosition="left"
             onClick={handleExport}
+            className="min-w-[130px]"
           >
             Export JSON
           </ModernButton>

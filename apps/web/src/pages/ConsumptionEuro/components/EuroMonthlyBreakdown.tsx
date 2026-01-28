@@ -8,7 +8,8 @@ import {
   Tooltip,
   ResponsiveContainer
 } from 'recharts'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, Download } from 'lucide-react'
+import { toast } from '@/stores/notificationStore'
 import type { YearlyCost } from '../types/euro.types'
 
 interface EuroMonthlyBreakdownProps {
@@ -43,6 +44,36 @@ const MONTH_NAMES = [
 export function EuroMonthlyBreakdown({ yearlyCosts, isDarkMode }: EuroMonthlyBreakdownProps) {
   const [expandedYear, setExpandedYear] = useState<string | null>(yearlyCosts[0]?.year || null)
 
+  const handleExportBreakdown = () => {
+    const exportData = yearlyCosts.map(year => ({
+      year: year.year,
+      periodLabel: year.periodLabel,
+      totalCost: year.totalCost,
+      consumptionCost: year.consumptionCost,
+      subscriptionCost: year.subscriptionCost,
+      hcCost: year.hcCost,
+      hpCost: year.hpCost,
+      totalKwh: year.totalKwh,
+      hcKwh: year.hcKwh,
+      hpKwh: year.hpKwh,
+      months: year.months.map(m => ({
+        month: m.month,
+        monthLabel: m.monthLabel,
+        totalCost: m.totalCost,
+        consumptionCost: m.consumptionCost,
+        subscriptionCost: m.subscriptionCost,
+        hcCost: m.hcCost,
+        hpCost: m.hpCost,
+        totalKwh: m.totalKwh,
+        hcKwh: m.hcKwh,
+        hpKwh: m.hpKwh
+      }))
+    }))
+    const jsonData = JSON.stringify(exportData, null, 2)
+    navigator.clipboard.writeText(jsonData)
+    toast.success('Détail mensuel copié dans le presse-papier')
+  }
+
   // Prepare year comparison data - always show all years
   const comparisonData = useMemo(() => {
     if (yearlyCosts.length === 0) return []
@@ -72,6 +103,20 @@ export function EuroMonthlyBreakdown({ yearlyCosts, isDarkMode }: EuroMonthlyBre
 
   return (
     <div className="space-y-6">
+      {/* Header with export button */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Détail mensuel
+        </h3>
+        <button
+          onClick={handleExportBreakdown}
+          className="flex items-center justify-center gap-2 min-w-[120px] px-3 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+        >
+          <Download size={16} />
+          <span>Export JSON</span>
+        </button>
+      </div>
+
       {/* Year comparison chart */}
       {yearlyCosts.length >= 1 && (
         <div className="space-y-4">
@@ -137,7 +182,14 @@ export function EuroMonthlyBreakdown({ yearlyCosts, isDarkMode }: EuroMonthlyBre
             >
               <div className="flex items-center gap-4">
                 <span className="font-semibold text-gray-900 dark:text-gray-100">
-                  {year.year}
+                  {(() => {
+                    // Extract years from periodLabel (e.g., "25 janv. 2025 - 24 janv. 2026")
+                    const yearMatches = year.periodLabel.match(/(\d{4})/g)
+                    if (yearMatches && yearMatches.length >= 2) {
+                      return `12 mois (${yearMatches[0]}-${yearMatches[1]})`
+                    }
+                    return `12 mois (${year.year})`
+                  })()}
                 </span>
                 <span className="text-sm text-gray-500 dark:text-gray-400">
                   {year.periodLabel}

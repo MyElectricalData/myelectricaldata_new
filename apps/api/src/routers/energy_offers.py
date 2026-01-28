@@ -1103,6 +1103,7 @@ async def bulk_approve_contributions(
                     ejp_normal=pricing.get("ejp_normal"),
                     ejp_peak=pricing.get("ejp_peak"),
                     hc_schedules=contribution.hc_schedules,
+                    power_kva=contribution.power_kva,
                 )
                 db.add(offer)
 

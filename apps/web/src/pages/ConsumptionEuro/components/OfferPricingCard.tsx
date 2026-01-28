@@ -1,4 +1,4 @@
-import { Tag, ArrowLeftRight, X, ChevronDown } from 'lucide-react'
+import { Tag, ArrowLeftRight, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import type { SelectedOfferWithProvider } from '../types/euro.types'
 
@@ -27,6 +27,7 @@ interface OfferPricingCardProps {
   providers?: EnergyProvider[]
   onComparisonChange?: (offerId: string | null) => void
   comparisonOfferId?: string | null
+  defaultExpanded?: boolean
 }
 
 // Format currency
@@ -54,10 +55,17 @@ export function OfferPricingCard({
   compatibleOffers = [],
   providers = [],
   onComparisonChange,
-  comparisonOfferId
+  comparisonOfferId,
+  defaultExpanded = false
 }: OfferPricingCardProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded)
   const offerType = selectedOffer.offer_type
+
+  // Format subscription for compact view
+  const subscriptionValue = typeof selectedOffer.subscription_price === 'string'
+    ? parseFloat(selectedOffer.subscription_price)
+    : selectedOffer.subscription_price
 
   // Group offers by provider for the dropdown
   const offersByProvider = useMemo(() => {
@@ -90,13 +98,16 @@ export function OfferPricingCard({
   }
 
   return (
-    <div className={`p-4 rounded-xl border-2 ${
+    <div className={`rounded-xl border-2 ${
       isComparison
         ? 'bg-gray-50 dark:bg-gray-800/80 border-amber-500'
         : 'bg-gray-50 dark:bg-gray-800/80 border-blue-500'
     }`}>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      {/* Compact Header - Always visible */}
+      <div
+        className="flex items-center justify-between p-4 cursor-pointer transition-opacity hover:opacity-80 rounded-t-xl"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
         <div className="flex items-center gap-3">
           <div className={`p-2 rounded-lg ${isComparison ? 'bg-amber-100 dark:bg-amber-900/40' : 'bg-blue-100 dark:bg-blue-900/40'}`}>
             <Tag className={isComparison ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400'} size={20} />
@@ -110,7 +121,15 @@ export function OfferPricingCard({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {/* Compact info when collapsed */}
+          {!isExpanded && (
+            <div className="hidden sm:flex items-center gap-3 text-sm text-gray-600 dark:text-gray-400">
+              <span>{selectedOffer.power_kva} kVA</span>
+              <span>•</span>
+              <span>{formatCurrency(subscriptionValue)}/mois</span>
+            </div>
+          )}
           <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
             isComparison
               ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200'
@@ -118,8 +137,16 @@ export function OfferPricingCard({
           }`}>
             {offerType}
           </span>
+          <div className="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+            <span className="text-sm">{isExpanded ? 'Réduire' : 'Détails'}</span>
+            {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </div>
         </div>
       </div>
+
+      {/* Expanded content */}
+      {isExpanded && (
+        <div className="px-4 pb-4">
 
       {/* Comparison info banner */}
       {isComparison && originalOffer && (
@@ -129,7 +156,10 @@ export function OfferPricingCard({
             <span>Mode comparaison actif - Offre principale : <strong>{originalOffer.providerName} - {originalOffer.name}</strong></span>
           </div>
           <button
-            onClick={handleResetComparison}
+            onClick={(e) => {
+              e.stopPropagation()
+              handleResetComparison()
+            }}
             className="p-1 hover:bg-amber-200 dark:hover:bg-amber-800 rounded transition-colors"
             title="Revenir à l'offre principale"
           >
@@ -254,68 +284,76 @@ export function OfferPricingCard({
       )}
 
       {/* Comparison selector */}
-      {onComparisonChange && compatibleOffers.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <button
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="w-full flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-lg hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <ArrowLeftRight size={18} className="text-blue-500" />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Comparer avec une autre offre
-              </span>
-            </div>
-            <ChevronDown
-              size={18}
-              className={`text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`}
-            />
-          </button>
-
-          {/* Offer list - inline within the card */}
-          {isDropdownOpen && (
-            <div className="mt-3 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-lg max-h-64 overflow-y-auto">
-              {offersByProvider.map(({ provider, offers }) => (
-                <div key={provider.id}>
-                  <div className="px-4 py-2 bg-gray-100 dark:bg-gray-700/50 text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide sticky top-0">
-                    {provider.name}
-                  </div>
-                  {offers.map(offer => {
-                    const isSelected = offer.id === comparisonOfferId
-                    const isOriginal = offer.id === originalOffer?.id
-                    return (
-                      <button
-                        key={offer.id}
-                        onClick={() => handleSelectOffer(offer.id)}
-                        className={`w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors flex items-center justify-between ${
-                          isSelected ? 'bg-blue-50 dark:bg-blue-900/30' : ''
-                        }`}
-                      >
-                        <div>
-                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                            {offer.name}
-                          </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {offer.offer_type} - {offer.power_kva} kVA
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {isOriginal && (
-                            <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded">
-                              Actuelle
-                            </span>
-                          )}
-                          {isSelected && !isOriginal && (
-                            <span className="text-xs px-2 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 rounded">
-                              Comparaison
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                    )
-                  })}
+          {onComparisonChange && compatibleOffers.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setIsDropdownOpen(!isDropdownOpen)
+                }}
+                className="w-full flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-lg hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <ArrowLeftRight size={18} className="text-blue-500" />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Comparer avec une autre offre
+                  </span>
                 </div>
-              ))}
+                <ChevronDown
+                  size={18}
+                  className={`text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+
+              {/* Offer list - inline within the card */}
+              {isDropdownOpen && (
+                <div className="mt-3 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-lg max-h-64 overflow-y-auto">
+                  {offersByProvider.map(({ provider, offers }) => (
+                    <div key={provider.id}>
+                      <div className="px-4 py-2 bg-gray-100 dark:bg-gray-700/50 text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide sticky top-0">
+                        {provider.name}
+                      </div>
+                      {offers.map(offer => {
+                        const isSelected = offer.id === comparisonOfferId
+                        const isOriginal = offer.id === originalOffer?.id
+                        return (
+                          <button
+                            key={offer.id}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleSelectOffer(offer.id)
+                            }}
+                            className={`w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors flex items-center justify-between ${
+                              isSelected ? 'bg-blue-50 dark:bg-blue-900/30' : ''
+                            }`}
+                          >
+                            <div>
+                              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                {offer.name}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {offer.offer_type} - {offer.power_kva} kVA
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isOriginal && (
+                                <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded">
+                                  Actuelle
+                                </span>
+                              )}
+                              {isSelected && !isOriginal && (
+                                <span className="text-xs px-2 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 rounded">
+                                  Comparaison
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

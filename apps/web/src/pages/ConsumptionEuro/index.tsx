@@ -375,8 +375,26 @@ export default function ConsumptionEuro() {
         </div>
       )}
 
+      {/* Current offer info - Compact at top with expand option */}
+      {hasDataInCache && hasOffer && displayOffer && (
+        <AnimatedSection isVisible={true} delay={0}>
+          <div className="mb-6 relative z-20">
+            <OfferPricingCard
+              selectedOffer={displayOffer}
+              isComparison={!!comparisonOfferId}
+              originalOffer={selectedOfferWithProvider}
+              compatibleOffers={compatibleOffers}
+              providers={providers}
+              onComparisonChange={setComparisonOfferId}
+              comparisonOfferId={comparisonOfferId}
+              defaultExpanded={false}
+            />
+          </div>
+        </AnimatedSection>
+      )}
+
       {/* Statistics Section */}
-      <AnimatedSection isVisible={hasDataInCache && hasOffer} delay={0}>
+      <AnimatedSection isVisible={hasDataInCache && hasOffer} delay={50}>
         <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
           <div
             className={`flex items-center justify-between p-6 ${
@@ -434,25 +452,8 @@ export default function ConsumptionEuro() {
         </div>
       </AnimatedSection>
 
-      {/* Current offer info with pricing details - now below statistics with comparison selector */}
-      {hasDataInCache && hasOffer && displayOffer && (
-        <AnimatedSection isVisible={true} delay={50}>
-          <div className="mt-6 relative z-20">
-            <OfferPricingCard
-              selectedOffer={displayOffer}
-              isComparison={!!comparisonOfferId}
-              originalOffer={selectedOfferWithProvider}
-              compatibleOffers={compatibleOffers}
-              providers={providers}
-              onComparisonChange={setComparisonOfferId}
-              comparisonOfferId={comparisonOfferId}
-            />
-          </div>
-        </AnimatedSection>
-      )}
-
       {/* Charts Section */}
-      <AnimatedSection isVisible={hasDataInCache && hasOffer && hasCostData} delay={100}>
+      <AnimatedSection isVisible={hasDataInCache && hasOffer && hasCostData} delay={150}>
         <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200 relative z-10">
           <div
             className="flex items-center justify-between p-6 cursor-pointer"
@@ -495,7 +496,7 @@ export default function ConsumptionEuro() {
       </AnimatedSection>
 
       {/* Monthly Breakdown Section */}
-      <AnimatedSection isVisible={hasDataInCache && hasOffer && hasCostData} delay={200}>
+      <AnimatedSection isVisible={hasDataInCache && hasOffer && hasCostData} delay={250}>
         <div className="mt-6 rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
           <div
             className="flex items-center justify-between p-6 cursor-pointer"

@@ -33,9 +33,11 @@ async def init_db() -> None:
     # NOTE: Les types d'offres (PricingType) sont maintenant gérés via OfferRegistry
     # dans services/offers/registry.py (auto-discovery des calculateurs Python)
 
-    # Seed default energy provider (EDF) and offers
-    async with async_session_maker() as session:
-        await init_default_energy_offers(session)
+    # Seed default energy provider (EDF) and offers (mode serveur uniquement)
+    # En mode client, les providers et offres sont synchronisés depuis la gateway
+    if not settings.CLIENT_MODE:
+        async with async_session_maker() as session:
+            await init_default_energy_offers(session)
 
     # Ensure ADMIN_EMAILS users have admin role (runs every startup)
     async with async_session_maker() as session:

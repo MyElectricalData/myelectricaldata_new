@@ -28,11 +28,12 @@ export function YearlyConsumption({ chartData, isDarkMode }: YearlyConsumptionPr
           Comparaison mensuelle par année
         </h3>
         <ModernButton
-          variant="gradient"
+          variant="primary"
           size="sm"
           icon={Download}
           iconPosition="left"
           onClick={handleExportMonthly}
+          className="min-w-[130px]"
         >
           Export JSON
         </ModernButton>

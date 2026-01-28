@@ -9,7 +9,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from 'recharts'
 import {
@@ -43,15 +42,20 @@ const formatHour = (dateStr: string) => {
 const TYPE_COLORS: Record<string, string> = {
   REALISED: '#10b981', // vert (réalisé)
   ID: '#f59e0b', // orange (intraday)
-  'D-1': '#3b82f6', // bleu (prévision J-1)
-  'D-2': '#8b5cf6', // violet (prévision J-2)
+  'D-1': '#3b82f6', // bleu (prévision veille)
 }
 
 const TYPE_LABELS: Record<string, string> = {
   REALISED: 'Réalisé',
   ID: 'Intraday',
-  'D-1': 'Prévision J-1',
-  'D-2': 'Prévision J-2',
+  'D-1': 'Prévision veille',
+}
+
+// Descriptions détaillées des types de données
+const TYPE_DESCRIPTIONS: Record<string, string> = {
+  REALISED: 'Consommation réelle mesurée, mise à jour toutes les 15 minutes',
+  ID: 'Prévision recalculée en continu selon la météo et la consommation observée',
+  'D-1': 'Prévision établie la veille, basée sur les prévisions météo',
 }
 
 export default function France() {
@@ -72,6 +76,13 @@ export default function France() {
   const [syncing, setSyncing] = useState(false)
   const [lastSyncConsumption, setLastSyncConsumption] = useState<string | null>(null)
   const [lastSyncGeneration, setLastSyncGeneration] = useState<string | null>(null)
+
+  // État des courbes visibles (toutes activées par défaut)
+  const [visibleTypes, setVisibleTypes] = useState<Record<string, boolean>>({
+    REALISED: true,
+    ID: true,
+    'D-1': true,
+  })
 
   // Formatter le temps écoulé depuis la dernière synchronisation
   const formatLastSync = (isoString: string | null | undefined) => {
@@ -186,6 +197,7 @@ export default function France() {
   }
 
   // Préparer les données pour le graphique consommation
+  // Affiche la journée complète (00h00 - 23h59)
   const prepareConsumptionChartData = () => {
     if (!consumptionData) return []
 
@@ -201,27 +213,106 @@ export default function France() {
       }
     }
 
-    return Object.entries(dataByTime)
+    // Veille 00h00 à aujourd'hui 23h59 (48h de données)
+    const now = new Date()
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0)
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
+
+    const sortedData = Object.entries(dataByTime)
       .map(([time, values]) => ({
         time,
         label: formatHour(time),
         ...values,
       }))
+      .filter((item) => {
+        const itemTime = new Date(item.time)
+        return itemTime >= yesterday && itemTime <= endOfToday
+      })
       .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
-      .slice(-96) // 24h de données à 15min
+
+    // Ajouter le jour au premier point de chaque journée
+    let lastDay: number | null = null
+    for (const item of sortedData) {
+      const date = new Date(item.time)
+      const day = date.getDate()
+      if (lastDay !== null && day !== lastDay) {
+        item.label = date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })
+      }
+      lastDay = day
+    }
+
+    return sortedData
   }
 
-  // Préparer les données pour le graphique production
+  // Préparer les données pour le graphique production avec bilan énergétique
   const prepareMixChartData = () => {
     if (!mixData) return []
 
-    return mixData.mix.map((item) => ({
-      time: item.start_date,
-      label: formatHour(item.start_date),
-      solar: item.solar,
-      wind: item.wind,
-      total: item.total_renewable,
-    }))
+    // Créer un index de consommation par heure (arrondie)
+    const consumptionByHour: Record<string, number> = {}
+    if (consumptionData) {
+      for (const typeData of consumptionData.short_term) {
+        // Utiliser REALISED en priorité, sinon ID
+        if (typeData.type === 'REALISED' || (typeData.type === 'ID' && Object.keys(consumptionByHour).length === 0)) {
+          for (const value of typeData.values) {
+            // Arrondir à l'heure pour matcher avec les données de production (horaires)
+            const date = new Date(value.start_date)
+            date.setMinutes(0, 0, 0)
+            const hourKey = date.toISOString()
+            // Garder la valeur la plus récente pour chaque heure
+            if (!consumptionByHour[hourKey] || typeData.type === 'REALISED') {
+              consumptionByHour[hourKey] = value.value
+            }
+          }
+        }
+      }
+    }
+
+    // Filtrer sur la même période que le graphique consommation (veille à aujourd'hui)
+    const now = new Date()
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0)
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
+
+    const sortedData = mixData.mix
+      .filter((item) => {
+        const itemTime = new Date(item.start_date)
+        return itemTime >= yesterday && itemTime <= endOfToday
+      })
+      .map((item) => {
+        // Trouver la consommation correspondante
+        const date = new Date(item.start_date)
+        date.setMinutes(0, 0, 0)
+        const hourKey = date.toISOString()
+        const consumption = consumptionByHour[hourKey] || 0
+
+        // Bilan = production renouvelable - consommation (négatif = déficit)
+        const balance = item.total_renewable - consumption
+
+        return {
+          time: item.start_date,
+          label: formatHour(item.start_date),
+          solar: item.solar,
+          wind: item.wind,
+          total: item.total_renewable,
+          consumption,
+          balance,
+          // Pourcentage de la consommation couverte par le renouvelable
+          coveragePercent: consumption > 0 ? Math.round((item.total_renewable / consumption) * 100) : 0,
+        }
+      })
+
+    // Ajouter le jour au premier point de chaque journée
+    let lastDay: number | null = null
+    for (const item of sortedData) {
+      const date = new Date(item.time)
+      const day = date.getDate()
+      if (lastDay !== null && day !== lastDay) {
+        item.label = date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })
+      }
+      lastDay = day
+    }
+
+    return sortedData
   }
 
   // Calculer les totaux production actuels
@@ -261,7 +352,10 @@ export default function France() {
   const consumptionChartData = prepareConsumptionChartData()
   const mixChartData = prepareMixChartData()
   const productionTotals = getCurrentProductionTotals()
-  const availableConsumptionTypes = consumptionData?.short_term.map(d => d.type) || []
+  // Filtrer pour n'afficher que les types supportés (exclure D-2)
+  const supportedTypes = ['REALISED', 'ID', 'D-1']
+  const availableConsumptionTypes = (consumptionData?.short_term.map(d => d.type) || [])
+    .filter(type => supportedTypes.includes(type))
 
   // Calculer le dernier temps de synchronisation (le plus récent des deux)
   const getLastSyncTime = () => {
@@ -274,155 +368,196 @@ export default function France() {
   }
 
   return (
-    <div className="pt-6 w-full">
-      <div className="space-y-8">
-        {/* Bouton de synchronisation (mode client uniquement) */}
-        {isClientMode && (
-          <div className="flex items-center justify-end gap-3">
-            <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
-              <Clock className="w-4 h-4" />
-              {formatLastSync(getLastSyncTime())}
-            </span>
-            <button
-              onClick={handleSync}
-              disabled={syncing}
-              className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Synchronisation...' : 'Synchroniser'}
-            </button>
+    <div className="w-full">
+      <div className="space-y-6">
+        {/* ===== BLOC RÉSUMÉ TEMPS RÉEL ===== */}
+        <div className="card p-6 border-l-4 border-green-500">
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900/30">
+              <Zap className="text-green-600 dark:text-green-400" size={32} />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-xl font-semibold">Réseau électrique français</h2>
+                {/* Bouton de synchronisation (client mode uniquement) */}
+                {isClientMode && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                      <Clock className="w-4 h-4" />
+                      {formatLastSync(getLastSyncTime())}
+                    </span>
+                    <button
+                      onClick={handleSync}
+                      disabled={syncing}
+                      className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+                      {syncing ? 'Synchronisation...' : 'Synchroniser'}
+                    </button>
+                  </div>
+                )}
+              </div>
+              <p className="text-lg font-medium text-green-600 dark:text-green-400 mb-2">
+                {currentConsumption ? `Consommation : ${formatMW(currentConsumption.value)}` : 'Données en cours de chargement...'}
+              </p>
+              <p className="text-gray-600 dark:text-gray-400">
+                Suivi en temps réel de la consommation et de la production électrique nationale.
+              </p>
+            </div>
           </div>
-        )}
 
-        {/* ===== SECTION CONSOMMATION ===== */}
-
-        {/* Cartes résumé : consommation actuelle + production renouvelable */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Consommation actuelle */}
-          {currentConsumption && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 p-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                  <Zap className="text-green-600 dark:text-green-400" size={24} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Consommation
-                  </h3>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {formatMW(currentConsumption.value)}
+          {/* Cartes résumé intégrées */}
+          <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Consommation actuelle */}
+            {currentConsumption && (
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                    <Zap className="text-green-600 dark:text-green-400" size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Consommation</p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-white">{formatMW(currentConsumption.value)}</p>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Production solaire */}
-          {productionTotals && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 p-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                  <Sun className="text-yellow-600 dark:text-yellow-400" size={24} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Solaire
-                  </h3>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {formatMW(productionTotals.solar)}
+            {/* Production solaire */}
+            {productionTotals && (
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+                    <Sun className="text-yellow-600 dark:text-yellow-400" size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Solaire</p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-white">{formatMW(productionTotals.solar)}</p>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Production éolienne */}
-          {productionTotals && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 p-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                  <Wind className="text-blue-600 dark:text-blue-400" size={24} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Éolien
-                  </h3>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {formatMW(productionTotals.wind)}
+            {/* Production éolienne */}
+            {productionTotals && (
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                    <Wind className="text-blue-600 dark:text-blue-400" size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Éolien</p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-white">{formatMW(productionTotals.wind)}</p>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Total renouvelable */}
-          {productionTotals && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 p-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                  <Leaf className="text-green-600 dark:text-green-400" size={24} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Renouvelable
-                  </h3>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {formatMW(productionTotals.total)}
+            {/* Total renouvelable */}
+            {productionTotals && (
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                    <Leaf className="text-green-600 dark:text-green-400" size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Renouvelable</p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-white">{formatMW(productionTotals.total)}</p>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Graphique consommation */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 p-6">
+        <div className="card p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-gray-900 dark:text-white">
             <TrendingUp className="text-primary-600 dark:text-primary-400" size={20} />
             Consommation nationale
           </h2>
 
           {consumptionChartData.length > 0 ? (
-            <div className="h-[350px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={consumptionChartData}>
-                  <CartesianGrid strokeDasharray="3 3" className="dark:opacity-30" />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fill: 'currentColor', fontSize: 12 }}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis
-                    tickFormatter={(value) => `${(value / 1000).toFixed(0)} GW`}
-                    tick={{ fill: 'currentColor', fontSize: 12 }}
-                    domain={['auto', 'auto']}
-                  />
-                  <Tooltip
-                    formatter={(value: number, name: string) => [formatMW(value), TYPE_LABELS[name] || name]}
-                    labelFormatter={(label) => `Heure : ${label}`}
-                    contentStyle={{
-                      backgroundColor: 'var(--tooltip-bg, #fff)',
-                      border: '1px solid var(--tooltip-border, #e5e7eb)',
-                      borderRadius: '0.5rem',
-                    }}
-                  />
-                  <Legend
-                    formatter={(value) => TYPE_LABELS[value] || value}
-                  />
-                  {availableConsumptionTypes.map((type) => (
-                    <Line
-                      key={type}
-                      type="monotone"
-                      dataKey={type}
-                      stroke={TYPE_COLORS[type] || '#6b7280'}
-                      strokeWidth={type === 'REALISED' ? 2 : 1}
-                      dot={false}
-                      name={type}
+            <>
+              <div className="h-[350px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={consumptionChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="dark:opacity-30" />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: 'currentColor', fontSize: 12 }}
+                      interval="preserveStartEnd"
                     />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+                    <YAxis
+                      tickFormatter={(value) => `${(value / 1000).toFixed(0)} GW`}
+                      tick={{ fill: 'currentColor', fontSize: 12 }}
+                      domain={['auto', 'auto']}
+                    />
+                    <Tooltip
+                      formatter={(value: number, name: string) => [formatMW(value), TYPE_LABELS[name] || name]}
+                      labelFormatter={(label) => `Heure : ${label}`}
+                      contentStyle={{
+                        backgroundColor: 'rgb(var(--color-gray-800, 31 41 55) / 1)',
+                        border: '1px solid rgb(var(--color-gray-700, 55 65 81) / 1)',
+                        borderRadius: '0.5rem',
+                        color: 'white',
+                      }}
+                      itemStyle={{ color: 'white' }}
+                      labelStyle={{ color: 'white' }}
+                    />
+                    {availableConsumptionTypes
+                      .filter((type) => visibleTypes[type])
+                      .map((type) => (
+                        <Line
+                          key={type}
+                          type="monotone"
+                          dataKey={type}
+                          stroke={TYPE_COLORS[type] || '#6b7280'}
+                          strokeWidth={type === 'REALISED' ? 2 : 1}
+                          dot={false}
+                          name={type}
+                        />
+                      ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Toggles pour activer/désactiver les courbes */}
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 items-stretch">
+                {availableConsumptionTypes.map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setVisibleTypes((prev) => ({ ...prev, [type]: !prev[type] }))}
+                    className={`flex items-start gap-3 text-sm p-3 rounded-lg border transition-all h-full ${
+                      visibleTypes[type]
+                        ? 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800'
+                        : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 opacity-60'
+                    }`}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded border-2 mt-0.5 flex-shrink-0 flex items-center justify-center ${
+                        visibleTypes[type] ? 'border-transparent' : 'border-gray-300 dark:border-gray-600'
+                      }`}
+                      style={{ backgroundColor: visibleTypes[type] ? TYPE_COLORS[type] || '#6b7280' : 'transparent' }}
+                    >
+                      {visibleTypes[type] && (
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="text-left flex-1">
+                      <span className={`font-medium ${visibleTypes[type] ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>
+                        {TYPE_LABELS[type] || type}
+                      </span>
+                      <p className="text-gray-500 dark:text-gray-400 text-xs min-h-[2.5rem]">
+                        {TYPE_DESCRIPTIONS[type] || ''}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center h-[350px] text-center">
               <BarChart3 className="text-gray-400 dark:text-gray-500 mb-4" size={48} />
@@ -439,71 +574,133 @@ export default function France() {
         {/* ===== SECTION PRODUCTION ===== */}
 
         {/* Graphique du mix renouvelable */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 p-6">
+        <div className="card p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-gray-900 dark:text-white">
             <Leaf className="text-primary-600 dark:text-primary-400" size={20} />
             Production renouvelable
           </h2>
 
           {mixChartData.length > 0 ? (
-            <div className="h-[350px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={mixChartData}>
-                  <CartesianGrid strokeDasharray="3 3" className="dark:opacity-30" />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fill: 'currentColor', fontSize: 12 }}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis
-                    tickFormatter={(value) => `${(value / 1000).toFixed(0)} GW`}
-                    tick={{ fill: 'currentColor', fontSize: 12 }}
-                    domain={[0, 'auto']}
-                  />
-                  <Tooltip
-                    formatter={(value: number, name: string) => {
-                      const labels: Record<string, string> = {
-                        solar: 'Solaire',
-                        wind: 'Éolien',
-                        total: 'Total',
-                      }
-                      return [formatMW(value), labels[name] || name]
-                    }}
-                    labelFormatter={(label) => `Heure : ${label}`}
-                    contentStyle={{
-                      backgroundColor: 'var(--tooltip-bg, #fff)',
-                      border: '1px solid var(--tooltip-border, #e5e7eb)',
-                      borderRadius: '0.5rem',
-                    }}
-                  />
-                  <Legend
-                    formatter={(value) => {
-                      const labels: Record<string, string> = {
-                        solar: 'Solaire',
-                        wind: 'Éolien',
-                      }
-                      return labels[value] || value
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="solar"
-                    stackId="1"
-                    stroke="#f59e0b"
-                    fill="#fcd34d"
-                    fillOpacity={0.6}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="wind"
-                    stackId="1"
-                    stroke="#3b82f6"
-                    fill="#93c5fd"
-                    fillOpacity={0.6}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <>
+              <div className="h-[350px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={mixChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="dark:opacity-30" />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: 'currentColor', fontSize: 12 }}
+                      interval="preserveStartEnd"
+                    />
+                    <YAxis
+                      tickFormatter={(value) => `${(value / 1000).toFixed(0)} GW`}
+                      tick={{ fill: 'currentColor', fontSize: 12 }}
+                      domain={[0, (dataMax: number) => {
+                        // Inclure la consommation dans le calcul du max
+                        const maxConsumption = Math.max(...mixChartData.map(d => d.consumption || 0))
+                        return Math.max(dataMax, maxConsumption) * 1.05 // +5% de marge
+                      }]}
+                    />
+                    <Tooltip
+                      formatter={(value: number, name: string) => {
+                        const labels: Record<string, string> = {
+                          solar: 'Solaire',
+                          wind: 'Éolien',
+                          total: 'Total renouvelable',
+                          consumption: 'Consommation',
+                        }
+                        return [formatMW(value), labels[name] || name]
+                      }}
+                      labelFormatter={(label) => `Heure : ${label}`}
+                      contentStyle={{
+                        backgroundColor: 'rgb(var(--color-gray-800, 31 41 55) / 1)',
+                        border: '1px solid rgb(var(--color-gray-700, 55 65 81) / 1)',
+                        borderRadius: '0.5rem',
+                        color: 'white',
+                      }}
+                      itemStyle={{ color: 'white' }}
+                      labelStyle={{ color: 'white' }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="solar"
+                      stackId="1"
+                      stroke="#f59e0b"
+                      fill="#fcd34d"
+                      fillOpacity={0.6}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="wind"
+                      stackId="1"
+                      stroke="#3b82f6"
+                      fill="#93c5fd"
+                      fillOpacity={0.6}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="consumption"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      dot={false}
+                      strokeDasharray="5 5"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Indicateur de couverture renouvelable */}
+              {mixChartData.length > 0 && mixChartData[Math.floor(mixChartData.length / 2)]?.coveragePercent > 0 && (
+                <div className="mt-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                        Couverture renouvelable actuelle
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-500">
+                        Part de la consommation couverte par solaire + éolien
+                      </p>
+                    </div>
+                    <div className={`text-2xl font-bold ${
+                      mixChartData[Math.floor(mixChartData.length / 2)].coveragePercent >= 50
+                        ? 'text-green-600 dark:text-green-400'
+                        : mixChartData[Math.floor(mixChartData.length / 2)].coveragePercent >= 25
+                          ? 'text-yellow-600 dark:text-yellow-400'
+                          : 'text-red-600 dark:text-red-400'
+                    }`}>
+                      {mixChartData[Math.floor(mixChartData.length / 2)].coveragePercent}%
+                    </div>
+                  </div>
+                  <div className="mt-2 h-2 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        mixChartData[Math.floor(mixChartData.length / 2)].coveragePercent >= 50
+                          ? 'bg-green-500'
+                          : mixChartData[Math.floor(mixChartData.length / 2)].coveragePercent >= 25
+                            ? 'bg-yellow-500'
+                            : 'bg-red-500'
+                      }`}
+                      style={{ width: `${Math.min(100, mixChartData[Math.floor(mixChartData.length / 2)].coveragePercent)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Légende explicative */}
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#fcd34d' }} />
+                  <span className="text-gray-600 dark:text-gray-400">Solaire (empilé)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#93c5fd' }} />
+                  <span className="text-gray-600 dark:text-gray-400">Éolien (empilé)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-1 rounded" style={{ backgroundColor: '#ef4444', borderStyle: 'dashed' }} />
+                  <span className="text-gray-600 dark:text-gray-400">Consommation (ligne rouge)</span>
+                </div>
+              </div>
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center h-[300px] text-center">
               <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-800 max-w-md">
@@ -522,7 +719,7 @@ export default function France() {
         </div>
 
         {/* Info combinée */}
-        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-6">
+        <div className="card p-6 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500">
           <div className="flex items-start gap-3">
             <Info className="text-blue-600 dark:text-blue-400 mt-1 flex-shrink-0" size={20} />
             <div>

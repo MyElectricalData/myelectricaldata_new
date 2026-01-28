@@ -2573,7 +2573,7 @@ export default function Simulator() {
             </div>
             {simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0 && (
               <ModernButton
-                variant="gradient"
+                variant="primary"
                 size="sm"
                 icon={FileDown}
                 iconPosition="left"

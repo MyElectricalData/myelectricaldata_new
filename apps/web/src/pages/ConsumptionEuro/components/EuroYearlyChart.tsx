@@ -8,6 +8,8 @@ import {
   Tooltip,
   ResponsiveContainer
 } from 'recharts'
+import { Download } from 'lucide-react'
+import { toast } from '@/stores/notificationStore'
 import type { YearlyCost } from '../types/euro.types'
 
 interface EuroYearlyChartProps {
@@ -41,6 +43,31 @@ const MONTH_NAMES = [
 
 export function EuroYearlyChart({ yearlyCosts, isDarkMode }: EuroYearlyChartProps) {
   const [showBreakdown, setShowBreakdown] = useState(false)
+
+  const handleExportChart = () => {
+    const exportData = yearlyCosts.map(year => ({
+      year: year.year,
+      periodLabel: year.periodLabel,
+      totalCost: year.totalCost,
+      totalKwh: year.totalKwh,
+      consumptionCost: year.consumptionCost,
+      subscriptionCost: year.subscriptionCost,
+      months: year.months.map(m => ({
+        month: m.month,
+        monthLabel: m.monthLabel,
+        totalCost: m.totalCost,
+        hcCost: m.hcCost,
+        hpCost: m.hpCost,
+        subscriptionCost: m.subscriptionCost,
+        totalKwh: m.totalKwh,
+        hcKwh: m.hcKwh,
+        hpKwh: m.hpKwh
+      }))
+    }))
+    const jsonData = JSON.stringify(exportData, null, 2)
+    navigator.clipboard.writeText(jsonData)
+    toast.success('Données comparaison annuelle copiées dans le presse-papier')
+  }
 
   // Prepare chart data for monthly comparison - always show all years
   const chartData = useMemo(() => {
@@ -116,6 +143,20 @@ export function EuroYearlyChart({ yearlyCosts, isDarkMode }: EuroYearlyChartProp
 
   return (
     <div className="space-y-4">
+      {/* Header with export button */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Comparaison annuelle
+        </h3>
+        <button
+          onClick={handleExportChart}
+          className="flex items-center justify-center gap-2 min-w-[120px] px-3 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+        >
+          <Download size={16} />
+          <span>Export JSON</span>
+        </button>
+      </div>
+
       {/* Year stats cards */}
       <div className="grid grid-cols-2 gap-4">
         {yearlyCosts.map((year, idx) => {
@@ -136,7 +177,14 @@ export function EuroYearlyChart({ yearlyCosts, isDarkMode }: EuroYearlyChartProp
                   className="text-lg font-bold"
                   style={{ color: color.main }}
                 >
-                  {year.year}
+                  {(() => {
+                    // Extract years from periodLabel (e.g., "25 janv. 2025 - 24 janv. 2026")
+                    const yearMatches = year.periodLabel.match(/(\d{4})/g)
+                    if (yearMatches && yearMatches.length >= 2) {
+                      return `12 mois (${yearMatches[0]}-${yearMatches[1]})`
+                    }
+                    return `12 mois (${year.year})`
+                  })()}
                 </span>
                 <div
                   className="w-3 h-3 rounded-full"

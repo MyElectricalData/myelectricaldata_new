@@ -40,9 +40,9 @@ export function YearlyTable({ chartData, hasDetailedData }: YearlyTableProps) {
         </div>
         <button
           onClick={handleExport}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
+          className="flex items-center justify-center gap-2 min-w-[120px] px-3 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
         >
-          <Download size={16} className="flex-shrink-0" />
+          <Download size={16} />
           <span>Export JSON</span>
         </button>
       </div>

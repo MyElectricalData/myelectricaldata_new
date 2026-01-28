@@ -681,14 +681,14 @@ async def get_consumption_detail_batch(
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres)"),
     start: str = Query(..., description="Date de début (YYYY-MM-DD)"),
     end: str = Query(..., description="Date de fin (YYYY-MM-DD)"),
-    use_cache: bool = Query(False, description="Use cached data if available (ignored in client mode)"),
+    use_cache: bool = Query(True, description="Utiliser le cache local et ne fetcher que les données manquantes"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Get detailed consumption data in batch (handles long date ranges)
 
-    This endpoint fetches detailed consumption data by splitting the request
-    into 7-day chunks (Enedis API limitation) and combining the results.
+    Stratégie local-first : consulte la base locale, identifie les trous,
+    et ne fetch que les plages manquantes depuis la passerelle.
     """
     # Verify PDL ownership
     if not await verify_pdl_ownership(usage_point_id, current_user, db):
@@ -701,53 +701,90 @@ async def get_consumption_detail_batch(
         )
 
     try:
-        adapter = get_med_adapter()
+        start_date = parse_date(start)
+        end_date = parse_date(end)
+    except ValueError as e:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(code="INVALID_DATE", message=str(e)),
+        )
 
-        # Parse dates
-        start_date = datetime.strptime(start, "%Y-%m-%d")
-        end_date = datetime.strptime(end, "%Y-%m-%d")
-
-        # Fetch data in 7-day chunks
+    try:
+        local_service = LocalDataService(db)
         all_readings: list[dict] = []
-        current_start = start_date
 
-        while current_start < end_date:
-            chunk_end = min(current_start + timedelta(days=7), end_date)
+        if use_cache:
+            # Récupérer les données locales et les plages manquantes
+            local_data, missing_ranges = await local_service.get_consumption_detail(
+                usage_point_id, start_date, end_date
+            )
+            all_readings.extend(local_data)
 
-            try:
-                chunk_data = await adapter.get_consumption_detail(
-                    usage_point_id,
-                    current_start.strftime("%Y-%m-%d"),
-                    chunk_end.strftime("%Y-%m-%d"),
+            if not missing_ranges:
+                logger.info(
+                    f"[{usage_point_id}] Batch detail consumption servi depuis le cache local "
+                    f"({len(local_data)} enregistrements)"
+                )
+                return APIResponse(
+                    success=True,
+                    data=format_detail_response(usage_point_id, start, end, all_readings, from_cache=True),
                 )
 
-                # Extract interval readings from response
-                if chunk_data and "meter_reading" in chunk_data:
-                    readings = chunk_data["meter_reading"].get("interval_reading", [])
-                    all_readings.extend(readings)
-                elif chunk_data and "data" in chunk_data and "meter_reading" in chunk_data["data"]:
-                    readings = chunk_data["data"]["meter_reading"].get("interval_reading", [])
-                    all_readings.extend(readings)
+            # Fetcher uniquement les plages manquantes en chunks de 7 jours
+            adapter = get_med_adapter()
+            for range_start, range_end in missing_ranges:
+                current_start = range_start
+                while current_start < range_end:
+                    chunk_end = min(current_start + timedelta(days=7), range_end)
+                    try:
+                        response = await adapter.get_consumption_detail(
+                            usage_point_id,
+                            current_start.isoformat(),
+                            chunk_end.isoformat(),
+                        )
+                        gateway_readings = extract_readings_from_response(response)
+                        all_readings.extend(gateway_readings)
+                    except Exception as chunk_error:
+                        logger.warning(
+                            f"[{usage_point_id}] Chunk {current_start} - {chunk_end} échoué: {chunk_error}"
+                        )
+                    current_start = chunk_end
 
-            except Exception as chunk_error:
-                logger.warning(f"[{usage_point_id}] Chunk {current_start} to {chunk_end} failed: {chunk_error}")
+            logger.info(
+                f"[{usage_point_id}] Batch detail consumption: {len(local_data)} local + "
+                f"{len(all_readings) - len(local_data)} gateway ({len(missing_ranges)} plages manquantes)"
+            )
 
-            current_start = chunk_end
+        else:
+            # Force fetch sans cache
+            adapter = get_med_adapter()
+            current_start = start_date
+            while current_start < end_date:
+                chunk_end = min(current_start + timedelta(days=7), end_date)
+                try:
+                    response = await adapter.get_consumption_detail(
+                        usage_point_id,
+                        current_start.isoformat(),
+                        chunk_end.isoformat(),
+                    )
+                    gateway_readings = extract_readings_from_response(response)
+                    all_readings.extend(gateway_readings)
+                except Exception as chunk_error:
+                    logger.warning(
+                        f"[{usage_point_id}] Chunk {current_start} - {chunk_end} échoué: {chunk_error}"
+                    )
+                current_start = chunk_end
 
-        # Build combined response
-        result = {
-            "meter_reading": {
-                "usage_point_id": usage_point_id,
-                "start": start,
-                "end": end,
-                "interval_reading": all_readings,
-            }
-        }
+        # Trier par date
+        all_readings.sort(key=lambda x: x.get("date", ""))
 
-        return APIResponse(success=True, data=result)
+        return APIResponse(
+            success=True,
+            data=format_detail_response(usage_point_id, start, end, all_readings, from_cache=False),
+        )
 
     except Exception as e:
-        logger.error(f"[{usage_point_id}] Error fetching batch consumption detail: {e}")
+        logger.error(f"[{usage_point_id}] Erreur batch consumption detail: {e}")
         return APIResponse(
             success=False,
             error=ErrorDetail(code="GATEWAY_ERROR", message=str(e)),
@@ -759,14 +796,14 @@ async def get_production_detail_batch(
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres)"),
     start: str = Query(..., description="Date de début (YYYY-MM-DD)"),
     end: str = Query(..., description="Date de fin (YYYY-MM-DD)"),
-    use_cache: bool = Query(False, description="Use cached data if available (ignored in client mode)"),
+    use_cache: bool = Query(True, description="Utiliser le cache local et ne fetcher que les données manquantes"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """Get detailed production data in batch (handles long date ranges)
 
-    This endpoint fetches detailed production data by splitting the request
-    into 7-day chunks (Enedis API limitation) and combining the results.
+    Stratégie local-first : consulte la base locale, identifie les trous,
+    et ne fetch que les plages manquantes depuis la passerelle.
     """
     # Verify PDL ownership
     if not await verify_pdl_ownership(usage_point_id, current_user, db):
@@ -779,53 +816,90 @@ async def get_production_detail_batch(
         )
 
     try:
-        adapter = get_med_adapter()
+        start_date = parse_date(start)
+        end_date = parse_date(end)
+    except ValueError as e:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(code="INVALID_DATE", message=str(e)),
+        )
 
-        # Parse dates
-        start_date = datetime.strptime(start, "%Y-%m-%d")
-        end_date = datetime.strptime(end, "%Y-%m-%d")
-
-        # Fetch data in 7-day chunks
+    try:
+        local_service = LocalDataService(db)
         all_readings: list[dict] = []
-        current_start = start_date
 
-        while current_start < end_date:
-            chunk_end = min(current_start + timedelta(days=7), end_date)
+        if use_cache:
+            # Récupérer les données locales et les plages manquantes
+            local_data, missing_ranges = await local_service.get_production_detail(
+                usage_point_id, start_date, end_date
+            )
+            all_readings.extend(local_data)
 
-            try:
-                chunk_data = await adapter.get_production_detail(
-                    usage_point_id,
-                    current_start.strftime("%Y-%m-%d"),
-                    chunk_end.strftime("%Y-%m-%d"),
+            if not missing_ranges:
+                logger.info(
+                    f"[{usage_point_id}] Batch detail production servi depuis le cache local "
+                    f"({len(local_data)} enregistrements)"
+                )
+                return APIResponse(
+                    success=True,
+                    data=format_detail_response(usage_point_id, start, end, all_readings, from_cache=True),
                 )
 
-                # Extract interval readings from response
-                if chunk_data and "meter_reading" in chunk_data:
-                    readings = chunk_data["meter_reading"].get("interval_reading", [])
-                    all_readings.extend(readings)
-                elif chunk_data and "data" in chunk_data and "meter_reading" in chunk_data["data"]:
-                    readings = chunk_data["data"]["meter_reading"].get("interval_reading", [])
-                    all_readings.extend(readings)
+            # Fetcher uniquement les plages manquantes en chunks de 7 jours
+            adapter = get_med_adapter()
+            for range_start, range_end in missing_ranges:
+                current_start = range_start
+                while current_start < range_end:
+                    chunk_end = min(current_start + timedelta(days=7), range_end)
+                    try:
+                        response = await adapter.get_production_detail(
+                            usage_point_id,
+                            current_start.isoformat(),
+                            chunk_end.isoformat(),
+                        )
+                        gateway_readings = extract_readings_from_response(response)
+                        all_readings.extend(gateway_readings)
+                    except Exception as chunk_error:
+                        logger.warning(
+                            f"[{usage_point_id}] Chunk {current_start} - {chunk_end} échoué: {chunk_error}"
+                        )
+                    current_start = chunk_end
 
-            except Exception as chunk_error:
-                logger.warning(f"[{usage_point_id}] Chunk {current_start} to {chunk_end} failed: {chunk_error}")
+            logger.info(
+                f"[{usage_point_id}] Batch detail production: {len(local_data)} local + "
+                f"{len(all_readings) - len(local_data)} gateway ({len(missing_ranges)} plages manquantes)"
+            )
 
-            current_start = chunk_end
+        else:
+            # Force fetch sans cache
+            adapter = get_med_adapter()
+            current_start = start_date
+            while current_start < end_date:
+                chunk_end = min(current_start + timedelta(days=7), end_date)
+                try:
+                    response = await adapter.get_production_detail(
+                        usage_point_id,
+                        current_start.isoformat(),
+                        chunk_end.isoformat(),
+                    )
+                    gateway_readings = extract_readings_from_response(response)
+                    all_readings.extend(gateway_readings)
+                except Exception as chunk_error:
+                    logger.warning(
+                        f"[{usage_point_id}] Chunk {current_start} - {chunk_end} échoué: {chunk_error}"
+                    )
+                current_start = chunk_end
 
-        # Build combined response
-        result = {
-            "meter_reading": {
-                "usage_point_id": usage_point_id,
-                "start": start,
-                "end": end,
-                "interval_reading": all_readings,
-            }
-        }
+        # Trier par date
+        all_readings.sort(key=lambda x: x.get("date", ""))
 
-        return APIResponse(success=True, data=result)
+        return APIResponse(
+            success=True,
+            data=format_detail_response(usage_point_id, start, end, all_readings, from_cache=False),
+        )
 
     except Exception as e:
-        logger.error(f"[{usage_point_id}] Error fetching batch production detail: {e}")
+        logger.error(f"[{usage_point_id}] Erreur batch production detail: {e}")
         return APIResponse(
             success=False,
             error=ErrorDetail(code="GATEWAY_ERROR", message=str(e)),

@@ -30,7 +30,7 @@ function ModernButton({
   className = '',
   children
 }: ModernButtonProps) {
-  const baseClasses = 'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 shadow-sm'
+  const baseClasses = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors'
 
   const variantClasses = {
     primary: 'bg-primary-600 hover:bg-primary-700 text-white',
@@ -866,7 +866,7 @@ export function DetailedCurve({
             <span>Semaine -1</span>
           </button>
           <ModernButton
-            variant="gradient"
+            variant="primary"
             size="sm"
             icon={Download}
             iconPosition="left"
@@ -910,7 +910,7 @@ export function DetailedCurve({
           <span>Semaine -1</span>
         </button>
         <ModernButton
-          variant="gradient"
+          variant="primary"
           size="sm"
           icon={Download}
           iconPosition="left"

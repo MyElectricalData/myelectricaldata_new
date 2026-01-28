@@ -188,7 +188,7 @@ export function PowerPeaks({
         <div className="flex gap-2">
           {zoomDomain && (
             <ModernButton
-              variant="gradient"
+              variant="primary"
               size="sm"
               icon={ZoomOut}
               iconPosition="left"
@@ -200,11 +200,12 @@ export function PowerPeaks({
             </ModernButton>
           )}
           <ModernButton
-            variant="gradient"
+            variant="primary"
             size="sm"
             icon={Download}
             iconPosition="left"
             onClick={handleExport}
+            className="min-w-[130px]"
           >
             Export JSON
           </ModernButton>
