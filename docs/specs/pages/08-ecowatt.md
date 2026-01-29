@@ -1,17 +1,38 @@
 ---
+name: ecowatt
 id: ecowatt
+path: /ecowatt
+description: Signal EcoWatt RTE sur l'etat du reseau electrique francais
+mode_client: true
+mode_server: true
+menu: EcoWatt
 ---
+
 # EcoWatt
-
-**Route:** `/ecowatt`
-
-## Description
 
 Page affichant les **informations EcoWatt de RTE** sur l'état du réseau électrique français.
 
-## Fonctionnalités principales
+## Features
 
-### 1. Signal EcoWatt actuel
+| Feature                       | Statut |
+| ----------------------------- | ------ |
+| Signal EcoWatt actuel         | FAIT   |
+| Previsions sur 4 jours        | FAIT   |
+| Statistiques mois/annee       | FAIT   |
+| Recommandations EcoGestes     | FAIT   |
+| Informations complementaires  | FAIT   |
+
+## Fichiers
+
+| Type    | Fichier                             |
+| ------- | ----------------------------------- |
+| Page    | `apps/web/src/pages/EcoWatt.tsx`    |
+| API     | `apps/web/src/api/ecowatt.ts`       |
+| Backend | `apps/api/src/routers/ecowatt.py`   |
+
+## Details implementation
+
+### Signal EcoWatt actuel (FAIT)
 - Indicateur visuel état réseau :
   - 🟢 Vert : Pas de tension
   - 🟠 Orange : Système tendu
@@ -19,37 +40,24 @@ Page affichant les **informations EcoWatt de RTE** sur l'état du réseau élect
 - Message explicatif selon niveau
 - Heure dernière mise à jour
 
-### 2. Prévisions sur 4 jours
+### Previsions sur 4 jours (FAIT)
 - Tableau prévisions jour par jour
 - État par tranche horaire (matin/après-midi/soir)
 - Code couleur selon niveau tension
 
-### 3. Statistiques
+### Statistiques (FAIT)
 - Nombre jours vert/orange/rouge sur mois
 - Nombre jours vert/orange/rouge sur année
 - Graphiques de répartition
 
-### 4. Recommandations
+### Recommandations (FAIT)
 - Conseils EcoGestes selon niveau
 - Actions en cas de tension réseau
 
-### 5. Informations complémentaires
+### Informations complementaires (FAIT)
 - Explication système EcoWatt
 - Pourquoi et quand économiser
 - Lien vers site officiel RTE
-
-## Technologies
-
-- React avec TypeScript
-- React Query (données EcoWatt)
-- Tailwind CSS
-- Support mode sombre
-
-## Fichiers liés
-
-- **Frontend** : `apps/web/src/pages/EcoWatt.tsx`
-- **API** : `apps/web/src/api/ecowatt.ts`
-- **Backend** : `apps/api/src/routers/ecowatt.py`
 
 ## Notes importantes
 

@@ -1,15 +1,40 @@
 ---
+name: france
 id: france
+path: /france
+description: Donnees nationales de consommation et production electrique en temps reel
+mode_client: true
+mode_server: true
+menu: France
 ---
-# Page France
 
-## Vue d'ensemble
+# Page France
 
 La page **France** affiche les données nationales de consommation et production électrique en temps réel, basées sur les APIs RTE.
 
-**Route** : `/france`
-**Fichier** : `apps/web/src/pages/France.tsx`
-**Mode** : Serveur et Client
+## Features
+
+| Feature                      | Statut |
+| ---------------------------- | ------ |
+| Cartes resume (4 indicateurs)| FAIT   |
+| Graphique consommation       | FAIT   |
+| Graphique production renouv. | FAIT   |
+| Mode serveur (API RTE)       | FAIT   |
+| Mode client (gateway)        | FAIT   |
+| Selecteur de periode         | TODO   |
+| Export CSV/PDF               | TODO   |
+
+## Fichiers
+
+| Type    | Fichier                                      |
+| ------- | -------------------------------------------- |
+| Page    | `apps/web/src/pages/France.tsx`              |
+| API     | `apps/web/src/api/consumptionFrance.ts`      |
+|         | `apps/web/src/api/generationForecast.ts`     |
+| Backend | `apps/api/src/routers/consumption_france.py` |
+|         | `apps/api/src/routers/generation_forecast.py`|
+
+## Details implementation
 
 ## Mode de fonctionnement
 
@@ -20,9 +45,7 @@ La page **France** affiche les données nationales de consommation et production
 
 En mode client, les données sont récupérées depuis la passerelle serveur et stockées localement dans PostgreSQL. Le scheduler synchronise automatiquement les données France.
 
-## Fonctionnalités
-
-### Cartes résumé (4 indicateurs)
+### Cartes resume (FAIT)
 
 | Indicateur   | Icône | Source API                    |
 | ------------ | ----- | ----------------------------- |
@@ -31,7 +54,7 @@ En mode client, les données sont récupérées depuis la passerelle serveur et 
 | Éolien       | Wind  | `/generation-forecast/mix`    |
 | Renouvelable | Leaf  | `/generation-forecast/mix`    |
 
-### Graphique Consommation nationale
+### Graphique Consommation nationale (FAIT)
 
 Affiche les courbes de consommation avec différentes sources :
 
@@ -44,7 +67,7 @@ Affiche les courbes de consommation avec différentes sources :
 
 **Période affichée** : 24 dernières heures (96 points à 15 min)
 
-### Graphique Production renouvelable
+### Graphique Production renouvelable (FAIT)
 
 Graphique à aires empilées montrant :
 

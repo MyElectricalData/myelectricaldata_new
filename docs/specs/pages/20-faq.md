@@ -1,17 +1,36 @@
 ---
+name: faq
 id: faq
+path: /faq
+description: Foire Aux Questions pour aider les utilisateurs
+mode_client: false
+mode_server: true
+menu: FAQ
 ---
+
 # Page FAQ
-
-**Route:** `/faq`
-
-## Description
 
 Page affichant la **Foire Aux Questions** (FAQ) pour aider les utilisateurs à comprendre et utiliser l'application.
 
-## Fonctionnalités principales
+## Features
 
-### 1. Questions organisées par catégorie
+| Feature                         | Statut |
+| ------------------------------- | ------ |
+| Questions par categorie         | FAIT   |
+| Systeme d'accordeon             | FAIT   |
+| Recherche                       | FAIT   |
+| Liens utiles                    | FAIT   |
+| Contact support                 | FAIT   |
+
+## Fichiers
+
+| Type    | Fichier                        |
+| ------- | ------------------------------ |
+| Page    | `apps/web/src/pages/FAQ.tsx`   |
+
+## Details implementation
+
+### Questions par categorie (FAIT)
 
 - **Général** : Questions sur l'application et son fonctionnement
 - **Compte et connexion** : Création de compte, connexion, mot de passe
@@ -21,25 +40,25 @@ Page affichant la **Foire Aux Questions** (FAQ) pour aider les utilisateurs à c
 - **TEMPO et EcoWatt** : Informations spécifiques
 - **Problèmes techniques** : Dépannage et erreurs courantes
 
-### 2. Système d'accordéon
+### Systeme d'accordeon (FAIT)
 
 - Questions pliables/dépliables
 - Ouverture d'une question à la fois ou plusieurs simultanément
 - Icônes pour indiquer l'état (ouvert/fermé)
 
-### 3. Recherche
+### Recherche (FAIT)
 
 - Barre de recherche pour filtrer les questions
 - Mise en évidence des termes recherchés
 - Affichage du nombre de résultats
 
-### 4. Liens utiles
+### Liens utiles (FAIT)
 
 - Liens vers les pages de l'application
 - Liens vers la documentation externe (Enedis, RTE, etc.)
 - Tutoriels vidéo si disponibles
 
-### 5. Contact support
+### Contact support (FAIT)
 
 - Lien vers le formulaire de contact
 - Email de support
@@ -76,18 +95,6 @@ Page affichant la **Foire Aux Questions** (FAQ) pour aider les utilisateurs à c
 - Comment fonctionne le simulateur ?
 - Les prix sont-ils à jour ?
 - Puis-je ajouter une offre manquante ?
-
-## Technologies utilisées
-
-- React avec TypeScript
-- Tailwind CSS pour le style
-- Support du mode sombre
-- Markdown pour le contenu des réponses
-
-## Fichiers liés
-
-- **Frontend** : `apps/web/src/pages/FAQ.tsx`
-- **Contenu** : Peut être stocké dans un fichier JSON ou en base de données
 
 ## Notes importantes
 

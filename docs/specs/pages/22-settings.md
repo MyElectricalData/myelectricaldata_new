@@ -1,19 +1,44 @@
 ---
+name: settings
 id: settings
+path: /settings
+description: Gestion des parametres de compte et preferences
+mode_client: false
+mode_server: true
+menu: Parametres
 ---
-# Page Paramètres
 
-**Route:** `/settings`
-
-## Description
+# Page Parametres
 
 Page permettant aux utilisateurs de **gérer leurs paramètres de compte** et leurs préférences.
 
+## Features
+
+| Feature                       | Statut |
+| ----------------------------- | ------ |
+| Statistiques utilisation API  | FAIT   |
+| Informations du compte        | FAIT   |
+| Identifiants API              | FAIT   |
+| Modification mot de passe     | FAIT   |
+| Selection theme               | FAIT   |
+| Token API (JWT)               | FAIT   |
+| Deconnexion                   | FAIT   |
+| Suppression compte            | FAIT   |
+
+## Fichiers
+
+| Type    | Fichier                              |
+| ------- | ------------------------------------ |
+| Page    | `apps/web/src/pages/Settings.tsx`    |
+| API     | `apps/web/src/api/accounts.ts`       |
+| Hooks   | `apps/web/src/hooks/useAuth.ts`      |
+| Backend | `apps/api/src/routers/accounts.py`   |
+
+## Details implementation
+
 **Important:** Crée les différents blocs dans l'ordre suivant.
 
-## Fonctionnalités principales (dans l'ordre d'affichage)
-
-### 1. Statistiques d'utilisation de l'API
+### Statistiques d'utilisation de l'API (FAIT)
 
 - Nombre d'appels avec cache (limit + barre de progression)
 - Nombre d'appels sans cache (limit + barre de progression)
@@ -21,62 +46,46 @@ Page permettant aux utilisateurs de **gérer leurs paramètres de compte** et le
 - Affichage de la date actuelle des compteurs
 - Rafraîchissement automatique toutes les 30 secondes
 
-### 2. Informations du compte
+### Informations du compte (FAIT)
 
 - Affichage de l'email
 - Affichage de l'ID utilisateur (UID)
 - Statut du compte (actif/inactif)
 - Date de création du compte
 
-### 3. Identifiants API (Client Credentials)
+### Identifiants API (FAIT)
 
 - Affichage du client_id avec bouton de copie
 - Gestion du client_secret avec un bouton pour le régénérer
 - ⚠️ Le client_secret n'est jamais stocké ni affiché. Vous l'avez reçu lors de la création de votre compte.
 - Avertissement : régénérer invalide l'ancien secret et supprime le cache
 
-### 4. Modification du mot de passe
+### Modification du mot de passe (FAIT)
 
 - Formulaire de changement de mot de passe
 - Validation de l'ancien mot de passe
 - Confirmation du nouveau mot de passe
 - Messages de succès/erreur
 
-### 5. Thème
+### Theme (FAIT)
 
 - Sélection du thème (clair/sombre/système)
 - Application immédiate du thème choisi
 
-### 6. Token d'API (JWT)
+### Token d'API (FAIT)
 
 - Bouton pour copier le token de session actuel
 - Permet d'appeler les API directement (pour développeurs)
 - Avertissement sur la durée de vie limitée du token
 - Message de sécurité (ne pas partager le token)
 
-### 7. Déconnexion
+### Deconnexion (FAIT)
 
 - Bouton de déconnexion
 
-### 8. Gestion du compte (Zone dangereuse)
+### Gestion du compte - Zone dangereuse (FAIT)
 
 - Option de suppression du compte (avec confirmation)
-
-## Technologies utilisées
-
-- React avec TypeScript
-- React Query pour les mutations
-- Tailwind CSS pour le style
-- Support du mode sombre
-- react-hot-toast pour les notifications
-
-## Fichiers liés
-
-- **Frontend** : `apps/web/src/pages/Settings.tsx`
-- **API** : `apps/web/src/api/accounts.ts`
-- **Hooks** : `apps/web/src/hooks/useAuth.ts`
-- **Types** : `apps/web/src/types/api.ts`
-- **Backend** : `apps/api/src/routers/accounts.py`
 
 ## Notes importantes
 

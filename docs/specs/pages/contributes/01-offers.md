@@ -15,22 +15,23 @@ Fichier : `apps/web/src/pages/Contribute/components/tabs/AllOffers.tsx`
 
 ## Features
 
-| Feature                          | Statut |
-| -------------------------------- | ------ |
-| Mode lecture/edition             | FAIT   |
-| Filtre par fournisseur           | FAIT   |
-| Filtre par type d'offre          | FAIT   |
-| Regroupement par nom d'offre     | FAIT   |
-| Edition du nom d'offre           | FAIT   |
-| Edition inline des offres        | FAIT   |
-| Suppression de puissance         | FAIT   |
-| Ajout de puissance               | FAIT   |
-| Creation nouveau groupe          | FAIT   |
-| Recapitulatif avant soumission   | FAIT   |
-| Soumission des modifications     | FAIT   |
-| Creation nouveau fournisseur     | FAIT   |
-| Suppression de fournisseur       | FAIT   |
-| Ajout nouvelle offre             | FAIT   |
+| Feature                            | Statut |
+| ---------------------------------- | ------ |
+| Mode lecture/edition               | FAIT   |
+| Filtre par fournisseur             | FAIT   |
+| Filtre par type d'offre            | FAIT   |
+| Regroupement par nom d'offre       | FAIT   |
+| Edition du nom d'offre             | FAIT   |
+| Edition inline des offres          | FAIT   |
+| Suppression de puissance           | FAIT   |
+| Ajout de puissance                 | FAIT   |
+| Creation nouveau groupe            | FAIT   |
+| Recapitulatif avant soumission     | FAIT   |
+| Soumission des modifications       | FAIT   |
+| Creation nouveau fournisseur       | FAIT   |
+| Suppression de fournisseur         | FAIT   |
+| Ajout nouvelle offre               | FAIT   |
+| Ajouter une gestion date par offre | TODO   |
 
 ## Details implementation
 
@@ -98,7 +99,9 @@ En mode edition, l'en-tete de chaque groupe d'offres devient editable.
 **State :**
 
 ```typescript
-const [editedOfferNames, setEditedOfferNames] = useState<Record<string, string>>({})
+const [editedOfferNames, setEditedOfferNames] = useState<
+  Record<string, string>
+>({});
 ```
 
 **UI :**
@@ -134,13 +137,15 @@ Pour Alpiq qui a deja "Stable", on peut proposer un nouveau groupe "Vert Fixe" a
 **State :**
 
 ```typescript
-const [newGroups, setNewGroups] = useState<Array<{
-  name: string
-  powers: Array<{
-    power: number
-    fields: Record<string, string>
+const [newGroups, setNewGroups] = useState<
+  Array<{
+    name: string;
+    powers: Array<{
+      power: number;
+      fields: Record<string, string>;
+    }>;
   }>
-}>>([])
+>([]);
 ```
 
 **UI :**
@@ -161,6 +166,7 @@ const [newGroups, setNewGroups] = useState<Array<{
 **Recap :**
 
 Dans le recapitulatif, les nouveaux groupes sont affiches dans une section bleue avec :
+
 - Le nom du groupe
 - La liste des puissances avec leurs tarifs
 
@@ -283,37 +289,43 @@ Le recapitulatif affiche les informations completes :
 
 ```typescript
 // Mode lecture (false) ou edition (true)
-const [isEditMode, setIsEditMode] = useState(false)
+const [isEditMode, setIsEditMode] = useState(false);
 
 // Editions de tarifs existants
-const [editedOffers, setEditedOffers] = useState<Record<string, Record<string, string>>>({})
+const [editedOffers, setEditedOffers] = useState<
+  Record<string, Record<string, string>>
+>({});
 
 // Puissances a supprimer
-const [powersToRemove, setPowersToRemove] = useState<number[]>([])
+const [powersToRemove, setPowersToRemove] = useState<number[]>([]);
 
 // Nouvelles puissances a ajouter avec leurs tarifs (supporte plusieurs ajouts)
-const [newPowersData, setNewPowersData] = useState<Array<{
-  power: number
-  fields: Record<string, string>
-}>>([])
+const [newPowersData, setNewPowersData] = useState<
+  Array<{
+    power: number;
+    fields: Record<string, string>;
+  }>
+>([]);
 
 // URL de la fiche tarifaire (obligatoire sauf admin/moderateur)
-const [priceSheetUrl, setPriceSheetUrl] = useState('')
+const [priceSheetUrl, setPriceSheetUrl] = useState("");
 
 // Creation nouveau fournisseur (formulaire inline)
-const [isAddingProvider, setIsAddingProvider] = useState(false)
-const [newProviderName, setNewProviderName] = useState('')
-const [newProviderOfferType, setNewProviderOfferType] = useState('')
+const [isAddingProvider, setIsAddingProvider] = useState(false);
+const [newProviderName, setNewProviderName] = useState("");
+const [newProviderOfferType, setNewProviderOfferType] = useState("");
 
 // Fournisseurs a supprimer
-const [providersToRemove, setProvidersToRemove] = useState<string[]>([])
+const [providersToRemove, setProvidersToRemove] = useState<string[]>([]);
 
 // Ajout nouvelle offre a un fournisseur existant
-const [isAddingOffer, setIsAddingOffer] = useState(false)
-const [newOfferType, setNewOfferType] = useState('')
+const [isAddingOffer, setIsAddingOffer] = useState(false);
+const [newOfferType, setNewOfferType] = useState("");
 
 // Edition des noms d'offres (cle = nom original clean, valeur = nouveau nom)
-const [editedOfferNames, setEditedOfferNames] = useState<Record<string, string>>({})
+const [editedOfferNames, setEditedOfferNames] = useState<
+  Record<string, string>
+>({});
 ```
 
 ### Computed values (useMemo)
@@ -321,23 +333,23 @@ const [editedOfferNames, setEditedOfferNames] = useState<Record<string, string>>
 ```typescript
 // Regroupement des offres par nom "clean"
 const groupedOffers = useMemo(() => {
-  const groups: Record<string, typeof providerOffers> = {}
+  const groups: Record<string, typeof providerOffers> = {};
   for (const offer of providerOffers) {
-    const cleanName = getCleanOfferName(offer.name)
-    if (!groups[cleanName]) groups[cleanName] = []
-    groups[cleanName].push(offer)
+    const cleanName = getCleanOfferName(offer.name);
+    if (!groups[cleanName]) groups[cleanName] = [];
+    groups[cleanName].push(offer);
   }
   // Tri par puissance dans chaque groupe
   for (const groupName of Object.keys(groups)) {
-    groups[groupName].sort((a, b) => powerA - powerB)
+    groups[groupName].sort((a, b) => powerA - powerB);
   }
-  return groups
-}, [providerOffers])
+  return groups;
+}, [providerOffers]);
 
 // Liste des noms de groupes tries alphabetiquement
 const groupNames = useMemo(() => {
-  return Object.keys(groupedOffers).sort((a, b) => a.localeCompare(b))
-}, [groupedOffers])
+  return Object.keys(groupedOffers).sort((a, b) => a.localeCompare(b));
+}, [groupedOffers]);
 ```
 
 ## API utilisee
@@ -451,6 +463,13 @@ Permet de proposer l'ajout d'un nouveau type d'offre pour un fournisseur existan
 - Invalide les caches `my-contributions`, `energy-providers` et `energy-offers`
 - Toast de succes/erreur
 - Reset du formulaire apres succes
+
+## Ajouter une gestion de date par offre (TODO)
+
+- Chaque offre doit posséder une date de validité (début) et l'afficher.
+  - Il est donc nécéssaire d'ajouter une date pour chaque nouvelle offres proposée.
+- La fin d'une offre est opérer quand la même offre est remplacer par une offre équivalente avec une date plus récentes.
+- Les anciennes offres ne sont supprimée, elles sont juste désactiver (pour l'historique).
 
 ## Flux utilisateur
 

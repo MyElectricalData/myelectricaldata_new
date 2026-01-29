@@ -2742,12 +2742,7 @@ export default function Simulator() {
                       </div>
                     </th>
                     <th className="p-3 text-right font-semibold" title={currentOfferResult ? "Écart par rapport à votre offre actuelle" : "Écart par rapport à la meilleure offre"}>
-                      <div className="flex items-center justify-end gap-1">
-                        <span>Écart</span>
-                        {currentOfferResult && (
-                          <span className="text-xs font-normal text-primary-600 dark:text-primary-400">(vs actuelle)</span>
-                        )}
-                      </div>
+                      Écart
                     </th>
                   </tr>
                 </thead>

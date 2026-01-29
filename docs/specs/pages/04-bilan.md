@@ -1,29 +1,45 @@
 ---
 name: bilan
 id: bilan
-path: /bilan
-description: Page de bilan énergétique entre consommation et production
+path: /balance
+description: Page de bilan energetique entre consommation et production
 mode_client: true
 mode_server: true
 menu: Bilan
 ---
 
-# Page Bilan Énergétique
+# Page Bilan Energetique
 
-**Route:** `/balance`
+Page permettant de visualiser le **bilan énergétique** entre consommation et production.
 
-## Description
+## Features
 
-Page permettant de visualiser le **bilan énergétique** entre la consommation et la production d'électricité. Destinée aux utilisateurs disposant d'une installation de production (panneaux solaires, éolienne, etc.).
+| Feature                       | Statut |
+| ----------------------------- | ------ |
+| Cartes resume (4 indicateurs) | FAIT   |
+| Selecteur d'annees            | FAIT   |
+| Comparaison mensuelle         | FAIT   |
+| Courbe de bilan net           | FAIT   |
+| Tableau annuel                | FAIT   |
+| Bloc d'informations           | FAIT   |
 
-## Prérequis
+## Fichiers
+
+| Type       | Fichier                                  |
+| ---------- | ---------------------------------------- |
+| Page       | `apps/web/src/pages/Balance/index.tsx`   |
+| Composants | `apps/web/src/pages/Balance/components/` |
+| Hooks      | `apps/web/src/pages/Balance/hooks/`      |
+| Types      | `apps/web/src/pages/Balance/types/`      |
+
+## Details implementation
+
+### Prerequis
 
 - Au moins un PDL avec des données de **production** (directement ou via PDL lié)
 - Données de consommation et de production chargées en cache
 
-## Fonctionnalités principales
-
-### 1. Cartes de résumé (BalanceSummaryCards)
+### Cartes de resume (FAIT)
 
 4 métriques clés sur la période (3 ans par défaut) :
 
@@ -34,50 +50,28 @@ Page permettant de visualiser le **bilan énergétique** entre la consommation e
 | **Bilan Net**        | Tendance (vert/rouge) | Différence production - consommation |
 | **Autoconsommation** | % (violet)            | Taux d'autoconsommation              |
 
-### 2. Sélecteur d'années
+### Selecteur d'annees (FAIT)
 
 - Boutons colorés pour chaque année disponible
 - Sélection/désélection pour comparer
 - Production totale affichée par année
 
-### 3. Comparaison mensuelle (MonthlyComparison)
+### Comparaison mensuelle (FAIT)
 
 Graphique en barres consommation vs production par mois.
 
-### 4. Courbe de bilan net (NetBalanceCurve)
+### Courbe de bilan net (FAIT)
 
 Graphique linéaire du bilan net journalier (surplus vert, déficit rouge).
 
-### 5. Tableau annuel (YearlyTable)
+### Tableau annuel (FAIT)
 
 Récapitulatif par année : consommation, production, bilan net, taux autoconsommation.
 
-### 6. Bloc d'informations (InfoBlock)
+### Bloc d'informations (FAIT)
 
 Section dépliable avec explications sur les calculs.
 
-## Architecture des fichiers
+## Notes
 
-```text
-apps/web/src/pages/Balance/
-├── index.tsx
-├── components/
-│   ├── BalanceSummaryCards.tsx
-│   ├── MonthlyComparison.tsx
-│   ├── NetBalanceCurve.tsx
-│   ├── YearlyTable.tsx
-│   └── InfoBlock.tsx
-├── hooks/
-│   ├── useBalanceData.ts
-│   └── useBalanceCalcs.ts
-└── types/
-    └── balance.types.ts
-```
-
-## Technologies
-
-- React + TypeScript
-- React Query (cache)
-- Zustand (état)
-- Recharts (graphiques)
-- Tailwind CSS + mode sombre
+- React + TypeScript, React Query, Zustand, Recharts, Tailwind CSS + mode sombre

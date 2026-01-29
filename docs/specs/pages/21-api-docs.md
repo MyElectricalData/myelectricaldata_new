@@ -1,24 +1,45 @@
 ---
+name: api-docs
 id: api-docs
+path: /api-docs
+description: Documentation interactive de l'API avec Swagger UI
+mode_client: false
+mode_server: true
+menu: Documentation API
 ---
+
 # Documentation de l'API
 
-**Route:** `/api-docs`
+Page affichant la **documentation interactive de l'API** avec l'interface Swagger UI.
 
-## Description de la page
+## Features
 
-Cette page affiche la **documentation interactive de l'API** avec l'interface Swagger UI.
+| Feature                    | Statut |
+| -------------------------- | ------ |
+| Interface Swagger UI       | FAIT   |
+| Organisation par categorie | FAIT   |
+| Authentification JWT       | FAIT   |
+| Test des endpoints         | FAIT   |
+| Schemas de donnees         | FAIT   |
+| Theme sombre               | FAIT   |
 
-## Fonctionnalités principales
+## Fichiers
 
-1. **Interface Swagger UI**
+| Type    | Fichier                           |
+| ------- | --------------------------------- |
+| Page    | `apps/web/src/pages/ApiDocs.tsx`  |
+| Backend | `apps/api/main.py`                |
+
+## Details implementation
+
+### Interface Swagger UI (FAIT)
 
    - Documentation complète de tous les endpoints API
    - Interface interactive pour tester les requêtes
    - Schémas de données détaillés
    - Exemples de requêtes/réponses
 
-2. **Organisation par catégories**
+### Organisation par categories (FAIT)
 
    - **Accounts** : Gestion des comptes utilisateurs
    - **PDL** : Gestion des Points De Livraison
@@ -29,43 +50,30 @@ Cette page affiche la **documentation interactive de l'API** avec l'interface Sw
    - **OAuth** : Authentification Enedis
    - **Admin** : Administration (réservé aux admins)
 
-3. **Authentification**
+### Authentification (FAIT)
 
    - Bouton "Authorize" pour s'authentifier
    - Support des tokens JWT
    - Authentification automatique si déjà connecté
 
-4. **Test des endpoints**
+### Test des endpoints (FAIT)
 
    - Bouton "Try it out" sur chaque endpoint
    - Remplissage des paramètres
    - Exécution de la requête
    - Affichage de la réponse (JSON, status code, headers)
 
-5. **Schémas de données**
+### Schemas de donnees (FAIT)
    - Documentation de tous les modèles
    - Types de données
    - Champs obligatoires/optionnels
    - Exemples de valeurs
 
-## Personnalisation
+### Personnalisation (FAIT)
 
-- Thème sombre adapté au design de l'application
-- Logo et titre personnalisés
-- CSS custom pour l'intégration visuelle
-
-## Technologies utilisées
-
-- Swagger UI React
-- OpenAPI 3.0 specification
-- React avec TypeScript
-- Tailwind CSS pour le wrapper
-
-## Fichiers liés
-
-- **Frontend** : `apps/web/src/pages/ApiDocs.tsx`
-- **Backend** : `apps/api/main.py` (génération de la spec OpenAPI)
-- **Spec OpenAPI** : Générée automatiquement par FastAPI
+- Theme sombre adapte au design de l'application
+- Logo et titre personnalises
+- CSS custom pour l'integration visuelle
 
 ## Notes importantes
 

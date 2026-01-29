@@ -1,17 +1,42 @@
 ---
+name: signup
 id: signup
+path: /signup
+description: Page d'inscription pour creer un compte et obtenir ses identifiants API
+mode_client: false
+mode_server: true
+menu: null
 ---
+
 # Page Inscription
-
-**Route:** `/signup`
-
-## Description
 
 Page permettant aux **nouveaux utilisateurs de créer un compte** et d'obtenir leurs identifiants API (Client ID et Client Secret).
 
-## Fonctionnalités principales
+## Features
 
-### 1. Formulaire d'inscription
+| Feature                         | Statut |
+| ------------------------------- | ------ |
+| Formulaire email/mot de passe   | FAIT   |
+| Protection Cloudflare Turnstile | FAIT   |
+| Validation formulaire           | FAIT   |
+| Affichage identifiants API      | FAIT   |
+| Copie Client ID/Secret          | FAIT   |
+| Indicateur force mot de passe   | FAIT   |
+| Navigation vers connexion       | FAIT   |
+
+## Fichiers
+
+| Type    | Fichier                              |
+| ------- | ------------------------------------ |
+| Page    | `apps/web/src/pages/Signup.tsx`      |
+| Hook    | `apps/web/src/hooks/useAuth.ts`      |
+| API     | `apps/web/src/api/auth.ts`           |
+| Types   | `apps/web/src/types/api.ts`          |
+| Backend | `apps/api/src/routers/accounts.py`   |
+
+## Details implementation
+
+### Formulaire email/mot de passe (FAIT)
 
 - **Email** : Adresse email de l'utilisateur
   - Validation du format email
@@ -23,14 +48,14 @@ Page permettant aux **nouveaux utilisateurs de créer un compte** et d'obtenir l
   - Vérification que les deux mots de passe correspondent
   - Bouton pour afficher/masquer la confirmation
 
-### 2. Protection Cloudflare Turnstile
+### Protection Cloudflare Turnstile (FAIT)
 
 - Widget Cloudflare Turnstile pour prévenir les abus
 - Génération d'un token de validation
 - Gestion des erreurs et expirations
 - Configuration via `VITE_TURNSTILE_SITE_KEY`
 
-### 3. Validation du formulaire
+### Validation du formulaire (FAIT)
 
 - Email valide et unique
 - Mot de passe d'au moins 8 caractères
@@ -38,7 +63,7 @@ Page permettant aux **nouveaux utilisateurs de créer un compte** et d'obtenir l
 - Token Turnstile valide (si activé)
 - Messages d'erreur explicites
 
-### 4. Écran de succès
+### Ecran de succes (FAIT)
 
 - Affichage des identifiants API générés :
   - **Client ID** : Identifiant public
@@ -48,7 +73,7 @@ Page permettant aux **nouveaux utilisateurs de créer un compte** et d'obtenir l
 - Avertissement important : les identifiants ne seront plus affichés
 - Bouton pour continuer vers la page de connexion
 
-### 5. Navigation
+### Navigation (FAIT)
 
 - Lien vers la page de connexion (si déjà un compte)
 - Lien de retour à l'accueil
@@ -78,24 +103,6 @@ Page permettant aux **nouveaux utilisateurs de créer un compte** et d'obtenir l
 - Mot de passe trop court (< 8 caractères)
 - Erreur Turnstile
 - Erreur serveur
-
-## Technologies utilisées
-
-- React avec TypeScript
-- React Hook Form ou state local
-- Cloudflare Turnstile pour la protection anti-bot
-- Lucide React pour les icônes (Eye, EyeOff, Copy, Check)
-- React Router pour la navigation
-- Tailwind CSS pour le style
-- Support du mode sombre
-
-## Fichiers liés
-
-- **Frontend** : `apps/web/src/pages/Signup.tsx`
-- **Hook** : `apps/web/src/hooks/useAuth.ts`
-- **API** : `apps/web/src/api/auth.ts`
-- **Types** : `apps/web/src/types/api.ts`
-- **Backend** : `apps/api/src/routers/accounts.py`
 
 ## Notes importantes
 

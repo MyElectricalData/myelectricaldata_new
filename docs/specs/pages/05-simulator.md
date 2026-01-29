@@ -1,51 +1,76 @@
 ---
+name: simulator
 id: simulator
+path: /simulator
+description: Comparateur automatique des offres d'electricite
+mode_client: false
+mode_server: true
+menu: Simulateur
 ---
+
 # Simulateur
-
-**Route:** `/simulator`
-
-## Description
 
 Page permettant de **comparer automatiquement toutes les offres d'électricité** en utilisant les données de consommation réelles sur 12 mois.
 
-## Fonctionnalités principales
+## Features
 
-### 1. Configuration
+| Feature                     | Statut |
+| --------------------------- | ------ |
+| Selection PDL et filtrage   | FAIT   |
+| Recuperation donnees 365j   | FAIT   |
+| Tableau comparatif          | FAIT   |
+| Details expandables         | FAIT   |
+| Export PDF                  | FAIT   |
+| Informations additionnelles | FAIT   |
+| Support 8 types d'offres    | FAIT   |
+| Cache partage               | FAIT   |
+
+## Fichiers
+
+| Type       | Fichier                                       |
+| ---------- | --------------------------------------------- |
+| Page       | `apps/web/src/pages/Simulator.tsx`            |
+| Composants | `apps/web/src/pages/Simulator/components/`    |
+| API        | `apps/web/src/api/enedis.ts`, `energy.ts`     |
+| Backend    | `apps/api/src/routers/enedis.py`, `energy.py` |
+
+## Details implementation
+
+### Selection PDL et filtrage (FAIT)
 
 - Sélection du PDL (si plusieurs actifs)
 - Filtrage automatique selon puissance souscrite
 - Bouton "Lancer la simulation"
 
-### 2. Récupération des données
+### Recuperation des donnees (FAIT)
 
 - Chargement données horaires sur 365 jours
 - Par périodes de 7 jours avec chevauchement
 - Barre de progression détaillée
 - Cache React Query (staleTime: 7 jours)
 
-### 3. Résultats de simulation
+### Resultats de simulation (FAIT)
 
 - Tableau comparatif classé par coût total
 - Pour chaque offre : Rang, fournisseur, type, coûts détaillés, écarts
 - Badges d'alerte (avertissements, tarifs anciens)
 - Highlight meilleure offre (fond vert)
 
-### 4. Détails expandables
+### Details expandables (FAIT)
 
 - Répartition consommation par type
 - Calculs détaillés : kWh × prix = coût
 - Grille tarifaire complète
 - Messages d'avertissement
 
-### 5. Export PDF
+### Export PDF (FAIT)
 
 - PDF multi-pages professionnel
 - Page 1 : Résumé + Top 10
 - Pages suivantes : Détails complets (1 page/offre)
 - Footer avec pagination et branding
 
-### 6. Informations additionnelles
+### Informations additionnelles (FAIT)
 
 - Consommation totale sur période
 - Économies potentielles
@@ -61,21 +86,6 @@ Page permettant de **comparer automatiquement toutes les offres d'électricité*
 6. **SEASONAL** : Hiver/Été avec jours de pointe
 7. **TEMPO** : 3 couleurs (Bleu/Blanc/Rouge)
 8. **EJP** : 22 jours de pointe/an
-
-## Technologies
-
-- React 18 avec TypeScript
-- React Query (cache partagé avec /consumption)
-- jsPDF (génération PDF)
-- Tailwind CSS
-- Lucide React
-- ModernButton component (glassmorphism + gradients)
-
-## Fichiers liés
-
-- **Frontend** : `apps/web/src/pages/Simulator.tsx` (1768 lignes)
-- **API** : `apps/web/src/api/enedis.ts`, `energy.ts`, `tempo.ts`
-- **Backend** : `apps/api/src/routers/enedis.py`, `energy.py`, `tempo.py`
 
 ## Optimisations
 
@@ -99,12 +109,14 @@ Page permettant de **comparer automatiquement toutes les offres d'électricité*
 La page utilise le composant `ModernButton` pour une expérience utilisateur améliorée :
 
 **Bouton principal "Lancer la simulation"** :
+
 - Variant : `primary` avec gradient bleu
 - Taille : `lg` (large) avec `fullWidth`
 - États : Loading avec spinner animé
 - Icône : Calculator (masquée pendant le loading)
 
 **Bouton "Exporter en PDF"** :
+
 - Variant : `gradient` (bleu → indigo → violet)
 - Taille : `sm` (compact)
 - Icône : FileDown à gauche
