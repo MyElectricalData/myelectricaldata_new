@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.12.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.11.0...1.12.0) (2026-02-01)
+
+### Features
+
+* ajouter un sélecteur de période avec intégration des préférences utilisateur dans le simulateur ([ffd725d](https://github.com/MyElectricalData/myelectricaldata_new/commit/ffd725d6fef89ea8d125cc3f19e9fc1bec0d10ba))
+
 ## [1.11.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.10.0...1.11.0) (2026-02-01)
 
 ### Features
