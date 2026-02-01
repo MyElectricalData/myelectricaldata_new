@@ -13,6 +13,7 @@ import { logger } from '@/utils/logger'
 import { ModernButton } from './Simulator/components/ModernButton'
 import { useIsDemo } from '@/hooks/useIsDemo'
 import { usePdlStore } from '@/stores/pdlStore'
+import { useDatePreferencesStore, getDateRangeFromPreset, DATE_PRESET_LABELS } from '@/stores/datePreferencesStore'
 import { useDataFetchStore } from '@/stores/dataFetchStore'
 import { useUnifiedDataFetch } from '@/hooks/useUnifiedDataFetch'
 import { useAllPdls } from '@/hooks/useAllPdls'
@@ -272,9 +273,13 @@ export default function Simulator() {
   const [refOfferFilterProvider, setRefOfferFilterProvider] = useState<string>('all')
   const [refOfferFilterType, setRefOfferFilterType] = useState<string>('all')
 
-  // Period selection state
-  type PeriodOption = 'rolling' | '2025' | '2024' | 'custom'
-  const [selectedPeriod, setSelectedPeriod] = useState<PeriodOption>('rolling')
+  // Period selection state - initialise depuis les preferences utilisateur
+  type PeriodOption = 'rolling' | '2025' | '2024' | 'profile' | 'custom'
+  const { preset: userPreset, customDate: userCustomDate } = useDatePreferencesStore()
+  const profileRange = useMemo(() => getDateRangeFromPreset(userPreset, userCustomDate), [userPreset, userCustomDate])
+  const profileLabel = DATE_PRESET_LABELS[userPreset]
+  // Initialiser sur le profil sauf si le profil est deja "rolling" (doublon avec le raccourci Annee glissante)
+  const [selectedPeriod, setSelectedPeriod] = useState<PeriodOption>(userPreset === 'rolling' ? 'rolling' : 'profile')
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
 
@@ -320,6 +325,13 @@ export default function Simulator() {
         label = 'Année 2024'
         break
       }
+      case 'profile': {
+        startDate = profileRange.start
+        const profEnd = new Date(profileRange.end)
+        endDate = profEnd > yesterday ? yesterdayStr : profileRange.end
+        label = profileLabel
+        break
+      }
       case 'custom': {
         if (customStartDate && customEndDate) {
           startDate = customStartDate
@@ -352,7 +364,7 @@ export default function Simulator() {
     }
 
     return { simulationStartDate: startDate, simulationEndDate: endDate, periodLabel: label }
-  }, [selectedPeriod, customStartDate, customEndDate])
+  }, [selectedPeriod, customStartDate, customEndDate, profileRange, profileLabel])
 
   // Get PDL details for demo auto-fetch
   const allPDLs: PDL[] = Array.isArray(pdlsData) ? pdlsData : []
@@ -481,7 +493,7 @@ export default function Simulator() {
       setIsInitialLoadingFromCache(false)
       setIsLoadingExiting(false)
     }, 300)
-    setSimulationResult(null)
+    // Ne pas reset simulationResult ici : garder les anciens resultats visibles pendant le recalcul
     setFetchProgress({current: 0, total: 0, phase: ''})
     setSimulationError(null)
 
@@ -678,10 +690,15 @@ export default function Simulator() {
     logger.log('Total kWh for year:', totalKwh)
     logger.log('First 3 consumption samples:', JSON.stringify(allConsumptionFinal.slice(0, 3), null, 2))
 
+    // Calculer le nombre de mois de la plage pour proratiser l'abonnement
+    const uniqueDays = new Set(allConsumptionFinal.map(item => item.dateOnly))
+    const periodDays = uniqueDays.size
+    const periodMonths = periodDays / 30.44 // Nombre moyen de jours par mois
+
     // Simulate each offer
     const results = offers.map((offer) => {
       const provider = providers.find((p) => p.id === offer.provider_id)
-      const subscriptionCostYear = offer.subscription_price * 12
+      const subscriptionCostYear = offer.subscription_price * periodMonths
 
       let energyCost = 0
 
@@ -2560,14 +2577,20 @@ export default function Simulator() {
 
       {/* Simulation Results */}
       <AnimatedSection isVisible={simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0} delay={0}>
-        <div className="rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-colors duration-200">
+        <div className={`rounded-xl shadow-md border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 transition-all duration-300 ${isSimulating ? 'opacity-60 pointer-events-none' : ''}`}>
           <div className="flex items-center justify-between p-6">
             <div className="flex items-center gap-2">
-              <Calculator className="text-primary-600 dark:text-primary-400" size={20} />
+              {isSimulating ? (
+                <Loader2 className="text-primary-600 dark:text-primary-400 animate-spin" size={20} />
+              ) : (
+                <Calculator className="text-primary-600 dark:text-primary-400" size={20} />
+              )}
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0
-                  ? `Comparaison des offres (${filteredAndSortedResults.length} résultat${filteredAndSortedResults.length > 1 ? 's' : ''})`
-                  : 'Comparaison des offres'
+                {isSimulating
+                  ? 'Recalcul en cours…'
+                  : simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0
+                    ? `Comparaison des offres (${filteredAndSortedResults.length} résultat${filteredAndSortedResults.length > 1 ? 's' : ''})`
+                    : 'Comparaison des offres'
                 }
               </h2>
             </div>
@@ -2578,6 +2601,7 @@ export default function Simulator() {
                 icon={FileDown}
                 iconPosition="left"
                 onClick={exportToPDF}
+                className="!shadow-none hover:!shadow-none"
               >
                 Exporter en PDF
               </ModernButton>
@@ -2600,6 +2624,11 @@ export default function Simulator() {
                 minDate={selectedPDLDetails?.oldest_available_data_date || selectedPDLDetails?.activation_date}
                 availableDates={availableDates}
                 shortcuts={[
+                  ...(userPreset !== 'rolling' ? [{
+                    label: `Mon profil (${profileLabel})`,
+                    onClick: () => setSelectedPeriod('profile'),
+                    active: selectedPeriod === 'profile'
+                  }] : []),
                   {
                     label: 'Année glissante',
                     onClick: () => setSelectedPeriod('rolling'),
@@ -2717,7 +2746,7 @@ export default function Simulator() {
                       title="Cliquez pour trier"
                     >
                       <div className="flex items-center justify-end gap-1">
-                        <span>Abonnement/an</span>
+                        <span>Abo.</span>
                         {getSortIcon('subscription')}
                       </div>
                     </th>
@@ -2727,7 +2756,7 @@ export default function Simulator() {
                       title="Cliquez pour trier"
                     >
                       <div className="flex items-center justify-end gap-1">
-                        <span>Énergie/an</span>
+                        <span>Énergie</span>
                         {getSortIcon('energy')}
                       </div>
                     </th>
@@ -2737,7 +2766,7 @@ export default function Simulator() {
                       title="Cliquez pour trier"
                     >
                       <div className="flex items-center justify-end gap-1">
-                        <span>Total annuel</span>
+                        <span>Total</span>
                         {getSortIcon('total')}
                       </div>
                     </th>
@@ -2813,6 +2842,11 @@ export default function Simulator() {
                                 </span>
                               )}
                             </div>
+                            {result.validFrom && (
+                              <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                                Tarif du {new Date(result.validFrom).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </div>
+                            )}
                           </td>
                           <td className="p-2 text-right text-sm text-gray-600 dark:text-gray-400">{result.subscriptionCost.toFixed(0)} €</td>
                           <td className="p-2 text-right text-sm text-gray-600 dark:text-gray-400">{result.energyCost.toFixed(0)} €</td>

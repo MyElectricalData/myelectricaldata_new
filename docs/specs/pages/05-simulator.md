@@ -17,6 +17,7 @@ Page permettant de **comparer automatiquement toutes les offres d'électricité*
 | Feature                     | Statut |
 | --------------------------- | ------ |
 | Selection PDL et filtrage   | FAIT   |
+| Selecteur de periode        | FAIT   |
 | Recuperation donnees 365j   | FAIT   |
 | Tableau comparatif          | FAIT   |
 | Details expandables         | FAIT   |
@@ -31,6 +32,7 @@ Page permettant de **comparer automatiquement toutes les offres d'électricité*
 | ---------- | --------------------------------------------- |
 | Page       | `apps/web/src/pages/Simulator.tsx`            |
 | Composants | `apps/web/src/pages/Simulator/components/`    |
+| Periode    | `apps/web/src/components/PeriodSelector.tsx`  |
 | API        | `apps/web/src/api/enedis.ts`, `energy.ts`     |
 | Backend    | `apps/api/src/routers/enedis.py`, `energy.py` |
 
@@ -41,6 +43,49 @@ Page permettant de **comparer automatiquement toutes les offres d'électricité*
 - Sélection du PDL (si plusieurs actifs)
 - Filtrage automatique selon puissance souscrite
 - Bouton "Lancer la simulation"
+
+### Selecteur de periode (FAIT)
+
+Composant `PeriodSelector` reutilisable permettant de choisir la plage de dates pour la simulation.
+
+**Raccourcis** :
+
+| Raccourci        | Comportement                                           | Condition d'affichage          |
+| ---------------- | ------------------------------------------------------ | ------------------------------ |
+| **Mon profil**   | Plage calculee depuis `datePreferencesStore`            | Masque si profil = `rolling`   |
+| **Glissant**     | 365 derniers jours (J-1 a J-365)                       | Toujours visible               |
+| **2025**         | 1er janvier au 31 decembre (ou J-1 si annee en cours)  | Toujours visible               |
+| **2024**         | Annee complete 2024                                    | Toujours visible               |
+
+Le raccourci "Mon profil" affiche le label du preset entre parentheses (ex: "Mon profil (Annee Tempo)").
+
+**Selection personnalisee** :
+
+- Deux calendriers `DayPicker` independants (date debut / date fin)
+- Navigation par dropdowns mois/annee (pas de fleches)
+- Locale francaise avec mois capitalises
+- Dates futures desactivees (limite a J-1)
+- Dates sans donnees en cache grisees via `availableDates`
+- Date minimum basee sur `oldest_available_data_date` ou `activation_date` du PDL
+
+**Initialisation depuis le profil utilisateur** :
+
+Au montage, le selecteur lit le preset configure dans `datePreferencesStore` (page Parametres) :
+
+| Preset profil  | Periode initiale du simulateur |
+| -------------- | ------------------------------ |
+| `rolling`      | Raccourci "Annee glissante"    |
+| `calendar`     | Raccourci "Mon profil"         |
+| `tempo`        | Raccourci "Mon profil"         |
+| `custom` (j/m) | Raccourci "Mon profil"         |
+
+Les raccourcis restent disponibles pour changer de periode apres initialisation.
+
+**Comportement** :
+
+- Changement de periode relance automatiquement la simulation si deja executee
+- Retour au mode "Glissant" par defaut si dates personnalisees non definies
+- Le `periodLabel` s'affiche dans la barre de progression et les resultats
 
 ### Recuperation des donnees (FAIT)
 

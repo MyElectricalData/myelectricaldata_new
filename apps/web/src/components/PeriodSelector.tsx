@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { DayPicker } from 'react-day-picker'
-import { Calendar } from 'lucide-react'
 import 'react-day-picker/style.css'
 
 // Create a custom French locale with capitalized month names
@@ -287,14 +286,6 @@ export function PeriodSelector({
       <style>{pickerStyles}</style>
 
       <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-        {/* Label */}
-        <div className="flex items-center gap-2">
-          <Calendar className="text-primary-600 dark:text-primary-400 flex-shrink-0" size={24} />
-          <label className="text-sm font-semibold text-gray-900 dark:text-white whitespace-nowrap">
-            Sélectionner une période :
-          </label>
-        </div>
-
         {/* Date range display */}
         <div className="flex-1 flex items-center gap-2">
           {/* Start date button */}
@@ -403,10 +394,10 @@ export function PeriodSelector({
                 onClick={shortcut.onClick}
                 disabled={disabled}
                 className={`
-                  px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200
+                  px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 border
                   ${shortcut.active
-                    ? 'bg-primary-600 text-white dark:bg-primary-500'
-                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                    ? 'bg-primary-600 text-white dark:bg-primary-500 border-primary-600 dark:border-primary-500'
+                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
                   }
                   ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
                 `}
