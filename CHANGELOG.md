@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.13.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.12.0...1.13.0) (2026-02-01)
+
+### Features
+
+* ajouter une modale de confirmation pour éviter la perte de modifications non soumises ([1531d93](https://github.com/MyElectricalData/myelectricaldata_new/commit/1531d9390cd3c45153ee9c6074a2f7864df2fbc4))
+
 ## [1.12.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.11.0...1.12.0) (2026-02-01)
 
 ### Features
