@@ -170,7 +170,7 @@ config:
 # Application secrets - CLIENT MODE
 # Uses MyElectricalData API instead of direct Enedis access
 secrets:
-  # Use a single existing secret for ALL secrets (legacy mode)
+  # Use a single kexisting secret for ALL secrets (legacy mode)
   existingSecret: ""
 
   # JWT secret key for local authentication (optional in client mode)
