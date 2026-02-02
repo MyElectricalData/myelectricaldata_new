@@ -218,11 +218,11 @@ async def create_contribution(
     power_variants = contribution_data.get("power_variants")
     power_kva_legacy = contribution_data.get("power_kva")
 
-    # Les suppressions de fournisseur n'ont pas besoin de puissance
+    # Les suppressions (fournisseur ou offre obsolète) n'ont pas besoin de puissance
     offer_name = contribution_data.get("offer_name", "")
-    is_provider_deletion = "[SUPPRESSION FOURNISSEUR]" in offer_name or "[SUPPRESSION_FOURNISSEUR]" in offer_name
+    is_deletion = "[SUPPRESSION" in offer_name
 
-    if not power_variants and not power_kva_legacy and not is_provider_deletion:
+    if not power_variants and power_kva_legacy is None and not is_deletion:
         return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="Au moins une puissance (kVA) est obligatoire"))
 
     # Validate power_variants format if provided
@@ -286,6 +286,95 @@ async def create_contribution(
     )
 
 
+@router.post("/contribute/batch", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
+async def create_contributions_batch(
+    batch_data: dict, current_user: User = Depends(require_not_demo), db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Soumet un lot de contributions en une seule transaction.
+    Envoie une seule notification Slack/email groupée au lieu d'une par contribution."""
+    contributions_list = batch_data.get("contributions", [])
+    if not isinstance(contributions_list, list) or len(contributions_list) == 0:
+        return APIResponse(success=False, error=ErrorDetail(code="INVALID_FORMAT", message="Le champ 'contributions' doit être un tableau non vide"))
+
+    is_privileged = current_user.is_admin or (current_user.role and current_user.role.name in ["admin", "moderator"])
+
+    # Valider le lien vers la fiche tarifaire (obligatoire pour les non-privilégiés)
+    price_sheet_url = batch_data.get("price_sheet_url", "")
+    if not price_sheet_url and not is_privileged:
+        return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="Le lien vers la fiche des prix est obligatoire"))
+
+    created_contributions: list[OfferContribution] = []
+    errors: list[str] = []
+
+    for i, contribution_data in enumerate(contributions_list):
+        try:
+            offer_name = contribution_data.get("offer_name", "")
+            is_deletion = "[SUPPRESSION" in offer_name
+
+            power_variants = contribution_data.get("power_variants")
+            power_kva_legacy = contribution_data.get("power_kva")
+
+            if not power_variants and power_kva_legacy is None and not is_deletion:
+                errors.append(f"Contribution {i + 1}: puissance (kVA) manquante")
+                continue
+
+            if power_variants:
+                if not isinstance(power_variants, list) or len(power_variants) == 0:
+                    errors.append(f"Contribution {i + 1}: power_variants invalide")
+                    continue
+
+            contribution = OfferContribution(
+                contributor_user_id=current_user.id,
+                contribution_type=contribution_data.get("contribution_type", "NEW_OFFER"),
+                status="pending",
+                provider_name=contribution_data.get("provider_name"),
+                provider_website=contribution_data.get("provider_website"),
+                existing_provider_id=contribution_data.get("existing_provider_id"),
+                existing_offer_id=contribution_data.get("existing_offer_id"),
+                offer_name=contribution_data["offer_name"],
+                offer_type=contribution_data["offer_type"],
+                description=contribution_data.get("description"),
+                power_variants=power_variants,
+                pricing_data=contribution_data.get("pricing_data") if not power_variants else None,
+                hc_schedules=contribution_data.get("hc_schedules"),
+                power_kva=power_kva_legacy if not power_variants else None,
+                price_sheet_url=contribution_data.get("price_sheet_url", price_sheet_url),
+                screenshot_url=contribution_data.get("screenshot_url"),
+                valid_from=parse_iso_datetime(contribution_data.get("valid_from")),
+            )
+            db.add(contribution)
+            created_contributions.append(contribution)
+        except Exception as e:
+            errors.append(f"Contribution {i + 1}: {str(e)}")
+
+    if created_contributions:
+        await db.commit()
+        for c in created_contributions:
+            await db.refresh(c)
+
+    # Envoyer une seule notification groupée (Slack + email)
+    if created_contributions:
+        try:
+            await send_batch_contribution_notification(created_contributions, current_user, db)
+        except Exception as e:
+            logger.error(f"[CONTRIBUTION] Erreur notification email batch: {str(e)}")
+
+        try:
+            await slack_service.send_batch_contribution_notification(created_contributions, current_user)
+        except Exception as e:
+            logger.error(f"[CONTRIBUTION] Erreur notification Slack batch: {str(e)}")
+
+    return APIResponse(
+        success=True,
+        data={
+            "created": len(created_contributions),
+            "errors": len(errors),
+            "error_details": errors if errors else None,
+            "message": f"{len(created_contributions)} contribution(s) soumise(s) avec succès.",
+        },
+    )
+
+
 @router.put("/contributions/{contribution_id}", response_model=APIResponse)
 async def update_contribution(
     contribution_id: str = Path(..., description="Contribution ID"),
@@ -322,11 +411,11 @@ async def update_contribution(
     power_variants = contribution_data.get("power_variants")
     power_kva_legacy = contribution_data.get("power_kva")
 
-    # Les suppressions de fournisseur n'ont pas besoin de puissance
+    # Les suppressions (fournisseur ou offre obsolète) n'ont pas besoin de puissance
     offer_name = contribution_data.get("offer_name", "")
-    is_provider_deletion = "[SUPPRESSION FOURNISSEUR]" in offer_name or "[SUPPRESSION_FOURNISSEUR]" in offer_name
+    is_deletion = "[SUPPRESSION" in offer_name
 
-    if not power_variants and not power_kva_legacy and not is_provider_deletion:
+    if not power_variants and power_kva_legacy is None and not is_deletion:
         return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="Au moins une puissance (kVA) est obligatoire"))
 
     # Validate power_variants format if provided
@@ -1747,6 +1836,113 @@ MyElectricalData
             logger.info(f"[CONTRIBUTION] Notification sent to admin: {admin_email}")
         except Exception as e:
             logger.error(f"[CONTRIBUTION] Failed to send email to {admin_email}: {str(e)}")
+
+
+async def send_batch_contribution_notification(
+    contributions: list[OfferContribution], contributor: User, db: AsyncSession
+) -> None:
+    """Envoie un seul email groupé aux admins pour un lot de contributions."""
+    if not settings.ADMIN_EMAILS or not contributions:
+        return
+
+    admin_emails = [email.strip() for email in settings.ADMIN_EMAILS.split(",")]
+    admin_url = f"{settings.FRONTEND_URL}/admin/contributions"
+
+    provider_name = contributions[0].provider_name or "Fournisseur existant"
+    total = len(contributions)
+
+    # Compter par type
+    updates = sum(1 for c in contributions if c.contribution_type == "UPDATE_OFFER" and "[SUPPRESSION" not in (c.offer_name or ""))
+    new_offers = sum(1 for c in contributions if c.contribution_type == "NEW_OFFER")
+    deletions = sum(1 for c in contributions if "[SUPPRESSION" in (c.offer_name or ""))
+
+    summary_parts = []
+    if updates:
+        summary_parts.append(f"{updates} mise(s) à jour")
+    if new_offers:
+        summary_parts.append(f"{new_offers} nouvelle(s) offre(s)")
+    if deletions:
+        summary_parts.append(f"{deletions} suppression(s)")
+
+    summary = ", ".join(summary_parts) or f"{total} contribution(s)"
+
+    # Détail par type d'offre
+    by_type: dict[str, int] = {}
+    for c in contributions:
+        otype = c.offer_type or "?"
+        by_type[otype] = by_type.get(otype, 0) + 1
+
+    detail_html = "".join(f"<li><strong>{otype}</strong> : {count} contribution(s)</li>" for otype, count in by_type.items())
+
+    subject = f"Lot de {total} contributions — {provider_name}"
+
+    html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: white; margin: 0;">MyElectricalData</h1>
+    </div>
+
+    <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+        <h2 style="color: #333; margin-top: 0;">Lot de contributions communautaires</h2>
+
+        <div style="background: white; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p><strong>Contributeur :</strong> {contributor.email}</p>
+            <p><strong>Fournisseur :</strong> {provider_name}</p>
+            <p><strong>Total :</strong> {total} contribution(s)</p>
+            <p><strong>Résumé :</strong> {summary}</p>
+        </div>
+
+        <div style="background: white; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p><strong>Détail par type d'offre :</strong></p>
+            <ul>{detail_html}</ul>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{admin_url}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+                Gérer les contributions
+            </a>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+
+        <p style="color: #999; font-size: 12px; text-align: center;">
+            MyElectricalData - Base de données communautaire
+        </p>
+    </div>
+</body>
+</html>
+    """
+
+    detail_text = "\n".join(f"  - {otype} : {count} contribution(s)" for otype, count in by_type.items())
+    text_content = f"""
+Lot de contributions communautaires — MyElectricalData
+
+Contributeur : {contributor.email}
+Fournisseur : {provider_name}
+Total : {total} contribution(s)
+Résumé : {summary}
+
+Détail :
+{detail_text}
+
+Gérer les contributions : {admin_url}
+
+---
+MyElectricalData
+    """
+
+    for admin_email in admin_emails:
+        try:
+            await email_service.send_email(admin_email, subject, html_content, text_content)
+            logger.info(f"[CONTRIBUTION] Notification batch envoyée à : {admin_email}")
+        except Exception as e:
+            logger.error(f"[CONTRIBUTION] Erreur envoi batch à {admin_email}: {str(e)}")
 
 
 async def send_rejection_notification(contribution: OfferContribution, contributor: User, reason: str) -> None:

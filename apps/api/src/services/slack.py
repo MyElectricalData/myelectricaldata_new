@@ -187,5 +187,112 @@ class SlackService:
 
         return await self.send_notification(fallback_text, blocks)
 
+    async def send_batch_contribution_notification(
+        self, contributions: list[OfferContribution], contributor: User
+    ) -> bool:
+        """Envoie une seule notification Slack pour un lot de contributions.
+
+        Regroupe les contributions par type (mises à jour, nouvelles, suppressions)
+        et affiche un résumé synthétique.
+        """
+        if not contributions:
+            return False
+
+        # Regrouper par type de contribution
+        updates = [c for c in contributions if c.contribution_type == "UPDATE_OFFER" and "[SUPPRESSION" not in (c.offer_name or "")]
+        new_offers = [c for c in contributions if c.contribution_type == "NEW_OFFER"]
+        deletions = [c for c in contributions if "[SUPPRESSION" in (c.offer_name or "")]
+
+        # Déterminer le fournisseur (normalement le même pour toutes)
+        provider_name = contributions[0].provider_name or "[Fournisseur existant]"
+
+        # Construire le résumé
+        summary_parts = []
+        if updates:
+            summary_parts.append(f":arrows_counterclockwise: {len(updates)} mise(s) à jour")
+        if new_offers:
+            summary_parts.append(f":new: {len(new_offers)} nouvelle(s) offre(s)")
+        if deletions:
+            summary_parts.append(f":wastebasket: {len(deletions)} suppression(s)")
+
+        summary = " · ".join(summary_parts)
+        total = len(contributions)
+
+        fallback_text = (
+            f":package: Lot de {total} contribution(s) pour {provider_name} "
+            f"par {contributor.email}"
+        )
+
+        # Regrouper les offres par type d'offre pour le détail
+        by_offer_type: dict[str, list[str]] = {}
+        for c in contributions:
+            offer_type = c.offer_type or "?"
+            if offer_type not in by_offer_type:
+                by_offer_type[offer_type] = []
+            label = c.offer_name or "?"
+            if c.power_kva:
+                label += f" ({c.power_kva} kVA)"
+            by_offer_type[offer_type].append(label)
+
+        detail_lines = []
+        for otype, names in by_offer_type.items():
+            detail_lines.append(f"*{otype}* : {len(names)} contribution(s)")
+
+        detail_text = "\n".join(detail_lines) if detail_lines else "Détails non disponibles"
+
+        # Construire les blocs Slack
+        blocks: list[dict[str, Any]] = [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": f":package: Lot de {total} contribution(s) — {provider_name}",
+                    "emoji": True,
+                },
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*Fournisseur:*\n{provider_name}"},
+                    {"type": "mrkdwn", "text": f"*Contributeur:*\n{contributor.email}"},
+                    {"type": "mrkdwn", "text": f"*Total:*\n{total} contribution(s)"},
+                    {"type": "mrkdwn", "text": f"*Résumé:*\n{summary}"},
+                ],
+            },
+            {"type": "divider"},
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*Détail par type d'offre :*\n{detail_text}"},
+            },
+        ]
+
+        # Lien fiche tarifaire (du premier qui en a un)
+        price_url = next((c.price_sheet_url for c in contributions if c.price_sheet_url), None)
+        if price_url:
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"*Fiche des prix:*\n<{price_url}|Voir la fiche>"},
+                }
+            )
+
+        # Lien admin
+        admin_url = f"{settings.FRONTEND_URL}/admin/contributions"
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Gérer les contributions", "emoji": True},
+                        "url": admin_url,
+                        "style": "primary",
+                    }
+                ],
+            }
+        )
+
+        return await self.send_notification(fallback_text, blocks)
+
 
 slack_service = SlackService()

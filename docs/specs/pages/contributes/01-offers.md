@@ -35,6 +35,7 @@ Fichier : `apps/web/src/pages/Contribute/components/tabs/AllOffers.tsx`
 | Toggle historique des tarifs   | FAIT   |
 | Duplication des tarifs         | FAIT   |
 | Warning perte de modifications | FAIT   |
+| Mode IA (import JSON)          | FAIT   |
 
 ## Details implementation
 
@@ -602,6 +603,80 @@ const [confirmDialog, setConfirmDialog] = useState<{
 - Bouton "Soumettre" : `bg-primary-600 hover:bg-primary-700 text-white` avec icone `Send`
 - Bouton "Continuer sans soumettre" : `bg-orange-600 hover:bg-orange-700 text-white`
 
+### Mode IA - Import JSON (FAIT)
+
+Permet d'importer les tarifs d'un fournisseur via un JSON genere par une IA externe.
+
+**Prerequis :** Mode edition actif + fournisseur selectionne.
+
+**Flux :**
+
+1. L'utilisateur clique sur "Mode IA" dans la barre d'outils
+2. Un panneau s'ouvre avec un prompt pre-genere contenant le nom du fournisseur et tous les types d'offres
+3. L'utilisateur copie le prompt, le colle dans son IA preferee
+4. L'IA genere un JSON multi-offres
+5. L'utilisateur colle le JSON et clique "Importer"
+6. Les donnees sont validees et injectees dans les champs d'edition
+
+**Format JSON multi-offres :**
+
+```json
+{
+  "offers": [
+    {
+      "offer_name": "Nom de l'offre",
+      "offer_type": "BASE",
+      "valid_from": "2025-02-01",
+      "warning": "optionnel",
+      "power_variants": [
+        {
+          "power_kva": 6,
+          "subscription_price": 12.34,
+          "base_price": 0.2516
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Logique d'import (`importAIJson`) :**
+
+- Nettoyage automatique des blocs markdown (` ```json ... ``` `)
+- Validation du type d'offre (doit etre un type connu)
+- Pour chaque variante de puissance :
+  - Si match par `power_kva` dans les offres existantes du fournisseur : injection dans `editedOffers`
+  - Si pas de match : ajout dans `newPowersData`
+- Rapport detaille par offre (matched, added, warnings)
+- Si import multi-types : passage automatique du filtre en "all"
+
+**States :**
+
+```typescript
+const [showAIMode, setShowAIMode] = useState(false)
+const [aiJsonInput, setAiJsonInput] = useState('')
+const [aiImportResult, setAiImportResult] = useState<{
+  success: boolean
+  message: string
+  details?: Array<{
+    offer_type: string
+    offer_name: string
+    matched: number
+    added: number
+    warning?: string
+  }>
+} | null>(null)
+```
+
+**UI :**
+
+- Bouton "Mode IA" : `bg-purple-50 dark:bg-purple-900/30 text-purple-700` (inactif) / `bg-purple-600 text-white` (actif)
+- Panneau : `border-purple-200 dark:border-purple-700` avec header violet
+- Prompt : `<pre>` avec bouton "Copier" en overlay
+- Textarea : pour coller le JSON
+- Resultat : vert si succes, rouge si erreur, avec details par offre et warnings amber
+- Reset automatique au changement de fournisseur
+
 ## Flux utilisateur
 
 1. Consulter les offres en mode lecture (par defaut)
@@ -612,8 +687,9 @@ const [confirmDialog, setConfirmDialog] = useState<{
 4. Selectionner un type d'offre (boutons) ou :
    - Cliquer sur "Proposer une nouvelle offre" pour ajouter un nouveau type d'offre au fournisseur
 5. Effectuer les modifications souhaitees :
-   - Modifier les tarifs existants (champs inline)
-   - Dupliquer les tarifs d'une ligne vers la suivante ou toutes les lignes (icone CopyDown)
+   - **Manuellement** : Modifier les tarifs existants (champs inline)
+   - **Duplication** : Dupliquer les tarifs d'une ligne vers la suivante ou toutes les lignes
+   - **Mode IA** : Cliquer "Mode IA", copier le prompt, coller le JSON genere par l'IA
    - Marquer des puissances pour suppression (icone corbeille)
    - Ajouter une ou plusieurs puissances (bouton "Ajouter une puissance")
 6. Renseigner le lien vers la fiche tarifaire officielle (optionnel pour admin/moderateur)

@@ -268,6 +268,13 @@ export const energyApi = {
     return apiClient.post('energy/contribute', data)
   },
 
+  submitContributionBatch: async (contributions: ContributionData[], priceSheetUrl: string) => {
+    return apiClient.post('energy/contribute/batch', {
+      contributions,
+      price_sheet_url: priceSheetUrl,
+    })
+  },
+
   updateContribution: async (contributionId: string, data: ContributionData) => {
     return apiClient.put(`energy/contributions/${contributionId}`, data)
   },

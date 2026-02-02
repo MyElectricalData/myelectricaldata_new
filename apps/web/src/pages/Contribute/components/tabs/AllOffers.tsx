@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Package, Send, X, Link, AlertCircle, Plus, Trash2, Undo2, Eye, Pencil, Info, Building2, ArrowDownToLine } from 'lucide-react'
+import { Package, Send, X, Link, AlertCircle, Plus, Trash2, Undo2, Eye, Pencil, Info, Building2, ArrowDownToLine, Sparkles, Copy } from 'lucide-react'
 import { energyApi, type EnergyProvider, type ContributionData, type EnergyOffer } from '@/api/energy'
 import { toast } from '@/stores/notificationStore'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
@@ -32,6 +32,9 @@ export default function AllOffers() {
   const [newPowersData, setNewPowersData] = useState<Array<{
     power: number
     fields: Record<string, string>
+    // Champs optionnels pour l'import IA multi-types
+    offer_type?: string
+    offer_name?: string
   }>>([])
 
   // Formulaire inline pour créer un nouveau fournisseur
@@ -78,6 +81,30 @@ export default function AllOffers() {
     onConfirm: () => void
     onSubmit: () => void
   } | null>(null)
+
+  // Mode IA : import JSON
+  const [showAIMode, setShowAIMode] = useState(false)
+  const [aiJsonInput, setAiJsonInput] = useState('')
+  const [aiImportResult, setAiImportResult] = useState<{
+    success: boolean
+    message: string
+    details?: Array<{
+      offer_type: string
+      offer_name: string
+      matched: number
+      added: number
+      warning?: string
+    }>
+  } | null>(null)
+  // Offres signalées comme supprimées/deprecated par l'IA
+  const [deprecatedOffers, setDeprecatedOffers] = useState<Array<{
+    offer_type: string
+    offer_name: string
+    offer_ids: string[]
+    warning: string
+  }>>([])
+  // Flag pour empêcher le reset de newPowersData lors d'un changement de filtre déclenché par l'import IA
+  const skipFilterResetRef = useRef(false)
 
   // Fetch providers
   const { data: providersData } = useQuery({
@@ -176,6 +203,7 @@ export default function AllOffers() {
       setPowersToRemove([])
       setNewPowersData([])
       setNewGroups([])
+      setDeprecatedOffers([])
       setIsAddingOffer(false)
       setNewOfferType('')
       return
@@ -196,19 +224,29 @@ export default function AllOffers() {
     } else {
       setFilterOfferType('all')
     }
-    // Reset les propositions de puissances et le mode ajout d'offre
+    // Reset les propositions de puissances, le mode ajout d'offre et le mode IA
     setPowersToRemove([])
     setNewPowersData([])
     setNewGroups([])
     setIsAddingOffer(false)
     setNewOfferType('')
+    setShowAIMode(false)
+    setAiJsonInput('')
+    setAiImportResult(null)
+    setDeprecatedOffers([])
   }, [filterProvider, offersArray])
 
   // Reset les propositions de puissances quand on change de type d'offre
+  // (sauf si le changement vient de l'import IA)
   useEffect(() => {
+    if (skipFilterResetRef.current) {
+      skipFilterResetRef.current = false
+      return
+    }
     setPowersToRemove([])
     setNewPowersData([])
     setNewGroups([])
+    setDeprecatedOffers([])
   }, [filterOfferType])
 
   // Fermer le dropdown de duplication au clic exterieur
@@ -240,8 +278,9 @@ export default function AllOffers() {
     const renamedGroupsCount = Object.entries(editedOfferNames).filter(
       ([originalName, newName]) => newName !== originalName && newName.trim() !== ''
     ).length
-    return modifiedOffersCount + newPowersData.length + powersToRemove.length + providersToRemove.length + newGroups.length + renamedGroupsCount
-  }, [offersArray, editedOffers, editedOfferNames, newPowersData, powersToRemove, providersToRemove, newGroups])
+    const deprecatedCount = deprecatedOffers.reduce((sum, d) => sum + d.offer_ids.length, 0)
+    return modifiedOffersCount + newPowersData.length + powersToRemove.length + providersToRemove.length + newGroups.length + renamedGroupsCount + deprecatedCount
+  }, [offersArray, editedOffers, editedOfferNames, newPowersData, powersToRemove, providersToRemove, newGroups, deprecatedOffers])
 
   // Vérifier s'il y a des modifications à afficher
   const hasAnyModifications = totalModificationsCount > 0
@@ -325,6 +364,310 @@ export default function AllOffers() {
     toast.success(targetMode === 'next'
       ? 'Tarifs dupliqués vers la ligne suivante'
       : `Tarifs dupliqués vers ${targets.length} ligne(s)`)
+  }
+
+  // Générer le prompt IA dynamiquement avec le nom du fournisseur sélectionné
+  const generateAIPrompt = (): string => {
+    const provider = sortedProviders.find(p => p.id === filterProvider)
+    const providerName = provider?.name || 'Inconnu'
+
+    // Construire la liste des offres actuelles du fournisseur
+    const currentOffers = offersArray.filter(o => o.provider_id === filterProvider)
+    let currentOffersSection = ''
+    if (currentOffers.length > 0) {
+      // Regrouper par offer_type + clean name
+      const groups: Record<string, { type: string; name: string; powers: number[] }> = {}
+      for (const offer of currentOffers) {
+        const cleanName = getCleanOfferName(offer.name)
+        const key = `${offer.offer_type}::${cleanName}`
+        if (!groups[key]) {
+          groups[key] = { type: offer.offer_type, name: cleanName, powers: [] }
+        }
+        const power = offer.power_kva || parseInt(offer.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
+        if (power > 0) groups[key].powers.push(power)
+      }
+      const lines = Object.values(groups).map(g => {
+        const sortedPowers = g.powers.sort((a, b) => a - b)
+        return `- "${g.name}" (${g.type}) : puissances ${sortedPowers.join(', ')} kVA`
+      })
+      currentOffersSection = `
+
+## Offres actuellement enregistrées pour "${providerName}"
+
+${lines.join('\n')}
+
+Compare avec les offres actuelles du fournisseur :
+- Si une offre ci-dessus N'EXISTE PLUS chez le fournisseur, ajoute-la quand même dans le JSON avec un champ "deprecated": true et un "warning" expliquant qu'elle semble avoir été supprimée ou remplacée.
+- Si une offre a été RENOMMÉE, utilise le nouveau nom et ajoute un "warning" mentionnant l'ancien nom.
+- Si de NOUVELLES offres existent chez le fournisseur et ne figurent pas ci-dessus, ajoute-les normalement.`
+    }
+
+    return `Tu es un assistant spécialisé dans les tarifs d'électricité en France.
+
+Je souhaite obtenir les grilles tarifaires actuelles du fournisseur "${providerName}".
+
+Génère un JSON contenant TOUTES les offres disponibles de ce fournisseur.
+
+## Format JSON requis
+
+{
+  "offers": [
+    {
+      "offer_name": "Nom de l'offre (sans puissance ni type)",
+      "offer_type": "TYPE",
+      "valid_from": "YYYY-MM-DD",
+      "warning": "optionnel - si le type ne correspond pas exactement",
+      "deprecated": false,
+      "power_variants": [
+        {
+          "power_kva": 6,
+          "subscription_price": 12.34,
+          ... champs prix selon le type ...
+        }
+      ]
+    }
+  ]
+}
+
+## Types d'offres disponibles
+
+Choisis le type le plus adapté pour chaque offre :
+
+- BASE : tarif unique → champs : "base_price"
+- HC_HP : heures creuses/pleines → champs : "hc_price", "hp_price"
+- TEMPO : 6 tarifs bleu/blanc/rouge × HC/HP → champs : "tempo_blue_hc", "tempo_blue_hp", "tempo_white_hc", "tempo_white_hp", "tempo_red_hc", "tempo_red_hp"
+- EJP : normal + pointe → champs : "ejp_normal", "ejp_peak"
+- SEASONAL : été/hiver × HC/HP → champs : "hc_price_summer", "hp_price_summer", "hc_price_winter", "hp_price_winter"
+- ZEN_FLEX : équivalent à SEASONAL
+- ZEN_WEEK_END : base + week-end → champs : "base_price", "base_price_weekend"
+- ZEN_WEEK_END_HP_HC : HC/HP semaine + HC/HP week-end → champs : "hc_price", "hp_price", "hc_price_weekend", "hp_price_weekend"
+${currentOffersSection}
+
+## Règles
+
+- IMPORTANT : tous les prix doivent être en TTC (Toutes Taxes Comprises)
+- Tous les prix en euros avec un point décimal (ex: 0.2516)
+- subscription_price = abonnement mensuel TTC en €/mois
+- Les prix kWh sont en €/kWh TTC
+- Inclure toutes les puissances disponibles (typiquement : 3, 6, 9, 12, 15, 18, 24, 30, 36 kVA)
+- offer_name ne doit PAS contenir la puissance ni le type d'offre
+- valid_from = date de début de validité de la grille tarifaire
+- Si tu extrais les données d'un PDF : attention, les grilles tarifaires sont souvent présentées en colonnes (puissances en lignes, prix en colonnes). Veille à bien associer chaque prix à la bonne puissance et au bon champ.
+
+## Source des données
+
+Si l'utilisateur te fournit un document en pièce jointe :
+- **Page HTML ou lien web** : source la plus fiable, privilégier ce format
+- **Image (capture d'écran)** : bonne alternative, la lecture visuelle est généralement fiable
+- **PDF** : attention, la structure interne des fichiers PDF rend la lecture difficile pour les IA (colonnes mélangées, tableaux mal interprétés). Si possible, demande à l'utilisateur une capture d'écran ou un lien HTML à la place.
+
+Dans TOUS les cas, les tarifs proposés DOIVENT être vérifiés par l'utilisateur avant validation. Ajoute un "warning" si tu n'es pas certain d'un tarif.
+
+## Warning
+
+Si une offre du fournisseur ne correspond pas exactement à un type ci-dessus, choisis le type le plus proche ET ajoute un champ "warning" expliquant la différence. Par exemple :
+- "warning": "Cette offre a des horaires HC spécifiques non standards"
+- "warning": "Offre avec remise variable non modélisable dans les types standards"
+
+## Sortie
+
+Ne retourne QUE le JSON, sans texte avant ou après.`
+  }
+
+  // Importer un JSON multi-offres généré par une IA
+  const importAIJson = () => {
+    try {
+      // Nettoyer le JSON (retirer les blocs markdown ```json ... ```)
+      let cleaned = aiJsonInput.trim()
+      const codeBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/)
+      if (codeBlockMatch) {
+        cleaned = codeBlockMatch[1].trim()
+      }
+
+      const data = JSON.parse(cleaned)
+
+      // Valider la structure
+      if (!data.offers || !Array.isArray(data.offers) || data.offers.length === 0) {
+        setAiImportResult({
+          success: false,
+          message: 'Le JSON doit contenir un tableau "offers" non vide.',
+        })
+        return
+      }
+
+      const knownTypes = ['BASE', 'BASE_WEEKEND', 'HC_HP', 'HC_NUIT_WEEKEND', 'HC_WEEKEND', 'TEMPO', 'EJP', 'ZEN_FLEX', 'SEASONAL', 'ZEN_WEEK_END', 'ZEN_WEEK_END_HP_HC']
+      const details: Array<{
+        offer_type: string
+        offer_name: string
+        matched: number
+        added: number
+        deprecated?: boolean
+        warning?: string
+      }> = []
+
+      const updatedOffers = { ...editedOffers }
+      const addedPowers: Array<{ power: number; fields: Record<string, string>; offer_type: string; offer_name: string }> = []
+      const newDeprecated: typeof deprecatedOffers = []
+
+      for (const offer of data.offers) {
+        // Offre marquée comme supprimée par l'IA
+        if (offer.deprecated === true) {
+          // Trouver les offres existantes correspondantes pour les marquer
+          const matchingOffers = offersArray.filter(o =>
+            o.provider_id === filterProvider && o.offer_type === offer.offer_type
+          )
+          // Filtrer par nom si possible
+          const byName = matchingOffers.filter(o =>
+            getCleanOfferName(o.name).toLowerCase().includes(offer.offer_name?.toLowerCase() || '')
+          )
+          const targetOffers = byName.length > 0 ? byName : matchingOffers
+          if (targetOffers.length > 0) {
+            newDeprecated.push({
+              offer_type: offer.offer_type || '???',
+              offer_name: offer.offer_name || '???',
+              offer_ids: targetOffers.map(o => o.id),
+              warning: offer.warning || 'Offre signalée comme supprimée ou remplacée.',
+            })
+          }
+          details.push({
+            offer_type: offer.offer_type || '???',
+            offer_name: offer.offer_name || '???',
+            matched: 0,
+            added: 0,
+            deprecated: true,
+            warning: offer.warning || 'Offre signalée comme supprimée ou remplacée.',
+          })
+          continue
+        }
+        // Valider le type d'offre
+        if (!offer.offer_type || !knownTypes.includes(offer.offer_type)) {
+          details.push({
+            offer_type: offer.offer_type || '???',
+            offer_name: offer.offer_name || '???',
+            matched: 0,
+            added: 0,
+            warning: `Type d'offre inconnu : "${offer.offer_type}". Types valides : ${knownTypes.join(', ')}`,
+          })
+          continue
+        }
+
+        // Valider les variantes de puissance
+        if (!offer.power_variants || !Array.isArray(offer.power_variants) || offer.power_variants.length === 0) {
+          details.push({
+            offer_type: offer.offer_type,
+            offer_name: offer.offer_name || '???',
+            matched: 0,
+            added: 0,
+            warning: 'Aucune variante de puissance fournie.',
+          })
+          continue
+        }
+
+        // Chercher les offres existantes du fournisseur pour ce type
+        const existingForType = offersArray.filter(
+          o => o.provider_id === filterProvider && o.offer_type === offer.offer_type
+        )
+
+        let matched = 0
+        let added = 0
+        const fieldKeys = getFieldKeysForOfferType(offer.offer_type)
+
+        for (const variant of offer.power_variants) {
+          if (!variant.power_kva || !variant.subscription_price) continue
+
+          // Chercher une offre existante avec cette puissance
+          const existing = existingForType.find(o => {
+            const power = o.power_kva || parseInt(o.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
+            return power === variant.power_kva
+          })
+
+          if (existing) {
+            // Injecter dans editedOffers
+            updatedOffers[existing.id] = { ...(updatedOffers[existing.id] || {}) }
+            updatedOffers[existing.id].subscription_price = String(variant.subscription_price)
+            for (const key of fieldKeys) {
+              if (variant[key] !== undefined) {
+                updatedOffers[existing.id][key] = String(variant[key])
+              }
+            }
+            matched++
+          } else {
+            // Puissance non existante : créer dans newPowersData avec offer_type
+            const fields: Record<string, string> = {
+              subscription_price: String(variant.subscription_price),
+            }
+            for (const key of fieldKeys) {
+              if (variant[key] !== undefined) {
+                fields[key] = String(variant[key])
+              }
+            }
+            addedPowers.push({
+              power: variant.power_kva,
+              fields,
+              offer_type: offer.offer_type,
+              offer_name: offer.offer_name || offer.offer_type,
+            })
+            added++
+          }
+        }
+
+        details.push({
+          offer_type: offer.offer_type,
+          offer_name: offer.offer_name || offer.offer_type,
+          matched,
+          added,
+          warning: offer.warning,
+        })
+      }
+
+      // Appliquer les modifications
+      setEditedOffers(updatedOffers)
+      if (addedPowers.length > 0) {
+        setNewPowersData(prev => [...prev, ...addedPowers])
+      }
+      if (newDeprecated.length > 0) {
+        setDeprecatedOffers(prev => [...prev, ...newDeprecated])
+      }
+
+      // Si l'import a touché des types différents du filtre actuel, on passe en mode "all"
+      const importedTypes = details.map(d => d.offer_type)
+      const hasMultipleTypes = new Set(importedTypes).size > 1
+      if (hasMultipleTypes && filterOfferType !== 'all') {
+        // Empêcher le useEffect de reset newPowersData/powersToRemove
+        skipFilterResetRef.current = true
+        setFilterOfferType('all')
+      }
+
+      const totalMatched = details.reduce((sum, d) => sum + d.matched, 0)
+      const totalAdded = details.reduce((sum, d) => sum + d.added, 0)
+      const totalDeprecated = details.filter(d => d.deprecated).length
+
+      const parts = [`${totalMatched} mise(s) à jour`]
+      if (totalAdded > 0) {
+        parts.push(`${totalAdded} nouvelle(s) puissance(s)`)
+      }
+      if (totalDeprecated > 0) {
+        parts.push(`${totalDeprecated} offre(s) à supprimer`)
+      }
+
+      setAiImportResult({
+        success: true,
+        message: `${details.length} offre(s) importée(s) : ${parts.join(', ')}.`,
+        details,
+      })
+
+      toast.success(`Import IA réussi : ${parts.join(', ')}`)
+
+      // Fermer le mode IA et ouvrir le récapitulatif de soumission
+      setShowAIMode(false)
+      setShowRecapModal(true)
+    } catch (e) {
+      setAiImportResult({
+        success: false,
+        message: `Erreur de parsing JSON : ${e instanceof Error ? e.message : 'format invalide'}`,
+      })
+      toast.error('Erreur lors du parsing du JSON')
+    }
   }
 
   // Helper pour formater la valeur
@@ -422,7 +765,8 @@ export default function AllOffers() {
     return match ? `${match[1]} kVA` : null
   }
 
-  // Helper pour soumettre toutes les modifications
+  // Helper pour soumettre toutes les modifications en un seul lot (batch)
+  // Envoie une seule notification Slack/email au lieu d'une par contribution
   const submitAllModifications = async () => {
     const currentProvider = sortedProviders.find(p => p.id === filterProvider)
 
@@ -437,14 +781,12 @@ export default function AllOffers() {
       : currentProvider ? `${currentProvider.name} - ${filterOfferType}` : ''
 
     const modifiedOffers = providerOffers.filter(offer => isOfferModified(offer))
-    const hasProviderModifications = modifiedOffers.length > 0 || newPowersData.length > 0 || powersToRemove.length > 0 || newGroups.length > 0 || hasModifiedGroupNames
+    const hasProviderModifications = modifiedOffers.length > 0 || newPowersData.length > 0 || powersToRemove.length > 0 || newGroups.length > 0 || hasModifiedGroupNames || deprecatedOffers.length > 0
     const hasProviderDeletions = providersToRemove.length > 0
 
     if (!hasProviderModifications && !hasProviderDeletions) return
 
     setSubmittingOffers(true)
-    let successCount = 0
-    let errorCount = 0
 
     // Helper pour parser les valeurs numériques en évitant NaN
     const parsePrice = (editedValue: string | undefined, originalValue: number | undefined): number | undefined => {
@@ -455,229 +797,200 @@ export default function AllOffers() {
       return originalValue
     }
 
-    // Soumettre les modifications de tarifs existants (seulement si un fournisseur est sélectionné)
+    // Collecter toutes les contributions dans un tableau
+    const allContributions: ContributionData[] = []
+
+    // Modifications de tarifs existants
     if (currentProvider) {
       for (const offer of modifiedOffers) {
-        try {
-          const edited = editedOffers[offer.id] || {}
-          // Extraire la puissance de l'offre depuis son nom (ex: "Tarif Bleu - 6 kVA")
-          const powerMatch = offer.name.match(/(\d+)\s*kVA/i)
-          const powerKva = powerMatch ? parseInt(powerMatch[1]) : offer.power_kva || 6
+        const edited = editedOffers[offer.id] || {}
+        const powerMatch = offer.name.match(/(\d+)\s*kVA/i)
+        const powerKva = powerMatch ? parseInt(powerMatch[1]) : offer.power_kva || 6
 
-          const contributionData: ContributionData = {
-            contribution_type: 'UPDATE_OFFER',
-            existing_provider_id: offer.provider_id,
-            existing_offer_id: offer.id,
-            provider_name: currentProvider.name,
-            offer_name: offer.name,
-            offer_type: offer.offer_type,
-            power_kva: powerKva,
-            pricing_data: {
-              subscription_price: parsePrice(edited.subscription_price, offer.subscription_price),
-              base_price: parsePrice(edited.base_price, offer.base_price),
-              hc_price: parsePrice(edited.hc_price, offer.hc_price),
-              hp_price: parsePrice(edited.hp_price, offer.hp_price),
-              base_price_weekend: parsePrice(edited.base_price_weekend, offer.base_price_weekend),
-              hc_price_weekend: parsePrice(edited.hc_price_weekend, offer.hc_price_weekend),
-              hp_price_weekend: parsePrice(edited.hp_price_weekend, offer.hp_price_weekend),
-              tempo_blue_hc: parsePrice(edited.tempo_blue_hc, offer.tempo_blue_hc),
-              tempo_blue_hp: parsePrice(edited.tempo_blue_hp, offer.tempo_blue_hp),
-              tempo_white_hc: parsePrice(edited.tempo_white_hc, offer.tempo_white_hc),
-              tempo_white_hp: parsePrice(edited.tempo_white_hp, offer.tempo_white_hp),
-              tempo_red_hc: parsePrice(edited.tempo_red_hc, offer.tempo_red_hc),
-              tempo_red_hp: parsePrice(edited.tempo_red_hp, offer.tempo_red_hp),
-              ejp_normal: parsePrice(edited.ejp_normal, offer.ejp_normal),
-              ejp_peak: parsePrice(edited.ejp_peak, offer.ejp_peak),
-              hc_price_winter: parsePrice(edited.hc_price_winter, offer.hc_price_winter),
-              hp_price_winter: parsePrice(edited.hp_price_winter, offer.hp_price_winter),
-              hc_price_summer: parsePrice(edited.hc_price_summer, offer.hc_price_summer),
-              hp_price_summer: parsePrice(edited.hp_price_summer, offer.hp_price_summer),
-            },
-            price_sheet_url: priceSheetUrl,
-            valid_from: offer.valid_from || new Date().toISOString().split('T')[0],
-          }
-          const response = await energyApi.submitContribution(contributionData)
-          if (response.success) {
-            successCount++
-          } else {
-            errorCount++
-          }
-        } catch {
-          errorCount++
-        }
+        allContributions.push({
+          contribution_type: 'UPDATE_OFFER',
+          existing_provider_id: offer.provider_id,
+          existing_offer_id: offer.id,
+          provider_name: currentProvider.name,
+          offer_name: offer.name,
+          offer_type: offer.offer_type,
+          power_kva: powerKva,
+          pricing_data: {
+            subscription_price: parsePrice(edited.subscription_price, offer.subscription_price),
+            base_price: parsePrice(edited.base_price, offer.base_price),
+            hc_price: parsePrice(edited.hc_price, offer.hc_price),
+            hp_price: parsePrice(edited.hp_price, offer.hp_price),
+            base_price_weekend: parsePrice(edited.base_price_weekend, offer.base_price_weekend),
+            hc_price_weekend: parsePrice(edited.hc_price_weekend, offer.hc_price_weekend),
+            hp_price_weekend: parsePrice(edited.hp_price_weekend, offer.hp_price_weekend),
+            tempo_blue_hc: parsePrice(edited.tempo_blue_hc, offer.tempo_blue_hc),
+            tempo_blue_hp: parsePrice(edited.tempo_blue_hp, offer.tempo_blue_hp),
+            tempo_white_hc: parsePrice(edited.tempo_white_hc, offer.tempo_white_hc),
+            tempo_white_hp: parsePrice(edited.tempo_white_hp, offer.tempo_white_hp),
+            tempo_red_hc: parsePrice(edited.tempo_red_hc, offer.tempo_red_hc),
+            tempo_red_hp: parsePrice(edited.tempo_red_hp, offer.tempo_red_hp),
+            ejp_normal: parsePrice(edited.ejp_normal, offer.ejp_normal),
+            ejp_peak: parsePrice(edited.ejp_peak, offer.ejp_peak),
+            hc_price_winter: parsePrice(edited.hc_price_winter, offer.hc_price_winter),
+            hp_price_winter: parsePrice(edited.hp_price_winter, offer.hp_price_winter),
+            hc_price_summer: parsePrice(edited.hc_price_summer, offer.hc_price_summer),
+            hp_price_summer: parsePrice(edited.hp_price_summer, offer.hp_price_summer),
+          },
+          price_sheet_url: priceSheetUrl,
+          valid_from: offer.valid_from || new Date().toISOString().split('T')[0],
+        })
       }
 
-      // Soumettre les demandes de suppression de puissances (utilise UPDATE_OFFER avec description)
+      // Suppressions de puissances
       for (const power of powersToRemove) {
-        try {
-          const contributionData: ContributionData = {
+        allContributions.push({
+          contribution_type: 'UPDATE_OFFER',
+          existing_provider_id: currentProvider.id,
+          provider_name: currentProvider.name,
+          offer_name: `[SUPPRESSION] ${currentProvider.name} - ${filterOfferType} - ${power} kVA`,
+          offer_type: filterOfferType,
+          description: `Demande de suppression de la puissance ${power} kVA pour ${currentProvider.name} (${filterOfferType})`,
+          power_kva: power,
+          price_sheet_url: priceSheetUrl,
+          valid_from: new Date().toISOString().split('T')[0],
+        })
+      }
+
+      // Offres obsolètes (deprecated) signalées par l'IA
+      for (const dep of deprecatedOffers) {
+        for (const offerId of dep.offer_ids) {
+          allContributions.push({
             contribution_type: 'UPDATE_OFFER',
             existing_provider_id: currentProvider.id,
             provider_name: currentProvider.name,
-            offer_name: `[SUPPRESSION] ${currentProvider.name} - ${filterOfferType} - ${power} kVA`,
-            offer_type: filterOfferType,
-            description: `Demande de suppression de la puissance ${power} kVA pour ${currentProvider.name} (${filterOfferType})`,
-            power_kva: power,
+            offer_name: `[SUPPRESSION] ${dep.offer_name} (${dep.offer_type})`,
+            offer_type: dep.offer_type,
+            description: `Offre signalée comme obsolète par l'IA : ${dep.warning}`,
+            power_kva: 0,
             price_sheet_url: priceSheetUrl,
             valid_from: new Date().toISOString().split('T')[0],
-          }
-          const response = await energyApi.submitContribution(contributionData)
-          if (response.success) {
-            successCount++
-          } else {
-            errorCount++
-          }
-        } catch {
-          errorCount++
+          })
+          // Utilisation de offerId pour traçabilité (ajout dans existing_offer_id)
+          allContributions[allContributions.length - 1].existing_offer_id = offerId
         }
       }
 
-      // Soumettre les demandes d'ajout de puissances (utilise NEW_OFFER)
+      // Ajout de nouvelles puissances
       for (const newPower of newPowersData) {
-        try {
-          const contributionData: ContributionData = {
+        const effectiveType = newPower.offer_type || filterOfferType
+        const effectiveName = newPower.offer_name || existingBaseOfferName
+        const pricingData: Record<string, number | undefined> = {}
+        for (const [key, value] of Object.entries(newPower.fields)) {
+          if (key !== 'subscription_price' && value) {
+            pricingData[key] = parsePrice(value, undefined)
+          }
+        }
+        pricingData.subscription_price = parsePrice(newPower.fields.subscription_price, undefined)
+        allContributions.push({
+          contribution_type: 'NEW_OFFER',
+          existing_provider_id: currentProvider.id,
+          provider_name: currentProvider.name,
+          offer_name: `${effectiveName} - ${newPower.power} kVA`,
+          offer_type: effectiveType,
+          description: `Ajout de la puissance ${newPower.power} kVA pour ${currentProvider.name} (${effectiveType})`,
+          power_kva: newPower.power,
+          pricing_data: pricingData,
+          price_sheet_url: priceSheetUrl,
+          valid_from: new Date().toISOString().split('T')[0],
+        })
+      }
+
+      // Nouveaux groupes d'offres
+      for (const group of newGroups) {
+        if (!group.name || group.powers.length === 0) continue
+        for (const power of group.powers) {
+          if (!power.power || power.power <= 0) continue
+          allContributions.push({
             contribution_type: 'NEW_OFFER',
             existing_provider_id: currentProvider.id,
             provider_name: currentProvider.name,
-            offer_name: `${existingBaseOfferName} - ${newPower.power} kVA`,
+            offer_name: `${group.name} - ${power.power} kVA`,
             offer_type: filterOfferType,
-            description: `Ajout de la puissance ${newPower.power} kVA pour ${currentProvider.name} (${filterOfferType})`,
-            power_kva: newPower.power,
+            description: `Création d'un nouveau groupe d'offres "${group.name}" avec la puissance ${power.power} kVA pour ${currentProvider.name} (${filterOfferType})`,
+            power_kva: power.power,
             pricing_data: {
-              subscription_price: parsePrice(newPower.fields.subscription_price, undefined),
-              base_price: parsePrice(newPower.fields.base_price, undefined),
-              hc_price: parsePrice(newPower.fields.hc_price, undefined),
-              hp_price: parsePrice(newPower.fields.hp_price, undefined),
+              subscription_price: parsePrice(power.fields.subscription_price, undefined),
+              base_price: parsePrice(power.fields.base_price, undefined),
+              hc_price: parsePrice(power.fields.hc_price, undefined),
+              hp_price: parsePrice(power.fields.hp_price, undefined),
             },
             price_sheet_url: priceSheetUrl,
-            valid_from: new Date().toISOString().split('T')[0],
-          }
-          const response = await energyApi.submitContribution(contributionData)
-          if (response.success) {
-            successCount++
-          } else {
-            errorCount++
-          }
-        } catch {
-          errorCount++
+            valid_from: group.validFrom || new Date().toISOString().split('T')[0],
+          })
         }
       }
 
-      // Soumettre les nouveaux groupes d'offres
-      for (const group of newGroups) {
-        if (!group.name || group.powers.length === 0) continue
-
-        for (const power of group.powers) {
-          if (!power.power || power.power <= 0) continue
-
-          try {
-            const contributionData: ContributionData = {
-              contribution_type: 'NEW_OFFER',
-              existing_provider_id: currentProvider.id,
-              provider_name: currentProvider.name,
-              offer_name: `${group.name} - ${power.power} kVA`,
-              offer_type: filterOfferType,
-              description: `Création d'un nouveau groupe d'offres "${group.name}" avec la puissance ${power.power} kVA pour ${currentProvider.name} (${filterOfferType})`,
-              power_kva: power.power,
-              pricing_data: {
-                subscription_price: parsePrice(power.fields.subscription_price, undefined),
-                base_price: parsePrice(power.fields.base_price, undefined),
-                hc_price: parsePrice(power.fields.hc_price, undefined),
-                hp_price: parsePrice(power.fields.hp_price, undefined),
-              },
-              price_sheet_url: priceSheetUrl,
-              valid_from: group.validFrom || new Date().toISOString().split('T')[0],
-            }
-            const response = await energyApi.submitContribution(contributionData)
-            if (response.success) {
-              successCount++
-            } else {
-              errorCount++
-            }
-          } catch {
-            errorCount++
-          }
-        }
-      }
-
-      // Soumettre les renommages de groupes d'offres
+      // Renommages de groupes d'offres
       for (const [originalName, newName] of Object.entries(editedOfferNames)) {
         if (newName === originalName || newName.trim() === '') continue
-
-        // Trouver toutes les offres de ce groupe pour les mettre à jour
         const offersInGroup = providerOffers.filter(o => getCleanOfferName(o.name) === originalName)
-
         for (const offer of offersInGroup) {
-          try {
-            // Reconstruire le nouveau nom de l'offre avec le nouveau nom de groupe
-            const power = getPower(offer.name)
-            const newOfferName = power ? `${newName} - ${power}` : newName
-
-            const contributionData: ContributionData = {
-              contribution_type: 'UPDATE_OFFER',
-              existing_provider_id: currentProvider.id,
-              existing_offer_id: offer.id,
-              provider_name: currentProvider.name,
-              offer_name: `[RENOMMAGE] ${newOfferName}`,
-              offer_type: filterOfferType,
-              description: `Renommage du groupe d'offres "${originalName}" en "${newName}" pour ${currentProvider.name} (${filterOfferType})`,
-              power_kva: offer.power_kva || (power ? parseInt(power) : 6),
-              price_sheet_url: priceSheetUrl,
-              valid_from: new Date().toISOString().split('T')[0],
-            }
-            const response = await energyApi.submitContribution(contributionData)
-            if (response.success) {
-              successCount++
-            } else {
-              errorCount++
-            }
-          } catch {
-            errorCount++
-          }
+          const power = getPower(offer.name)
+          const newOfferName = power ? `${newName} - ${power}` : newName
+          allContributions.push({
+            contribution_type: 'UPDATE_OFFER',
+            existing_provider_id: currentProvider.id,
+            existing_offer_id: offer.id,
+            provider_name: currentProvider.name,
+            offer_name: `[RENOMMAGE] ${newOfferName}`,
+            offer_type: filterOfferType,
+            description: `Renommage du groupe d'offres "${originalName}" en "${newName}" pour ${currentProvider.name} (${filterOfferType})`,
+            power_kva: offer.power_kva || (power ? parseInt(power) : 6),
+            price_sheet_url: priceSheetUrl,
+            valid_from: new Date().toISOString().split('T')[0],
+          })
         }
       }
     }
 
-    // Soumettre les demandes de suppression de fournisseurs
+    // Suppressions de fournisseurs
     for (const providerId of providersToRemove) {
-      try {
-        const providerToDelete = sortedProviders.find(p => p.id === providerId)
-        if (!providerToDelete) continue
+      const providerToDelete = sortedProviders.find(p => p.id === providerId)
+      if (!providerToDelete) continue
+      allContributions.push({
+        contribution_type: 'UPDATE_OFFER',
+        existing_provider_id: providerId,
+        provider_name: providerToDelete.name,
+        offer_name: `[SUPPRESSION FOURNISSEUR] ${providerToDelete.name}`,
+        offer_type: 'BASE',
+        description: `Demande de suppression du fournisseur "${providerToDelete.name}" et de toutes ses offres.`,
+        price_sheet_url: priceSheetUrl || 'N/A',
+        valid_from: new Date().toISOString().split('T')[0],
+      })
+    }
 
-        const contributionData: ContributionData = {
-          contribution_type: 'UPDATE_OFFER',
-          existing_provider_id: providerId,
-          provider_name: providerToDelete.name,
-          offer_name: `[SUPPRESSION FOURNISSEUR] ${providerToDelete.name}`,
-          offer_type: 'BASE', // Type par défaut pour la demande
-          description: `Demande de suppression du fournisseur "${providerToDelete.name}" et de toutes ses offres.`,
-          price_sheet_url: priceSheetUrl || 'N/A',
-          valid_from: new Date().toISOString().split('T')[0],
+    // Envoyer en un seul appel batch
+    try {
+      const response = await energyApi.submitContributionBatch(allContributions, priceSheetUrl)
+      if (response.success) {
+        const data = response.data as { created: number; errors: number; error_details?: string[] }
+        const created = data.created || 0
+        const errors = data.errors || 0
+        if (created > 0) {
+          toast.success(`${created} contribution(s) soumise(s) avec succès !`)
+          setEditedOffers({})
+          setEditedOfferNames({})
+          setPriceSheetUrl('')
+          setPowersToRemove([])
+          setNewPowersData([])
+          setNewGroups([])
+          setProvidersToRemove([])
+          setDeprecatedOffers([])
+          queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
         }
-        const response = await energyApi.submitContribution(contributionData)
-        if (response.success) {
-          successCount++
-        } else {
-          errorCount++
+        if (errors > 0) {
+          toast.error(`${errors} erreur(s) lors de l'envoi`)
         }
-      } catch {
-        errorCount++
+      } else {
+        toast.error('Erreur lors de la soumission des contributions')
       }
-    }
-
-    if (successCount > 0) {
-      toast.success(`${successCount} contribution(s) soumise(s) avec succès !`)
-      setEditedOffers({})
-      setEditedOfferNames({})
-      setPriceSheetUrl('')
-      setPowersToRemove([])
-      setNewPowersData([])
-      setNewGroups([])
-      setProvidersToRemove([])
-      queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
-    }
-    if (errorCount > 0) {
-      toast.error(`${errorCount} erreur(s) lors de l'envoi`)
+    } catch {
+      toast.error('Erreur de communication avec le serveur')
     }
     setSubmittingOffers(false)
   }
@@ -699,7 +1012,7 @@ export default function AllOffers() {
   // Get provider offers filtered and sorted by power
   const providerOffers = offersArray
     .filter((offer) =>
-      offer.provider_id === filterProvider && offer.offer_type === filterOfferType
+      offer.provider_id === filterProvider && (filterOfferType === 'all' || offer.offer_type === filterOfferType)
     )
     .sort((a, b) => {
       const powerA = a.power_kva || parseInt(a.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
@@ -739,34 +1052,49 @@ export default function AllOffers() {
   const existingPowers = useMemo(() => {
     return providerOffers.map(offer => {
       const powerMatch = offer.name.match(/(\d+)\s*kVA/i)
-      return powerMatch ? parseInt(powerMatch[1]) : (offer.power_kva || 0)
-    }).filter(p => p > 0)
+      const power = powerMatch ? parseInt(powerMatch[1]) : (offer.power_kva || 0)
+      return { power, offer_type: offer.offer_type }
+    }).filter(p => p.power > 0)
   }, [providerOffers])
 
   // Vérifier si une puissance est déjà utilisée (existante ou dans les nouvelles puissances ajoutées)
-  const isPowerAlreadyUsed = (power: number, currentIndex?: number): boolean => {
+  // Prend en compte le offer_type ET offer_name pour distinguer les puissances d'offres différentes
+  const isPowerAlreadyUsed = (power: number, currentIndex?: number, offerType?: string, offerName?: string): boolean => {
+    const effectiveType = offerType || filterOfferType
     // Vérifier dans les offres existantes (sauf celles marquées pour suppression)
-    if (existingPowers.includes(power) && !powersToRemove.includes(power)) {
-      return true
-    }
+    // En mode 'all', on compare aussi par nom d'offre pour éviter les faux doublons entre offres différentes
+    const existsInOffers = existingPowers.some(ep =>
+      ep.power === power && ep.offer_type === effectiveType && !powersToRemove.includes(power)
+    )
+    if (existsInOffers) return true
     // Vérifier dans les nouvelles puissances ajoutées (sauf l'index courant)
-    return newPowersData.some((p, i) => p.power === power && i !== currentIndex)
+    // Même power + même offer_type + même offer_name = doublon
+    return newPowersData.some((p, i) => {
+      if (i === currentIndex) return false
+      if (p.power !== power) return false
+      const pType = p.offer_type || filterOfferType
+      if (pType !== effectiveType) return false
+      // Si les deux ont un offer_name, comparer aussi par nom
+      if (offerName && p.offer_name && offerName !== p.offer_name) return false
+      return true
+    })
   }
 
   // Vérifier s'il y a des doublons dans les nouvelles puissances
   const hasDuplicatePowers = useMemo(() => {
-    return newPowersData.some((newPower, index) => isPowerAlreadyUsed(newPower.power, index))
+    return newPowersData.some((newPower, index) => isPowerAlreadyUsed(newPower.power, index, newPower.offer_type, newPower.offer_name))
   }, [newPowersData, existingPowers, powersToRemove])
 
   // Détecter les champs de prix requis pour le type d'offre actuel
-  const getRequiredPriceFields = (): string[] => {
-    if (filterOfferType === 'BASE') return ['base_price']
-    if (filterOfferType === 'HC_HP') return ['hc_price', 'hp_price']
-    if (filterOfferType === 'TEMPO') return ['tempo_blue_hc', 'tempo_blue_hp', 'tempo_white_hc', 'tempo_white_hp', 'tempo_red_hc', 'tempo_red_hp']
-    if (filterOfferType === 'EJP') return ['ejp_normal', 'ejp_peak']
-    if (filterOfferType === 'ZEN_FLEX' || filterOfferType === 'SEASONAL') return ['hc_price_summer', 'hp_price_summer', 'hc_price_winter', 'hp_price_winter']
-    if (filterOfferType === 'ZEN_WEEK_END') return ['base_price', 'base_price_weekend']
-    if (filterOfferType === 'ZEN_WEEK_END_HP_HC' || filterOfferType === 'HC_WEEKEND' || filterOfferType === 'HC_NUIT_WEEKEND') return ['hc_price', 'hp_price', 'hc_price_weekend', 'hp_price_weekend']
+  const getRequiredPriceFields = (offerType?: string): string[] => {
+    const type = offerType || filterOfferType
+    if (type === 'BASE') return ['base_price']
+    if (type === 'HC_HP') return ['hc_price', 'hp_price']
+    if (type === 'TEMPO') return ['tempo_blue_hc', 'tempo_blue_hp', 'tempo_white_hc', 'tempo_white_hp', 'tempo_red_hc', 'tempo_red_hp']
+    if (type === 'EJP') return ['ejp_normal', 'ejp_peak']
+    if (type === 'ZEN_FLEX' || type === 'SEASONAL') return ['hc_price_summer', 'hp_price_summer', 'hc_price_winter', 'hp_price_winter']
+    if (type === 'ZEN_WEEK_END') return ['base_price', 'base_price_weekend']
+    if (type === 'ZEN_WEEK_END_HP_HC' || type === 'HC_WEEKEND' || type === 'HC_NUIT_WEEKEND') return ['hc_price', 'hp_price', 'hc_price_weekend', 'hp_price_weekend']
 
     // Pour les types non standard, détecter depuis les offres existantes
     const knownPriceFields = [
@@ -777,7 +1105,7 @@ export default function AllOffers() {
       'ejp_normal', 'ejp_peak'
     ]
 
-    const offersOfType = offersArray.filter(o => o.offer_type === filterOfferType)
+    const offersOfType = offersArray.filter(o => o.offer_type === type)
     if (offersOfType.length === 0) return ['base_price'] // fallback
 
     const usedFields = new Set<string>()
@@ -794,14 +1122,14 @@ export default function AllOffers() {
   }
 
   // Vérifier si une nouvelle puissance a tous les champs obligatoires remplis
-  const isNewPowerComplete = (newPower: { power: number; fields: Record<string, string> }): boolean => {
+  const isNewPowerComplete = (newPower: { power: number; fields: Record<string, string>; offer_type?: string }): boolean => {
     // Puissance doit être > 0
     if (!newPower.power || newPower.power <= 0) return false
     // Abonnement obligatoire
     if (!newPower.fields.subscription_price || newPower.fields.subscription_price === '') return false
 
     // Vérifier les champs de prix requis pour ce type d'offre
-    const requiredFields = getRequiredPriceFields()
+    const requiredFields = getRequiredPriceFields(newPower.offer_type)
     for (const field of requiredFields) {
       if (!newPower.fields[field] || newPower.fields[field] === '') return false
     }
@@ -935,6 +1263,23 @@ export default function AllOffers() {
             })()}
           </p>
         </div>
+        {/* Bouton Mode IA (visible en mode édition + fournisseur sélectionné) */}
+        {isEditMode && filterProvider && (
+          <button
+            onClick={() => {
+              setShowAIMode(!showAIMode)
+              setAiImportResult(null)
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              showAIMode
+                ? 'bg-purple-600 text-white hover:bg-purple-700'
+                : 'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/50 border border-purple-200 dark:border-purple-700'
+            }`}
+          >
+            <Sparkles size={16} />
+            Mode IA
+          </button>
+        )}
         {/* Bouton mode lecture/édition */}
         <button
           onClick={() => {
@@ -1084,8 +1429,8 @@ export default function AllOffers() {
             )}
           </div>
 
-          {/* Bouton/Champ ajouter un nouveau fournisseur (uniquement en mode édition) */}
-          {isEditMode && !isAddingProvider && (
+          {/* Bouton/Champ ajouter un nouveau fournisseur (masqué en mode IA) */}
+          {isEditMode && !isAddingProvider && !showAIMode && (
             <button
               onClick={() => {
                 setIsAddingProvider(true)
@@ -1105,6 +1450,129 @@ export default function AllOffers() {
             </button>
           )}
         </div>
+
+        {/* Panneau Mode IA (après le choix de fournisseur) */}
+        {showAIMode && isEditMode && filterProvider && (
+          <div className="border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-purple-50 dark:bg-purple-900/30 px-4 py-3 flex items-center gap-2 border-b border-purple-200 dark:border-purple-700">
+              <Sparkles size={18} className="text-purple-600 dark:text-purple-400" />
+              <h3 className="font-semibold text-purple-800 dark:text-purple-200 text-sm">Import via IA</h3>
+              <span className="text-xs text-purple-600 dark:text-purple-400 ml-auto">
+                Fournisseur : {sortedProviders.find(p => p.id === filterProvider)?.name || '—'}
+              </span>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Étape 1 : Prompt */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    1. Copiez ce prompt dans votre IA préférée
+                  </p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(generateAIPrompt())
+                      toast.success('Prompt copié dans le presse-papier')
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-md hover:bg-purple-700 transition-colors"
+                  >
+                    <Copy size={14} />
+                    Copier le prompt
+                  </button>
+                </div>
+                <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 text-xs text-gray-700 dark:text-gray-300 max-h-48 overflow-y-auto whitespace-pre-wrap font-mono">
+                  {generateAIPrompt()}
+                </pre>
+              </div>
+
+              {/* Conseils sur les sources et vérification */}
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-3">
+                <p className="text-xs font-medium text-amber-800 dark:text-amber-300 mb-1.5 flex items-center gap-1.5">
+                  <AlertCircle size={14} />
+                  Conseils pour de meilleurs résultats
+                </p>
+                <ul className="text-xs text-amber-700 dark:text-amber-400 space-y-1 ml-5 list-disc">
+                  <li>Privilégiez une <strong>page web</strong> ou une <strong>capture d'écran</strong> comme source</li>
+                  <li>Les <strong>PDF</strong> sont difficiles à lire pour les IA (colonnes mélangées, tableaux mal interprétés)</li>
+                  <li>Dans tous les cas, <strong>vérifiez toujours les tarifs proposés</strong> avant de soumettre</li>
+                </ul>
+              </div>
+
+              {/* Étape 2 : JSON input */}
+              <div>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  2. Collez le JSON généré par l'IA
+                </p>
+                <textarea
+                  value={aiJsonInput}
+                  onChange={(e) => setAiJsonInput(e.target.value)}
+                  placeholder='{ "offers": [ ... ] }'
+                  className="w-full h-40 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 text-xs font-mono text-gray-700 dark:text-gray-300 resize-y focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                />
+              </div>
+
+              {/* Résultat de l'import */}
+              {aiImportResult && (
+                <div className={`rounded-lg border p-3 text-sm ${
+                  aiImportResult.success
+                    ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300'
+                    : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
+                }`}>
+                  <p className="font-medium mb-1">{aiImportResult.success ? '✅' : '❌'} {aiImportResult.message}</p>
+                  {aiImportResult.details && aiImportResult.details.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {aiImportResult.details.map((d, i) => (
+                        <li key={i} className="text-xs">
+                          <span className="font-medium">{d.offer_name}</span>
+                          <span className="text-gray-500 dark:text-gray-400"> ({d.offer_type})</span>
+                          {' : '}
+                          {d.deprecated ? (
+                            <span className="text-orange-600 dark:text-orange-400 font-medium">obsolète — suppression proposée</span>
+                          ) : (
+                            <>
+                              {d.matched > 0 && <span>{d.matched} mise(s) à jour</span>}
+                              {d.matched > 0 && d.added > 0 && ', '}
+                              {d.added > 0 && <span className="text-blue-500">{d.added} nouvelle(s) puissance(s)</span>}
+                              {d.matched === 0 && d.added === 0 && <span className="text-gray-400">aucune correspondance</span>}
+                            </>
+                          )}
+                          {d.warning && (
+                            <span className="block mt-0.5 text-amber-600 dark:text-amber-400">
+                              ⚠️ {d.warning}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {/* Boutons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowAIMode(false)
+                    setAiJsonInput('')
+                    setAiImportResult(null)
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Fermer
+                </button>
+                <button
+                  onClick={importAIJson}
+                  disabled={!aiJsonInput.trim()}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Sparkles size={16} />
+                  Importer
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Formulaire nouveau fournisseur (remplace la sélection de type d'offre) */}
         {isAddingProvider && (
@@ -1191,8 +1659,8 @@ export default function AllOffers() {
           </div>
         )}
 
-        {/* Type d'offre - Boutons dynamiques (masqué si ajout de fournisseur) */}
-        {!isAddingProvider && filterProvider && (
+        {/* Type d'offre - Boutons dynamiques (masqué si ajout de fournisseur ou mode IA) */}
+        {!isAddingProvider && !showAIMode && filterProvider && (
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Type d'offre</label>
 
@@ -1331,6 +1799,9 @@ export default function AllOffers() {
         )}
 
       </div>
+
+      {/* Contenu masqué en mode IA */}
+      {!showAIMode && (<>
 
       {/* Bloc d'information sur le type d'offre sélectionné */}
       {filterOfferType && filterOfferType !== 'all' && (
@@ -2561,9 +3032,10 @@ export default function AllOffers() {
 
           {/* Lignes des nouvelles puissances ajoutées (uniquement en mode édition) */}
           {isEditMode && newPowersData.map((newPower, index) => {
-            const isDuplicate = isPowerAlreadyUsed(newPower.power, index)
+            const isDuplicate = isPowerAlreadyUsed(newPower.power, index, newPower.offer_type, newPower.offer_name)
             const isIncomplete = !isNewPowerComplete(newPower)
             const hasError = isDuplicate || isIncomplete
+            const effectiveType = newPower.offer_type || filterOfferType
             return (
             <div
               key={`new-power-${index}`}
@@ -2581,6 +3053,9 @@ export default function AllOffers() {
                   <div className="flex items-center gap-2">
                     <Plus size={16} className={hasError ? (isDuplicate ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400') : 'text-green-600 dark:text-green-400'} />
                     <h4 className={`font-medium text-sm ${hasError ? (isDuplicate ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300') : 'text-green-700 dark:text-green-300'}`}>Nouvelle puissance</h4>
+                    {newPower.offer_type && (
+                      <span className="text-xs text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 px-1.5 py-0.5 rounded shrink-0">{newPower.offer_type}</span>
+                    )}
                     {isDuplicate ? (
                       <span className="text-xs text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded shrink-0">Existe déjà</span>
                     ) : isIncomplete ? (
@@ -2632,9 +3107,9 @@ export default function AllOffers() {
                   </div>
                 </div>
 
-                {/* Tarifs selon le type d'offre */}
+                {/* Tarifs selon le type d'offre (effectiveType = offer_type IA ou filterOfferType) */}
                 <div className="flex flex-wrap gap-x-3 gap-y-1 justify-end pr-4 flex-1">
-                  {filterOfferType === 'BASE' && (
+                  {effectiveType === 'BASE' && (
                     <div className="flex items-center gap-2 w-[200px]">
                       <span className="text-sm font-semibold w-10 shrink-0 text-right text-gray-600 dark:text-gray-400">Base<span className="text-red-500">*</span></span>
                       <input
@@ -2655,7 +3130,7 @@ export default function AllOffers() {
                     </div>
                   )}
 
-                  {filterOfferType === 'HC_HP' && (
+                  {effectiveType === 'HC_HP' && (
                     <>
                       <div className="flex items-center gap-2 w-[200px]">
                         <span className="text-sm font-semibold w-10 shrink-0 text-right text-blue-600 dark:text-blue-400">HC<span className="text-red-500">*</span></span>
@@ -2696,13 +3171,13 @@ export default function AllOffers() {
                     </>
                   )}
 
-                  {filterOfferType === 'TEMPO' && (
+                  {effectiveType === 'TEMPO' && (
                     <div className="text-sm text-gray-500 dark:text-gray-400 italic">
                       Tarifs Tempo à renseigner après validation
                     </div>
                   )}
 
-                  {(filterOfferType === 'ZEN_WEEK_END' || filterOfferType === 'ZEN_WEEK_END_HP_HC' || filterOfferType === 'ZEN_FLEX' || filterOfferType === 'SEASONAL' || filterOfferType === 'EJP') && (
+                  {(effectiveType === 'ZEN_WEEK_END' || effectiveType === 'ZEN_WEEK_END_HP_HC' || effectiveType === 'ZEN_FLEX' || effectiveType === 'SEASONAL' || effectiveType === 'EJP') && (
                     <div className="text-sm text-gray-500 dark:text-gray-400 italic">
                       Tarifs spécifiques à renseigner après validation
                     </div>
@@ -3073,6 +3548,8 @@ export default function AllOffers() {
         </div>
       ) : null}
 
+      </>)}
+
       {/* Modal de récapitulatif */}
       {showRecapModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -3107,9 +3584,17 @@ export default function AllOffers() {
               <div className="space-y-4">
                 {/* Modifications de tarifs — regroupées par offre */}
                 {(() => {
-                  // Regrouper les offres modifiées par clean name
-                  const groups: Record<string, typeof modifiedOffers> = {}
-                  for (const offer of modifiedOffers) {
+                  // Toutes les offres modifiées du fournisseur (tous types confondus)
+                  const allModifiedOffers = offersArray
+                    .filter(o => o.provider_id === filterProvider && isOfferModified(o))
+                    .sort((a, b) => {
+                      const powerA = a.power_kva || parseInt(a.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
+                      const powerB = b.power_kva || parseInt(b.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
+                      return powerA - powerB
+                    })
+                  // Regrouper par clean name
+                  const groups: Record<string, typeof allModifiedOffers> = {}
+                  for (const offer of allModifiedOffers) {
                     const edited = editedOffers[offer.id] || {}
                     const hasRealChanges = Object.entries(edited).some(([key, value]) => {
                       const orig = Number((offer as unknown as Record<string, unknown>)[key])
@@ -3187,6 +3672,30 @@ export default function AllOffers() {
                   </div>
                 )}
 
+                {/* Offres signalées comme deprecated par l'IA */}
+                {deprecatedOffers.length > 0 && (
+                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800 overflow-hidden">
+                    <div className="px-4 py-2.5 bg-orange-100 dark:bg-orange-900/40 font-semibold text-sm text-orange-800 dark:text-orange-300 border-b border-orange-200 dark:border-orange-700 flex items-center gap-2">
+                      <Trash2 size={14} />
+                      Offres obsolètes signalées par l'IA ({deprecatedOffers.reduce((sum, d) => sum + d.offer_ids.length, 0)})
+                    </div>
+                    <div className="divide-y divide-orange-200 dark:divide-orange-800">
+                      {deprecatedOffers.map((dep, index) => (
+                        <div key={`deprecated-${index}`} className="px-4 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-orange-700 dark:text-orange-300">{dep.offer_name}</span>
+                            <span className="text-xs bg-orange-200 dark:bg-orange-800 text-orange-700 dark:text-orange-300 px-1.5 py-0.5 rounded">{dep.offer_type}</span>
+                            <span className="text-xs text-orange-500 dark:text-orange-400 ml-auto">{dep.offer_ids.length} offre{dep.offer_ids.length > 1 ? 's' : ''}</span>
+                          </div>
+                          {dep.warning && (
+                            <p className="text-xs text-orange-600 dark:text-orange-400 mt-1 italic">{dep.warning}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Modifications de puissances */}
                 {(newPowersData.length > 0 || powersToRemove.length > 0) && (
                   <div className="bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -3208,7 +3717,12 @@ export default function AllOffers() {
                       {newPowersData.map((newPower, index) => (
                         <div key={`add-${index}`} className="px-4 py-2">
                           <div className="flex items-center justify-between text-green-600 dark:text-green-400">
-                            <span className="text-xs flex items-center gap-1"><Plus size={12} /> Ajouter</span>
+                            <span className="text-xs flex items-center gap-1">
+                              <Plus size={12} /> Ajouter
+                              {newPower.offer_type && (
+                                <span className="text-purple-500 dark:text-purple-400 ml-1">({newPower.offer_type})</span>
+                              )}
+                            </span>
                             <span className="text-xs font-semibold">{newPower.power} kVA</span>
                           </div>
                           <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
@@ -3354,6 +3868,7 @@ export default function AllOffers() {
                   setProvidersToRemove([])
                   setNewGroups([])
                   setEditedOfferNames({})
+                  setDeprecatedOffers([])
                   setShowRecapModal(false)
                 }}
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg transition-colors"
