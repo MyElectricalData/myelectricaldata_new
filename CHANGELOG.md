@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.16.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.15.0...1.16.0) (2026-02-02)
+
+### Features
+
+* add valid_from date handling in contributions and offers ([473c812](https://github.com/MyElectricalData/myelectricaldata_new/commit/473c812adcc4cad47c941309c34c0533f8bded4f))
+
 ## [1.15.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.14.0...1.15.0) (2026-02-02)
 
 ### Features
