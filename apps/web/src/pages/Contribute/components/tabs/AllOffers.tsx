@@ -93,6 +93,7 @@ export default function AllOffers() {
       offer_name: string
       matched: number
       added: number
+      deprecated?: boolean
       warning?: string
     }>
   } | null>(null)
@@ -1019,8 +1020,6 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
       const powerB = b.power_kva || parseInt(b.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
       return powerA - powerB
     })
-
-  const modifiedOffers = providerOffers.filter(offer => isOfferModified(offer))
 
   // Regrouper les offres par nom (clean name)
   const groupedOffers = useMemo(() => {

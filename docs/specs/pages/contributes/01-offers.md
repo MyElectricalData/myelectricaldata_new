@@ -628,6 +628,7 @@ Permet d'importer les tarifs d'un fournisseur via un JSON genere par une IA exte
       "offer_type": "BASE",
       "valid_from": "2025-02-01",
       "warning": "optionnel",
+      "deprecated": false,
       "power_variants": [
         {
           "power_kva": 6,
@@ -640,6 +641,8 @@ Permet d'importer les tarifs d'un fournisseur via un JSON genere par une IA exte
 }
 ```
 
+Le champ `deprecated: true` permet a l'IA de signaler des offres qui n'existent plus chez le fournisseur. Ces offres sont affichees en orange dans le panneau de resultat et proposees a la suppression dans le recapitulatif.
+
 **Logique d'import (`importAIJson`) :**
 
 - Nettoyage automatique des blocs markdown (` ```json ... ``` `)
@@ -647,8 +650,27 @@ Permet d'importer les tarifs d'un fournisseur via un JSON genere par une IA exte
 - Pour chaque variante de puissance :
   - Si match par `power_kva` dans les offres existantes du fournisseur : injection dans `editedOffers`
   - Si pas de match : ajout dans `newPowersData`
-- Rapport detaille par offre (matched, added, warnings)
+- Offres avec `deprecated: true` : stockees dans `deprecatedOffers` et proposees a la suppression
+- Rapport detaille par offre (matched, added, deprecated, warnings)
 - Si import multi-types : passage automatique du filtre en "all"
+
+**Detection d'offres obsoletes :**
+
+Le prompt demande a l'IA de comparer les offres trouvees avec celles existantes. Si une offre n'existe plus, l'IA la retourne avec `deprecated: true`. Ces offres sont :
+
+- Affichees en orange dans le resultat d'import ("obsolete - suppression proposee")
+- Stockees dans le state `deprecatedOffers`
+- Affichees dans le recapitulatif avant soumission (section orange avec icone Trash2)
+- Soumises comme demande de suppression via l'endpoint batch
+
+**Conseils source de donnees :**
+
+Un encadre amber est affiche entre le prompt et la zone de saisie JSON avec des conseils :
+
+- Page HTML ou lien web : source la plus fiable
+- Image (capture d'ecran) : bonne alternative
+- PDF : difficile a lire pour les IA (colonnes melangees, tableaux mal interpretes)
+- Rappel : toujours verifier les tarifs avant de soumettre
 
 **States :**
 
@@ -663,9 +685,16 @@ const [aiImportResult, setAiImportResult] = useState<{
     offer_name: string
     matched: number
     added: number
+    deprecated?: boolean
     warning?: string
   }>
 } | null>(null)
+const [deprecatedOffers, setDeprecatedOffers] = useState<Array<{
+  offer_type: string
+  offer_name: string
+  offer_ids: string[]
+  warning: string
+}>>([])
 ```
 
 **UI :**
@@ -694,4 +723,28 @@ const [aiImportResult, setAiImportResult] = useState<{
    - Ajouter une ou plusieurs puissances (bouton "Ajouter une puissance")
 6. Renseigner le lien vers la fiche tarifaire officielle (optionnel pour admin/moderateur)
 7. Cliquer sur "Envoyer les contributions"
-8. Les contributions sont soumises et apparaissent dans "Mes contributions"
+8. Les contributions sont soumises en batch et apparaissent dans "Mes contributions"
+
+## Soumission batch
+
+Les contributions sont envoyees en un seul appel API (`POST /energy/contribute/batch`) au lieu d'un appel par modification. Cela permet :
+
+- **Une seule notification Slack** regroupant toutes les modifications par type (mises a jour, nouvelles offres, suppressions)
+- **Un seul email** aux administrateurs avec un tableau recapitulatif
+- **Une seule transaction** base de donnees pour l'ensemble du lot
+- **Un rapport** avec le nombre de contributions creees et les eventuelles erreurs
+
+**Endpoint batch :**
+
+```text
+POST /energy/contribute/batch
+Body: { "contributions": [...], "price_sheet_url": "..." }
+Response: { "created": 96, "errors": 0, "error_details": [], "message": "..." }
+```
+
+**Types de contributions dans le batch :**
+
+- Modifications de tarifs existants (match par `existing_offer_id`)
+- Nouvelles puissances (`power_variants` sans `existing_offer_id`)
+- Suppressions de fournisseurs (`offer_name` contient `[SUPPRESSION FOURNISSEUR]`)
+- Offres obsoletes (`offer_name` contient `[SUPPRESSION]`, `power_kva: 0`)
