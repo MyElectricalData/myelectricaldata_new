@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.15.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.14.0...1.15.0) (2026-02-02)
+
+### Features
+
+* améliorer la logique de suppression des offres avec plusieurs méthodes de recherche ([4405e22](https://github.com/MyElectricalData/myelectricaldata_new/commit/4405e222147d65a447b04e7846a0d06e85c57c6b))
+
 ## [1.14.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.13.0...1.14.0) (2026-02-02)
 
 ### Features
