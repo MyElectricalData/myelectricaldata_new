@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.18.0...1.18.1) (2026-02-05)
+
+### Refactoring
+
+* Simulator component: rename showOnlyRecent to showOldOffers and update related logic; enhance container runtime detection in scripts; remove UFC Que Choisir documentation; update README for offers; improve frontend and backend watch scripts for container compatibility. ([ebd8f7e](https://github.com/MyElectricalData/myelectricaldata_new/commit/ebd8f7e47128555fc961a6dea0a5f9de9b62adfd))
+
 ## [1.18.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.17.0...1.18.0) (2026-02-02)
 
 ### Features
