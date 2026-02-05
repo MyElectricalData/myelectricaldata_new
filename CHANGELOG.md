@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.18.1...1.18.2) (2026-02-05)
+
+### Refactoring
+
+* supprimer l'offre UFC de la configuration des sidebars ([48c677e](https://github.com/MyElectricalData/myelectricaldata_new/commit/48c677e54106e10104ba13c150550859fe5bb44f))
+
 ## [1.18.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.18.0...1.18.1) (2026-02-05)
 
 ### Refactoring
