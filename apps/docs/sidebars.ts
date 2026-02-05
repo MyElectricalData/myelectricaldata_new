@@ -133,7 +133,6 @@ const sidebars: SidebarsConfig = {
         "server-mode/offers/octopus",
         "server-mode/offers/primeo",
         "server-mode/offers/totalenergies",
-        "server-mode/offers/ufc",
         "server-mode/offers/vattenfall",
       ],
     },
