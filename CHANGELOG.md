@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.17.0...1.18.0) (2026-02-02)
+
+### Features
+
+* ajouter des champs pour la source de données et la date d'extraction dans le JSON des offres ([02aa60f](https://github.com/MyElectricalData/myelectricaldata_new/commit/02aa60fb0a97441dadba8d05a1cc54a20a7f2f85))
+
 ## [1.17.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.16.0...1.17.0) (2026-02-02)
 
 ### Features
