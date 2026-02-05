@@ -59,7 +59,7 @@ Structure de donnees pour une offre:
 | [Ekwateur](./ekwateur.md) | `ekwateur_scraper.py` | Site web | 100% vert |
 | [Vattenfall](./vattenfall.md) | `vattenfall_scraper.py` | PDF officiel | 100% vert |
 | [Octopus Energy](./octopus.md) | `octopus_scraper.py` | HelloWatt | Marche |
-| [UFC Que Choisir](./ufc.md) | `ufc_scraper.py` | PDF officiel | EMCE via Octopus |
+
 | [Mint Energie](./mint.md) | `mint_scraper.py` | PDF officiel | 100% vert |
 
 ## Mise a jour des tarifs

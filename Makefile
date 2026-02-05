@@ -1,13 +1,23 @@
 # Makefile for MyElectricalData project
 # Usage: make [target]
 
+# Container Runtime Detection
+# Supports: docker, nerdctl (containerd/Rancher Desktop)
+# Priority: first runtime with a working daemon wins
+# Override: make CONTAINER_RT=nerdctl <target>
+CONTAINER_RT ?= $(shell docker info >/dev/null 2>&1 && echo "docker" || { nerdctl info >/dev/null 2>&1 && echo "nerdctl" || echo "docker"; })
+
+# Runtime capability flags
+RUNTIME_IS_NERDCTL := $(if $(filter nerdctl,$(CONTAINER_RT)),true,)
+HAS_BUILDX := $(if $(RUNTIME_IS_NERDCTL),,$(shell $(CONTAINER_RT) buildx version >/dev/null 2>&1 && echo yes))
+
 # Variables
 # Development uses dev/ folder, production uses root
-COMPOSE = docker compose -f dev/docker-compose.yml
-COMPOSE_SERVER = docker compose -f dev/docker-compose.server.yml
+COMPOSE = $(CONTAINER_RT) compose -f dev/docker-compose.yml
+COMPOSE_SERVER = $(CONTAINER_RT) compose -f dev/docker-compose.server.yml
 # Production compose files (at root)
-COMPOSE_PROD = docker compose
-COMPOSE_PROD_SERVER = docker compose -f docker-compose.server.yml
+COMPOSE_PROD = $(CONTAINER_RT) compose
+COMPOSE_PROD_SERVER = $(CONTAINER_RT) compose -f docker-compose.server.yml
 WATCH_SCRIPT = ./watch-backend.sh
 LOG_DIR = ./tmp
 LOG_FILE = $(LOG_DIR)/watch-backend.log
@@ -42,6 +52,7 @@ NC = \033[0m # No Color
 ## Help
 help:
 	@echo "$(GREEN)MyElectricalData - Makefile Commands$(NC)"
+	@echo "$(YELLOW)Runtime: $(CONTAINER_RT) | buildx: $(if $(HAS_BUILDX),oui,non)$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Development:$(NC)"
 	@echo "  make dev          - Start development environment with hot reload watching"
@@ -286,9 +297,11 @@ rebuild:
 
 ## Check dependencies
 check-deps:
-	@command -v docker >/dev/null 2>&1 || { echo "$(RED)Docker is required but not installed$(NC)"; exit 1; }
-	@command -v docker compose >/dev/null 2>&1 || { echo "$(RED)Docker Compose is required but not installed$(NC)"; exit 1; }
-	@echo "$(GREEN)Dependencies OK$(NC)"
+	@if ! command -v docker >/dev/null 2>&1 && ! command -v nerdctl >/dev/null 2>&1; then \
+		echo "$(RED)Docker ou nerdctl est requis$(NC)"; exit 1; \
+	fi
+	@$(CONTAINER_RT) compose version >/dev/null 2>&1 || { echo "$(RED)$(CONTAINER_RT) compose est requis$(NC)"; exit 1; }
+	@echo "$(GREEN)Runtime: $(CONTAINER_RT) | buildx: $(if $(HAS_BUILDX),oui,non)$(NC)"
 
 ## Install fswatch for better file watching on macOS
 install-fswatch:
@@ -332,9 +345,9 @@ docs-down:
 ## Login to GitHub Container Registry
 docker-login:
 	@echo "$(GREEN)Logging in to GitHub Container Registry...$(NC)"
-	@echo "$(YELLOW)Make sure GITHUB_TOKEN is set or use: echo \$$GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin$(NC)"
+	@echo "$(YELLOW)Make sure GITHUB_TOKEN is set or use: echo \$$GITHUB_TOKEN | $(CONTAINER_RT) login ghcr.io -u USERNAME --password-stdin$(NC)"
 	@if [ -n "$$GITHUB_TOKEN" ]; then \
-		echo "$$GITHUB_TOKEN" | docker login $(REGISTRY) -u $(GITHUB_ORG) --password-stdin; \
+		echo "$$GITHUB_TOKEN" | $(CONTAINER_RT) login $(REGISTRY) -u $(GITHUB_ORG) --password-stdin; \
 		echo "$(GREEN)Logged in to $(REGISTRY)$(NC)"; \
 	else \
 		echo "$(RED)GITHUB_TOKEN not set. Please set it or login manually:$(NC)"; \
@@ -346,7 +359,7 @@ docker-login:
 ## Build backend Docker image
 docker-build-backend:
 	@echo "$(GREEN)Building backend image: $(IMAGE_BACKEND):$(VERSION)$(NC)"
-	docker build -t $(IMAGE_BACKEND):$(VERSION) \
+	$(CONTAINER_RT) build -t $(IMAGE_BACKEND):$(VERSION) \
 		-t $(IMAGE_BACKEND):latest \
 		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
 		--label "org.opencontainers.image.revision=$(GIT_COMMIT)" \
@@ -357,7 +370,7 @@ docker-build-backend:
 ## Build frontend Docker image
 docker-build-frontend:
 	@echo "$(GREEN)Building frontend image: $(IMAGE_FRONTEND):$(VERSION)$(NC)"
-	docker build -t $(IMAGE_FRONTEND):$(VERSION) \
+	$(CONTAINER_RT) build -t $(IMAGE_FRONTEND):$(VERSION) \
 		-t $(IMAGE_FRONTEND):latest \
 		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
 		--label "org.opencontainers.image.revision=$(GIT_COMMIT)" \
@@ -372,15 +385,15 @@ docker-build: docker-build-backend docker-build-frontend
 ## Push backend Docker image to registry
 docker-push-backend:
 	@echo "$(GREEN)Pushing backend image: $(IMAGE_BACKEND):$(VERSION)$(NC)"
-	docker push $(IMAGE_BACKEND):$(VERSION)
-	docker push $(IMAGE_BACKEND):latest
+	$(CONTAINER_RT) push $(IMAGE_BACKEND):$(VERSION)
+	$(CONTAINER_RT) push $(IMAGE_BACKEND):latest
 	@echo "$(GREEN)Backend image pushed$(NC)"
 
 ## Push frontend Docker image to registry
 docker-push-frontend:
 	@echo "$(GREEN)Pushing frontend image: $(IMAGE_FRONTEND):$(VERSION)$(NC)"
-	docker push $(IMAGE_FRONTEND):$(VERSION)
-	docker push $(IMAGE_FRONTEND):latest
+	$(CONTAINER_RT) push $(IMAGE_FRONTEND):$(VERSION)
+	$(CONTAINER_RT) push $(IMAGE_FRONTEND):latest
 	@echo "$(GREEN)Frontend image pushed$(NC)"
 
 ## Push all Docker images to registry
@@ -399,10 +412,12 @@ docker-release: docker-build docker-push
 	@echo "$(GREEN)==================================================$(NC)"
 
 ## Build multi-platform images and push (for production releases)
+## Nécessite Docker avec buildx. Non supporté par nerdctl → utiliser docker-release-ci
 docker-release-multiarch: docker-login
+ifdef HAS_BUILDX
 	@echo "$(GREEN)Building and pushing multi-platform images...$(NC)"
 	@echo "$(YELLOW)Platforms: $(PLATFORMS)$(NC)"
-	docker buildx build --platform $(PLATFORMS) \
+	$(CONTAINER_RT) buildx build --platform $(PLATFORMS) \
 		-t $(IMAGE_BACKEND):$(VERSION) \
 		-t $(IMAGE_BACKEND):latest \
 		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
@@ -410,7 +425,7 @@ docker-release-multiarch: docker-login
 		--label "org.opencontainers.image.version=$(VERSION)" \
 		--push \
 		./apps/api
-	docker buildx build --platform $(PLATFORMS) \
+	$(CONTAINER_RT) buildx build --platform $(PLATFORMS) \
 		-t $(IMAGE_FRONTEND):$(VERSION) \
 		-t $(IMAGE_FRONTEND):latest \
 		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
@@ -419,11 +434,19 @@ docker-release-multiarch: docker-login
 		--push \
 		./apps/web
 	@echo "$(GREEN)Multi-platform release complete!$(NC)"
+else
+	@echo "$(RED)buildx non disponible (runtime: $(CONTAINER_RT))$(NC)"
+	@echo "$(YELLOW)Alternatives :$(NC)"
+	@echo "  make docker-release-native   - Build architecture native uniquement"
+	@echo "  make docker-release-ci       - Build multi-arch via GitHub Actions"
+	@exit 1
+endif
 
 ## Build and push amd64 images only (for x86_64 servers)
 docker-release-amd64: docker-login
 	@echo "$(GREEN)Building and pushing amd64 images...$(NC)"
-	docker buildx build --platform linux/amd64 \
+ifdef HAS_BUILDX
+	$(CONTAINER_RT) buildx build --platform linux/amd64 \
 		-t $(IMAGE_BACKEND):$(VERSION) \
 		-t $(IMAGE_BACKEND):latest \
 		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
@@ -431,7 +454,7 @@ docker-release-amd64: docker-login
 		--label "org.opencontainers.image.version=$(VERSION)" \
 		--push \
 		./apps/api
-	docker buildx build --platform linux/amd64 \
+	$(CONTAINER_RT) buildx build --platform linux/amd64 \
 		-t $(IMAGE_FRONTEND):$(VERSION) \
 		-t $(IMAGE_FRONTEND):latest \
 		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
@@ -439,6 +462,26 @@ docker-release-amd64: docker-login
 		--label "org.opencontainers.image.version=$(VERSION)" \
 		--push \
 		./apps/web
+else
+	$(CONTAINER_RT) build --platform linux/amd64 \
+		-t $(IMAGE_BACKEND):$(VERSION) \
+		-t $(IMAGE_BACKEND):latest \
+		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
+		--label "org.opencontainers.image.revision=$(GIT_COMMIT)" \
+		--label "org.opencontainers.image.version=$(VERSION)" \
+		./apps/api
+	$(CONTAINER_RT) push $(IMAGE_BACKEND):$(VERSION)
+	$(CONTAINER_RT) push $(IMAGE_BACKEND):latest
+	$(CONTAINER_RT) build --platform linux/amd64 \
+		-t $(IMAGE_FRONTEND):$(VERSION) \
+		-t $(IMAGE_FRONTEND):latest \
+		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
+		--label "org.opencontainers.image.revision=$(GIT_COMMIT)" \
+		--label "org.opencontainers.image.version=$(VERSION)" \
+		./apps/web
+	$(CONTAINER_RT) push $(IMAGE_FRONTEND):$(VERSION)
+	$(CONTAINER_RT) push $(IMAGE_FRONTEND):latest
+endif
 	@echo "$(GREEN)amd64 release complete!$(NC)"
 	@echo "$(GREEN)Images:$(NC)"
 	@echo "  - $(IMAGE_BACKEND):$(VERSION)"
@@ -447,7 +490,8 @@ docker-release-amd64: docker-login
 ## Build and push arm64 images only (for ARM servers like Raspberry Pi, Apple Silicon)
 docker-release-arm64: docker-login
 	@echo "$(GREEN)Building and pushing arm64 images...$(NC)"
-	docker buildx build --platform linux/arm64 \
+ifdef HAS_BUILDX
+	$(CONTAINER_RT) buildx build --platform linux/arm64 \
 		-t $(IMAGE_BACKEND):$(VERSION) \
 		-t $(IMAGE_BACKEND):latest \
 		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
@@ -455,7 +499,7 @@ docker-release-arm64: docker-login
 		--label "org.opencontainers.image.version=$(VERSION)" \
 		--push \
 		./apps/api
-	docker buildx build --platform linux/arm64 \
+	$(CONTAINER_RT) buildx build --platform linux/arm64 \
 		-t $(IMAGE_FRONTEND):$(VERSION) \
 		-t $(IMAGE_FRONTEND):latest \
 		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
@@ -463,14 +507,40 @@ docker-release-arm64: docker-login
 		--label "org.opencontainers.image.version=$(VERSION)" \
 		--push \
 		./apps/web
+else
+	$(CONTAINER_RT) build --platform linux/arm64 \
+		-t $(IMAGE_BACKEND):$(VERSION) \
+		-t $(IMAGE_BACKEND):latest \
+		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
+		--label "org.opencontainers.image.revision=$(GIT_COMMIT)" \
+		--label "org.opencontainers.image.version=$(VERSION)" \
+		./apps/api
+	$(CONTAINER_RT) push $(IMAGE_BACKEND):$(VERSION)
+	$(CONTAINER_RT) push $(IMAGE_BACKEND):latest
+	$(CONTAINER_RT) build --platform linux/arm64 \
+		-t $(IMAGE_FRONTEND):$(VERSION) \
+		-t $(IMAGE_FRONTEND):latest \
+		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
+		--label "org.opencontainers.image.revision=$(GIT_COMMIT)" \
+		--label "org.opencontainers.image.version=$(VERSION)" \
+		./apps/web
+	$(CONTAINER_RT) push $(IMAGE_FRONTEND):$(VERSION)
+	$(CONTAINER_RT) push $(IMAGE_FRONTEND):latest
+endif
 	@echo "$(GREEN)arm64 release complete!$(NC)"
 
-## Setup buildx for multi-platform builds
+## Setup buildx for multi-platform builds (Docker uniquement)
 docker-buildx-setup:
+ifdef HAS_BUILDX
 	@echo "$(GREEN)Setting up Docker buildx...$(NC)"
-	docker buildx create --name myelectricaldata-builder --use --bootstrap 2>/dev/null || docker buildx use myelectricaldata-builder
-	docker buildx inspect --bootstrap
+	$(CONTAINER_RT) buildx create --name myelectricaldata-builder --use --bootstrap 2>/dev/null || $(CONTAINER_RT) buildx use myelectricaldata-builder
+	$(CONTAINER_RT) buildx inspect --bootstrap
 	@echo "$(GREEN)Buildx ready for multi-platform builds$(NC)"
+else
+	@echo "$(RED)buildx non disponible (runtime: $(CONTAINER_RT))$(NC)"
+	@echo "$(YELLOW)buildx nécessite Docker Engine. nerdctl/Rancher Desktop ne le supporte pas.$(NC)"
+	@exit 1
+endif
 
 ## Trigger GitHub Actions to build multi-arch images (recommended for cross-platform)
 docker-release-ci:
@@ -488,21 +558,25 @@ docker-release-ci:
 ## Build native architecture only (fast, for local testing)
 docker-release-native: docker-login
 	@echo "$(GREEN)Building and pushing native architecture images...$(NC)"
-	docker build -t $(IMAGE_BACKEND):$(VERSION) \
+	$(CONTAINER_RT) build -t $(IMAGE_BACKEND):$(VERSION) \
 		-t $(IMAGE_BACKEND):latest \
 		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
-		--push \
 		./apps/api
-	docker build -t $(IMAGE_FRONTEND):$(VERSION) \
+	$(CONTAINER_RT) push $(IMAGE_BACKEND):$(VERSION)
+	$(CONTAINER_RT) push $(IMAGE_BACKEND):latest
+	$(CONTAINER_RT) build -t $(IMAGE_FRONTEND):$(VERSION) \
 		-t $(IMAGE_FRONTEND):latest \
 		--label "org.opencontainers.image.source=https://github.com/$(GITHUB_ORG)/$(GITHUB_REPO)" \
-		--push \
 		./apps/web
+	$(CONTAINER_RT) push $(IMAGE_FRONTEND):$(VERSION)
+	$(CONTAINER_RT) push $(IMAGE_FRONTEND):latest
 	@echo "$(GREEN)Native release complete!$(NC)"
 
 ## Show current Docker image tags
 docker-info:
 	@echo "$(GREEN)Docker Registry Configuration$(NC)"
+	@echo "  Runtime:      $(CONTAINER_RT)"
+	@echo "  buildx:       $(if $(HAS_BUILDX),oui,non)"
 	@echo "  Registry:     $(REGISTRY)"
 	@echo "  Organization: $(GITHUB_ORG)"
 	@echo "  Version:      $(VERSION)"

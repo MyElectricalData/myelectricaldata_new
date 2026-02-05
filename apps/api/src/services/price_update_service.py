@@ -7,7 +7,7 @@ import uuid
 import logging
 
 from ..models import EnergyProvider, EnergyOffer
-from .price_scrapers import EDFPriceScraper, EnercoopPriceScraper, TotalEnergiesPriceScraper, PrimeoEnergiePriceScraper, EngieScraper, AlpiqScraper, AlternaScraper, EkwateurScraper, OctopusScraper, VattenfallScraper, UFCQueChoisirScraper, MintEnergieScraper
+from .price_scrapers import EDFPriceScraper, EnercoopPriceScraper, TotalEnergiesPriceScraper, PrimeoEnergiePriceScraper, EngieScraper, AlpiqScraper, AlternaScraper, EkwateurScraper, OctopusScraper, VattenfallScraper, MintEnergieScraper
 from .price_scrapers.base import OfferData
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,6 @@ class PriceUpdateService:
         "Ekwateur": EkwateurScraper,
         "Octopus": OctopusScraper,
         "Vattenfall": VattenfallScraper,
-        "UFC Que Choisir": UFCQueChoisirScraper,
         "Mint Énergie": MintEnergieScraper,
     }
 
@@ -44,7 +43,6 @@ class PriceUpdateService:
         "Ekwateur": {"website": "https://ekwateur.fr"},
         "Octopus": {"website": "https://octopusenergy.fr"},
         "Vattenfall": {"website": "https://www.vattenfall.fr"},
-        "UFC Que Choisir": {"website": "https://www.quechoisir.org"},
         "Mint Énergie": {"website": "https://www.mint-energie.com"},
     }
 

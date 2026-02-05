@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Building2, Zap, Tag, X } from 'lucide-react'
 import { energyApi, EnergyOffer } from '@/api/energy'
@@ -110,6 +110,13 @@ export default function OfferSelector({
       .filter(o => o.provider_id === effectiveProviderId && o.offer_type === effectiveOfferType)
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [filteredOffers, effectiveProviderId, effectiveOfferType])
+
+  // Auto-sélection : quand il n'y a qu'une seule offre possible, la sélectionner automatiquement
+  useEffect(() => {
+    if (availableOffers.length === 1 && availableOffers[0].id !== selectedOfferId) {
+      onChange(availableOffers[0].id)
+    }
+  }, [availableOffers, selectedOfferId, onChange])
 
   // Reset offer type when provider changes manually
   const handleProviderChange = (providerId: string | null) => {
@@ -400,8 +407,8 @@ export default function OfferSelector({
 
   return (
     <div className={`space-y-3 ${className}`}>
-      {/* All selectors on one line */}
-      <div className="grid grid-cols-3 gap-2">
+      {/* Fournisseur + Type sur une ligne */}
+      <div className="grid grid-cols-2 gap-2">
         {/* Provider Selector */}
         <div>
           <label className="flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -443,17 +450,19 @@ export default function OfferSelector({
             ))}
           </select>
         </div>
+      </div>
 
-        {/* Offer Selector */}
+      {/* Sélecteur d'offre visible uniquement quand plusieurs offres existent pour la combinaison */}
+      {availableOffers.length > 1 && (
         <div>
           <label className="flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
             <Tag size={12} />
-            Offre
+            Offre ({availableOffers.length} disponibles)
           </label>
           <select
             value={selectedOfferId || ''}
             onChange={(e) => handleOfferChange(e.target.value || null)}
-            disabled={disabled || isLoading || !effectiveProviderId || !effectiveOfferType}
+            disabled={disabled || isLoading}
             className={selectClassName}
           >
             <option value="">--</option>
@@ -464,7 +473,7 @@ export default function OfferSelector({
             ))}
           </select>
         </div>
-      </div>
+      )}
 
       {/* Selected offer summary */}
       {selectedOffer && (
@@ -533,8 +542,8 @@ export default function OfferSelector({
       {/* Help text when no offer selected */}
       {!selectedOffer && !isLoading && (
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          Sélectionnez un fournisseur, puis un type d'offre pour voir les offres disponibles
-          {subscribedPower && ` pour ${subscribedPower} kVA`}.
+          Sélectionnez un fournisseur et un type d'offre.
+          {subscribedPower ? ` L'offre correspondante pour ${subscribedPower} kVA sera automatiquement sélectionnée.` : ' Renseignez aussi la puissance souscrite pour filtrer les offres.'}
         </p>
       )}
     </div>

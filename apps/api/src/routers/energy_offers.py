@@ -111,6 +111,7 @@ async def apply_contribution_changes(
     if contribution.contribution_type in ["NEW_OFFER", "NEW_PROVIDER"]:
         if contribution.power_variants:
             # Format nouveau : une offre par variante de puissance
+            # Les prix peuvent être dans chaque variant (prioritaire) ou dans pricing_data (fallback)
             pricing_common = contribution.pricing_data or {}
             for variant in contribution.power_variants:
                 power_kva = variant.get("power_kva")
@@ -122,25 +123,25 @@ async def apply_contribution_changes(
                     offer_type=contribution.offer_type,
                     description=contribution.description,
                     subscription_price=subscription_price,
-                    base_price=pricing_common.get("base_price"),
-                    hc_price=pricing_common.get("hc_price"),
-                    hp_price=pricing_common.get("hp_price"),
-                    base_price_weekend=pricing_common.get("base_price_weekend"),
-                    hc_price_weekend=pricing_common.get("hc_price_weekend"),
-                    hp_price_weekend=pricing_common.get("hp_price_weekend"),
-                    tempo_blue_hc=pricing_common.get("tempo_blue_hc"),
-                    tempo_blue_hp=pricing_common.get("tempo_blue_hp"),
-                    tempo_white_hc=pricing_common.get("tempo_white_hc"),
-                    tempo_white_hp=pricing_common.get("tempo_white_hp"),
-                    tempo_red_hc=pricing_common.get("tempo_red_hc"),
-                    tempo_red_hp=pricing_common.get("tempo_red_hp"),
-                    ejp_normal=pricing_common.get("ejp_normal"),
-                    ejp_peak=pricing_common.get("ejp_peak"),
-                    hc_price_winter=pricing_common.get("hc_price_winter"),
-                    hp_price_winter=pricing_common.get("hp_price_winter"),
-                    hc_price_summer=pricing_common.get("hc_price_summer"),
-                    hp_price_summer=pricing_common.get("hp_price_summer"),
-                    peak_day_price=pricing_common.get("peak_day_price"),
+                    base_price=variant.get("base_price", pricing_common.get("base_price")),
+                    hc_price=variant.get("hc_price", pricing_common.get("hc_price")),
+                    hp_price=variant.get("hp_price", pricing_common.get("hp_price")),
+                    base_price_weekend=variant.get("base_price_weekend", pricing_common.get("base_price_weekend")),
+                    hc_price_weekend=variant.get("hc_price_weekend", pricing_common.get("hc_price_weekend")),
+                    hp_price_weekend=variant.get("hp_price_weekend", pricing_common.get("hp_price_weekend")),
+                    tempo_blue_hc=variant.get("tempo_blue_hc", pricing_common.get("tempo_blue_hc")),
+                    tempo_blue_hp=variant.get("tempo_blue_hp", pricing_common.get("tempo_blue_hp")),
+                    tempo_white_hc=variant.get("tempo_white_hc", pricing_common.get("tempo_white_hc")),
+                    tempo_white_hp=variant.get("tempo_white_hp", pricing_common.get("tempo_white_hp")),
+                    tempo_red_hc=variant.get("tempo_red_hc", pricing_common.get("tempo_red_hc")),
+                    tempo_red_hp=variant.get("tempo_red_hp", pricing_common.get("tempo_red_hp")),
+                    ejp_normal=variant.get("ejp_normal", pricing_common.get("ejp_normal")),
+                    ejp_peak=variant.get("ejp_peak", pricing_common.get("ejp_peak")),
+                    hc_price_winter=variant.get("hc_price_winter", pricing_common.get("hc_price_winter")),
+                    hp_price_winter=variant.get("hp_price_winter", pricing_common.get("hp_price_winter")),
+                    hc_price_summer=variant.get("hc_price_summer", pricing_common.get("hc_price_summer")),
+                    hp_price_summer=variant.get("hp_price_summer", pricing_common.get("hp_price_summer")),
+                    peak_day_price=variant.get("peak_day_price", pricing_common.get("peak_day_price")),
                     hc_schedules=contribution.hc_schedules,
                     power_kva=power_kva,
                     valid_from=valid_from_date,
@@ -151,6 +152,19 @@ async def apply_contribution_changes(
         else:
             # Format legacy : une seule offre
             pricing = contribution.pricing_data or {}
+
+            # Extraire valid_to de pricing_data si présent (offres historiques)
+            valid_to_date = None
+            valid_to_raw = pricing.pop("valid_to", None)
+            if valid_to_raw:
+                try:
+                    if isinstance(valid_to_raw, str):
+                        valid_to_date = datetime.fromisoformat(valid_to_raw.replace("Z", "+00:00"))
+                        if valid_to_date.tzinfo is None:
+                            valid_to_date = valid_to_date.replace(tzinfo=UTC)
+                except (ValueError, TypeError):
+                    logger.warning(f"[CONTRIBUTION] Invalid valid_to format: {valid_to_raw}")
+
             offer = EnergyOffer(
                 provider_id=provider_id,
                 name=contribution.offer_name,
@@ -168,13 +182,24 @@ async def apply_contribution_changes(
                 tempo_red_hp=pricing.get("tempo_red_hp"),
                 ejp_normal=pricing.get("ejp_normal"),
                 ejp_peak=pricing.get("ejp_peak"),
+                base_price_weekend=pricing.get("base_price_weekend"),
+                hc_price_weekend=pricing.get("hc_price_weekend"),
+                hp_price_weekend=pricing.get("hp_price_weekend"),
+                hc_price_winter=pricing.get("hc_price_winter"),
+                hp_price_winter=pricing.get("hp_price_winter"),
+                hc_price_summer=pricing.get("hc_price_summer"),
+                hp_price_summer=pricing.get("hp_price_summer"),
+                peak_day_price=pricing.get("peak_day_price"),
                 hc_schedules=contribution.hc_schedules,
                 power_kva=contribution.power_kva,
                 valid_from=valid_from_date,
+                valid_to=valid_to_date,
                 offer_url=contribution.price_sheet_url,
                 price_updated_at=datetime.now(UTC),
             )
             db.add(offer)
+            if valid_to_date:
+                logger.info(f"[CONTRIBUTION] Created historical offer: {contribution.offer_name} valid_to={valid_to_date}")
 
     elif contribution.contribution_type == "UPDATE_OFFER":
         if contribution.offer_name and "[SUPPRESSION FOURNISSEUR]" in contribution.offer_name:
@@ -228,10 +253,12 @@ async def apply_contribution_changes(
                 offer_to_delete = offers_found[0] if offers_found else None
 
             if offer_to_delete:
-                await db.delete(offer_to_delete)
+                # Marquer comme expirée au lieu de supprimer (conservation de l'historique)
+                offer_to_delete.valid_to = datetime.now(UTC)
+                offer_to_delete.updated_at = datetime.now(UTC)
                 logger.info(
-                    f"[CONTRIBUTION] Deleted offer: provider={contribution.existing_provider_id}, "
-                    f"type={contribution.offer_type}, power={contribution.power_kva} kVA, offer_id={offer_to_delete.id}"
+                    f"[CONTRIBUTION] Désactivation offre (suppression): {offer_to_delete.name} (id={offer_to_delete.id}) "
+                    f"- valid_to={offer_to_delete.valid_to}"
                 )
 
         elif contribution.existing_offer_id:
@@ -257,6 +284,14 @@ async def apply_contribution_changes(
                 offer.tempo_red_hp = pricing.get("tempo_red_hp")
                 offer.ejp_normal = pricing.get("ejp_normal")
                 offer.ejp_peak = pricing.get("ejp_peak")
+                offer.base_price_weekend = pricing.get("base_price_weekend")
+                offer.hc_price_weekend = pricing.get("hc_price_weekend")
+                offer.hp_price_weekend = pricing.get("hp_price_weekend")
+                offer.hc_price_winter = pricing.get("hc_price_winter")
+                offer.hp_price_winter = pricing.get("hp_price_winter")
+                offer.hc_price_summer = pricing.get("hc_price_summer")
+                offer.hp_price_summer = pricing.get("hp_price_summer")
+                offer.peak_day_price = pricing.get("peak_day_price")
                 offer.hc_schedules = contribution.hc_schedules
                 offer.updated_at = datetime.now(UTC)
 
@@ -529,6 +564,13 @@ async def create_contributions_batch(
                     errors.append(f"Contribution {i + 1}: power_variants invalide")
                     continue
 
+            # Vérifier que existing_offer_id existe en DB (sinon FK violation)
+            raw_offer_id = contribution_data.get("existing_offer_id")
+            if raw_offer_id:
+                offer_check = await db.execute(select(EnergyOffer).where(EnergyOffer.id == raw_offer_id))
+                if not offer_check.scalar_one_or_none():
+                    raw_offer_id = None
+
             contribution = OfferContribution(
                 contributor_user_id=current_user.id,
                 contribution_type=contribution_data.get("contribution_type", "NEW_OFFER"),
@@ -536,7 +578,7 @@ async def create_contributions_batch(
                 provider_name=contribution_data.get("provider_name"),
                 provider_website=contribution_data.get("provider_website"),
                 existing_provider_id=contribution_data.get("existing_provider_id"),
-                existing_offer_id=contribution_data.get("existing_offer_id"),
+                existing_offer_id=raw_offer_id,
                 offer_name=contribution_data["offer_name"],
                 offer_type=contribution_data["offer_type"],
                 description=contribution_data.get("description"),
@@ -1188,6 +1230,9 @@ async def bulk_approve_contributions(
     processed = 0
     skipped = 0
     errors = []
+    email_errors = []
+    # Regrouper les contributions approuvées par contributeur pour envoyer 1 email par personne
+    approved_by_contributor: dict[str, tuple[User, list[OfferContribution]]] = {}
 
     for contribution_id in contribution_ids:
         try:
@@ -1236,6 +1281,20 @@ async def bulk_approve_contributions(
 
             if contribution.contribution_type in ["NEW_OFFER", "NEW_PROVIDER"]:
                 # Create new offer
+                valid_from_date = contribution.valid_from or datetime.now(UTC)
+
+                # Extraire valid_to de pricing_data si présent (offres historiques)
+                valid_to_date = None
+                valid_to_raw = pricing.pop("valid_to", None) if pricing else None
+                if valid_to_raw:
+                    try:
+                        if isinstance(valid_to_raw, str):
+                            valid_to_date = datetime.fromisoformat(valid_to_raw.replace("Z", "+00:00"))
+                            if valid_to_date.tzinfo is None:
+                                valid_to_date = valid_to_date.replace(tzinfo=UTC)
+                    except (ValueError, TypeError):
+                        logger.warning(f"[BULK APPROVE] Invalid valid_to format: {valid_to_raw}")
+
                 offer = EnergyOffer(
                     provider_id=provider_id,
                     name=contribution.offer_name,
@@ -1245,6 +1304,9 @@ async def bulk_approve_contributions(
                     base_price=pricing.get("base_price"),
                     hc_price=pricing.get("hc_price"),
                     hp_price=pricing.get("hp_price"),
+                    base_price_weekend=pricing.get("base_price_weekend"),
+                    hc_price_weekend=pricing.get("hc_price_weekend"),
+                    hp_price_weekend=pricing.get("hp_price_weekend"),
                     tempo_blue_hc=pricing.get("tempo_blue_hc"),
                     tempo_blue_hp=pricing.get("tempo_blue_hp"),
                     tempo_white_hc=pricing.get("tempo_white_hc"),
@@ -1253,10 +1315,21 @@ async def bulk_approve_contributions(
                     tempo_red_hp=pricing.get("tempo_red_hp"),
                     ejp_normal=pricing.get("ejp_normal"),
                     ejp_peak=pricing.get("ejp_peak"),
+                    hc_price_winter=pricing.get("hc_price_winter"),
+                    hp_price_winter=pricing.get("hp_price_winter"),
+                    hc_price_summer=pricing.get("hc_price_summer"),
+                    hp_price_summer=pricing.get("hp_price_summer"),
+                    peak_day_price=pricing.get("peak_day_price"),
                     hc_schedules=contribution.hc_schedules,
                     power_kva=contribution.power_kva,
+                    valid_from=valid_from_date,
+                    valid_to=valid_to_date,
+                    offer_url=contribution.price_sheet_url,
+                    price_updated_at=datetime.now(UTC),
                 )
                 db.add(offer)
+                if valid_to_date:
+                    logger.info(f"[BULK APPROVE] Created historical offer: {contribution.offer_name} valid_to={valid_to_date}")
 
             elif contribution.contribution_type == "UPDATE_OFFER":
                 # Check if this is a provider deletion request (offer_name contains [SUPPRESSION FOURNISSEUR])
@@ -1338,10 +1411,12 @@ async def bulk_approve_contributions(
                         offer_to_delete = offers_found[0] if offers_found else None
 
                     if offer_to_delete:
-                        await db.delete(offer_to_delete)
+                        # Marquer comme expirée au lieu de supprimer (conservation de l'historique)
+                        offer_to_delete.valid_to = datetime.now(UTC)
+                        offer_to_delete.updated_at = datetime.now(UTC)
                         logger.info(
-                            f"[BULK APPROVE] Deleted offer: provider={contribution.existing_provider_id}, "
-                            f"type={contribution.offer_type}, power={contribution.power_kva} kVA, offer_id={offer_to_delete.id}"
+                            f"[BULK APPROVE] Désactivation offre (suppression): {offer_to_delete.name} (id={offer_to_delete.id}) "
+                            f"- valid_to={offer_to_delete.valid_to}"
                         )
                     else:
                         logger.warning(
@@ -1371,6 +1446,14 @@ async def bulk_approve_contributions(
                         offer.tempo_red_hp = pricing.get("tempo_red_hp")
                         offer.ejp_normal = pricing.get("ejp_normal")
                         offer.ejp_peak = pricing.get("ejp_peak")
+                        offer.base_price_weekend = pricing.get("base_price_weekend")
+                        offer.hc_price_weekend = pricing.get("hc_price_weekend")
+                        offer.hp_price_weekend = pricing.get("hp_price_weekend")
+                        offer.hc_price_winter = pricing.get("hc_price_winter")
+                        offer.hp_price_winter = pricing.get("hp_price_winter")
+                        offer.hc_price_summer = pricing.get("hc_price_summer")
+                        offer.hp_price_summer = pricing.get("hp_price_summer")
+                        offer.peak_day_price = pricing.get("peak_day_price")
                         offer.hc_schedules = contribution.hc_schedules
                         offer.updated_at = datetime.now(UTC)
 
@@ -1380,6 +1463,15 @@ async def bulk_approve_contributions(
             contribution.reviewed_at = datetime.now(UTC)
 
             processed += 1
+
+            # Collecter pour envoi groupé
+            contributor_result = await db.execute(select(User).where(User.id == contribution.contributor_user_id))
+            contributor = contributor_result.scalar_one_or_none()
+            if contributor:
+                user_id = str(contributor.id)
+                if user_id not in approved_by_contributor:
+                    approved_by_contributor[user_id] = (contributor, [])
+                approved_by_contributor[user_id][1].append(contribution)
 
         except Exception as e:
             logger.error(f"[BULK APPROVE] Error processing contribution {contribution_id}: {str(e)}")
@@ -1394,6 +1486,14 @@ async def bulk_approve_contributions(
         logger.error(f"[BULK APPROVE] Commit failed: {str(e)}")
         return APIResponse(success=False, error=ErrorDetail(code="DATABASE_ERROR", message=f"Failed to commit changes: {str(e)}"))
 
+    # Envoyer un seul email groupé par contributeur (après le commit)
+    for user_id, (contributor, contributions_list) in approved_by_contributor.items():
+        try:
+            await send_batch_approval_notification(contributions_list, contributor)
+        except Exception as e:
+            logger.error(f"[BULK APPROVE] Failed to send approval notification to {contributor.email}: {str(e)}")
+            email_errors.append({"email": contributor.email, "count": len(contributions_list), "error": str(e)})
+
     message = f"{processed} contributions traitées"
     if skipped > 0:
         message += f", {skipped} ignorée{'s' if skipped > 1 else ''} (déjà traitée{'s' if skipped > 1 else ''} ou invalide{'s' if skipped > 1 else ''})"
@@ -1407,6 +1507,7 @@ async def bulk_approve_contributions(
             "skipped": skipped,
             "message": message,
             "errors": errors if errors else None,
+            "email_errors": email_errors if email_errors else None,
         }
     )
 
@@ -1433,6 +1534,8 @@ async def bulk_reject_contributions(
     processed = 0
     skipped = 0
     email_errors = []
+    # Regrouper les contributions rejetées par contributeur pour envoyer 1 email par personne
+    rejected_by_contributor: dict[str, tuple[User, list[OfferContribution]]] = {}
 
     for contribution_id in contribution_ids:
         try:
@@ -1461,14 +1564,12 @@ async def bulk_reject_contributions(
 
             processed += 1
 
-            # Send rejection notification email to contributor
+            # Collecter pour envoi groupé
             if contributor:
-                try:
-                    await send_rejection_notification(contribution, contributor, reason)
-                except Exception as e:
-                    logger.error(f"[BULK REJECT] Failed to send rejection notification for {contribution_id}: {str(e)}")
-                    email_errors.append({"contribution_id": contribution_id, "email": contributor.email, "error": str(e)})
-                    # Don't fail the rejection if email fails
+                user_id = str(contributor.id)
+                if user_id not in rejected_by_contributor:
+                    rejected_by_contributor[user_id] = (contributor, [])
+                rejected_by_contributor[user_id][1].append(contribution)
 
         except Exception as e:
             logger.error(f"[BULK REJECT] Error processing contribution {contribution_id}: {str(e)}")
@@ -1481,6 +1582,17 @@ async def bulk_reject_contributions(
         await db.rollback()
         logger.error(f"[BULK REJECT] Commit failed: {str(e)}")
         return APIResponse(success=False, error=ErrorDetail(code="DATABASE_ERROR", message=f"Failed to commit changes: {str(e)}"))
+
+    # Envoyer un seul email groupé par contributeur (après le commit)
+    for user_id, (contributor, contributions_list) in rejected_by_contributor.items():
+        try:
+            if len(contributions_list) == 1:
+                await send_rejection_notification(contributions_list[0], contributor, reason)
+            else:
+                await send_batch_rejection_notification(contributions_list, contributor, reason)
+        except Exception as e:
+            logger.error(f"[BULK REJECT] Failed to send rejection notification to {contributor.email}: {str(e)}")
+            email_errors.append({"email": contributor.email, "count": len(contributions_list), "error": str(e)})
 
     message = f"{processed} contributions traitées"
     if skipped > 0:
@@ -1681,6 +1793,47 @@ async def delete_offer(
 
         traceback.print_exc()
         return APIResponse(success=False, error=ErrorDetail(code="SERVER_ERROR", message=str(e)))
+
+
+@router.post("/providers", response_model=APIResponse)
+async def create_provider(
+    data: dict,
+    current_user: User = Depends(require_action('offers', 'edit')),
+    db: AsyncSession = Depends(get_db)
+) -> APIResponse:
+    """Créer un nouveau fournisseur d'énergie (requires offers.edit permission)"""
+    name = data.get("name", "").strip()
+    if not name:
+        return APIResponse(success=False, error=ErrorDetail(code="VALIDATION_ERROR", message="Le nom du fournisseur est obligatoire"))
+
+    # Vérifier l'unicité
+    existing = await db.execute(select(EnergyProvider).where(EnergyProvider.name == name))
+    if existing.scalar_one_or_none():
+        return APIResponse(success=False, error=ErrorDetail(code="DUPLICATE", message=f"Le fournisseur '{name}' existe déjà"))
+
+    try:
+        provider = EnergyProvider(
+            name=name,
+            website=data.get("website", "").strip() or None,
+            logo_url=data.get("logo_url", "").strip() or None,
+        )
+        db.add(provider)
+        await db.commit()
+        await db.refresh(provider)
+
+        return APIResponse(
+            success=True,
+            data={
+                "id": str(provider.id),
+                "name": provider.name,
+                "website": provider.website,
+                "logo_url": provider.logo_url,
+            }
+        )
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"[PROVIDER CREATE ERROR] {str(e)}")
+        return APIResponse(success=False, error=ErrorDetail(code="DATABASE_ERROR", message="Erreur lors de la création du fournisseur"))
 
 
 @router.put("/providers/{provider_id}", response_model=APIResponse)
@@ -2045,6 +2198,217 @@ MyElectricalData - Base de données communautaire des offres d'électricité
         logger.info(f"[CONTRIBUTION] Rejection notification sent to contributor: {contributor.email}")
     except Exception as e:
         logger.error(f"[CONTRIBUTION] Failed to send rejection email to {contributor.email}: {str(e)}")
+        raise
+
+
+async def send_batch_rejection_notification(
+    contributions: list[OfferContribution], contributor: User, reason: str
+) -> None:
+    """Envoie un seul email de rejet groupé pour plusieurs contributions d'un même contributeur."""
+    contributions_url = f"{settings.FRONTEND_URL}/contribute"
+    total = len(contributions)
+
+    subject = f"{total} contribution{'s' if total > 1 else ''} rejetée{'s' if total > 1 else ''} - MyElectricalData"
+
+    # Construire la liste des offres concernées en HTML
+    offers_html = ""
+    offers_text = ""
+    for c in contributions:
+        date_str = c.created_at.strftime('%d/%m/%Y à %H:%M') if c.created_at else "N/A"
+        offers_html += f"""
+            <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{c.offer_name}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{c.offer_type}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{date_str}</td>
+            </tr>"""
+        offers_text += f"  - {c.offer_name} ({c.offer_type}) — soumise le {date_str}\n"
+
+    html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: white; margin: 0;">MyElectricalData</h1>
+    </div>
+
+    <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+        <h2 style="color: #333; margin-top: 0;">Vos contributions ont été examinées</h2>
+
+        <p>Bonjour,</p>
+
+        <p>Nous avons examiné <strong>{total} contribution{'s' if total > 1 else ''}</strong> et malheureusement, nous n'avons pas pu les approuver.</p>
+
+        <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 0 5px 5px 0;">
+            <p style="margin: 0; font-weight: bold; color: #856404;">Raison du rejet :</p>
+            <p style="margin: 10px 0 0 0; color: #856404;">{reason}</p>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 5px; margin: 20px 0;">
+            <thead>
+                <tr style="background: #f0f0f0;">
+                    <th style="padding: 10px; text-align: left;">Offre</th>
+                    <th style="padding: 10px; text-align: left;">Type</th>
+                    <th style="padding: 10px; text-align: left;">Date</th>
+                </tr>
+            </thead>
+            <tbody>{offers_html}
+            </tbody>
+        </table>
+
+        <p>Vous pouvez soumettre de nouvelles contributions avec les informations corrigées :</p>
+
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{contributions_url}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+                Soumettre de nouvelles contributions
+            </a>
+        </div>
+
+        <p style="color: #666; font-size: 14px;">Merci pour votre participation à la communauté MyElectricalData !</p>
+
+        <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+
+        <p style="color: #999; font-size: 12px; text-align: center;">
+            MyElectricalData - Base de données communautaire des offres d'électricité
+        </p>
+    </div>
+</body>
+</html>
+    """
+
+    text_content = f"""
+Vos contributions ont été examinées - MyElectricalData
+
+Bonjour,
+
+Nous avons examiné {total} contribution{'s' if total > 1 else ''} et malheureusement, nous n'avons pas pu les approuver.
+
+Raison du rejet :
+{reason}
+
+Offres concernées :
+{offers_text}
+Vous pouvez soumettre de nouvelles contributions avec les informations corrigées :
+{contributions_url}
+
+Merci pour votre participation à la communauté MyElectricalData !
+
+---
+MyElectricalData - Base de données communautaire des offres d'électricité
+    """
+
+    try:
+        await email_service.send_email(contributor.email, subject, html_content, text_content)
+        logger.info(f"[CONTRIBUTION] Batch rejection notification ({total} contributions) sent to: {contributor.email}")
+    except Exception as e:
+        logger.error(f"[CONTRIBUTION] Failed to send batch rejection email to {contributor.email}: {str(e)}")
+        raise
+
+
+async def send_batch_approval_notification(
+    contributions: list[OfferContribution], contributor: User
+) -> None:
+    """Envoie un seul email d'approbation groupé pour plusieurs contributions d'un même contributeur."""
+    contributions_url = f"{settings.FRONTEND_URL}/contribute"
+    total = len(contributions)
+
+    subject = f"{total} contribution{'s' if total > 1 else ''} approuvée{'s' if total > 1 else ''} - MyElectricalData"
+
+    # Construire la liste des offres concernées en HTML
+    offers_html = ""
+    offers_text = ""
+    for c in contributions:
+        date_str = c.created_at.strftime('%d/%m/%Y à %H:%M') if c.created_at else "N/A"
+        offers_html += f"""
+            <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{c.offer_name}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{c.offer_type}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{date_str}</td>
+            </tr>"""
+        offers_text += f"  - {c.offer_name} ({c.offer_type}) — soumise le {date_str}\n"
+
+    html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: white; margin: 0;">MyElectricalData</h1>
+    </div>
+
+    <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+        <h2 style="color: #333; margin-top: 0;">Vos contributions ont été approuvées !</h2>
+
+        <p>Bonjour,</p>
+
+        <p>Bonne nouvelle ! <strong>{total} contribution{'s' if total > 1 else ''}</strong> {'ont' if total > 1 else 'a'} été approuvée{'s' if total > 1 else ''} et intégrée{'s' if total > 1 else ''} à la base de données.</p>
+
+        <div style="background: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0; border-radius: 0 5px 5px 0;">
+            <p style="margin: 0; font-weight: bold; color: #155724;">Merci pour votre contribution !</p>
+            <p style="margin: 10px 0 0 0; color: #155724;">Vos données aident la communauté à comparer les offres d'électricité.</p>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 5px; margin: 20px 0;">
+            <thead>
+                <tr style="background: #f0f0f0;">
+                    <th style="padding: 10px; text-align: left;">Offre</th>
+                    <th style="padding: 10px; text-align: left;">Type</th>
+                    <th style="padding: 10px; text-align: left;">Date</th>
+                </tr>
+            </thead>
+            <tbody>{offers_html}
+            </tbody>
+        </table>
+
+        <p>Vous pouvez continuer à contribuer :</p>
+
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{contributions_url}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+                Contribuer
+            </a>
+        </div>
+
+        <p style="color: #666; font-size: 14px;">Merci pour votre participation à la communauté MyElectricalData !</p>
+
+        <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+
+        <p style="color: #999; font-size: 12px; text-align: center;">
+            MyElectricalData - Base de données communautaire des offres d'électricité
+        </p>
+    </div>
+</body>
+</html>
+    """
+
+    text_content = f"""
+Vos contributions ont été approuvées - MyElectricalData
+
+Bonjour,
+
+Bonne nouvelle ! {total} contribution{'s' if total > 1 else ''} {'ont' if total > 1 else 'a'} été approuvée{'s' if total > 1 else ''} et intégrée{'s' if total > 1 else ''} à la base de données.
+
+Offres approuvées :
+{offers_text}
+Merci pour votre contribution ! Vos données aident la communauté à comparer les offres d'électricité.
+
+Vous pouvez continuer à contribuer :
+{contributions_url}
+
+---
+MyElectricalData - Base de données communautaire des offres d'électricité
+    """
+
+    try:
+        await email_service.send_email(contributor.email, subject, html_content, text_content)
+        logger.info(f"[CONTRIBUTION] Batch approval notification ({total} contributions) sent to: {contributor.email}")
+    except Exception as e:
+        logger.error(f"[CONTRIBUTION] Failed to send batch approval email to {contributor.email}: {str(e)}")
         raise
 
 

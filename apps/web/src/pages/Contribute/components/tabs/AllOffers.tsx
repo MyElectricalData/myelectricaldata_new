@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Package, Send, X, Link, AlertCircle, Plus, Trash2, Undo2, Eye, Pencil, Info, Building2, ArrowDownToLine, Sparkles, Copy, Zap } from 'lucide-react'
+import { Package, Send, X, Link, AlertCircle, Plus, Trash2, Undo2, Eye, Pencil, Info, Building2, ArrowDownToLine, Sparkles, Copy, Zap, ChevronDown, ChevronRight, Clock } from 'lucide-react'
 import { energyApi, type EnergyProvider, type ContributionData, type EnergyOffer } from '@/api/energy'
 import { toast } from '@/stores/notificationStore'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
@@ -20,6 +20,9 @@ export default function AllOffers() {
   // Filter state
   const [filterProvider, setFilterProvider] = useState<string>('')
   const [filterOfferType, setFilterOfferType] = useState<string>('all')
+  const [selectedGroupName, setSelectedGroupName] = useState<string>('')
+  const [showTypeInfoPopup, setShowTypeInfoPopup] = useState(false)
+  const [typeInfoTarget, setTypeInfoTarget] = useState<string>('')
 
   // State pour l'édition inline des offres
   const [editedOffers, setEditedOffers] = useState<Record<string, Record<string, string>>>({})
@@ -36,12 +39,14 @@ export default function AllOffers() {
     offer_type?: string
     offer_name?: string
     valid_from?: string
+    valid_to?: string
   }>>([])
 
   // Formulaire inline pour créer un nouveau fournisseur
   const [isAddingProvider, setIsAddingProvider] = useState(false)
   const [newProviderName, setNewProviderName] = useState('')
-  const [newProviderOfferType, setNewProviderOfferType] = useState('')
+  const [newProviderWebsite, setNewProviderWebsite] = useState('')
+  const [creatingProvider, setCreatingProvider] = useState(false)
 
   // Fournisseurs marqués pour suppression
   const [providersToRemove, setProvidersToRemove] = useState<string[]>([])
@@ -53,7 +58,7 @@ export default function AllOffers() {
   // Date de mise en service pour les formulaires d'ajout (nouveau fournisseur / nouvelle offre)
   const [newOfferValidFrom, setNewOfferValidFrom] = useState(() => new Date().toISOString().split('T')[0])
 
-  // Édition des noms d'offres (clé = nom original clean, valeur = nouveau nom)
+  // Édition des noms d'offres (clé = "nomOriginal::offerType", valeur = nouveau nom)
   const [editedOfferNames, setEditedOfferNames] = useState<Record<string, string>>({})
 
   // Nouveaux groupes d'offres à créer (nom du groupe + date de validité + puissances avec tarifs)
@@ -69,8 +74,8 @@ export default function AllOffers() {
   // Modal du récapitulatif
   const [showRecapModal, setShowRecapModal] = useState(false)
 
-  // Afficher l'historique des tarifs
-  const [showHistory, setShowHistory] = useState(false)
+  // Section offres expirées (pliable, fermée par défaut)
+  const [showExpiredSection, setShowExpiredSection] = useState(false)
 
   // Dropdown de duplication des tarifs
   const [duplicateDropdownId, setDuplicateDropdownId] = useState<string | null>(null)
@@ -125,9 +130,9 @@ export default function AllOffers() {
 
   // Fetch all offers (staleTime: 0 pour toujours refetch au montage)
   const { data: offersData } = useQuery({
-    queryKey: ['energy-offers', showHistory],
+    queryKey: ['energy-offers', 'with-history'],
     queryFn: async () => {
-      const response = await energyApi.getOffers(undefined, showHistory)
+      const response = await energyApi.getOffers(undefined, true)
       if (response.success && Array.isArray(response.data)) {
         return response.data as EnergyOffer[]
       }
@@ -152,7 +157,7 @@ export default function AllOffers() {
   }, [providersData])
 
   // Ordre de tri des types d'offres
-  const typeOrder = ['BASE', 'HC_HP', 'TEMPO', 'EJP', 'ZEN_FLEX', 'ZEN_WEEK_END', 'ZEN_WEEK_END_HP_HC', 'SEASONAL', 'BASE_WEEKEND', 'HC_NUIT_WEEKEND', 'HC_WEEKEND']
+  const typeOrder = ['BASE', 'HC_HP', 'TEMPO', 'EJP', 'SEASONAL', 'BASE_WEEKEND', 'HC_NUIT_WEEKEND', 'HC_WEEKEND']
 
   // Types d'offres disponibles pour le fournisseur sélectionné
   const availableOfferTypes = useMemo(() => {
@@ -169,25 +174,16 @@ export default function AllOffers() {
     })
   }, [filterProvider, offersArray])
 
-  // Tous les types d'offres disponibles dans la base (pour nouveau fournisseur)
-  const allOfferTypes = useMemo(() => {
-    if (offersArray.length === 0) return []
-    const types = [...new Set(offersArray.map(o => o.offer_type))]
-    return types.sort((a, b) => {
-      const indexA = typeOrder.indexOf(a)
-      const indexB = typeOrder.indexOf(b)
-      if (indexA === -1 && indexB === -1) return a.localeCompare(b)
-      if (indexA === -1) return 1
-      if (indexB === -1) return -1
-      return indexA - indexB
-    })
-  }, [offersArray])
+
+  // Types non intégrés au simulateur (ne pas proposer pour la création de nouvelles offres)
+  const unsupportedCreationTypes: string[] = []
 
   // Types d'offres non encore utilisés par le fournisseur sélectionné (pour ajout d'offre)
   const unusedOfferTypes = useMemo(() => {
-    if (!filterProvider) return typeOrder
+    const creatableTypes = typeOrder.filter(t => !unsupportedCreationTypes.includes(t))
+    if (!filterProvider) return creatableTypes
     const usedTypes = new Set(offersArray.filter(o => o.provider_id === filterProvider).map(o => o.offer_type))
-    return typeOrder.filter(type => !usedTypes.has(type))
+    return creatableTypes.filter(type => !usedTypes.has(type))
   }, [filterProvider, offersArray])
 
   // Initialiser avec EDF par défaut
@@ -225,7 +221,7 @@ export default function AllOffers() {
 
     const providerOffers = offersArray.filter(o => o.provider_id === filterProvider)
     const types = [...new Set(providerOffers.map(o => o.offer_type))]
-    const typeOrder = ['BASE', 'HC_HP', 'TEMPO', 'EJP', 'ZEN_FLEX', 'ZEN_WEEK_END', 'ZEN_WEEK_END_HP_HC']
+    const typeOrder = ['BASE', 'HC_HP', 'TEMPO', 'EJP', 'SEASONAL', 'BASE_WEEKEND', 'HC_NUIT_WEEKEND', 'HC_WEEKEND']
     const sortedTypes = types.sort((a, b) => {
       const indexA = typeOrder.indexOf(a)
       const indexB = typeOrder.indexOf(b)
@@ -272,6 +268,23 @@ export default function AllOffers() {
     return () => document.removeEventListener('click', handleClick)
   }, [duplicateDropdownId])
 
+  // Auto-focus et scroll vers le dernier nouveau groupe créé
+  const prevNewGroupsLengthRef = useRef(0)
+  useEffect(() => {
+    if (newGroups.length > prevNewGroupsLengthRef.current) {
+      // Un nouveau groupe a été ajouté, focus le champ nom du dernier groupe
+      requestAnimationFrame(() => {
+        const inputs = document.querySelectorAll<HTMLInputElement>('[data-new-group-name]')
+        const lastInput = inputs[inputs.length - 1]
+        if (lastInput) {
+          lastInput.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          lastInput.focus()
+        }
+      })
+    }
+    prevNewGroupsLengthRef.current = newGroups.length
+  }, [newGroups.length])
+
   // Helper pour vérifier si une offre a été modifiée (comparaison numérique avec epsilon)
   const isOfferModified = (offer: EnergyOffer): boolean => {
     const edited = editedOffers[offer.id]
@@ -292,14 +305,20 @@ export default function AllOffers() {
 
   // Helper pour vérifier s'il y a des noms de groupes modifiés
   const hasModifiedGroupNames = Object.entries(editedOfferNames).some(
-    ([originalName, newName]) => newName !== originalName && newName.trim() !== ''
+    ([renameKey, newName]) => {
+      const originalName = renameKey.split('::')[0]
+      return newName !== originalName && newName.trim() !== ''
+    }
   )
 
   // Calculer le nombre total de modifications pour le badge
   const totalModificationsCount = useMemo(() => {
     const modifiedOffersCount = offersArray.filter(offer => isOfferModified(offer)).length
     const renamedGroupsCount = Object.entries(editedOfferNames).filter(
-      ([originalName, newName]) => newName !== originalName && newName.trim() !== ''
+      ([renameKey, newName]) => {
+        const originalName = renameKey.split('::')[0]
+        return newName !== originalName && newName.trim() !== ''
+      }
     ).length
     const deprecatedCount = deprecatedOffers.reduce((sum, d) => sum + d.offer_ids.length, 0)
     return modifiedOffersCount + newPowersData.length + powersToRemove.length + providersToRemove.length + newGroups.length + renamedGroupsCount + deprecatedCount
@@ -345,12 +364,11 @@ export default function AllOffers() {
     switch (offerType) {
       case 'BASE': return ['base_price']
       case 'BASE_WEEKEND': return ['base_price', 'base_price_weekend']
-      case 'HC_HP': case 'HC_NUIT_WEEKEND': case 'HC_WEEKEND': return ['hc_price', 'hp_price']
+      case 'HC_HP': return ['hc_price', 'hp_price']
+      case 'HC_NUIT_WEEKEND': case 'HC_WEEKEND': return ['hc_price', 'hp_price', 'hc_price_weekend', 'hp_price_weekend']
       case 'TEMPO': return ['tempo_blue_hc', 'tempo_blue_hp', 'tempo_white_hc', 'tempo_white_hp', 'tempo_red_hc', 'tempo_red_hp']
       case 'EJP': return ['ejp_normal', 'ejp_peak']
-      case 'ZEN_FLEX': case 'SEASONAL': return ['hc_price_summer', 'hp_price_summer', 'hc_price_winter', 'hp_price_winter']
-      case 'ZEN_WEEK_END': return ['base_price', 'base_price_weekend']
-      case 'ZEN_WEEK_END_HP_HC': return ['hc_price', 'hp_price', 'hc_price_weekend', 'hp_price_weekend']
+      case 'SEASONAL': return ['hc_price_summer', 'hp_price_summer', 'hc_price_winter', 'hp_price_winter']
       default: return []
     }
   }
@@ -394,30 +412,58 @@ export default function AllOffers() {
     const provider = sortedProviders.find(p => p.id === filterProvider)
     const providerName = provider?.name || 'Inconnu'
 
-    // Construire la liste des offres actuelles du fournisseur
+    // Construire la liste des offres actuelles du fournisseur avec structure détaillée
     const currentOffers = offersArray.filter(o => o.provider_id === filterProvider)
     let currentOffersSection = ''
     if (currentOffers.length > 0) {
-      // Regrouper par offer_type + clean name
-      const groups: Record<string, { type: string; name: string; powers: number[] }> = {}
+      // Regrouper par offer_type + clean name, garder un exemple d'offre par groupe
+      const groups: Record<string, { type: string; name: string; powers: number[]; sample: typeof currentOffers[0] }> = {}
       for (const offer of currentOffers) {
         const cleanName = getCleanOfferName(offer.name)
         const key = `${offer.offer_type}::${cleanName}`
         if (!groups[key]) {
-          groups[key] = { type: offer.offer_type, name: cleanName, powers: [] }
+          groups[key] = { type: offer.offer_type, name: cleanName, powers: [], sample: offer }
         }
         const power = offer.power_kva || parseInt(offer.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
         if (power > 0) groups[key].powers.push(power)
       }
-      const lines = Object.values(groups).map(g => {
+
+      // Construire la description détaillée de chaque groupe
+      const allPriceKeys = [
+        'subscription_price', 'base_price', 'base_price_weekend',
+        'hc_price', 'hp_price', 'hc_price_weekend', 'hp_price_weekend',
+        'hc_price_summer', 'hp_price_summer', 'hc_price_winter', 'hp_price_winter',
+        'tempo_blue_hc', 'tempo_blue_hp', 'tempo_white_hc', 'tempo_white_hp',
+        'tempo_red_hc', 'tempo_red_hp', 'ejp_normal', 'ejp_peak',
+      ] as const
+
+      const groupValues = Object.values(groups)
+      const lines = groupValues.map(g => {
         const sortedPowers = g.powers.sort((a, b) => a - b)
-        return `- "${g.name}" (${g.type}) : puissances ${sortedPowers.join(', ')} kVA`
+        // Extraire les champs prix non-null de l'exemple
+        const sampleFields: Record<string, string> = {}
+        for (const key of allPriceKeys) {
+          const val = (g.sample as unknown as Record<string, unknown>)[key]
+          if (val !== null && val !== undefined) {
+            sampleFields[key] = String(val)
+          }
+        }
+        const fieldsStr = Object.entries(sampleFields)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(', ')
+
+        return `- "${g.name}" (${g.type}) : ${g.powers.length} puissance(s) — ${sortedPowers.join(', ')} kVA\n  Structure : { ${fieldsStr} }`
       })
+      const totalOffers = currentOffers.length
       currentOffersSection = `
 
 ## Offres actuellement enregistrées pour "${providerName}"
 
 ${lines.join('\n')}
+
+**Total : ${totalOffers} lignes tarifaires réparties sur ${groupValues.length} offre(s).**
+
+Utilise cette structure comme référence pour valider ton JSON : les champs prix de chaque type doivent correspondre.
 
 Compare avec les offres actuelles du fournisseur :
 - Si une offre ci-dessus N'EXISTE PLUS chez le fournisseur, ajoute-la quand même dans le JSON avec un champ "deprecated": true et un "warning" expliquant qu'elle semble avoir été supprimée ou remplacée.
@@ -427,61 +473,183 @@ Compare avec les offres actuelles du fournisseur :
 
     return `Tu es un assistant spécialisé dans les tarifs d'électricité en France.
 
+## Méthode recommandée
+
+- **Compare PLUSIEURS sources** pour fiabiliser les prix : site officiel du fournisseur, grilles tarifaires PDF, comparateurs (selectra.info, jechange.fr, fournisseurs-electricite.com, etc.)
+- En cas de divergence entre sources, privilégie la grille officielle du fournisseur et ajoute un warning mentionnant l'écart constaté
+- Active le mode **"tasks"** (ou équivalent multi-étapes) de ton IA pour traiter chaque offre séparément et aller plus vite
+- N'hésite pas à faire plusieurs recherches successives si le fournisseur propose beaucoup d'offres
+
 Je souhaite obtenir les grilles tarifaires actuelles du fournisseur "${providerName}".
 
 Génère un JSON contenant TOUTES les offres disponibles de ce fournisseur.
 
 ## Format JSON requis
 
+\`\`\`json
 {
   "provider_name": "${providerName}",
-  "data_source": "Description de la source (ex: capture d'écran site officiel, PDF téléchargé)",
+  "data_source": "Description de la source (ex: grille tarifaire PDF téléchargée depuis le site officiel)",
   "extraction_date": "YYYY-MM-DD",
   "offers": [
     {
       "offer_name": "Nom de l'offre (sans puissance ni type)",
       "offer_type": "TYPE",
       "valid_from": "YYYY-MM-DD",
-      "valid_until": "YYYY-MM-DD (optionnel - si l'offre a une date de fin)",
-      "special_conditions": "optionnel - conditions particulières (ex: prix fixe jusqu'à telle date)",
-      "warning": "optionnel - si le type ne correspond pas exactement ou si incertitude",
+      "valid_until": "YYYY-MM-DD ou null",
+      "special_conditions": "optionnel - conditions particulières",
+      "warning": "optionnel - si incertitude ou remarque",
       "deprecated": false,
       "power_variants": [
         {
           "power_kva": 6,
           "subscription_price": 12.34,
-          ... champs prix selon le type ...
+          "...champs_prix_selon_type..."
         }
       ]
     }
   ]
 }
+\`\`\`
 
-## Types d'offres disponibles
+## Types d'offres disponibles et leurs champs
 
-Choisis le type le plus adapté pour chaque offre :
+Il existe exactement **8 types**. Chaque type a des champs prix **obligatoires**. Le champ \`subscription_price\` (abonnement mensuel TTC en €/mois) est obligatoire pour TOUS les types.
 
-- BASE : tarif unique → champs : "base_price"
-- HC_HP : heures creuses/pleines → champs : "hc_price", "hp_price"
-- TEMPO : 6 tarifs bleu/blanc/rouge × HC/HP → champs : "tempo_blue_hc", "tempo_blue_hp", "tempo_white_hc", "tempo_white_hp", "tempo_red_hc", "tempo_red_hp"
-- EJP : normal + pointe → champs : "ejp_normal", "ejp_peak"
-- SEASONAL : été/hiver × HC/HP → champs : "hc_price_summer", "hp_price_summer", "hc_price_winter", "hp_price_winter"
-- ZEN_FLEX : équivalent à SEASONAL
-- ZEN_WEEK_END : base + week-end → champs : "base_price", "base_price_weekend"
-- ZEN_WEEK_END_HP_HC : HC/HP semaine + HC/HP week-end → champs : "hc_price", "hp_price", "hc_price_weekend", "hp_price_weekend"
+**IMPORTANT — Mapping obligatoire :**
+- Chaque offre du fournisseur DOIT être associée à l'un des 8 types ci-dessous
+- Analyse la structure tarifaire de l'offre (nombre de prix, périodes HC/HP, saisons, etc.) pour déterminer le type correspondant
+- Si une offre ne correspond à AUCUN des 8 types (structure tarifaire inconnue, tarification dynamique, indexation spot, etc.), ajoute un \`"warning"\` expliquant le problème et indique à l'utilisateur de contacter un administrateur ou modérateur pour créer un nouveau type d'offre
+
+### BASE — Tarif unique
+Un seul prix du kWh, identique à toute heure.
+
+| Champ | Description |
+|-------|-------------|
+| \`base_price\` | Prix du kWh TTC |
+
+Exemple :
+\`\`\`json
+{ "power_kva": 6, "subscription_price": 12.03, "base_price": 0.195200 }
+\`\`\`
+
+### HC_HP — Heures Creuses / Heures Pleines
+2 prix selon l'heure (HC = nuit/creux, HP = jour/plein).
+
+| Champ | Description |
+|-------|-------------|
+| \`hc_price\` | Prix du kWh en Heures Creuses |
+| \`hp_price\` | Prix du kWh en Heures Pleines |
+
+Exemple :
+\`\`\`json
+{ "power_kva": 6, "subscription_price": 12.60, "hc_price": 0.163500, "hp_price": 0.208100 }
+\`\`\`
+
+### TEMPO — 6 tarifs (3 couleurs × HC/HP)
+Jours bleus (300j/an, les moins chers), blancs (43j/an) et rouges (22j/an, les plus chers), chacun avec HC et HP.
+
+| Champ | Description |
+|-------|-------------|
+| \`tempo_blue_hc\` | Jour Bleu — Heures Creuses |
+| \`tempo_blue_hp\` | Jour Bleu — Heures Pleines |
+| \`tempo_white_hc\` | Jour Blanc — Heures Creuses |
+| \`tempo_white_hp\` | Jour Blanc — Heures Pleines |
+| \`tempo_red_hc\` | Jour Rouge — Heures Creuses |
+| \`tempo_red_hp\` | Jour Rouge — Heures Pleines |
+
+Exemple :
+\`\`\`json
+{ "power_kva": 9, "subscription_price": 15.84, "tempo_blue_hc": 0.129200, "tempo_blue_hp": 0.160200, "tempo_white_hc": 0.148500, "tempo_white_hp": 0.189400, "tempo_red_hc": 0.141900, "tempo_red_hp": 0.756200 }
+\`\`\`
+
+### EJP — Effacement Jours de Pointe
+Tarif normal la plupart du temps, tarif pointe très élevé 22 jours par an.
+
+| Champ | Description |
+|-------|-------------|
+| \`ejp_normal\` | Prix du kWh en période Normale |
+| \`ejp_peak\` | Prix du kWh en période de Pointe |
+
+Exemple :
+\`\`\`json
+{ "power_kva": 9, "subscription_price": 13.75, "ejp_normal": 0.153100, "ejp_peak": 0.689400 }
+\`\`\`
+
+### SEASONAL — Saisonnier (2 saisons × HC/HP)
+4 prix selon la saison et l'heure. Selon le fournisseur, les 2 saisons peuvent être :
+- **Été / Hiver** : été = avril à octobre, hiver = novembre à mars
+- **Éco / Sobriété** : Éco = 345 jours (saison basse), Sobriété = 20 jours (saison haute)
+
+IMPORTANT : utiliser les champs \`summer\` pour la saison basse (été ou Éco) et \`winter\` pour la saison haute (hiver ou Sobriété), quel que soit le nom commercial.
+
+| Champ | Description |
+|-------|-------------|
+| \`hc_price_summer\` | HC saison basse (été / Éco) |
+| \`hp_price_summer\` | HP saison basse (été / Éco) |
+| \`hc_price_winter\` | HC saison haute (hiver / Sobriété) |
+| \`hp_price_winter\` | HP saison haute (hiver / Sobriété) |
+
+Exemple :
+\`\`\`json
+{ "power_kva": 9, "subscription_price": 14.27, "hc_price_summer": 0.142800, "hp_price_summer": 0.178500, "hc_price_winter": 0.167300, "hp_price_winter": 0.210900 }
+\`\`\`
+
+### BASE_WEEKEND — Base + Week-end
+2 prix : un tarif semaine et un tarif week-end (souvent moins cher le week-end).
+
+| Champ | Description |
+|-------|-------------|
+| \`base_price\` | Prix du kWh en semaine |
+| \`base_price_weekend\` | Prix du kWh le week-end |
+
+Exemple :
+\`\`\`json
+{ "power_kva": 6, "subscription_price": 12.03, "base_price": 0.208100, "base_price_weekend": 0.163500 }
+\`\`\`
+
+### HC_WEEKEND — HC/HP + Week-end
+4 prix : HC et HP en semaine + HC et HP le week-end.
+
+| Champ | Description |
+|-------|-------------|
+| \`hc_price\` | HC semaine |
+| \`hp_price\` | HP semaine |
+| \`hc_price_weekend\` | HC week-end |
+| \`hp_price_weekend\` | HP week-end |
+
+Exemple :
+\`\`\`json
+{ "power_kva": 9, "subscription_price": 14.27, "hc_price": 0.163500, "hp_price": 0.208100, "hc_price_weekend": 0.142800, "hp_price_weekend": 0.178500 }
+\`\`\`
+
+### HC_NUIT_WEEKEND — HC Nuit + Week-end
+Identique à HC_WEEKEND mais avec heures creuses étendues la nuit et le week-end. Mêmes champs.
+
+| Champ | Description |
+|-------|-------------|
+| \`hc_price\` | HC (nuit + week-end) |
+| \`hp_price\` | HP (jour semaine) |
+| \`hc_price_weekend\` | HC week-end |
+| \`hp_price_weekend\` | HP week-end |
+
+Exemple :
+\`\`\`json
+{ "power_kva": 9, "subscription_price": 14.27, "hc_price": 0.152300, "hp_price": 0.215800, "hc_price_weekend": 0.138700, "hp_price_weekend": 0.185400 }
+\`\`\`
 ${currentOffersSection}
 
 ## Règles générales
 
-- IMPORTANT : le champ "provider_name" à la racine du JSON DOIT être exactement "${providerName}"
-- IMPORTANT : tous les prix doivent être en TTC (Toutes Taxes Comprises)
-- Utiliser le point comme séparateur décimal (0.187702, pas 0,187702)
-- Garder 6 décimales pour les prix kWh (ex: 0.187702 €/kWh)
-- Garder 2 décimales pour les abonnements (ex: 12.03 €/mois)
-- subscription_price = abonnement mensuel TTC en €/mois
-- Les prix kWh sont en €/kWh TTC
-- offer_name ne doit PAS contenir la puissance ni le type d'offre
-- valid_from = date de début de validité de la grille tarifaire
+- **provider_name** : DOIT être exactement \`${providerName}\`
+- **Tous les prix en TTC** (Toutes Taxes Comprises)
+- **Séparateur décimal** : point (0.187702), PAS virgule
+- **Précision** : 6 décimales pour les prix kWh (ex: 0.187702 €/kWh), 2 décimales pour les abonnements (ex: 12.03 €/mois)
+- **subscription_price** = abonnement mensuel TTC en €/mois
+- **offer_name** : ne doit PAS contenir la puissance ni le type d'offre
+- **valid_from** : date de début de validité de la grille tarifaire (YYYY-MM-DD)
+- **valid_until** : date de fin de validité si connue, sinon null
+- **deprecated** : true si l'offre n'est plus commercialisée
 
 ## Paliers de prix
 
@@ -499,15 +667,6 @@ ATTENTION : certains fournisseurs appliquent des prix différents selon les tran
 - Retourne chaque puissance trouvée sur la source
 - Si certaines puissances listées dans les offres existantes ne sont pas visibles sur la source fournie, ajoute un warning au niveau de l'offre : "Puissance XX kVA non visible sur la source - tarif à confirmer"
 
-## Source des données
-
-Si l'utilisateur te fournit un document en pièce jointe :
-- **Page HTML ou lien web** : source la plus fiable, privilégier ce format
-- **Image (capture d'écran)** : bonne alternative, la lecture visuelle est généralement fiable
-- **PDF** : attention, la structure interne des fichiers PDF rend la lecture difficile pour les IA (colonnes mélangées, tableaux mal interprétés). Si possible, demande à l'utilisateur une capture d'écran ou un lien HTML à la place.
-
-Dans TOUS les cas, les tarifs proposés DOIVENT être vérifiés par l'utilisateur avant validation.
-
 ## Erreurs courantes à éviter
 
 1. **HT vs TTC** : Ne pas confondre les prix HT et TTC. Toujours prendre la colonne TTC.
@@ -516,6 +675,7 @@ Dans TOUS les cas, les tarifs proposés DOIVENT être vérifiés par l'utilisate
 4. **Cellules fusionnées** : Attention aux cellules fusionnées qui masquent les changements de palier. Une cellule fusionnée sur plusieurs lignes = même prix pour toutes ces puissances.
 5. **Colonnes tronquées** : Si certaines colonnes ne sont pas visibles sur la capture, ajouter un warning et ne pas inventer de valeurs.
 6. **Virgule vs point** : Les sources françaises utilisent la virgule (0,1877). Convertir en point dans le JSON (0.1877).
+7. **Noms de champs** : Utiliser EXACTEMENT les noms de champs indiqués pour chaque type. Ne pas inventer de variantes.
 
 ## Warnings
 
@@ -532,9 +692,16 @@ Exemples :
 - "warning": "Prix HP pour puissances 6-20 kVA non visibles sur la capture - valeurs présumées identiques à ≥21 kVA"
 - "warning": "Puissance 64 kVA non visible sur la source fournie"
 
-## Sortie
+## Sortie attendue
 
-Ne retourne QUE le JSON, sans texte avant ou après.`
+Avant le JSON, affiche un résumé sous cette forme :
+
+**Résumé :**
+- Offre X (TYPE) : Y puissance(s)
+- Offre Z (TYPE) : Y puissance(s)
+- **Total : N lignes tarifaires**
+
+Puis retourne le JSON complet.`
   }
 
   // Importer un JSON multi-offres généré par une IA
@@ -629,7 +796,15 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
         return
       }
 
-      const knownTypes = ['BASE', 'BASE_WEEKEND', 'HC_HP', 'HC_NUIT_WEEKEND', 'HC_WEEKEND', 'TEMPO', 'EJP', 'ZEN_FLEX', 'SEASONAL', 'ZEN_WEEK_END', 'ZEN_WEEK_END_HP_HC']
+      // Types supportés par le simulateur et le backend
+      const supportedTypes = ['BASE', 'BASE_WEEKEND', 'HC_HP', 'HC_NUIT_WEEKEND', 'HC_WEEKEND', 'TEMPO', 'EJP', 'SEASONAL']
+      // Types non intégrés au simulateur mais acceptés dans le JSON avec conversion automatique
+      const unsupportedTypeConversions: Record<string, string> = {
+        'ZEN_WEEK_END': 'BASE_WEEKEND',
+        'ZEN_WEEK_END_HP_HC': 'HC_WEEKEND',
+        'ZEN_FLEX': 'SEASONAL',
+      }
+      const knownTypes = [...supportedTypes, ...Object.keys(unsupportedTypeConversions)]
       const details: Array<{
         offer_type: string
         offer_name: string
@@ -640,38 +815,70 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
       }> = []
 
       const updatedOffers = { ...editedOffers }
-      const addedPowers: Array<{ power: number; fields: Record<string, string>; offer_type: string; offer_name: string; valid_from?: string }> = []
+      const addedPowers: Array<{ power: number; fields: Record<string, string>; offer_type: string; offer_name: string; valid_from?: string; valid_to?: string }> = []
       const newDeprecated: typeof deprecatedOffers = []
 
+      // Mapping des types synonymes : certains types IA correspondent à des types différents en base
+      // Ex: le scraper EDF crée les offres Zen Weekend avec le type BASE_WEEKEND, pas ZEN_WEEK_END
+      const typeSynonyms: Record<string, string[]> = {
+        'ZEN_WEEK_END': ['BASE_WEEKEND'],
+        'BASE_WEEKEND': ['ZEN_WEEK_END'],
+        'ZEN_WEEK_END_HP_HC': ['HC_WEEKEND', 'HC_NUIT_WEEKEND'],
+        'HC_WEEKEND': ['ZEN_WEEK_END_HP_HC'],
+        'HC_NUIT_WEEKEND': ['ZEN_WEEK_END_HP_HC'],
+        'ZEN_FLEX': ['SEASONAL'],
+        'SEASONAL': ['ZEN_FLEX'],
+      }
+
+      // Cherche les offres du fournisseur par type, avec fallback sur les types synonymes
+      const findOffersByType = (offerType: string): { offers: typeof offersArray; resolvedType: string } => {
+        const direct = offersArray.filter(o => o.provider_id === filterProvider && o.offer_type === offerType)
+        if (direct.length > 0) return { offers: direct, resolvedType: offerType }
+        // Fallback sur les synonymes
+        for (const synonym of (typeSynonyms[offerType] || [])) {
+          const synOffers = offersArray.filter(o => o.provider_id === filterProvider && o.offer_type === synonym)
+          if (synOffers.length > 0) return { offers: synOffers, resolvedType: synonym }
+        }
+        return { offers: [], resolvedType: offerType }
+      }
+
       for (const offer of data.offers) {
+        // Flag pour les offres dépréciées avec données de prix (import historique)
+        let isHistoricalImport = false
+
         // Offre marquée comme supprimée par l'IA
         if (offer.deprecated === true) {
-          // Trouver les offres existantes correspondantes pour les marquer
-          const matchingOffers = offersArray.filter(o =>
-            o.provider_id === filterProvider && o.offer_type === offer.offer_type
-          )
-          // Filtrer par nom si possible
-          const byName = matchingOffers.filter(o =>
-            getCleanOfferName(o.name).toLowerCase().includes(offer.offer_name?.toLowerCase() || '')
-          )
-          const targetOffers = byName.length > 0 ? byName : matchingOffers
-          if (targetOffers.length > 0) {
-            newDeprecated.push({
+          // Si l'offre dépréciée a des données de prix, l'importer comme offre historique
+          if (offer.power_variants && Array.isArray(offer.power_variants) && offer.power_variants.length > 0) {
+            isHistoricalImport = true
+            // Ne pas `continue` → le traitement régulier s'applique ci-dessous
+          } else {
+            // Offre dépréciée SANS données de prix → marquer les offres existantes pour suppression
+            const matchingOffers = offersArray.filter(o =>
+              o.provider_id === filterProvider && o.offer_type === offer.offer_type
+            )
+            const byName = matchingOffers.filter(o =>
+              getCleanOfferName(o.name).toLowerCase().includes(offer.offer_name?.toLowerCase() || '')
+            )
+            const targetOffers = byName.length > 0 ? byName : matchingOffers
+            if (targetOffers.length > 0) {
+              newDeprecated.push({
+                offer_type: offer.offer_type || '???',
+                offer_name: offer.offer_name || '???',
+                offer_ids: targetOffers.map(o => o.id),
+                warning: offer.warning || 'Offre signalée comme supprimée ou remplacée.',
+              })
+            }
+            details.push({
               offer_type: offer.offer_type || '???',
               offer_name: offer.offer_name || '???',
-              offer_ids: targetOffers.map(o => o.id),
+              matched: 0,
+              added: 0,
+              deprecated: true,
               warning: offer.warning || 'Offre signalée comme supprimée ou remplacée.',
             })
+            continue
           }
-          details.push({
-            offer_type: offer.offer_type || '???',
-            offer_name: offer.offer_name || '???',
-            matched: 0,
-            added: 0,
-            deprecated: true,
-            warning: offer.warning || 'Offre signalée comme supprimée ou remplacée.',
-          })
-          continue
         }
         // Valider le type d'offre
         if (!offer.offer_type || !knownTypes.includes(offer.offer_type)) {
@@ -680,9 +887,15 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
             offer_name: offer.offer_name || '???',
             matched: 0,
             added: 0,
-            warning: `Type d'offre inconnu : "${offer.offer_type}". Types valides : ${knownTypes.join(', ')}`,
+            warning: `Type d'offre inconnu : "${offer.offer_type}". Types valides : ${supportedTypes.join(', ')}`,
           })
           continue
+        }
+
+        // Convertir les types non intégrés au simulateur vers leur équivalent
+        const convertedType = unsupportedTypeConversions[offer.offer_type]
+        if (convertedType) {
+          offer.offer_type = convertedType
         }
 
         // Valider les variantes de puissance
@@ -697,10 +910,29 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
           continue
         }
 
-        // Chercher les offres existantes du fournisseur pour ce type
-        const existingForType = offersArray.filter(
-          o => o.provider_id === filterProvider && o.offer_type === offer.offer_type
-        )
+        // Chercher les offres existantes du fournisseur pour ce type (ou types synonymes)
+        const { offers: existingForType } = findOffersByType(offer.offer_type)
+
+        // Affiner par nom de groupe pour éviter de matcher une offre JSON
+        // sur un groupe existant portant un nom différent
+        // Ex: "Zen Online - Base" ne doit pas écraser "Tarif Bleu - BASE"
+        let existingFiltered = existingForType
+        if (isHistoricalImport) {
+          // Import historique (offre dépréciée) : toujours créer de nouvelles entrées
+          existingFiltered = []
+        } else if (offer.offer_name && existingForType.length > 0) {
+          const nameMatch = existingForType.filter(o => {
+            const cleanDb = getCleanOfferName(o.name).toLowerCase()
+            const cleanJson = offer.offer_name.toLowerCase()
+            return cleanDb.includes(cleanJson) || cleanJson.includes(cleanDb)
+          })
+          // Si aucun nom ne correspond, ce sont de nouvelles offres → pas de matching
+          if (nameMatch.length > 0) {
+            existingFiltered = nameMatch
+          } else {
+            existingFiltered = []
+          }
+        }
 
         let matched = 0
         let added = 0
@@ -735,8 +967,8 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
         for (const variant of offer.power_variants) {
           if (!variant.power_kva || !variant.subscription_price) continue
 
-          // Chercher une offre existante avec cette puissance
-          const existing = existingForType.find(o => {
+          // Chercher une offre existante avec cette puissance (dans le groupe filtré par nom)
+          const existing = existingFiltered.find(o => {
             const power = o.power_kva || parseInt(o.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
             return power === variant.power_kva
           })
@@ -771,6 +1003,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
               offer_type: offer.offer_type,
               offer_name: offer.offer_name || offer.offer_type,
               valid_from: offer.valid_from,
+              ...(isHistoricalImport && offer.valid_until ? { valid_to: offer.valid_until } : {}),
             })
             added++
           }
@@ -781,6 +1014,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
           offer_name: offer.offer_name || offer.offer_type,
           matched,
           added,
+          deprecated: isHistoricalImport || undefined,
           warning: offer.warning,
         })
       }
@@ -843,14 +1077,26 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
     return num.toString()
   }
 
-  // Helper pour obtenir la couleur du label
+  // Helper pour obtenir la couleur du label selon le type de tarif
   const getLabelColor = (label: string) => {
+    // Tempo : couleurs par jour
+    if (label.includes('Bleu')) return 'text-blue-600 dark:text-blue-400'
+    if (label.includes('Blanc')) return 'text-gray-500 dark:text-gray-300'
+    if (label.includes('Rouge')) return 'text-red-600 dark:text-red-400'
+    // Saisonnier
+    if (label.includes('Été')) return 'text-amber-600 dark:text-amber-400'
+    if (label.includes('Hiver')) return 'text-cyan-600 dark:text-cyan-400'
+    // Week-end
+    if (label.includes('WE')) return 'text-purple-600 dark:text-purple-400'
+    // HC/HP standard
     if (label === 'HC') return 'text-blue-600 dark:text-blue-400'
     if (label === 'HP') return 'text-red-600 dark:text-red-400'
+    // EJP
+    if (label === 'Pointe') return 'text-red-600 dark:text-red-400'
     return 'text-gray-600 dark:text-gray-400'
   }
 
-  // Configuration du nombre de colonnes de tarifs par type d'offre
+  // Configuration du nombre de colonnes de tarifs par type d'offre (tout sur une seule ligne)
   const getTariffColumns = (offerType: string): number => {
     switch (offerType) {
       case 'BASE':
@@ -858,31 +1104,59 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
       case 'HC_HP':
       case 'EJP':
         return 2  // HC/HP ou Normal/Pointe
-      case 'TEMPO':
-        return 2  // HC/HP par couleur (3 lignes)
-      case 'ZEN_FLEX':
-      case 'SEASONAL':
-        return 2  // HC/HP par saison (2 lignes)
-      case 'ZEN_WEEK_END':
-        return 1  // Base + Base WE (2 lignes de 1)
-      case 'ZEN_WEEK_END_HP_HC':
+      case 'BASE_WEEKEND':
+        return 2  // Base + Base WE
       case 'HC_WEEKEND':
       case 'HC_NUIT_WEEKEND':
-      case 'BASE_WEEKEND':
-        return 2  // HC/HP + WE (2 lignes de 2)
+        return 4  // HC/HP + HC WE/HP WE
+      case 'SEASONAL':
+        return 4  // HC/HP × 2 saisons
+      case 'TEMPO':
+        return 6  // Bleu HC/HP + Blanc HC/HP + Rouge HC/HP
       default:
         return 2  // Défaut
     }
   }
 
-  // Render un champ (éditable en mode édition, lecture seule sinon) - utilise flex-1 pour occuper l'espace disponible
-  const renderEditableField = (label: string, fieldKey: string, unit: string, offer: EnergyOffer) => {
+  // Render un champ (éditable en mode édition, lecture seule sinon)
+  // compact=true : labels empilés au-dessus de la valeur (pour grilles denses comme Tempo)
+  const renderEditableField = (label: string, fieldKey: string, unit: string, offer: EnergyOffer, compact = false) => {
     const editedValue = editedOffers[offer.id]?.[fieldKey]
     const originalValue = (offer as unknown as Record<string, unknown>)[fieldKey]
     const displayValue = editedValue !== undefined ? editedValue : formatValue(originalValue as string | number | undefined)
     const isModified = editedValue !== undefined && editedValue !== String(originalValue ?? '')
 
-    // Mode lecture : affichage simple avec flex-1
+    // Mode compact : label au-dessus de la valeur (pour Tempo, Seasonal, etc.)
+    if (compact) {
+      if (!isEditMode) {
+        return (
+          <div key={`${offer.id}-${fieldKey}`} className="flex-1 flex flex-col items-center min-w-0">
+            <span className={`text-xs font-semibold ${getLabelColor(label)}`}>{label}</span>
+            <span className="text-sm font-bold text-gray-900 dark:text-white">
+              {displayValue || '-'}
+            </span>
+          </div>
+        )
+      }
+      return (
+        <div key={`${offer.id}-${fieldKey}`} className="flex-1 flex flex-col items-center min-w-0 gap-0.5">
+          <span className={`text-xs font-semibold ${getLabelColor(label)}`}>{label}</span>
+          <input
+            type="number"
+            step="0.0001"
+            value={displayValue}
+            onChange={(e) => updateField(offer.id, fieldKey, e.target.value)}
+            className={`w-full min-w-[60px] max-w-[100px] px-2 py-1 text-sm font-bold text-center border-2 rounded-lg bg-white dark:bg-gray-800 focus:ring-2 focus:ring-primary-500 focus:outline-none ${
+              isModified
+                ? 'border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20'
+                : 'border-gray-300 dark:border-gray-600'
+            }`}
+          />
+        </div>
+      )
+    }
+
+    // Mode standard : label et valeur en ligne
     if (!isEditMode) {
       return (
         <div key={`${offer.id}-${fieldKey}`} className="flex-1 flex items-center gap-2 min-w-0">
@@ -895,7 +1169,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
       )
     }
 
-    // Mode édition : champ input avec flex-1
+    // Mode édition standard : champ input en ligne
     return (
       <div key={`${offer.id}-${fieldKey}`} className="flex-1 flex items-center gap-2 min-w-0">
         <span className={`text-sm font-semibold w-10 shrink-0 text-right ${getLabelColor(label)}`}>{label}</span>
@@ -1062,7 +1336,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
               </div>
             )}
 
-            {(effectiveType === 'ZEN_WEEK_END' || effectiveType === 'ZEN_WEEK_END_HP_HC' || effectiveType === 'ZEN_FLEX' || effectiveType === 'SEASONAL' || effectiveType === 'EJP') && (
+            {(effectiveType === 'BASE_WEEKEND' || effectiveType === 'HC_WEEKEND' || effectiveType === 'SEASONAL' || effectiveType === 'EJP') && (
               <div className="text-sm text-gray-500 dark:text-gray-400 italic">
                 Tarifs spécifiques à renseigner après validation
               </div>
@@ -1086,11 +1360,15 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
 
   // Helper pour extraire et nettoyer le nom de l'offre
   const getCleanOfferName = (offerName: string): string => {
-    let name = offerName.replace(/\s*\d+\s*kVA/gi, '')
+    // Étape 1 : retirer le suffixe kVA
+    let name = offerName.replace(/\s*-?\s*\d+\s*kVA/gi, '')
+    // Conserver le nom après retrait kVA comme fallback (ex: "Tempo" reste valide)
+    const nameAfterKva = name.replace(/\s*-\s*-\s*/g, ' - ').replace(/\s+/g, ' ').trim().replace(/\s*-\s*$/, '').trim()
+    // Étape 2 : retirer les mots-clés de type d'offre (peut donner une chaîne vide si le nom EST un type)
     name = name.replace(/\s*-?\s*(BASE|HC[_\s]?HP|TEMPO|EJP)/gi, '')
     name = name.replace(/\s*-\s*-\s*/g, ' - ').replace(/\s+/g, ' ').trim()
     name = name.replace(/\s*-\s*$/, '').trim()
-    return name || offerName
+    return name || nameAfterKva || offerName
   }
 
   // Helper pour extraire la puissance
@@ -1224,15 +1502,22 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
           }
         }
         pricingData.subscription_price = parsePrice(newPower.fields.subscription_price, undefined)
+        // Inclure valid_to dans pricing_data pour les offres historiques
+        const pricingDataFinal: Record<string, number | string | undefined> = { ...pricingData }
+        if (newPower.valid_to) {
+          pricingDataFinal.valid_to = newPower.valid_to
+        }
         allContributions.push({
           contribution_type: 'NEW_OFFER',
           existing_provider_id: currentProvider.id,
           provider_name: currentProvider.name,
           offer_name: `${effectiveName} - ${newPower.power} kVA`,
           offer_type: effectiveType,
-          description: `Ajout de la puissance ${newPower.power} kVA pour ${currentProvider.name} (${effectiveType})`,
+          description: newPower.valid_to
+            ? `Ajout historique : ${newPower.power} kVA pour ${currentProvider.name} (${effectiveType}) - offre expirée`
+            : `Ajout de la puissance ${newPower.power} kVA pour ${currentProvider.name} (${effectiveType})`,
           power_kva: newPower.power,
-          pricing_data: pricingData,
+          pricing_data: pricingDataFinal,
           price_sheet_url: priceSheetUrl,
           valid_from: newPower.valid_from || new Date().toISOString().split('T')[0],
         })
@@ -1264,9 +1549,12 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
       }
 
       // Renommages de groupes d'offres
-      for (const [originalName, newName] of Object.entries(editedOfferNames)) {
+      for (const [renameKey, newName] of Object.entries(editedOfferNames)) {
+        const [originalName, offerType] = renameKey.split('::')
         if (newName === originalName || newName.trim() === '') continue
-        const offersInGroup = providerOffers.filter(o => getCleanOfferName(o.name) === originalName)
+        const offersInGroup = providerOffers.filter(o =>
+          getCleanOfferName(o.name) === originalName && o.offer_type === offerType
+        )
         for (const offer of offersInGroup) {
           const power = getPower(offer.name)
           const newOfferName = power ? `${newName} - ${power}` : newName
@@ -1276,8 +1564,8 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
             existing_offer_id: offer.id,
             provider_name: currentProvider.name,
             offer_name: `[RENOMMAGE] ${newOfferName}`,
-            offer_type: filterOfferType,
-            description: `Renommage du groupe d'offres "${originalName}" en "${newName}" pour ${currentProvider.name} (${filterOfferType})`,
+            offer_type: offerType || filterOfferType,
+            description: `Renommage du groupe d'offres "${originalName}" en "${newName}" pour ${currentProvider.name} (${offerType || filterOfferType})`,
             power_kva: offer.power_kva || (power ? parseInt(power) : 6),
             price_sheet_url: priceSheetUrl,
             valid_from: new Date().toISOString().split('T')[0],
@@ -1404,6 +1692,50 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
     return Object.keys(groupedOffers).sort((a, b) => a.localeCompare(b))
   }, [groupedOffers])
 
+  // Séparer les groupes actifs et expirés
+  const activeGroupNames = useMemo(() => {
+    return groupNames.filter(g => !groupedOffers[g]?.every(offer => offer.valid_to))
+  }, [groupNames, groupedOffers])
+
+  const expiredGroupNames = useMemo(() => {
+    return groupNames.filter(g => groupedOffers[g]?.every(offer => offer.valid_to))
+  }, [groupNames, groupedOffers])
+
+  // Regrouper les offres expirées par date d'expiration (mois/année)
+  const expiredByDate = useMemo(() => {
+    const byDate: Record<string, string[]> = {}
+    for (const gName of expiredGroupNames) {
+      const offers = groupedOffers[gName]
+      if (!offers || offers.length === 0) continue
+      // Prendre la date valid_to la plus récente du groupe
+      const latestValidTo = offers.reduce((latest, offer) => {
+        if (!offer.valid_to) return latest
+        if (!latest) return offer.valid_to
+        return new Date(offer.valid_to) > new Date(latest) ? offer.valid_to : latest
+      }, null as string | null)
+      if (!latestValidTo) continue
+      const date = new Date(latestValidTo)
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+      if (!byDate[key]) byDate[key] = []
+      byDate[key].push(gName)
+    }
+    // Trier par date décroissante (plus récent en premier)
+    const sorted = Object.entries(byDate).sort(([a], [b]) => b.localeCompare(a))
+    return sorted
+  }, [expiredGroupNames, groupedOffers])
+
+  // Groupes visibles dans la zone principale = uniquement les offres actives
+  const visibleGroupNames = useMemo(() => {
+    return activeGroupNames
+  }, [activeGroupNames])
+
+  // Sélectionner automatiquement le premier groupe visible quand la liste change
+  useEffect(() => {
+    if (visibleGroupNames.length > 0 && !visibleGroupNames.includes(selectedGroupName)) {
+      setSelectedGroupName(visibleGroupNames[0])
+    }
+  }, [visibleGroupNames, selectedGroupName])
+
   // Calculer les puissances existantes pour ce fournisseur/type
   const existingPowers = useMemo(() => {
     return providerOffers.map(offer => {
@@ -1452,9 +1784,8 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
     if (type === 'HC_HP') return ['hc_price', 'hp_price']
     if (type === 'TEMPO') return ['tempo_blue_hc', 'tempo_blue_hp', 'tempo_white_hc', 'tempo_white_hp', 'tempo_red_hc', 'tempo_red_hp']
     if (type === 'EJP') return ['ejp_normal', 'ejp_peak']
-    if (type === 'ZEN_FLEX' || type === 'SEASONAL') return ['hc_price_summer', 'hp_price_summer', 'hc_price_winter', 'hp_price_winter']
-    if (type === 'ZEN_WEEK_END') return ['base_price', 'base_price_weekend']
-    if (type === 'ZEN_WEEK_END_HP_HC' || type === 'HC_WEEKEND' || type === 'HC_NUIT_WEEKEND') return ['hc_price', 'hp_price', 'hc_price_weekend', 'hp_price_weekend']
+    if (type === 'SEASONAL') return ['hc_price_summer', 'hp_price_summer', 'hc_price_winter', 'hp_price_winter']
+    if (type === 'HC_WEEKEND' || type === 'HC_NUIT_WEEKEND') return ['hc_price', 'hp_price', 'hc_price_weekend', 'hp_price_weekend']
 
     // Pour les types non standard, détecter depuis les offres existantes
     const knownPriceFields = [
@@ -1545,7 +1876,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
     }
 
     // Si type standard ou connu, ne pas utiliser la détection dynamique
-    if (['BASE', 'HC_HP', 'TEMPO', 'EJP', 'ZEN_FLEX', 'SEASONAL', 'ZEN_WEEK_END', 'ZEN_WEEK_END_HP_HC', 'HC_WEEKEND', 'HC_NUIT_WEEKEND'].includes(filterOfferType)) {
+    if (['BASE', 'HC_HP', 'TEMPO', 'EJP', 'SEASONAL', 'BASE_WEEKEND', 'HC_WEEKEND', 'HC_NUIT_WEEKEND'].includes(filterOfferType)) {
       return []
     }
 
@@ -1602,24 +1933,11 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
           <p className="text-gray-600 dark:text-gray-400 mt-1">
             {(() => {
               if (offersArray.length === 0) return '0 offre'
-              const filteredCount = offersArray.filter((offer) => {
-                if (filterProvider && offer.provider_id !== filterProvider) return false
-                if (filterOfferType !== 'all' && offer.offer_type !== filterOfferType) return false
-                return true
-              }).length
-
               const selectedProvider = sortedProviders.find(p => p.id === filterProvider)
-              const typeLabels: Record<string, string> = {
-                'BASE': 'Base',
-                'HC_HP': 'HC/HP',
-                'TEMPO': 'Tempo',
-                'EJP': 'EJP',
-                'ZEN_FLEX': 'Zen Flex',
-                'ZEN_WEEK_END': 'Zen Week-end',
-                'ZEN_WEEK_END_HP_HC': 'Zen Week-end HC/HP',
-              }
-              const typeLabel = filterOfferType !== 'all' ? typeLabels[filterOfferType] || filterOfferType : ''
-              return `${filteredCount} offre(s) ${selectedProvider ? `pour ${selectedProvider.name}` : ''}${typeLabel ? ` - ${typeLabel}` : ''}`
+              const totalCount = filterProvider
+                ? offersArray.filter(o => o.provider_id === filterProvider).length
+                : offersArray.length
+              return `${totalCount} offre(s)${selectedProvider ? ` pour ${selectedProvider.name}` : ''}`
             })()}
           </p>
         </div>
@@ -1657,7 +1975,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                 })
                 return
               }
-              setShowHistory(false)
+              setShowExpiredSection(false)
               setIsEditMode(true)
             }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -1702,35 +2020,36 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
       <div className="mb-6 space-y-4">
         {/* Fournisseurs - Boutons */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Sélectionner un fournisseur</label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+          <div className="mb-3">
+            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 text-center">Fournisseurs</label>
+            <div className="mt-1 h-0.5 w-full bg-primary-500 rounded-full" />
+          </div>
+          <div className="flex flex-wrap justify-center gap-2">
             {sortedProviders.map((provider) => {
               const isSelected = filterProvider === provider.id
               const providerOffersCount = offersArray.filter(o => o.provider_id === provider.id).length
               const isMarkedForRemoval = providersToRemove.includes(provider.id)
+              // Masquer les fournisseurs sans offre en mode lecture
+              if (!isEditMode && providerOffersCount === 0) return null
               return (
                 <div
                   key={provider.id}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-between gap-2 w-full ${
+                  onClick={() => {
+                    if (!isMarkedForRemoval && provider.id !== filterProvider) {
+                      confirmOrExecute(() => setFilterProvider(provider.id))
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-between gap-2 flex-1 min-w-[calc((100%-0.5rem)/2)] sm:min-w-[calc((100%-1rem)/3)] md:min-w-[calc((100%-2rem)/5)] ${
+                    isMarkedForRemoval ? 'cursor-not-allowed' : 'cursor-pointer'
+                  } ${
                     isMarkedForRemoval
                       ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 opacity-60'
                       : isSelected
                         ? 'bg-primary-600 text-white shadow-md'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
                   }`}
                 >
-                  <span
-                    onClick={() => {
-                      if (!isMarkedForRemoval && provider.id !== filterProvider) {
-                        confirmOrExecute(() => setFilterProvider(provider.id))
-                      }
-                    }}
-                    className={`flex-1 ${isMarkedForRemoval ? 'line-through cursor-not-allowed' : 'cursor-pointer'}`}
-                  >
-                    {provider.name}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className={`px-1.5 py-0.5 text-xs rounded-full ${
+                  <span className={`px-1.5 py-0.5 text-xs rounded-full shrink-0 ${
                       isMarkedForRemoval
                         ? 'bg-red-200 dark:bg-red-800 text-red-700 dark:text-red-300'
                         : isSelected
@@ -1738,9 +2057,79 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                           : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400'
                     }`}>
                       {providerOffersCount}
-                    </span>
-                  {/* Icône supprimer/restaurer (uniquement en mode édition) */}
-                  {isEditMode && (
+                  </span>
+                  <span
+                    className={`flex-1 text-center ${isMarkedForRemoval ? 'line-through' : ''}`}
+                  >
+                    {provider.name}
+                  </span>
+                  <span className="flex items-center gap-1 shrink-0">
+                  {/* Bouton export JSON */}
+                  {providerOffersCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const providerOffers = offersArray.filter(o => o.provider_id === provider.id && o.is_active !== false)
+                        // Regrouper par offer_type puis par nom de groupe (sans le suffixe " - X kVA")
+                        const grouped: Record<string, Record<string, typeof providerOffers>> = {}
+                        for (const offer of providerOffers) {
+                          if (!grouped[offer.offer_type]) grouped[offer.offer_type] = {}
+                          const groupName = offer.name.replace(/\s*-\s*\d+\s*kVA$/i, '').trim()
+                          if (!grouped[offer.offer_type][groupName]) grouped[offer.offer_type][groupName] = []
+                          grouped[offer.offer_type][groupName].push(offer)
+                        }
+                        // Construire le JSON d'export
+                        const exportOffers: Record<string, unknown>[] = []
+                        for (const [offerType, groups] of Object.entries(grouped)) {
+                          const priceFields = getFieldKeysForOfferType(offerType)
+                          for (const [groupName, offers] of Object.entries(groups)) {
+                            const sortedOffers = [...offers].sort((a, b) => (a.power_kva || 0) - (b.power_kva || 0))
+                            const variants = sortedOffers.map(o => {
+                              const variant: Record<string, unknown> = {
+                                power_kva: typeof o.power_kva === 'number' ? o.power_kva : Number(o.power_kva) || 0,
+                                subscription_price: typeof o.subscription_price === 'number' ? o.subscription_price : Number(o.subscription_price) || 0,
+                              }
+                              for (const field of priceFields) {
+                                const val = (o as unknown as Record<string, unknown>)[field]
+                                if (val != null) {
+                                  variant[field] = typeof val === 'number' ? val : Number(val) || 0
+                                }
+                              }
+                              return variant
+                            })
+                            exportOffers.push({
+                              offer_name: groupName,
+                              offer_type: offerType,
+                              power_variants: variants,
+                            })
+                          }
+                        }
+                        const exportData = {
+                          provider_name: provider.name,
+                          data_source: 'Export MyElectricalData',
+                          extraction_date: new Date().toISOString().split('T')[0],
+                          offers: exportOffers,
+                        }
+                        const json = JSON.stringify(exportData, null, 2)
+                        navigator.clipboard.writeText(json).then(() => {
+                          toast.success(`${providerOffersCount} offre(s) ${provider.name} copiées dans le presse-papier`)
+                        }).catch(() => {
+                          toast.error('Impossible de copier dans le presse-papier')
+                        })
+                      }}
+                      className={`p-1 rounded transition-all ${
+                        isSelected
+                          ? 'text-white/70 hover:text-white hover:bg-white/20'
+                          : 'text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600'
+                      }`}
+                      title="Copier les offres en JSON"
+                    >
+                      <Copy size={14} />
+                    </button>
+                  )}
+                  {/* Icône supprimer/restaurer (uniquement en mode édition, masqué en mode IA) */}
+                  {isEditMode && !showAIMode && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -1774,25 +2163,8 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
             })}
           </div>
 
-          {/* Toggle historique des tarifs (masqué en mode édition) */}
-          {!isEditMode && <div className="mt-4 flex items-center gap-3">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={showHistory}
-                onChange={(e) => setShowHistory(e.target.checked)}
-                className="w-4 h-4 text-primary-600 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 cursor-pointer"
-              />
-              <span className="text-sm text-gray-700 dark:text-gray-300">
-                Afficher l'historique des tarifs
-              </span>
-            </label>
-            {showHistory && (
-              <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded">
-                Tarifs expirés inclus
-              </span>
-            )}
-          </div>}
+
+
 
           {/* Bouton/Champ ajouter un nouveau fournisseur (masqué en mode IA) */}
           {isEditMode && !isAddingProvider && !showAIMode && (
@@ -1800,11 +2172,9 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
               onClick={() => {
                 setIsAddingProvider(true)
                 setNewProviderName('')
-                setNewProviderOfferType(allOfferTypes[0] || 'BASE')
+                setNewProviderWebsite('')
                 setFilterProvider('')
                 setFilterOfferType('all')
-                setPowersToRemove([])
-                setNewPowersData([])
               }}
               className="w-full mt-3 px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 border-2 border-dashed border-primary-300 dark:border-primary-700 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:border-primary-400 dark:hover:border-primary-600"
               title="Proposer un nouveau fournisseur"
@@ -1855,11 +2225,18 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
               <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-3">
                 <p className="text-xs font-medium text-amber-800 dark:text-amber-300 mb-1.5 flex items-center gap-1.5">
                   <AlertCircle size={14} />
-                  Conseils pour de meilleurs résultats
+                  Comment utiliser ce prompt
                 </p>
-                <ul className="text-xs text-amber-700 dark:text-amber-400 space-y-1 ml-5 list-disc">
-                  <li>Privilégiez une <strong>page web</strong> ou une <strong>capture d'écran</strong> comme source</li>
-                  <li>Les <strong>PDF</strong> sont difficiles à lire pour les IA (colonnes mélangées, tableaux mal interprétés)</li>
+                <ul className="text-xs text-amber-700 dark:text-amber-400 space-y-1.5 ml-5 list-disc">
+                  <li><strong>Lancez le prompt seul</strong> — l'IA effectuera une recherche web pour trouver les tarifs officiels du fournisseur</li>
+                  <li>Pour fournir une source spécifique :
+                    <ul className="ml-4 mt-1 space-y-0.5 list-[circle]">
+                      <li><strong>Copier/coller le contenu</strong> : méthode la plus fiable. Ouvre le PDF ou la page web, sélectionne le tableau tarifaire et colle-le à la suite du prompt</li>
+                      <li><strong>Page HTML ou lien web</strong> : bonne alternative, l'IA peut souvent accéder aux pages publiques</li>
+                      <li><strong>Image (capture d'écran)</strong> : acceptable si les autres méthodes ne fonctionnent pas</li>
+                    </ul>
+                  </li>
+                  <li><strong>Évitez les PDF en pièce jointe</strong> — la structure interne des PDF rend la lecture difficile pour les IA (colonnes mélangées, tableaux mal interprétés)</li>
                   <li>Dans tous les cas, <strong>vérifiez toujours les tarifs proposés</strong> avant de soumettre</li>
                 </ul>
               </div>
@@ -1970,9 +2347,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                 onClick={() => {
                   setIsAddingProvider(false)
                   setNewProviderName('')
-                  setNewProviderOfferType('')
-                  setNewPowersData([])
-                  // Réinitialiser sur EDF
+                  setNewProviderWebsite('')
                   const edf = sortedProviders.find(p => p.name.toUpperCase() === 'EDF')
                   if (edf) {
                     setFilterProvider(edf.id)
@@ -1988,7 +2363,6 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Nom du fournisseur */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Nom du fournisseur <span className="text-red-500">*</span>
@@ -2003,50 +2377,126 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                 />
               </div>
 
-              {/* Type d'offre */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Type d'offre <span className="text-red-500">*</span>
+                  Site web
                 </label>
-                <select
-                  value={newProviderOfferType}
-                  onChange={(e) => setNewProviderOfferType(e.target.value)}
+                <input
+                  type="text"
+                  value={newProviderWebsite}
+                  onChange={(e) => setNewProviderWebsite(e.target.value)}
+                  placeholder="Ex: https://www.edf.fr"
                   className="w-full px-4 py-2 rounded-lg border-2 border-green-300 dark:border-green-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-green-500 focus:outline-none"
-                >
-                  {allOfferTypes.map((type) => {
-                    const typeLabels: Record<string, string> = {
-                      'BASE': 'Base',
-                      'HC_HP': 'HC/HP',
-                      'TEMPO': 'Tempo',
-                      'EJP': 'EJP',
-                      'ZEN_FLEX': 'Zen Flex',
-                      'ZEN_WEEK_END': 'Zen Week-end',
-                      'ZEN_WEEK_END_HP_HC': 'Zen Week-end HC/HP',
-                      'SEASONAL': 'Saisonnier',
-                      'BASE_WEEKEND': 'Base Week-end',
-                      'HC_NUIT_WEEKEND': 'HC Nuit & Week-end',
-                      'HC_WEEKEND': 'HC Week-end',
-                    }
-                    return (
-                      <option key={type} value={type}>
-                        {typeLabels[type] || type}
-                      </option>
-                    )
-                  })}
-                </select>
+                />
               </div>
             </div>
 
-            <p className="mt-3 text-sm text-green-700 dark:text-green-400">
-              Ajoutez les puissances et tarifs ci-dessous, puis soumettez votre contribution.
-            </p>
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={() => {
+                  setIsAddingProvider(false)
+                  setNewProviderName('')
+                  setNewProviderWebsite('')
+                  const edf = sortedProviders.find(p => p.name.toUpperCase() === 'EDF')
+                  if (edf) setFilterProvider(edf.id)
+                  else if (sortedProviders.length > 0) setFilterProvider(sortedProviders[0].id)
+                }}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 rounded-lg transition-colors"
+              >
+                <X size={16} />
+                Annuler
+              </button>
+              <button
+                onClick={async () => {
+                  if (!newProviderName.trim()) {
+                    toast.error('Veuillez renseigner le nom du fournisseur')
+                    return
+                  }
+                  setCreatingProvider(true)
+                  try {
+                    const response = await energyApi.createProvider({
+                      name: newProviderName.trim(),
+                      website: newProviderWebsite.trim() || undefined,
+                    })
+                    if (response.success && response.data) {
+                      toast.success(`Fournisseur "${newProviderName.trim()}" créé`)
+                      queryClient.invalidateQueries({ queryKey: ['energy-providers'] })
+                      setIsAddingProvider(false)
+                      setNewProviderName('')
+                      setNewProviderWebsite('')
+                      setFilterProvider(response.data.id)
+                    } else {
+                      toast.error(response.error?.message || 'Erreur lors de la création')
+                    }
+                  } catch {
+                    toast.error('Erreur lors de la création du fournisseur')
+                  }
+                  setCreatingProvider(false)
+                }}
+                disabled={creatingProvider || !newProviderName.trim()}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                <Plus size={16} />
+                {creatingProvider ? 'Création...' : 'Créer le fournisseur'}
+              </button>
+            </div>
           </div>
         )}
 
         {/* Type d'offre - Boutons dynamiques (masqué si ajout de fournisseur ou mode IA) */}
         {!isAddingProvider && !showAIMode && filterProvider && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Type d'offre</label>
+            <div className="mb-3">
+              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 text-center">Types d'offre</label>
+              <div className="mt-1 h-0.5 w-full bg-primary-500 rounded-full" />
+            </div>
+            <div className="flex items-center justify-between mb-3">
+              {isEditMode && (() => {
+                const providerOffers = offersArray.filter(o => o.provider_id === filterProvider)
+                const groups: Record<string, typeof providerOffers> = {}
+                for (const offer of providerOffers) {
+                  const name = getCleanOfferName(offer.name)
+                  if (!groups[name]) groups[name] = []
+                  groups[name].push(offer)
+                }
+                const groupEntries = Object.entries(groups)
+                if (groupEntries.length === 0) return null
+                const allDeprecated = groupEntries.every(([name, offers]) =>
+                  deprecatedOffers.some(d => d.offer_name === name && d.offer_type === offers[0]?.offer_type)
+                )
+                return (
+                  <button
+                    onClick={() => {
+                      if (allDeprecated) {
+                        const groupKeys = new Set(groupEntries.map(([name, offers]) => `${name}::${offers[0]?.offer_type}`))
+                        setDeprecatedOffers(prev => prev.filter(d => !groupKeys.has(`${d.offer_name}::${d.offer_type}`)))
+                        toast.info('Suppression de toutes les offres annulée')
+                      } else {
+                        const newDeprecated = groupEntries
+                          .filter(([name, offers]) => !deprecatedOffers.some(d => d.offer_name === name && d.offer_type === offers[0]?.offer_type))
+                          .map(([name, offers]) => ({
+                            offer_type: offers[0]?.offer_type || '',
+                            offer_name: name,
+                            offer_ids: offers.map(o => o.id),
+                            warning: 'Suppression groupée demandée par l\'utilisateur.',
+                          }))
+                        setDeprecatedOffers(prev => [...prev, ...newDeprecated])
+                        toast.success(`${newDeprecated.length} groupe(s) d'offres marqué(s) pour suppression`)
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                      allDeprecated
+                        ? 'text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'
+                        : 'text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50'
+                    }`}
+                    title={allDeprecated ? 'Annuler la suppression de toutes les offres' : 'Marquer toutes les offres pour suppression'}
+                  >
+                    {allDeprecated ? <Undo2 size={14} /> : <Trash2 size={14} />}
+                    {allDeprecated ? 'Annuler la suppression' : 'Supprimer toutes les offres du fournisseur'}
+                  </button>
+                )
+              })()}
+            </div>
 
             {/* Formulaire inline pour ajouter une nouvelle offre */}
             {isAddingOffer ? (
@@ -2087,12 +2537,9 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                           'HC_HP': 'HC/HP',
                           'TEMPO': 'Tempo',
                           'EJP': 'EJP',
-                          'ZEN_FLEX': 'Zen Flex',
-                          'ZEN_WEEK_END': 'Zen Week-end',
-                          'ZEN_WEEK_END_HP_HC': 'Zen Week-end HC/HP',
                           'SEASONAL': 'Saisonnier',
                           'BASE_WEEKEND': 'Base Week-end',
-                          'HC_NUIT_WEEKEND': 'HC Nuit & Week-end',
+                          'HC_NUIT_WEEKEND': 'HC Nuit Week-end',
                           'HC_WEEKEND': 'HC Week-end',
                         }
                         return (
@@ -2119,7 +2566,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
               <>
                 {/* Grille des types d'offres (tous les types en mode édition, existants sinon) */}
                 {(isEditMode ? typeOrder.length > 0 : availableOfferTypes.length > 0) && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                  <div className="flex flex-wrap justify-center gap-2">
                     {(isEditMode ? typeOrder : availableOfferTypes).map((type) => {
                       const isSelected = filterOfferType === type
                       const typeCount = offersArray.filter(o => o.provider_id === filterProvider && o.offer_type === type).length
@@ -2129,22 +2576,18 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                         'HC_HP': 'HC/HP',
                         'TEMPO': 'Tempo',
                         'EJP': 'EJP',
-                        'ZEN_FLEX': 'Zen Flex',
-                        'ZEN_WEEK_END': 'Zen Week-end',
-                        'ZEN_WEEK_END_HP_HC': 'Zen Week-end HC/HP',
                         'SEASONAL': 'Saisonnier',
                         'BASE_WEEKEND': 'Base Week-end',
                         'HC_NUIT_WEEKEND': 'HC Nuit Week-end',
                         'HC_WEEKEND': 'HC Week-end',
                       }
                       return (
-                        <button
+                        <div
                           key={type}
                           onClick={() => {
                             if (type === filterOfferType) return
                             confirmOrExecute(() => {
                               setFilterOfferType(type)
-                              // En mode édition, si le type est vide, créer directement un nouveau groupe
                               if (isEditMode && isEmpty) {
                                 if (newGroups.length === 0) {
                                   setNewGroups([{ name: '', validFrom: new Date().toISOString().split('T')[0], powers: [{ power: 0, fields: {} }] }])
@@ -2152,33 +2595,56 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                               }
                             })
                           }}
-                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 w-full ${
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-between gap-2 cursor-pointer flex-1 min-w-[calc((100%-0.5rem)/2)] sm:min-w-[calc((100%-1.5rem)/4)] ${
                             isSelected
                               ? 'bg-primary-600 text-white shadow-md'
                               : isEmpty && isEditMode
                                 ? 'bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-primary-400 dark:hover:border-primary-500 hover:text-primary-500 dark:hover:text-primary-400'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
                           }`}
                           title={isEmpty && isEditMode ? `Cliquer pour créer des offres ${typeLabels[type] || type}` : undefined}
                         >
-                          {isEmpty && isEditMode && <Plus size={12} className="shrink-0" />}
-                          {typeLabels[type] || type}
-                          <span className={`px-1.5 py-0.5 text-xs rounded-full ${
-                            isSelected
-                              ? 'bg-primary-500 text-white'
-                              : isEmpty
-                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
-                                : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400'
-                          }`}>
-                            {typeCount}
+                          <span className={`px-1.5 py-0.5 text-xs rounded-full shrink-0 ${
+                              isSelected
+                                ? 'bg-primary-500 text-white'
+                                : isEmpty
+                                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
+                                  : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400'
+                            }`}>
+                              {typeCount}
                           </span>
-                        </button>
+                          <span
+                            className="flex-1 text-center flex items-center justify-center gap-1.5"
+                          >
+                            {isEmpty && isEditMode && <Plus size={12} className="shrink-0" />}
+                            {typeLabels[type] || type}
+                          </span>
+                          <span className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setTypeInfoTarget(type)
+                                setShowTypeInfoPopup(true)
+                              }}
+                              className={`p-1 rounded transition-all ${
+                                isSelected
+                                  ? 'text-white/70 hover:text-white hover:bg-white/20'
+                                  : 'text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600'
+                              }`}
+                              title="Détail du type d'offre"
+                            >
+                              <Info size={14} />
+                            </button>
+                          </span>
+                        </div>
                       )
                     })}
                   </div>
                 )}
               </>
             )}
+
           </div>
         )}
 
@@ -2187,131 +2653,132 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
       {/* Contenu masqué en mode IA */}
       {!showAIMode && (<>
 
-      {/* Bloc d'information sur le type d'offre sélectionné */}
-      {filterOfferType && filterOfferType !== 'all' && (
-        <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <div className="flex items-start gap-3">
-            <Info size={20} className="text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
-            <div>
-              <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">
-                {filterOfferType === 'BASE' && 'Offre Base — Tarif unique'}
-                {filterOfferType === 'HC_HP' && 'Offre Heures Creuses / Heures Pleines'}
-                {filterOfferType === 'TEMPO' && 'Offre Tempo — 6 tarifs selon le jour'}
-                {filterOfferType === 'EJP' && 'Offre EJP — Effacement Jour de Pointe'}
-                {filterOfferType === 'ZEN_WEEK_END' && 'Offre Zen Week-end — Tarif réduit le week-end'}
-                {filterOfferType === 'ZEN_WEEK_END_HP_HC' && 'Offre Zen Week-end HC/HP'}
-                {!['BASE', 'HC_HP', 'TEMPO', 'EJP', 'ZEN_WEEK_END', 'ZEN_WEEK_END_HP_HC'].includes(filterOfferType) && `Offre ${filterOfferType}`}
-              </h4>
-              <div className="text-sm text-blue-700 dark:text-blue-400 space-y-2">
-                {filterOfferType === 'BASE' && (
-                  <>
-                    <p>Un seul prix du kWh, 24h/24, 7j/7, toute l'année.</p>
-                    <p className="text-xs text-blue-600 dark:text-blue-500">
-                      <strong>Tarifs à renseigner :</strong> Abonnement (€/mois) + Prix Base (€/kWh)
-                    </p>
-                  </>
-                )}
-                {filterOfferType === 'HC_HP' && (
-                  <>
-                    <p>Deux prix différents selon l'heure :</p>
-                    <ul className="list-disc list-inside ml-2 space-y-1">
-                      <li><strong>Heures Creuses (HC)</strong> : 8h par jour (souvent la nuit entre 22h et 6h, parfois le midi). Prix réduit.</li>
-                      <li><strong>Heures Pleines (HP)</strong> : les 16h restantes. Prix plus élevé.</li>
-                    </ul>
-                    <p className="text-xs text-blue-600 dark:text-blue-500">
-                      <strong>Tarifs à renseigner :</strong> Abonnement (€/mois) + Prix HC (€/kWh) + Prix HP (€/kWh)
-                    </p>
-                  </>
-                )}
-                {filterOfferType === 'TEMPO' && (
-                  <>
-                    <p>L'année est divisée en 3 types de jours, chacun avec ses tarifs HC/HP :</p>
-                    <ul className="list-none ml-2 space-y-1">
-                      <li><span className="inline-block w-3 h-3 rounded-full bg-blue-500 mr-2"></span><strong>Jours Bleus</strong> (300 jours/an) : tarif le plus avantageux</li>
-                      <li><span className="inline-block w-3 h-3 rounded-full bg-gray-400 mr-2"></span><strong>Jours Blancs</strong> (43 jours/an) : tarif intermédiaire</li>
-                      <li><span className="inline-block w-3 h-3 rounded-full bg-red-500 mr-2"></span><strong>Jours Rouges</strong> (22 jours/an) : tarif très élevé (hiver uniquement)</li>
-                    </ul>
-                    <p className="mt-1">La couleur du lendemain est annoncée la veille à 17h.</p>
-                    <p className="text-xs text-blue-600 dark:text-blue-500">
-                      <strong>Tarifs à renseigner :</strong> Abonnement + 6 prix (Bleu HC, Bleu HP, Blanc HC, Blanc HP, Rouge HC, Rouge HP)
-                    </p>
-                  </>
-                )}
-                {filterOfferType === 'EJP' && (
-                  <>
-                    <p>Offre historique (non commercialisée depuis 1998) avec 2 périodes :</p>
-                    <ul className="list-disc list-inside ml-2 space-y-1">
-                      <li><strong>Jours Normaux</strong> (343 jours/an) : tarif avantageux</li>
-                      <li><strong>Jours de Pointe</strong> (22 jours/an, hiver) : tarif très élevé. Prévenus la veille à 17h.</li>
-                    </ul>
-                    <p className="text-xs text-blue-600 dark:text-blue-500">
-                      <strong>Tarifs à renseigner :</strong> Abonnement + Prix Normal (€/kWh) + Prix Pointe (€/kWh)
-                    </p>
-                  </>
-                )}
-                {filterOfferType === 'ZEN_WEEK_END' && (
-                  <>
-                    <p>Tarif réduit pendant tout le week-end (samedi et dimanche), tarif normal en semaine.</p>
-                    <p className="text-xs text-blue-600 dark:text-blue-500">
-                      <strong>Tarifs à renseigner :</strong> Abonnement + Prix Semaine (€/kWh) + Prix Week-end (€/kWh)
-                    </p>
-                  </>
-                )}
-                {filterOfferType === 'ZEN_WEEK_END_HP_HC' && (
-                  <>
-                    <p>Combine les avantages HC/HP avec des tarifs week-end réduits :</p>
-                    <ul className="list-disc list-inside ml-2 space-y-1">
-                      <li><strong>Semaine</strong> : tarifs HC/HP classiques</li>
-                      <li><span className="text-green-600 dark:text-green-400 font-semibold">Week-end</span> : tarifs HC/HP réduits (samedi et dimanche)</li>
-                    </ul>
-                    <p className="text-xs text-blue-600 dark:text-blue-500">
-                      <strong>Tarifs à renseigner :</strong> Abonnement + HC Semaine + HP Semaine + HC Week-end + HP Week-end
-                    </p>
-                  </>
-                )}
-                {(filterOfferType === 'ZEN_FLEX' || filterOfferType === 'SEASONAL') && (
-                  <>
-                    <p>Tarification saisonnière avec des prix différents selon la période :</p>
-                    <ul className="list-disc list-inside ml-2 space-y-1">
-                      <li><span className="text-orange-600 dark:text-orange-400 font-semibold">Été</span> (avril à octobre) : tarifs HC/HP avantageux</li>
-                      <li><span className="text-blue-600 dark:text-blue-400 font-semibold">Hiver</span> (novembre à mars) : tarifs HC/HP plus élevés</li>
-                    </ul>
-                    <p className="text-xs text-blue-600 dark:text-blue-500">
-                      <strong>Tarifs à renseigner :</strong> Abonnement + HC Été + HP Été + HC Hiver + HP Hiver (€/kWh)
-                    </p>
-                  </>
-                )}
-                {(filterOfferType === 'HC_WEEKEND' || filterOfferType === 'HC_NUIT_WEEKEND') && (
-                  <>
-                    <p>Tarifs HC/HP avec avantage week-end :</p>
-                    <ul className="list-disc list-inside ml-2 space-y-1">
-                      <li><strong>Semaine</strong> : tarifs HC/HP classiques</li>
-                      <li><span className="text-green-600 dark:text-green-400 font-semibold">Week-end</span> : tarifs HC/HP réduits (samedi et dimanche)</li>
-                      {filterOfferType === 'HC_NUIT_WEEKEND' && <li><strong>Nuit</strong> : heures creuses étendues la nuit</li>}
-                    </ul>
-                    <p className="text-xs text-blue-600 dark:text-blue-500">
-                      <strong>Tarifs à renseigner :</strong> Abonnement + HC Semaine + HP Semaine + HC Week-end + HP Week-end
-                    </p>
-                  </>
-                )}
-                {!['BASE', 'HC_HP', 'TEMPO', 'EJP', 'ZEN_WEEK_END', 'ZEN_WEEK_END_HP_HC', 'ZEN_FLEX', 'SEASONAL', 'HC_WEEKEND', 'HC_NUIT_WEEKEND'].includes(filterOfferType) && (
-                  <>
-                    <p>Offre avec tarification spécifique détectée depuis les offres existantes.</p>
-                    {dynamicPriceFields.length > 0 && (
-                      <p className="text-xs text-blue-600 dark:text-blue-500">
-                        <strong>Tarifs à renseigner :</strong> Abonnement (€/mois) + {dynamicPriceFields.map(f => f.label).join(' + ')} (€/kWh)
-                      </p>
-                    )}
-                  </>
-                )}
+      {/* Popup d'information sur le type d'offre */}
+      {showTypeInfoPopup && typeInfoTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowTypeInfoPopup(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="relative max-w-lg w-full p-5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Info size={20} className="text-primary-600 dark:text-primary-400 shrink-0" />
+                <h4 className="font-semibold text-gray-900 dark:text-gray-100">
+                  {typeInfoTarget === 'BASE' && 'Offre Base — Tarif unique'}
+                  {typeInfoTarget === 'HC_HP' && 'Offre Heures Creuses / Heures Pleines'}
+                  {typeInfoTarget === 'TEMPO' && 'Offre Tempo — 6 tarifs selon le jour'}
+                  {typeInfoTarget === 'EJP' && 'Offre EJP — Effacement Jour de Pointe'}
+                  {typeInfoTarget === 'BASE_WEEKEND' && 'Offre Base Week-end'}
+                  {typeInfoTarget === 'SEASONAL' && 'Offre Saisonnière (2 saisons)'}
+                  {(typeInfoTarget === 'HC_WEEKEND' || typeInfoTarget === 'HC_NUIT_WEEKEND') && `Offre ${typeInfoTarget === 'HC_NUIT_WEEKEND' ? 'HC Nuit Week-end' : 'HC Week-end'}`}
+                  {!['BASE', 'HC_HP', 'TEMPO', 'EJP', 'BASE_WEEKEND', 'SEASONAL', 'HC_WEEKEND', 'HC_NUIT_WEEKEND'].includes(typeInfoTarget) && `Offre ${typeInfoTarget}`}
+                </h4>
               </div>
+              <button
+                onClick={() => setShowTypeInfoPopup(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="text-sm text-gray-700 dark:text-gray-300 space-y-2">
+              {typeInfoTarget === 'BASE' && (
+                <>
+                  <p>Un seul prix du kWh, 24h/24, 7j/7, toute l'année.</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <strong>Tarifs à renseigner :</strong> Abonnement (€/mois) + Prix Base (€/kWh)
+                  </p>
+                </>
+              )}
+              {typeInfoTarget === 'HC_HP' && (
+                <>
+                  <p>Deux prix différents selon l'heure :</p>
+                  <ul className="list-disc list-inside ml-2 space-y-1">
+                    <li><strong>Heures Creuses (HC)</strong> : 8h par jour (souvent la nuit entre 22h et 6h, parfois le midi). Prix réduit.</li>
+                    <li><strong>Heures Pleines (HP)</strong> : les 16h restantes. Prix plus élevé.</li>
+                  </ul>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <strong>Tarifs à renseigner :</strong> Abonnement (€/mois) + Prix HC (€/kWh) + Prix HP (€/kWh)
+                  </p>
+                </>
+              )}
+              {typeInfoTarget === 'TEMPO' && (
+                <>
+                  <p>L'année est divisée en 3 types de jours, chacun avec ses tarifs HC/HP :</p>
+                  <ul className="list-none ml-2 space-y-1">
+                    <li><span className="inline-block w-3 h-3 rounded-full bg-blue-500 mr-2"></span><strong>Jours Bleus</strong> (300 jours/an) : tarif le plus avantageux</li>
+                    <li><span className="inline-block w-3 h-3 rounded-full bg-gray-400 mr-2"></span><strong>Jours Blancs</strong> (43 jours/an) : tarif intermédiaire</li>
+                    <li><span className="inline-block w-3 h-3 rounded-full bg-red-500 mr-2"></span><strong>Jours Rouges</strong> (22 jours/an) : tarif très élevé (hiver uniquement)</li>
+                  </ul>
+                  <p className="mt-1">La couleur du lendemain est annoncée la veille à 17h.</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <strong>Tarifs à renseigner :</strong> Abonnement + 6 prix (Bleu HC, Bleu HP, Blanc HC, Blanc HP, Rouge HC, Rouge HP)
+                  </p>
+                </>
+              )}
+              {typeInfoTarget === 'EJP' && (
+                <>
+                  <p>Offre historique (non commercialisée depuis 1998) avec 2 périodes :</p>
+                  <ul className="list-disc list-inside ml-2 space-y-1">
+                    <li><strong>Jours Normaux</strong> (343 jours/an) : tarif avantageux</li>
+                    <li><strong>Jours de Pointe</strong> (22 jours/an, hiver) : tarif très élevé. Prévenus la veille à 17h.</li>
+                  </ul>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <strong>Tarifs à renseigner :</strong> Abonnement + Prix Normal (€/kWh) + Prix Pointe (€/kWh)
+                  </p>
+                </>
+              )}
+              {typeInfoTarget === 'BASE_WEEKEND' && (
+                <>
+                  <p>Tarif réduit pendant tout le week-end (samedi et dimanche), tarif normal en semaine.</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <strong>Tarifs à renseigner :</strong> Abonnement + Prix Semaine (€/kWh) + Prix Week-end (€/kWh)
+                  </p>
+                </>
+              )}
+              {typeInfoTarget === 'SEASONAL' && (
+                <>
+                  <p>Tarification saisonnière avec 2 périodes et des prix HC/HP différents :</p>
+                  <ul className="list-disc list-inside ml-2 space-y-1">
+                    <li><span className="text-orange-600 dark:text-orange-400 font-semibold">Saison basse / Éco</span> : été (avril-octobre) ou jours Éco (345 jours/an) selon le fournisseur — tarifs HC/HP avantageux</li>
+                    <li><span className="text-blue-600 dark:text-blue-400 font-semibold">Saison haute / Sobriété</span> : hiver (novembre-mars) ou jours Sobriété (20 jours/an) selon le fournisseur — tarifs HC/HP plus élevés</li>
+                  </ul>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <strong>Tarifs à renseigner :</strong> Abonnement + HC Été/Éco + HP Été/Éco + HC Hiver/Sobriété + HP Hiver/Sobriété (€/kWh)
+                  </p>
+                </>
+              )}
+              {(typeInfoTarget === 'HC_WEEKEND' || typeInfoTarget === 'HC_NUIT_WEEKEND') && (
+                <>
+                  <p>Tarifs HC/HP avec avantage week-end :</p>
+                  <ul className="list-disc list-inside ml-2 space-y-1">
+                    <li><strong>Semaine</strong> : tarifs HC/HP classiques</li>
+                    <li><span className="text-green-600 dark:text-green-400 font-semibold">Week-end</span> : tarifs HC/HP réduits (samedi et dimanche)</li>
+                    {typeInfoTarget === 'HC_NUIT_WEEKEND' && <li><strong>Nuit</strong> : heures creuses étendues la nuit</li>}
+                  </ul>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <strong>Tarifs à renseigner :</strong> Abonnement + HC Semaine + HP Semaine + HC Week-end + HP Week-end
+                  </p>
+                </>
+              )}
+              {!['BASE', 'HC_HP', 'TEMPO', 'EJP', 'SEASONAL', 'BASE_WEEKEND', 'HC_WEEKEND', 'HC_NUIT_WEEKEND'].includes(typeInfoTarget) && (
+                <>
+                  <p>Offre avec tarification spécifique détectée depuis les offres existantes.</p>
+                  {dynamicPriceFields.length > 0 && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      <strong>Tarifs à renseigner :</strong> Abonnement (€/mois) + {dynamicPriceFields.map(f => f.label).join(' + ')} (€/kWh)
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Mode ajout de nouveau fournisseur ou nouvelle offre : afficher uniquement la zone d'ajout de puissances */}
-      {(isAddingProvider || (isAddingOffer && newOfferType)) ? (
+      {/* Mode ajout de nouvelle offre : afficher uniquement la zone d'ajout de puissances */}
+      {(!isAddingProvider && isAddingOffer && newOfferType) ? (
         <div className="space-y-6">
           {/* Lignes des nouvelles puissances pour le nouveau fournisseur */}
           {newPowersData.map((newPower, index) => {
@@ -2381,7 +2848,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                   </div>
 
                   {/* Tarifs selon le type */}
-                  {newProviderOfferType === 'BASE' && (
+                  {newOfferType === 'BASE' && (
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Base</span>
                       <input
@@ -2397,7 +2864,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                     </div>
                   )}
 
-                  {newProviderOfferType === 'HC_HP' && (
+                  {newOfferType === 'HC_HP' && (
                     <>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-blue-600">HC</span>
@@ -2428,7 +2895,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                     </>
                   )}
 
-                  {(newProviderOfferType !== 'BASE' && newProviderOfferType !== 'HC_HP') && (
+                  {(newOfferType !== 'BASE' && newOfferType !== 'HC_HP') && (
                     <span className="text-sm text-gray-500 italic">Tarifs spécifiques après validation</span>
                   )}
 
@@ -2445,39 +2912,52 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
           })}
 
           {/* Bouton ajouter une puissance */}
-          <button
-            onClick={() => setNewPowersData(prev => [...prev, { power: 0, fields: {} }])}
-            className="w-full rounded-lg p-3 border-2 border-dashed border-primary-300 dark:border-primary-700 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:border-primary-400 dark:hover:border-primary-600 transition-all flex items-center justify-center gap-2"
-          >
-            <Plus size={18} />
-            <span className="font-medium text-sm">Ajouter une puissance</span>
-          </button>
+          {(() => {
+            const lastPower = newPowersData[newPowersData.length - 1]
+            const requiredFields = getFieldKeysForOfferType(newOfferType || filterOfferType)
+            const isLastComplete = !lastPower || (
+              lastPower.power > 0 &&
+              lastPower.fields.subscription_price?.trim() &&
+              requiredFields.every(f => lastPower.fields[f]?.trim())
+            )
+            return (
+              <button
+                onClick={() => {
+                  const copiedFields: Record<string, string> = {}
+                  if (lastPower) {
+                    for (const key of requiredFields) {
+                      if (lastPower.fields[key]) copiedFields[key] = lastPower.fields[key]
+                    }
+                  }
+                  setNewPowersData(prev => [...prev, { power: 0, fields: copiedFields }])
+                }}
+                disabled={!isLastComplete}
+                className={`w-full rounded-lg p-3 border-2 border-dashed transition-all flex items-center justify-center gap-2 ${
+                  isLastComplete
+                    ? 'border-primary-300 dark:border-primary-700 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:border-primary-400 dark:hover:border-primary-600'
+                    : 'border-gray-300 dark:border-gray-600 text-gray-400 opacity-50 cursor-not-allowed'
+                }`}
+              >
+                <Plus size={18} />
+                <span className="font-medium text-sm">Ajouter une puissance</span>
+              </button>
+            )
+          })()}
 
-          {/* Récapitulatif et soumission pour nouveau fournisseur ou nouvelle offre */}
+          {/* Récapitulatif et soumission pour nouvelle offre */}
           {newPowersData.length > 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-6">
               <h4 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                 <Send size={18} className="text-primary-600 dark:text-primary-400" />
-                Récapitulatif - {isAddingProvider ? 'Nouveau fournisseur' : 'Nouvelle offre'}
+                Récapitulatif - Nouvelle offre
               </h4>
 
               <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
                 <p className="text-sm text-green-700 dark:text-green-300">
-                  {isAddingProvider ? (
-                    <>
-                      <strong>{newProviderName || '(Nom à renseigner)'}</strong> - {(() => {
-                        const labels: Record<string, string> = { 'BASE': 'Base', 'HC_HP': 'HC/HP', 'TEMPO': 'Tempo', 'EJP': 'EJP', 'ZEN_FLEX': 'Zen Flex', 'ZEN_WEEK_END': 'Zen Week-end', 'SEASONAL': 'Saisonnier' }
-                        return labels[newProviderOfferType] || newProviderOfferType
-                      })()} - {newPowersData.length} puissance(s)
-                    </>
-                  ) : (
-                    <>
-                      <strong>{sortedProviders.find(p => p.id === filterProvider)?.name}</strong> - {(() => {
-                        const labels: Record<string, string> = { 'BASE': 'Base', 'HC_HP': 'HC/HP', 'TEMPO': 'Tempo', 'EJP': 'EJP', 'ZEN_FLEX': 'Zen Flex', 'ZEN_WEEK_END': 'Zen Week-end', 'SEASONAL': 'Saisonnier' }
-                        return labels[newOfferType] || newOfferType
-                      })()} (nouvelle offre) - {newPowersData.length} puissance(s)
-                    </>
-                  )}
+                  <strong>{sortedProviders.find(p => p.id === filterProvider)?.name}</strong> - {(() => {
+                    const labels: Record<string, string> = { 'BASE': 'Base', 'HC_HP': 'HC/HP', 'TEMPO': 'Tempo', 'EJP': 'EJP', 'SEASONAL': 'Saisonnier', 'BASE_WEEKEND': 'Base Week-end', 'HC_WEEKEND': 'HC Week-end', 'HC_NUIT_WEEKEND': 'HC Nuit Week-end' }
+                    return labels[newOfferType] || newOfferType
+                  })()} (nouvelle offre) - {newPowersData.length} puissance(s)
                 </p>
               </div>
 
@@ -2511,30 +2991,12 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                 </p>
               </div>
 
-              {/* Validation pour nouveau fournisseur */}
-              {isAddingProvider && !newProviderName.trim() && (
-                <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                  <p className="text-sm text-red-700 dark:text-red-300 flex items-center gap-2">
-                    <AlertCircle size={16} />
-                    Veuillez renseigner le nom du fournisseur.
-                  </p>
-                </div>
-              )}
 
               <div className="flex gap-3">
                 <button
                   onClick={() => {
-                    if (isAddingProvider) {
-                      setIsAddingProvider(false)
-                      setNewProviderName('')
-                      setNewProviderOfferType('')
-                      const edf = sortedProviders.find(p => p.name.toUpperCase() === 'EDF')
-                      if (edf) setFilterProvider(edf.id)
-                      else if (sortedProviders.length > 0) setFilterProvider(sortedProviders[0].id)
-                    } else {
-                      setIsAddingOffer(false)
-                      setNewOfferType('')
-                    }
+                    setIsAddingOffer(false)
+                    setNewOfferType('')
                     setNewPowersData([])
                     setPriceSheetUrl('')
                     setNewOfferValidFrom(new Date().toISOString().split('T')[0])
@@ -2546,10 +3008,6 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                 </button>
                 <button
                   onClick={async () => {
-                    if (isAddingProvider && !newProviderName.trim()) {
-                      toast.error('Veuillez renseigner le nom du fournisseur')
-                      return
-                    }
                     if (newPowersData.length === 0) {
                       toast.error('Ajoutez au moins une puissance')
                       return
@@ -2563,14 +3021,14 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                     let successCount = 0
                     let errorCount = 0
 
-                    const providerName = isAddingProvider ? newProviderName.trim() : sortedProviders.find(p => p.id === filterProvider)?.name || ''
-                    const offerType = isAddingProvider ? newProviderOfferType : newOfferType
+                    const providerName = sortedProviders.find(p => p.id === filterProvider)?.name || ''
+                    const offerType = newOfferType
 
                     for (const newPower of newPowersData) {
                       try {
                         const contributionData: ContributionData = {
-                          contribution_type: isAddingProvider ? 'NEW_PROVIDER' : 'NEW_OFFER',
-                          ...(isAddingProvider ? { provider_name: providerName } : { existing_provider_id: filterProvider }),
+                          contribution_type: 'NEW_OFFER',
+                          existing_provider_id: filterProvider,
                           offer_name: `${providerName} - ${offerType} - ${newPower.power} kVA`,
                           offer_type: offerType,
                           power_kva: newPower.power,
@@ -2596,17 +3054,8 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                       queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
                       queryClient.invalidateQueries({ queryKey: ['energy-providers'] })
                       queryClient.invalidateQueries({ queryKey: ['energy-offers'] })
-                      if (isAddingProvider) {
-                        setIsAddingProvider(false)
-                        setNewProviderName('')
-                        setNewProviderOfferType('')
-                        const edf = sortedProviders.find(p => p.name.toUpperCase() === 'EDF')
-                        if (edf) setFilterProvider(edf.id)
-                        else if (sortedProviders.length > 0) setFilterProvider(sortedProviders[0].id)
-                      } else {
-                        setIsAddingOffer(false)
-                        setNewOfferType('')
-                      }
+                      setIsAddingOffer(false)
+                      setNewOfferType('')
                       setNewPowersData([])
                       setPriceSheetUrl('')
                       setNewOfferValidFrom(new Date().toISOString().split('T')[0])
@@ -2616,7 +3065,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                     }
                     setSubmittingOffers(false)
                   }}
-                  disabled={submittingOffers || (isAddingProvider && !newProviderName.trim()) || newPowersData.length === 0 || (!isPrivilegedUser && !priceSheetUrl)}
+                  disabled={submittingOffers || newPowersData.length === 0 || (!isPrivilegedUser && !priceSheetUrl)}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:bg-primary-400 disabled:cursor-not-allowed rounded-lg transition-colors"
                 >
                   <Send size={18} />
@@ -2637,7 +3086,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
             Vous pourrez ensuite modifier les tarifs et soumettre vos contributions.
           </p>
         </div>
-      ) : offersArray.length > 0 && providerOffers.length === 0 ? (
+      ) : providerOffers.length === 0 ? (
         isEditMode ? (
           // En mode édition avec type vide : afficher directement les groupes ou un message si aucun groupe
           <div className="space-y-6">
@@ -2673,6 +3122,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                     value={group.name}
                     onChange={(e) => setNewGroups(prev => prev.map((g, i) => i === groupIndex ? { ...g, name: e.target.value } : g))}
                     placeholder="Nom de l'offre (ex: Vert Fixe, Stable...)"
+                    data-new-group-name
                     className="flex-1 max-w-md px-3 py-1.5 text-sm font-semibold rounded-lg border-2 border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
                   {/* Date de mise en service */}
@@ -2848,7 +3298,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                             </>
                           )}
 
-                          {(filterOfferType === 'ZEN_FLEX' || filterOfferType === 'SEASONAL') && (
+                          {filterOfferType === 'SEASONAL' && (
                             <>
                               {/* Ligne Été */}
                               <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
@@ -2881,7 +3331,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                             </>
                           )}
 
-                          {filterOfferType === 'ZEN_WEEK_END' && (
+                          {filterOfferType === 'BASE_WEEKEND' && (
                             <>
                               {/* Tarif semaine */}
                               <div className="flex items-center gap-2 w-[200px]">
@@ -2894,39 +3344,6 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                                 <span className="text-sm font-semibold w-16 shrink-0 text-right text-green-600 dark:text-green-400">Week-end<span className="text-red-500">*</span></span>
                                 <input type="number" step="0.0001" value={power.fields.base_price_weekend ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, base_price_weekend: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                                 <span className="text-gray-500 dark:text-gray-400 text-xs">€/kWh</span>
-                              </div>
-                            </>
-                          )}
-
-                          {filterOfferType === 'ZEN_WEEK_END_HP_HC' && (
-                            <>
-                              {/* Ligne Semaine */}
-                              <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
-                                <span className="text-sm font-semibold text-gray-600 dark:text-gray-400 w-16">Semaine</span>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">HC<span className="text-red-500">*</span></span>
-                                  <input type="number" step="0.0001" value={power.fields.hc_price ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, hc_price: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                                  <span className="text-gray-500 dark:text-gray-400 text-xs">€</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-sm font-semibold text-red-600 dark:text-red-400">HP<span className="text-red-500">*</span></span>
-                                  <input type="number" step="0.0001" value={power.fields.hp_price ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, hp_price: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                                  <span className="text-gray-500 dark:text-gray-400 text-xs">€</span>
-                                </div>
-                              </div>
-                              {/* Ligne Week-end */}
-                              <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
-                                <span className="text-sm font-semibold text-green-600 dark:text-green-400 w-16">Week-end</span>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">HC<span className="text-red-500">*</span></span>
-                                  <input type="number" step="0.0001" value={power.fields.hc_price_weekend ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, hc_price_weekend: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                                  <span className="text-gray-500 dark:text-gray-400 text-xs">€</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-sm font-semibold text-red-600 dark:text-red-400">HP<span className="text-red-500">*</span></span>
-                                  <input type="number" step="0.0001" value={power.fields.hp_price_weekend ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, hp_price_weekend: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                                  <span className="text-gray-500 dark:text-gray-400 text-xs">€</span>
-                                </div>
                               </div>
                             </>
                           )}
@@ -2965,7 +3382,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                           )}
 
                           {/* Champs dynamiques pour les types non standard (détectés depuis les offres existantes) */}
-                          {!['BASE', 'HC_HP', 'TEMPO', 'EJP', 'ZEN_FLEX', 'SEASONAL', 'ZEN_WEEK_END', 'ZEN_WEEK_END_HP_HC', 'HC_WEEKEND', 'HC_NUIT_WEEKEND'].includes(filterOfferType) && dynamicPriceFields.map(field => (
+                          {!['BASE', 'HC_HP', 'TEMPO', 'EJP', 'SEASONAL', 'BASE_WEEKEND', 'HC_WEEKEND', 'HC_NUIT_WEEKEND'].includes(filterOfferType) && dynamicPriceFields.map(field => (
                             <div key={field.key} className="flex items-center gap-2 w-[200px]">
                               <span className={`text-sm font-semibold w-16 shrink-0 text-right ${field.color || 'text-gray-600 dark:text-gray-400'}`}>
                                 {field.label}<span className="text-red-500">*</span>
@@ -3003,13 +3420,38 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                 })}
 
                 {/* Bouton ajouter une puissance au nouveau groupe */}
-                <button
-                  onClick={() => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: [...g.powers, { power: 0, fields: {} }] } : g))}
-                  className="w-full bg-primary-50 dark:bg-primary-900/30 rounded-lg p-3 border-2 border-primary-400 dark:border-primary-600 hover:border-primary-500 dark:hover:border-primary-500 hover:bg-primary-100 dark:hover:bg-primary-900/50 transition-all flex items-center justify-center gap-2 shadow-sm"
-                >
-                  <Plus size={18} className="text-primary-600 dark:text-primary-400" />
-                  <span className="font-semibold text-sm text-primary-700 dark:text-primary-300">Ajouter une puissance à ce groupe</span>
-                </button>
+                {(() => {
+                  const lastPower = group.powers[group.powers.length - 1]
+                  const requiredFields = getFieldKeysForOfferType(filterOfferType)
+                  const isLastComplete = !lastPower || (
+                    lastPower.power > 0 &&
+                    lastPower.fields.subscription_price?.trim() &&
+                    requiredFields.every(f => lastPower.fields[f]?.trim())
+                  )
+                  return (
+                    <button
+                      onClick={() => {
+                        // Copier les prix kWh de la dernière puissance (pas l'abonnement ni la puissance)
+                        const copiedFields: Record<string, string> = {}
+                        if (lastPower) {
+                          for (const key of requiredFields) {
+                            if (lastPower.fields[key]) copiedFields[key] = lastPower.fields[key]
+                          }
+                        }
+                        setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: [...g.powers, { power: 0, fields: copiedFields }] } : g))
+                      }}
+                      disabled={!isLastComplete}
+                      className={`w-full rounded-lg p-3 border-2 transition-all flex items-center justify-center gap-2 shadow-sm ${
+                        isLastComplete
+                          ? 'bg-primary-50 dark:bg-primary-900/30 border-primary-400 dark:border-primary-600 hover:border-primary-500 dark:hover:border-primary-500 hover:bg-primary-100 dark:hover:bg-primary-900/50'
+                          : 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 opacity-50 cursor-not-allowed'
+                      }`}
+                    >
+                      <Plus size={18} className={isLastComplete ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'} />
+                      <span className={`font-semibold text-sm ${isLastComplete ? 'text-primary-700 dark:text-primary-300' : 'text-gray-400'}`}>Ajouter une puissance à ce groupe</span>
+                    </button>
+                  )
+                })()}
               </div>
             ))}
 
@@ -3137,355 +3579,17 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
         )
       ) : providerOffers.length > 0 ? (
         <div className="space-y-6">
-          {/* Liste des offres éditables - Regroupées par nom */}
-          {groupNames.map((groupName) => {
-            const offersInGroup = groupedOffers[groupName]
-            const editedName = editedOfferNames[groupName]
-            const isNameModified = editedName !== undefined && editedName !== groupName
-
-            // Calculer la date de validité du groupe (la plus récente parmi les offres)
-            const groupValidFrom = offersInGroup.reduce((latest, offer) => {
-              if (!offer.valid_from) return latest
-              if (!latest) return offer.valid_from
-              return new Date(offer.valid_from) > new Date(latest) ? offer.valid_from : latest
-            }, null as string | null)
-
-            // Vérifier si le groupe contient des offres expirées
-            const hasExpiredOffers = offersInGroup.some(offer => offer.valid_to)
-
-            const isGroupDeprecated = deprecatedOffers.some(d =>
-              d.offer_name === groupName && d.offer_type === offersInGroup[0]?.offer_type
-            )
-
-            return (
-              <div key={groupName} className={`space-y-2 ${isGroupDeprecated ? 'opacity-50' : ''}`}>
-                {/* En-tête du groupe avec nom éditable */}
-                <div className={`flex items-center gap-3 pb-2 border-b ${isGroupDeprecated ? 'border-red-300 dark:border-red-700' : 'border-gray-200 dark:border-gray-700'}`}>
-                  {isEditMode ? (
-                    <input
-                      type="text"
-                      value={editedName ?? groupName}
-                      onChange={(e) => setEditedOfferNames(prev => ({ ...prev, [groupName]: e.target.value }))}
-                      className={`flex-1 max-w-md px-3 py-1.5 text-sm font-semibold rounded-lg border-2 bg-white dark:bg-gray-800 focus:ring-2 focus:outline-none ${
-                        isNameModified
-                          ? 'border-amber-400 dark:border-amber-600 focus:ring-amber-500'
-                          : 'border-gray-300 dark:border-gray-600 focus:ring-primary-500'
-                      }`}
-                      placeholder="Nom de l'offre"
-                    />
-                  ) : (
-                    <h4 className="text-sm font-semibold text-gray-900 dark:text-white">{groupName}</h4>
-                  )}
-                  {isNameModified && (
-                    <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">Nom modifié</span>
-                  )}
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{offersInGroup.length} puissance(s)</span>
-                  {isGroupDeprecated && (
-                    <span className="text-xs text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded font-medium">Suppression demandée</span>
-                  )}
-                  {/* Bouton supprimer le groupe complet (mode édition) */}
-                  {isEditMode && (
-                    <button
-                      onClick={() => {
-                        const isAlreadyDeprecated = deprecatedOffers.some(d =>
-                          d.offer_name === groupName && d.offer_type === offersInGroup[0]?.offer_type
-                        )
-                        if (isAlreadyDeprecated) {
-                          // Annuler la suppression
-                          setDeprecatedOffers(prev => prev.filter(d =>
-                            !(d.offer_name === groupName && d.offer_type === offersInGroup[0]?.offer_type)
-                          ))
-                        } else {
-                          setDeprecatedOffers(prev => [...prev, {
-                            offer_type: offersInGroup[0]?.offer_type || filterOfferType,
-                            offer_name: groupName,
-                            offer_ids: offersInGroup.map(o => o.id),
-                            warning: 'Suppression manuelle demandée par l\'utilisateur.',
-                          }])
-                        }
-                      }}
-                      className={`p-1.5 rounded transition-colors ${
-                        deprecatedOffers.some(d => d.offer_name === groupName && d.offer_type === offersInGroup[0]?.offer_type)
-                          ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20'
-                          : 'text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20'
-                      }`}
-                      title={deprecatedOffers.some(d => d.offer_name === groupName && d.offer_type === offersInGroup[0]?.offer_type)
-                        ? 'Annuler la suppression'
-                        : 'Supprimer cette offre'
-                      }
-                    >
-                      {deprecatedOffers.some(d => d.offer_name === groupName && d.offer_type === offersInGroup[0]?.offer_type)
-                        ? <Undo2 size={16} />
-                        : <Trash2 size={16} />
-                      }
-                    </button>
-                  )}
-                  {/* Spacer pour pousser la date à droite */}
-                  <div className="flex-1" />
-                  {/* Badge date de validité du groupe - Style proéminent */}
-                  {groupValidFrom && (
-                    <span
-                      className={`text-sm font-medium px-3 py-1 rounded-lg ${
-                        hasExpiredOffers
-                          ? 'text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700'
-                          : 'text-primary-700 dark:text-primary-300 bg-primary-100 dark:bg-primary-900/40 border border-primary-300 dark:border-primary-700'
-                      }`}
-                      title={`Tarif en vigueur depuis le ${new Date(groupValidFrom).toLocaleDateString('fr-FR')}`}
-                    >
-                      {hasExpiredOffers ? 'Expiré le ' : 'Depuis le '}
-                      {new Date(groupValidFrom).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                    </span>
-                  )}
-                </div>
-
-                {/* Offres du groupe */}
-                {offersInGroup.map((offer) => {
-                  const modified = isOfferModified(offer)
-                  const power = getPower(offer.name)
-                  const powerNum = power ? parseInt(power) : null
-                  const isMarkedForRemoval = powerNum !== null && powersToRemove.some(p => p.power === powerNum && p.groupName === groupName)
-
-                  return (
-                    <div
-                      key={offer.id}
-                      className={`bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border transition-all ${
-                        isMarkedForRemoval
-                          ? 'border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/20 opacity-60'
-                          : modified
-                            ? 'border-amber-400 dark:border-amber-600'
-                            : 'border-gray-200 dark:border-gray-700'
-                      }`}
-                    >
-                      {/* Layout CSS Grid adaptatif selon le type d'offre */}
-                      {(() => {
-                        const cols = getTariffColumns(offer.offer_type)
-                        // Grille: [Puissance] [Abo] [Tarif1] [Tarif2?] [Delete?]
-                        const gridCols = `70px 1fr ${Array(cols).fill('1fr').join(' ')} ${isEditMode ? '70px' : ''}`
-
-                        return (
-                          <div
-                            className="grid items-center gap-x-2 gap-y-1"
-                            style={{ gridTemplateColumns: gridCols }}
-                          >
-                            {/* Col 1: Puissance + Badges */}
-                            <div className="flex flex-col items-start gap-1">
-                              <span className={`text-sm font-medium px-2 py-1 rounded ${isMarkedForRemoval ? 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 line-through' : 'text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700'}`}>
-                                {power || '-'}
-                              </span>
-                              {isMarkedForRemoval && (
-                                <span className="text-xs text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded">À suppr.</span>
-                              )}
-                              {modified && !isMarkedForRemoval && (
-                                <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">Modifié</span>
-                              )}
-                            </div>
-
-                            {/* Col 2: Abonnement */}
-                            {renderEditableField('Abo.', 'subscription_price', '€/mois', offer)}
-
-                            {/* Colonnes Tarifs - adaptées au type */}
-                            {offer.offer_type === 'BASE' && (
-                              renderEditableField('Base', 'base_price', '€/kWh', offer)
-                            )}
-
-                            {offer.offer_type === 'BASE_WEEKEND' && (
-                              <>
-                                {renderEditableField('Base', 'base_price', '€/kWh', offer)}
-                                {renderEditableField('WE', 'base_price_weekend', '€/kWh', offer)}
-                              </>
-                            )}
-
-                            {offer.offer_type === 'HC_HP' && (
-                              <>
-                                {renderEditableField('HC', 'hc_price', '€/kWh', offer)}
-                                {renderEditableField('HP', 'hp_price', '€/kWh', offer)}
-                              </>
-                            )}
-
-                            {(offer.offer_type === 'HC_WEEKEND' || offer.offer_type === 'HC_NUIT_WEEKEND') && (
-                              <>
-                                {renderEditableField('HC', 'hc_price', '€/kWh', offer)}
-                                {renderEditableField('HP', 'hp_price', '€/kWh', offer)}
-                              </>
-                            )}
-
-                            {offer.offer_type === 'TEMPO' && (
-                              <>
-                                {renderEditableField('HC Bleu', 'tempo_blue_hc', '€/kWh', offer)}
-                                {renderEditableField('HP Bleu', 'tempo_blue_hp', '€/kWh', offer)}
-                              </>
-                            )}
-
-                            {(offer.offer_type === 'ZEN_FLEX' || offer.offer_type === 'SEASONAL') && (
-                              <>
-                                {renderEditableField('HC Été', 'hc_price_summer', '€/kWh', offer)}
-                                {renderEditableField('HP Été', 'hp_price_summer', '€/kWh', offer)}
-                              </>
-                            )}
-
-                            {(offer.offer_type === 'ZEN_WEEK_END' || offer.offer_type === 'ZEN_WEEK_END_HP_HC') && (
-                              <>
-                                {renderEditableField('HC', 'hc_price', '€/kWh', offer)}
-                                {renderEditableField('HP', 'hp_price', '€/kWh', offer)}
-                              </>
-                            )}
-
-                            {offer.offer_type === 'EJP' && (
-                              <>
-                                {renderEditableField('Normal', 'ejp_normal', '€/kWh', offer)}
-                                {renderEditableField('Pointe', 'ejp_peak', '€/kWh', offer)}
-                              </>
-                            )}
-
-                            {/* Col Actions - uniquement en mode édition (première ligne) */}
-                            {isEditMode && powerNum !== null && (
-                              <div className="flex items-center gap-0.5 justify-center">
-                                {isMarkedForRemoval ? (
-                                  <button
-                                    onClick={() => setPowersToRemove(prev => prev.filter(p => !(p.power === powerNum && p.groupName === groupName)))}
-                                    className="p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-                                    title="Annuler la suppression"
-                                  >
-                                    <Undo2 size={16} />
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => {
-                                      if (!powersToRemove.some(p => p.power === powerNum && p.groupName === groupName)) {
-                                        setPowersToRemove(prev => [...prev, { power: powerNum, groupName }])
-                                      }
-                                    }}
-                                    className="p-1.5 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                                    title="Proposer la suppression de cette puissance"
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
-                                )}
-                                {/* Bouton duplication des tarifs */}
-                                <div className="relative">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setDuplicateDropdownId(prev => prev === offer.id ? null : offer.id)
-                                    }}
-                                    className="p-1.5 text-primary-500 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded transition-colors"
-                                    title="Dupliquer les tarifs"
-                                  >
-                                    <ArrowDownToLine size={16} />
-                                  </button>
-                                  {duplicateDropdownId === offer.id && (
-                                    <div
-                                      className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 w-64"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <button
-                                        onClick={() => duplicateOfferFields(offer, 'next', offersInGroup)}
-                                        disabled={offersInGroup.indexOf(offer) === offersInGroup.length - 1}
-                                        className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                                      >
-                                        Dupliquer vers la ligne suivante
-                                      </button>
-                                      <button
-                                        onClick={() => duplicateOfferFields(offer, 'all', offersInGroup)}
-                                        disabled={offersInGroup.length <= 1}
-                                        className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                                      >
-                                        Dupliquer vers toutes les lignes
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Lignes supplémentaires pour types multi-lignes */}
-                            {/* TEMPO: Blancs et Rouges */}
-                            {offer.offer_type === 'TEMPO' && (
-                              <>
-                                <div></div>
-                                <div></div>
-                                {renderEditableField('HC Blanc', 'tempo_white_hc', '€/kWh', offer)}
-                                {renderEditableField('HP Blanc', 'tempo_white_hp', '€/kWh', offer)}
-                                {isEditMode && <div></div>}
-
-                                <div></div>
-                                <div></div>
-                                {renderEditableField('HC Rouge', 'tempo_red_hc', '€/kWh', offer)}
-                                {renderEditableField('HP Rouge', 'tempo_red_hp', '€/kWh', offer)}
-                                {isEditMode && <div></div>}
-                              </>
-                            )}
-
-                            {/* ZEN_FLEX/SEASONAL: Hiver */}
-                            {(offer.offer_type === 'ZEN_FLEX' || offer.offer_type === 'SEASONAL') && (
-                              <>
-                                <div></div>
-                                <div></div>
-                                {renderEditableField('HC Hiver', 'hc_price_winter', '€/kWh', offer)}
-                                {renderEditableField('HP Hiver', 'hp_price_winter', '€/kWh', offer)}
-                                {isEditMode && <div></div>}
-                              </>
-                            )}
-
-                            {/* HC_WEEKEND/HC_NUIT_WEEKEND: Week-end */}
-                            {(offer.offer_type === 'HC_WEEKEND' || offer.offer_type === 'HC_NUIT_WEEKEND') && (
-                              <>
-                                <div></div>
-                                <div></div>
-                                {renderEditableField('HC WE', 'hc_price_weekend', '€/kWh', offer)}
-                                {renderEditableField('HP WE', 'hp_price_weekend', '€/kWh', offer)}
-                                {isEditMode && <div></div>}
-                              </>
-                            )}
-
-                            {/* ZEN_WEEK_END/ZEN_WEEK_END_HP_HC: Week-end */}
-                            {(offer.offer_type === 'ZEN_WEEK_END' || offer.offer_type === 'ZEN_WEEK_END_HP_HC') && (
-                              <>
-                                <div></div>
-                                <div></div>
-                                {renderEditableField('HC WE', 'hc_price_weekend', '€/kWh', offer)}
-                                {renderEditableField('HP WE', 'hp_price_weekend', '€/kWh', offer)}
-                                {isEditMode && <div></div>}
-                              </>
-                            )}
-                          </div>
-                        )
-                      })()}
-                    </div>
-                  )
-                })}
-
-                {/* Nouvelles puissances ajoutées à ce groupe (mode édition) */}
-                {isEditMode && newPowersData.map((newPower, index) => {
-                  // Filtrer : n'afficher que les puissances de CE groupe
-                  const groupOfferType = offersInGroup[0]?.offer_type
-                  if (newPower.offer_name !== groupName || newPower.offer_type !== groupOfferType) return null
-                  return renderNewPowerRow(newPower, index)
-                })}
-
-                {/* Bouton ajouter une puissance à ce groupe (mode édition) */}
-                {isEditMode && (
-                  <button
-                    onClick={() => {
-                      const groupOfferType = offersInGroup[0]?.offer_type || filterOfferType
-                      setNewPowersData(prev => [...prev, { power: 0, fields: {}, offer_name: groupName, offer_type: groupOfferType }])
-                    }}
-                    className="w-full rounded-lg p-2 border-2 border-dashed border-primary-300 dark:border-primary-700 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:border-primary-400 dark:hover:border-primary-600 transition-all flex items-center justify-center gap-2"
-                  >
-                    <Plus size={16} />
-                    <span className="font-medium text-xs">Ajouter une puissance</span>
-                  </button>
-                )}
-              </div>
-            )
-          })}
-
-          {/* Nouvelles puissances non associées à un groupe (import IA sans offer_name, etc.) */}
-          {isEditMode && newPowersData.map((newPower, index) => {
-            // N'afficher ici que les puissances sans groupe ou dont le groupe n'existe pas
-            if (newPower.offer_name && groupNames.includes(newPower.offer_name)) return null
-            return renderNewPowerRow(newPower, index)
-          })}
+          {/* Bouton pour créer un nouveau groupe d'offres (en haut, uniquement en mode édition) */}
+          {isEditMode && (
+            <button
+              onClick={() => setNewGroups(prev => [...prev, { name: '', validFrom: new Date().toISOString().split('T')[0], powers: [{ power: 0, fields: {} }] }])}
+              className="w-full rounded-lg p-3 border-2 border-dashed border-primary-300 dark:border-primary-700 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:border-primary-400 dark:hover:border-primary-600 transition-all flex items-center justify-center gap-2"
+            >
+              <Package size={18} />
+              <Plus size={14} className="-ml-1" />
+              <span className="font-medium text-sm">Créer un nouveau groupe d'offres</span>
+            </button>
+          )}
 
           {/* Nouveaux groupes d'offres (uniquement en mode édition) */}
           {isEditMode && newGroups.map((group, groupIndex) => (
@@ -3498,6 +3602,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                   value={group.name}
                   onChange={(e) => setNewGroups(prev => prev.map((g, i) => i === groupIndex ? { ...g, name: e.target.value } : g))}
                   placeholder="Nom de l'offre (ex: Vert Fixe, Stable...)"
+                  data-new-group-name
                   className="flex-1 max-w-md px-3 py-1.5 text-sm font-semibold rounded-lg border-2 border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
                 {/* Date de mise en service */}
@@ -3629,7 +3734,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                           </>
                         )}
 
-                        {(filterOfferType === 'ZEN_FLEX' || filterOfferType === 'SEASONAL') && (
+                        {filterOfferType === 'SEASONAL' && (
                           <>
                             {/* Ligne Été */}
                             <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
@@ -3662,7 +3767,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                           </>
                         )}
 
-                        {filterOfferType === 'ZEN_WEEK_END' && (
+                        {filterOfferType === 'BASE_WEEKEND' && (
                           <>
                             {/* Tarif semaine */}
                             <div className="flex items-center gap-2 w-[200px]">
@@ -3675,39 +3780,6 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                               <span className="text-sm font-semibold w-16 shrink-0 text-right text-green-600 dark:text-green-400">Week-end<span className="text-red-500">*</span></span>
                               <input type="number" step="0.0001" value={power.fields.base_price_weekend ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, base_price_weekend: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                               <span className="text-gray-500 dark:text-gray-400 text-xs">€/kWh</span>
-                            </div>
-                          </>
-                        )}
-
-                        {filterOfferType === 'ZEN_WEEK_END_HP_HC' && (
-                          <>
-                            {/* Ligne Semaine */}
-                            <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
-                              <span className="text-sm font-semibold text-gray-600 dark:text-gray-400 w-16">Semaine</span>
-                              <div className="flex items-center gap-1">
-                                <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">HC<span className="text-red-500">*</span></span>
-                                <input type="number" step="0.0001" value={power.fields.hc_price ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, hc_price: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                                <span className="text-gray-500 dark:text-gray-400 text-xs">€</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span className="text-sm font-semibold text-red-600 dark:text-red-400">HP<span className="text-red-500">*</span></span>
-                                <input type="number" step="0.0001" value={power.fields.hp_price ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, hp_price: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                                <span className="text-gray-500 dark:text-gray-400 text-xs">€</span>
-                              </div>
-                            </div>
-                            {/* Ligne Week-end */}
-                            <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
-                              <span className="text-sm font-semibold text-green-600 dark:text-green-400 w-16">Week-end</span>
-                              <div className="flex items-center gap-1">
-                                <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">HC<span className="text-red-500">*</span></span>
-                                <input type="number" step="0.0001" value={power.fields.hc_price_weekend ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, hc_price_weekend: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                                <span className="text-gray-500 dark:text-gray-400 text-xs">€</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span className="text-sm font-semibold text-red-600 dark:text-red-400">HP<span className="text-red-500">*</span></span>
-                                <input type="number" step="0.0001" value={power.fields.hp_price_weekend ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, hp_price_weekend: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                                <span className="text-gray-500 dark:text-gray-400 text-xs">€</span>
-                              </div>
                             </div>
                           </>
                         )}
@@ -3746,7 +3818,7 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                         )}
 
                         {/* Champs dynamiques pour les types non standard (détectés depuis les offres existantes) */}
-                        {!['BASE', 'HC_HP', 'TEMPO', 'EJP', 'ZEN_FLEX', 'SEASONAL', 'ZEN_WEEK_END', 'ZEN_WEEK_END_HP_HC', 'HC_WEEKEND', 'HC_NUIT_WEEKEND'].includes(filterOfferType) && dynamicPriceFields.map(field => (
+                        {!['BASE', 'HC_HP', 'TEMPO', 'EJP', 'SEASONAL', 'BASE_WEEKEND', 'HC_WEEKEND', 'HC_NUIT_WEEKEND'].includes(filterOfferType) && dynamicPriceFields.map(field => (
                           <div key={field.key} className="flex items-center gap-2 w-[200px]">
                             <span className={`text-sm font-semibold w-16 shrink-0 text-right ${field.color || 'text-gray-600 dark:text-gray-400'}`}>
                               {field.label}<span className="text-red-500">*</span>
@@ -3784,48 +3856,526 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
               })}
 
               {/* Bouton ajouter une puissance au nouveau groupe */}
-              <button
-                onClick={() => setNewGroups(prev => prev.map((g, i) => i === groupIndex ? {
-                  ...g,
-                  powers: [...g.powers, { power: 0, fields: {} }]
-                } : g))}
-                className="w-full bg-primary-50 dark:bg-primary-900/30 rounded-lg p-3 border-2 border-primary-400 dark:border-primary-600 hover:border-primary-500 dark:hover:border-primary-500 hover:bg-primary-100 dark:hover:bg-primary-900/50 transition-all flex items-center justify-center gap-2 shadow-sm"
-              >
-                <Plus size={18} className="text-primary-600 dark:text-primary-400" />
-                <span className="font-semibold text-sm text-primary-700 dark:text-primary-300">Ajouter une puissance à ce groupe</span>
-              </button>
+              {(() => {
+                const lastPower = group.powers[group.powers.length - 1]
+                const requiredFields = getFieldKeysForOfferType(filterOfferType)
+                const isLastComplete = !lastPower || (
+                  lastPower.power > 0 &&
+                  lastPower.fields.subscription_price?.trim() &&
+                  requiredFields.every(f => lastPower.fields[f]?.trim())
+                )
+                return (
+                  <button
+                    onClick={() => {
+                      const copiedFields: Record<string, string> = {}
+                      if (lastPower) {
+                        for (const key of requiredFields) {
+                          if (lastPower.fields[key]) copiedFields[key] = lastPower.fields[key]
+                        }
+                      }
+                      setNewGroups(prev => prev.map((g, i) => i === groupIndex ? {
+                        ...g,
+                        powers: [...g.powers, { power: 0, fields: copiedFields }]
+                      } : g))
+                    }}
+                    disabled={!isLastComplete}
+                    className={`w-full rounded-lg p-3 border-2 transition-all flex items-center justify-center gap-2 shadow-sm ${
+                      isLastComplete
+                        ? 'bg-primary-50 dark:bg-primary-900/30 border-primary-400 dark:border-primary-600 hover:border-primary-500 dark:hover:border-primary-500 hover:bg-primary-100 dark:hover:bg-primary-900/50'
+                        : 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <Plus size={18} className={isLastComplete ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'} />
+                    <span className={`font-semibold text-sm ${isLastComplete ? 'text-primary-700 dark:text-primary-300' : 'text-gray-400'}`}>Ajouter une puissance à ce groupe</span>
+                  </button>
+                )
+              })()}
             </div>
           ))}
 
-          {/* Bouton pour créer un nouveau groupe d'offres (uniquement en mode édition) */}
-          {isEditMode && (
-            <button
-              onClick={() => setNewGroups(prev => [...prev, { name: '', validFrom: new Date().toISOString().split('T')[0], powers: [{ power: 0, fields: {} }] }])}
-              className="w-full rounded-lg p-3 border-2 border-dashed border-primary-300 dark:border-primary-700 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:border-primary-400 dark:hover:border-primary-600 transition-all flex items-center justify-center gap-2"
-            >
-              <Package size={18} />
-              <Plus size={14} className="-ml-1" />
-              <span className="font-medium text-sm">Créer un nouveau groupe d'offres</span>
-            </button>
+          {/* Onglets de groupes d'offres (mode lecture uniquement) */}
+          {activeGroupNames.length >= 1 && !isEditMode && (
+            <div>
+              <div className="mb-3">
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 text-center">Offres</label>
+                <div className="mt-1 h-0.5 w-full bg-primary-500 rounded-full" />
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+              {activeGroupNames.map((gName) => {
+                const isActive = selectedGroupName === gName
+                const count = groupedOffers[gName]?.length || 0
+                const isDeprecated = deprecatedOffers.some(d =>
+                  d.offer_name === gName && d.offer_type === groupedOffers[gName]?.[0]?.offer_type
+                )
+                return (
+                  <button
+                    key={gName}
+                    onClick={() => setSelectedGroupName(gName)}
+                    className={`flex-1 min-w-[150px] px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                      isDeprecated ? 'opacity-50 line-through ' : ''
+                    }${
+                      isActive
+                        ? 'bg-primary-600 text-white shadow-md'
+                        : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
+                    }`}
+                    title={isDeprecated ? 'Offre marquée pour suppression' : undefined}
+                  >
+                    <span className={`px-1.5 py-0.5 text-xs rounded-full shrink-0 ${
+                      isActive
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400'
+                    }`}>
+                      {count}
+                    </span>
+                    <span className="flex-1 text-center truncate">{gName}</span>
+                  </button>
+                )
+              })}
+              </div>
+            </div>
           )}
 
-          {/* Bouton flottant pour ouvrir le récapitulatif (uniquement en mode édition avec modifications) */}
+          {/* Liste des offres éditables - Regroupées par nom */}
+          {(isEditMode ? visibleGroupNames : visibleGroupNames.filter(g => g === selectedGroupName)).map((groupName) => {
+            const offersInGroup = groupedOffers[groupName]
+            const groupOfferType = offersInGroup[0]?.offer_type || filterOfferType
+            const renameKey = `${groupName}::${groupOfferType}`
+            const editedName = editedOfferNames[renameKey]
+            const isNameModified = editedName !== undefined && editedName !== groupName
+
+            // Calculer la date de validité du groupe (la plus récente parmi les offres)
+            const groupValidFrom = offersInGroup.reduce((latest, offer) => {
+              if (!offer.valid_from) return latest
+              if (!latest) return offer.valid_from
+              return new Date(offer.valid_from) > new Date(latest) ? offer.valid_from : latest
+            }, null as string | null)
+
+            // Vérifier si le groupe contient des offres expirées
+            const hasExpiredOffers = offersInGroup.some(offer => offer.valid_to)
+
+            const isGroupDeprecated = deprecatedOffers.some(d =>
+              d.offer_name === groupName && d.offer_type === groupOfferType
+            )
+
+            return (
+              <div key={`${groupName}::${groupOfferType}`} className={`space-y-2 ${isGroupDeprecated ? 'opacity-50' : ''}`}>
+                {/* En-tête du groupe avec nom éditable (mode édition uniquement, en lecture les onglets suffisent) */}
+                {isEditMode && <div className={`flex items-center gap-3 pb-2 border-b ${isGroupDeprecated ? 'border-red-300 dark:border-red-700' : 'border-gray-200 dark:border-gray-700'}`}>
+                    <input
+                      type="text"
+                      value={editedName ?? groupName}
+                      onChange={(e) => setEditedOfferNames(prev => ({ ...prev, [renameKey]: e.target.value }))}
+                      className={`flex-1 max-w-md px-3 py-1.5 text-sm font-semibold rounded-lg border-2 bg-white dark:bg-gray-800 focus:ring-2 focus:outline-none ${
+                        isNameModified
+                          ? 'border-amber-400 dark:border-amber-600 focus:ring-amber-500'
+                          : 'border-gray-300 dark:border-gray-600 focus:ring-primary-500'
+                      }`}
+                      placeholder="Nom de l'offre"
+                    />
+                  {isNameModified && (
+                    <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">Nom modifié</span>
+                  )}
+                  {isGroupDeprecated && (
+                    <span className="text-xs text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded font-medium">Suppression demandée</span>
+                  )}
+                  {/* Bouton supprimer le groupe complet (mode édition) */}
+                    <button
+                      onClick={() => {
+                        const isAlreadyDeprecated = deprecatedOffers.some(d =>
+                          d.offer_name === groupName && d.offer_type === offersInGroup[0]?.offer_type
+                        )
+                        if (isAlreadyDeprecated) {
+                          setDeprecatedOffers(prev => prev.filter(d =>
+                            !(d.offer_name === groupName && d.offer_type === offersInGroup[0]?.offer_type)
+                          ))
+                        } else {
+                          setDeprecatedOffers(prev => [...prev, {
+                            offer_type: offersInGroup[0]?.offer_type || filterOfferType,
+                            offer_name: groupName,
+                            offer_ids: offersInGroup.map(o => o.id),
+                            warning: 'Suppression manuelle demandée par l\'utilisateur.',
+                          }])
+                        }
+                      }}
+                      className={`p-1.5 rounded transition-colors ${
+                        deprecatedOffers.some(d => d.offer_name === groupName && d.offer_type === offersInGroup[0]?.offer_type)
+                          ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                          : 'text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20'
+                      }`}
+                      title={deprecatedOffers.some(d => d.offer_name === groupName && d.offer_type === offersInGroup[0]?.offer_type)
+                        ? 'Annuler la suppression'
+                        : 'Supprimer cette offre'
+                      }
+                    >
+                      {deprecatedOffers.some(d => d.offer_name === groupName && d.offer_type === offersInGroup[0]?.offer_type)
+                        ? <Undo2 size={16} />
+                        : <Trash2 size={16} />
+                      }
+                    </button>
+                </div>}
+
+                {/* Offres du groupe */}
+                {offersInGroup.map((offer) => {
+                  const modified = isOfferModified(offer)
+                  const power = getPower(offer.name)
+                  const powerNum = power ? parseInt(power) : null
+                  const isMarkedForRemoval = powerNum !== null && powersToRemove.some(p => p.power === powerNum && p.groupName === groupName)
+
+                  return (
+                    <div
+                      key={offer.id}
+                      className={`bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border transition-all ${
+                        isMarkedForRemoval
+                          ? 'border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/20 opacity-60'
+                          : modified
+                            ? 'border-amber-400 dark:border-amber-600'
+                            : 'border-gray-200 dark:border-gray-700'
+                      }`}
+                    >
+                      {/* Layout CSS Grid adaptatif selon le type d'offre */}
+                      {(() => {
+                        const cols = getTariffColumns(offer.offer_type)
+                        // Grille: [Puissance] [Abo] [Tarif1] [Tarif2?] [Delete?]
+                        const gridCols = `70px 1fr ${Array(cols).fill('1fr').join(' ')} ${isEditMode ? '70px' : ''}`
+
+                        return (
+                          <div
+                            className="grid items-center gap-x-2 gap-y-1"
+                            style={{ gridTemplateColumns: gridCols }}
+                          >
+                            {/* Col 1: Puissance + Badges */}
+                            <div className="flex flex-col items-start gap-1">
+                              <span className={`text-sm font-medium px-2 py-1 rounded ${isMarkedForRemoval ? 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 line-through' : 'text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700'}`}>
+                                {power || '-'}
+                              </span>
+                              {isMarkedForRemoval && (
+                                <span className="text-xs text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded">À suppr.</span>
+                              )}
+                              {modified && !isMarkedForRemoval && (
+                                <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">Modifié</span>
+                              )}
+                            </div>
+
+                            {/* Col 2: Abonnement (compact si beaucoup de colonnes tarifs) */}
+                            {renderEditableField('Abo.', 'subscription_price', '€/mois', offer, cols >= 4)}
+
+                            {/* Colonnes Tarifs - tout sur une seule ligne */}
+                            {offer.offer_type === 'BASE' && (
+                              renderEditableField('Base', 'base_price', '€/kWh', offer)
+                            )}
+
+                            {offer.offer_type === 'BASE_WEEKEND' && (
+                              <>
+                                {renderEditableField('Base', 'base_price', '€/kWh', offer)}
+                                {renderEditableField('WE', 'base_price_weekend', '€/kWh', offer)}
+                              </>
+                            )}
+
+                            {offer.offer_type === 'HC_HP' && (
+                              <>
+                                {renderEditableField('HC', 'hc_price', '€/kWh', offer)}
+                                {renderEditableField('HP', 'hp_price', '€/kWh', offer)}
+                              </>
+                            )}
+
+                            {(offer.offer_type === 'HC_WEEKEND' || offer.offer_type === 'HC_NUIT_WEEKEND') && (
+                              <>
+                                {renderEditableField('HC', 'hc_price', '€/kWh', offer, true)}
+                                {renderEditableField('HP', 'hp_price', '€/kWh', offer, true)}
+                                {renderEditableField('HC WE', 'hc_price_weekend', '€/kWh', offer, true)}
+                                {renderEditableField('HP WE', 'hp_price_weekend', '€/kWh', offer, true)}
+                              </>
+                            )}
+
+                            {offer.offer_type === 'TEMPO' && (
+                              <>
+                                {renderEditableField('HC Bleu', 'tempo_blue_hc', '€/kWh', offer, true)}
+                                {renderEditableField('HP Bleu', 'tempo_blue_hp', '€/kWh', offer, true)}
+                                {renderEditableField('HC Blanc', 'tempo_white_hc', '€/kWh', offer, true)}
+                                {renderEditableField('HP Blanc', 'tempo_white_hp', '€/kWh', offer, true)}
+                                {renderEditableField('HC Rouge', 'tempo_red_hc', '€/kWh', offer, true)}
+                                {renderEditableField('HP Rouge', 'tempo_red_hp', '€/kWh', offer, true)}
+                              </>
+                            )}
+
+                            {offer.offer_type === 'SEASONAL' && (
+                              <>
+                                {renderEditableField('HC Été', 'hc_price_summer', '€/kWh', offer, true)}
+                                {renderEditableField('HP Été', 'hp_price_summer', '€/kWh', offer, true)}
+                                {renderEditableField('HC Hiver', 'hc_price_winter', '€/kWh', offer, true)}
+                                {renderEditableField('HP Hiver', 'hp_price_winter', '€/kWh', offer, true)}
+                              </>
+                            )}
+
+                            {offer.offer_type === 'EJP' && (
+                              <>
+                                {renderEditableField('Normal', 'ejp_normal', '€/kWh', offer)}
+                                {renderEditableField('Pointe', 'ejp_peak', '€/kWh', offer)}
+                              </>
+                            )}
+
+                            {/* Col Actions - uniquement en mode édition (première ligne) */}
+                            {isEditMode && powerNum !== null && (
+                              <div className="flex items-center gap-0.5 justify-center">
+                                {isMarkedForRemoval ? (
+                                  <button
+                                    onClick={() => setPowersToRemove(prev => prev.filter(p => !(p.power === powerNum && p.groupName === groupName)))}
+                                    className="p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                                    title="Annuler la suppression"
+                                  >
+                                    <Undo2 size={16} />
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      if (!powersToRemove.some(p => p.power === powerNum && p.groupName === groupName)) {
+                                        setPowersToRemove(prev => [...prev, { power: powerNum, groupName }])
+                                      }
+                                    }}
+                                    className="p-1.5 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                                    title="Proposer la suppression de cette puissance"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                )}
+                                {/* Bouton duplication des tarifs */}
+                                <div className="relative">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setDuplicateDropdownId(prev => prev === offer.id ? null : offer.id)
+                                    }}
+                                    className="p-1.5 text-primary-500 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded transition-colors"
+                                    title="Dupliquer les tarifs"
+                                  >
+                                    <ArrowDownToLine size={16} />
+                                  </button>
+                                  {duplicateDropdownId === offer.id && (
+                                    <div
+                                      className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 w-64"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <button
+                                        onClick={() => duplicateOfferFields(offer, 'next', offersInGroup)}
+                                        disabled={offersInGroup.indexOf(offer) === offersInGroup.length - 1}
+                                        className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                      >
+                                        Dupliquer vers la ligne suivante
+                                      </button>
+                                      <button
+                                        onClick={() => duplicateOfferFields(offer, 'all', offersInGroup)}
+                                        disabled={offersInGroup.length <= 1}
+                                        className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                      >
+                                        Dupliquer vers toutes les lignes
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Plus de lignes supplémentaires : tous les tarifs sont sur une seule ligne */}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  )
+                })}
+
+                {/* Nouvelles puissances ajoutées à ce groupe (mode édition) */}
+                {isEditMode && newPowersData.map((newPower, index) => {
+                  // Filtrer : n'afficher que les puissances de CE groupe
+                  const groupOfferType = offersInGroup[0]?.offer_type
+                  if (newPower.offer_name !== groupName || newPower.offer_type !== groupOfferType) return null
+                  return renderNewPowerRow(newPower, index)
+                })}
+
+                {/* Bouton ajouter une puissance à ce groupe (mode édition) */}
+                {isEditMode && (() => {
+                  const groupOfferType = offersInGroup[0]?.offer_type || filterOfferType
+                  const requiredFields = getFieldKeysForOfferType(groupOfferType)
+                  // Chercher la dernière puissance ajoutée pour ce groupe
+                  const groupNewPowers = newPowersData.filter(np => np.offer_name === groupName && np.offer_type === groupOfferType)
+                  const lastNewPower = groupNewPowers.length > 0 ? groupNewPowers[groupNewPowers.length - 1] : null
+                  // Vérifier la complétude de la dernière ligne (newPower ou offre existante)
+                  let isLastComplete = true
+                  let lastFields: Record<string, string> = {}
+                  if (lastNewPower) {
+                    isLastComplete = lastNewPower.power > 0 &&
+                      !!lastNewPower.fields.subscription_price?.trim() &&
+                      requiredFields.every(f => !!lastNewPower.fields[f]?.trim())
+                    lastFields = lastNewPower.fields
+                  } else if (offersInGroup.length > 0) {
+                    const lastOffer = offersInGroup[offersInGroup.length - 1] as unknown as Record<string, unknown>
+                    // Les offres existantes sont déjà complètes, copier leurs prix
+                    for (const key of requiredFields) {
+                      if (lastOffer[key] != null) lastFields[key] = String(lastOffer[key])
+                    }
+                  }
+                  return (
+                    <button
+                      onClick={() => {
+                        const copiedFields: Record<string, string> = {}
+                        for (const key of requiredFields) {
+                          if (lastFields[key]) copiedFields[key] = lastFields[key]
+                        }
+                        setNewPowersData(prev => [...prev, { power: 0, fields: copiedFields, offer_name: groupName, offer_type: groupOfferType }])
+                      }}
+                      disabled={!isLastComplete}
+                      className={`w-full rounded-lg p-2 border-2 border-dashed transition-all flex items-center justify-center gap-2 ${isLastComplete ? 'border-primary-300 dark:border-primary-700 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:border-primary-400 dark:hover:border-primary-600' : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed'}`}
+                      title={!isLastComplete ? 'Remplissez tous les champs de la ligne précédente avant d\'en ajouter une nouvelle' : undefined}
+                    >
+                      <Plus size={16} />
+                      <span className="font-medium text-xs">Ajouter une puissance</span>
+                    </button>
+                  )
+                })()}
+
+                {/* Date de validité du groupe - en bas */}
+                {groupValidFrom && (
+                  <div className="flex justify-end pt-2">
+                    <span
+                      className={`text-sm font-medium px-3 py-1 rounded-lg border ${
+                        hasExpiredOffers
+                          ? 'text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-700'
+                          : 'text-primary-700 dark:text-primary-300 bg-primary-100 dark:bg-primary-900/40 border-primary-300 dark:border-primary-700'
+                      }`}
+                      title={`Tarif en vigueur depuis le ${new Date(groupValidFrom).toLocaleDateString('fr-FR')}`}
+                    >
+                      {hasExpiredOffers ? 'Expiré le ' : 'Depuis le '}
+                      {new Date(groupValidFrom).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {/* Nouvelles puissances non associées à un groupe (import IA sans offer_name, etc.) */}
+          {isEditMode && newPowersData.map((newPower, index) => {
+            // N'afficher ici que les puissances sans groupe ou dont le groupe n'existe pas
+            if (newPower.offer_name && groupNames.includes(newPower.offer_name)) return null
+            return renderNewPowerRow(newPower, index)
+          })}
+
+
+          {/* Section pliable : Offres expirées (mode lecture uniquement) */}
+          {!isEditMode && expiredByDate.length > 0 && (
+            <div className="mt-6">
+              <button
+                onClick={() => setShowExpiredSection(!showExpiredSection)}
+                className="w-full flex items-center gap-2 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors cursor-pointer"
+              >
+                {showExpiredSection ? <ChevronDown size={16} className="text-amber-500" /> : <ChevronRight size={16} className="text-amber-500" />}
+                <Clock size={16} className="text-amber-500" />
+                <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+                  Offres expirées
+                </span>
+                <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-200 dark:bg-amber-800 px-2 py-0.5 rounded-full">
+                  {expiredGroupNames.length}
+                </span>
+              </button>
+
+              {showExpiredSection && (
+                <div className="mt-3 space-y-4">
+                  {expiredByDate.map(([dateKey, gNames]) => {
+                    const [year, month] = dateKey.split('-')
+                    const dateLabel = new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+                    return (
+                      <div key={dateKey}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="h-px flex-1 bg-amber-300 dark:bg-amber-700" />
+                          <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase">
+                            {dateLabel}
+                          </span>
+                          <div className="h-px flex-1 bg-amber-300 dark:bg-amber-700" />
+                        </div>
+                        {gNames.sort((a, b) => a.localeCompare(b)).map((gName) => {
+                          const offers = groupedOffers[gName]
+                          if (!offers) return null
+                          const latestValidTo = offers.reduce((latest, offer) => {
+                            if (!offer.valid_to) return latest
+                            if (!latest) return offer.valid_to
+                            return new Date(offer.valid_to) > new Date(latest) ? offer.valid_to : latest
+                          }, null as string | null)
+                          return (
+                            <div
+                              key={gName}
+                              className="bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden mb-2 opacity-80"
+                            >
+                              <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-700 flex items-center justify-between">
+                                <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">{gName}</span>
+                                {latestValidTo && (
+                                  <span className="text-xs text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-600 px-2 py-0.5 rounded">
+                                    Expiré le {new Date(latestValidTo).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                                {offers.sort((a, b) => (a.power_kva || 0) - (b.power_kva || 0)).map((offer) => (
+                                  <div key={offer.id} className="px-4 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                                    <span className="font-medium text-gray-700 dark:text-gray-300 min-w-[60px]">
+                                      {offer.power_kva || '?'} kVA
+                                    </span>
+                                    <span className="text-gray-500 dark:text-gray-400 text-xs">
+                                      Abo. <span className="font-semibold text-gray-700 dark:text-gray-300">{offer.subscription_price}</span> €/mois
+                                    </span>
+                                    {offer.base_price != null && (
+                                      <span className="text-gray-500 dark:text-gray-400 text-xs">
+                                        Base <span className="font-semibold text-gray-700 dark:text-gray-300">{offer.base_price}</span> €/kWh
+                                      </span>
+                                    )}
+                                    {offer.hc_price != null && (
+                                      <span className="text-gray-500 dark:text-gray-400 text-xs">
+                                        HC <span className="font-semibold text-gray-700 dark:text-gray-300">{offer.hc_price}</span> €/kWh
+                                      </span>
+                                    )}
+                                    {offer.hp_price != null && (
+                                      <span className="text-gray-500 dark:text-gray-400 text-xs">
+                                        HP <span className="font-semibold text-gray-700 dark:text-gray-300">{offer.hp_price}</span> €/kWh
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Spacer pour le bouton flottant */}
           {isEditMode && hasAnyModifications && (
-            <button
-              onClick={() => setShowRecapModal(true)}
-              className="w-full rounded-lg p-4 border-2 border-dashed border-primary-300 dark:border-primary-700 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:border-primary-400 dark:hover:border-primary-600 transition-all flex items-center justify-center gap-3"
-            >
-              <Send size={20} />
-              <span className="font-semibold">Voir le récapitulatif et soumettre</span>
-              <span className="bg-primary-600 text-white text-xs font-bold px-2.5 py-1 rounded-full">
-                {totalModificationsCount}
-              </span>
-            </button>
+            <div className="h-16" />
           )}
         </div>
       ) : null}
 
       </>)}
+
+      {/* Bouton flottant fixe en bas de page pour ouvrir le récapitulatif */}
+      {isEditMode && hasAnyModifications && !showRecapModal && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-gradient-to-t from-gray-900/90 via-gray-900/70 to-transparent pointer-events-none">
+          <div className="max-w-3xl mx-auto pointer-events-auto">
+            <button
+              onClick={() => setShowRecapModal(true)}
+              className="w-full rounded-xl p-3.5 bg-primary-600 hover:bg-primary-700 text-white shadow-lg shadow-primary-600/30 hover:shadow-primary-600/50 transition-all flex items-center justify-center gap-3"
+            >
+              <Send size={20} />
+              <span className="font-semibold">Voir le récapitulatif et soumettre</span>
+              <span className="bg-white/20 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                {totalModificationsCount}
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modal de récapitulatif */}
       {showRecapModal && (
@@ -4039,14 +4589,21 @@ Ne retourne QUE le JSON, sans texte avant ou après.`
                     </div>
                     <div className="divide-y divide-amber-200 dark:divide-amber-700">
                       {Object.entries(editedOfferNames)
-                        .filter(([originalName, newName]) => newName !== originalName && newName.trim() !== '')
-                        .map(([originalName, newName]) => (
-                          <div key={`rename-${originalName}`} className="px-4 py-2 flex items-center gap-2 text-xs">
-                            <span className="text-red-500 line-through">{originalName}</span>
-                            <span className="text-gray-400">→</span>
-                            <span className="font-semibold text-green-600 dark:text-green-400">{newName}</span>
-                          </div>
-                        ))}
+                        .filter(([renameKey, newName]) => {
+                          const originalName = renameKey.split('::')[0]
+                          return newName !== originalName && newName.trim() !== ''
+                        })
+                        .map(([renameKey, newName]) => {
+                          const [originalName, offerType] = renameKey.split('::')
+                          return (
+                            <div key={`rename-${renameKey}`} className="px-4 py-2 flex items-center gap-2 text-xs">
+                              <span className="text-red-500 line-through">{originalName}</span>
+                              <span className="text-gray-400">→</span>
+                              <span className="font-semibold text-green-600 dark:text-green-400">{newName}</span>
+                              {offerType && <span className="text-gray-400 ml-1">({offerType})</span>}
+                            </div>
+                          )
+                        })}
                     </div>
                   </div>
                 )}

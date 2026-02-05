@@ -2,6 +2,16 @@
 
 # Script pour forcer le reload du backend quand des fichiers Python changent
 
+# Container runtime detection (docker ou nerdctl)
+if docker info >/dev/null 2>&1; then
+    CONTAINER_RT="docker"
+elif nerdctl info >/dev/null 2>&1; then
+    CONTAINER_RT="nerdctl"
+else
+    echo "❌ Aucun runtime conteneur disponible (docker ou nerdctl)"
+    exit 1
+fi
+
 # Fichier PID pour tracker le processus
 PID_FILE="./tmp/watch-backend.pid"
 LOCK_FILE="./tmp/watch-backend.lock"
@@ -59,7 +69,7 @@ restart_backend() {
     CURRENT_TIME=$(date +%s)
     if [ $((CURRENT_TIME - LAST_RESTART)) -ge $DEBOUNCE_SECONDS ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] 📝 Change detected, restarting backend..."
-        docker compose restart backend
+        $CONTAINER_RT compose restart backend
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Backend restarted"
         LAST_RESTART=$CURRENT_TIME
     else

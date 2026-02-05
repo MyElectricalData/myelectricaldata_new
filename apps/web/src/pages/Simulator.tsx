@@ -265,7 +265,7 @@ export default function Simulator() {
   // Filters and sorting state
   const [filterType, setFilterType] = useState<string>('all')
   const [filterProvider, setFilterProvider] = useState<string>('all')
-  const [showOnlyRecent, setShowOnlyRecent] = useState(false)
+  const [showOldOffers, setShowOldOffers] = useState(false)
   const [sortBy, setSortBy] = useState<'total' | 'subscription' | 'energy'>('total')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
 
@@ -1112,7 +1112,7 @@ export default function Simulator() {
       }
 
       // Remove power (kVA) from offer name for cleaner display
-      const offerNameWithoutPower = offer.name.replace(/\s*\d+\s*kVA\s*/i, '').trim()
+      const offerNameWithoutPower = offer.name.replace(/\s*-?\s*\d+\s*kVA\s*/i, '').trim()
 
       return {
         offerId: offer.id,
@@ -1185,8 +1185,8 @@ export default function Simulator() {
       filtered = filtered.filter((result) => result.providerName === filterProvider)
     }
 
-    // Filter by recency (tariffs < 6 months old)
-    if (showOnlyRecent) {
+    // Filter by recency (tariffs < 6 months old) - par défaut on masque les anciennes offres
+    if (!showOldOffers) {
       filtered = filtered.filter((result) => !isOldTariff(result.validFrom))
     }
 
@@ -1209,7 +1209,7 @@ export default function Simulator() {
     })
 
     return filtered
-  }, [simulationResult, filterType, filterProvider, showOnlyRecent, sortBy, sortOrder])
+  }, [simulationResult, filterType, filterProvider, showOldOffers, sortBy, sortOrder])
 
   // Check if viewing a shared PDL (impersonation mode)
   const isSharedPdl = !!impersonation
@@ -2703,11 +2703,11 @@ export default function Simulator() {
                   <label className="flex items-center gap-1 cursor-pointer text-xs text-gray-600 dark:text-gray-400">
                     <input
                       type="checkbox"
-                      checked={showOnlyRecent}
-                      onChange={(e) => setShowOnlyRecent(e.target.checked)}
+                      checked={showOldOffers}
+                      onChange={(e) => setShowOldOffers(e.target.checked)}
                       className="w-3 h-3 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
                     />
-                    <span>Récentes uniquement</span>
+                    <span>Afficher les anciennes offres</span>
                   </label>
                   <div className="relative group">
                     <Info
@@ -2716,7 +2716,7 @@ export default function Simulator() {
                     />
                     <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg z-10">
                       <div className="text-left">
-                        Affiche uniquement les offres avec des tarifs mis à jour il y a moins de 6 mois. Les offres plus anciennes sont marquées du badge "⚠️ Ancien".
+                        Inclut les offres dont les tarifs ont été mis à jour il y a plus de 6 mois. Ces offres sont marquées du badge "⚠️ Ancien".
                       </div>
                       <div className="absolute top-full left-4 -mt-1">
                         <div className="border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
@@ -2725,12 +2725,12 @@ export default function Simulator() {
                   </div>
                 </div>
 
-                {(filterType !== 'all' || filterProvider !== 'all' || showOnlyRecent) && (
+                {(filterType !== 'all' || filterProvider !== 'all' || showOldOffers) && (
                   <button
                     onClick={() => {
                       setFilterType('all')
                       setFilterProvider('all')
-                      setShowOnlyRecent(false)
+                      setShowOldOffers(false)
                     }}
                     className="text-xs text-primary-600 dark:text-primary-400 hover:underline ml-auto transition-colors"
                   >
@@ -3640,11 +3640,11 @@ export default function Simulator() {
                 </p>
                 {filteredAndSortedResults.length > 1 && (
                   <p className="mt-1">
-                    💡 {filterType !== 'all' || filterProvider !== 'all' || showOnlyRecent ? 'Parmi les offres affichées, l' : 'L'}'offre la moins chère vous permet d'économiser{' '}
+                    💡 {filterType !== 'all' || filterProvider !== 'all' || !showOldOffers ? 'Parmi les offres affichées, l' : 'L'}'offre la moins chère vous permet d'économiser{' '}
                     <strong className="text-green-600 dark:text-green-400">
                       {(filteredAndSortedResults[filteredAndSortedResults.length - 1].totalCost - filteredAndSortedResults[0].totalCost).toFixed(2)} €
                     </strong>
-                    {' '}par an par rapport à l'offre la plus chère{filterType !== 'all' || filterProvider !== 'all' || showOnlyRecent ? ' (affichée)' : ''}.
+                    {' '}par an par rapport à l'offre la plus chère{filterType !== 'all' || filterProvider !== 'all' || !showOldOffers ? ' (affichée)' : ''}.
                   </p>
                 )}
               </div>

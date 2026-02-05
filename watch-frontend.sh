@@ -2,6 +2,16 @@
 
 # Script pour forcer le reload du frontend quand des fichiers changent
 
+# Container runtime detection (docker ou nerdctl)
+if docker info >/dev/null 2>&1; then
+    CONTAINER_RT="docker"
+elif nerdctl info >/dev/null 2>&1; then
+    CONTAINER_RT="nerdctl"
+else
+    echo "❌ Aucun runtime conteneur disponible (docker ou nerdctl)"
+    exit 1
+fi
+
 # Fichier PID pour tracker le processus
 PID_FILE="./tmp/watch-frontend.pid"
 LOCK_FILE="./tmp/watch-frontend.lock"
@@ -54,7 +64,7 @@ echo "Press Ctrl+C to stop"
 # Function to rebuild frontend
 rebuild_frontend() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] 📝 Change detected, rebuilding frontend..."
-    docker compose build --no-cache frontend && docker compose up -d frontend
+    $CONTAINER_RT compose build --no-cache frontend && $CONTAINER_RT compose up -d frontend
     if [ $? -eq 0 ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Frontend rebuilt successfully"
     else

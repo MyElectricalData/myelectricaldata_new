@@ -338,6 +338,10 @@ export const energyApi = {
     return apiClient.delete(`energy/offers/${offerId}`)
   },
 
+  createProvider: async (data: { name: string; website?: string; logo_url?: string }) => {
+    return apiClient.post<{ id: string; name: string; website: string | null; logo_url: string | null }>('energy/providers', data)
+  },
+
   deleteProvider: async (providerId: string) => {
     return apiClient.delete(`energy/providers/${providerId}`)
   },

@@ -14,9 +14,19 @@ LOG_FILE="$LOG_DIR/watch-backend.log"
 WATCH_PID_FILE="$LOG_DIR/watch-backend.pid"
 WATCH_SCRIPT="./watch-backend.sh"
 
+# Container runtime detection (docker ou nerdctl)
+if docker info >/dev/null 2>&1; then
+    CONTAINER_RT="docker"
+elif nerdctl info >/dev/null 2>&1; then
+    CONTAINER_RT="nerdctl"
+else
+    echo -e "${RED}Aucun runtime conteneur disponible (docker ou nerdctl)${NC}"
+    exit 1
+fi
+
 # Docker Compose files (development in dev/ folder)
-COMPOSE_CLIENT="docker compose -f dev/docker-compose.yml"
-COMPOSE_SERVER="docker compose -f dev/docker-compose.server.yml"
+COMPOSE_CLIENT="$CONTAINER_RT compose -f dev/docker-compose.yml"
+COMPOSE_SERVER="$CONTAINER_RT compose -f dev/docker-compose.server.yml"
 
 echo -e "${GREEN}🚀 Starting development environment...${NC}"
 

@@ -9,7 +9,7 @@ from .alterna_scraper import AlternaScraper
 from .ekwateur_scraper import EkwateurScraper
 from .octopus_scraper import OctopusScraper
 from .vattenfall_scraper import VattenfallScraper
-from .ufc_scraper import UFCQueChoisirScraper
+
 from .mint_scraper import MintEnergieScraper
 
 __all__ = [
@@ -24,6 +24,6 @@ __all__ = [
     "EkwateurScraper",
     "OctopusScraper",
     "VattenfallScraper",
-    "UFCQueChoisirScraper",
+
     "MintEnergieScraper",
 ]
