@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.19.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.18.4...1.19.0) (2026-02-06)
+
+### Features
+
+* ajouter le support pour le tarif EJP dans le simulateur et améliorer l'affichage des offres ([802fb16](https://github.com/MyElectricalData/myelectricaldata_new/commit/802fb16389d58f1850de68d8cfccd1b788abce8c))
+
 ## [1.18.4](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.18.3...1.18.4) (2026-02-06)
 
 ### Bug Fixes
