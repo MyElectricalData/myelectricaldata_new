@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.18.2...1.18.3) (2026-02-06)
+
+### Refactoring
+
+* améliorer la gestion des offres expirées dans le simulateur et réinitialiser les modifications dans AllOffers ([f4fcefc](https://github.com/MyElectricalData/myelectricaldata_new/commit/f4fcefccdc48dc0ad29b79e9f909871136a1eb46))
+
 ## [1.18.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.18.1...1.18.2) (2026-02-05)
 
 ### Refactoring

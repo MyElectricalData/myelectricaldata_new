@@ -1,6 +1,6 @@
 [project]
 name = "myelectricaldata-api"
-version = "1.18.2"
+version = "1.18.3"
 description = "MyElectricalData API Gateway for Enedis data"
 authors = [{name = "m4dm4rtig4n"}]
 license = {text = "Apache-2.0"}
