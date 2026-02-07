@@ -368,15 +368,16 @@ async def list_offers(
     include_history: bool = Query(False, description="Include historical offers", openapi_examples={"with_history": {"summary": "Include history", "value": True}, "current_only": {"summary": "Current offers only", "value": False}}),
     db: AsyncSession = Depends(get_db)
 ) -> APIResponse:
-    """List all active energy offers, optionally filtered by provider
+    """List energy offers, optionally filtered by provider
 
-    By default, returns only offers valid for the current period (valid_to IS NULL or valid_to >= NOW)
-    Set include_history=true to get all offers including historical ones
+    By default, returns only active offers valid for the current period (valid_to IS NULL or valid_to >= NOW)
+    Set include_history=true to get all offers including inactive/expired ones
     """
-    query = select(EnergyOffer).where(EnergyOffer.is_active.is_(True))
+    query = select(EnergyOffer)
 
-    # Filter by current period only (unless include_history is True)
     if not include_history:
+        # Par défaut : uniquement les offres actives et dans leur période de validité
+        query = query.where(EnergyOffer.is_active.is_(True))
         now = datetime.now(UTC)
         query = query.where(
             (EnergyOffer.valid_to.is_(None)) | (EnergyOffer.valid_to >= now)

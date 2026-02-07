@@ -169,9 +169,10 @@ export default function Simulator() {
   const providersData = Array.isArray(providersDataRaw) ? providersDataRaw : []
 
   const { data: offersDataRaw, isLoading: offersLoading } = useQuery({
-    queryKey: ['energy-offers'],
+    queryKey: ['energy-offers', 'with-history'],
     queryFn: async () => {
-      const response = await energyApi.getOffers()
+      // Inclure l'historique pour pouvoir afficher l'offre utilisateur même si périmée
+      const response = await energyApi.getOffers(undefined, true)
       if (response.success && Array.isArray(response.data)) {
         return response.data as EnergyOffer[]
       }
@@ -180,11 +181,15 @@ export default function Simulator() {
     staleTime: 0, // Always refetch to ensure fresh data
   })
 
-  // Ensure offersData is always an array, exclure les offres expirées
-  const offersData = useMemo(() => {
-    const raw = Array.isArray(offersDataRaw) ? offersDataRaw : []
-    return raw.filter((o) => !isExpiredOffer(o))
+  // Toutes les offres (y compris périmées) pour retrouver l'offre de l'utilisateur
+  const allOffersIncludingExpired = useMemo(() => {
+    return Array.isArray(offersDataRaw) ? offersDataRaw : []
   }, [offersDataRaw])
+
+  // Offres actives uniquement pour la simulation principale
+  const offersData = useMemo(() => {
+    return allOffersIncludingExpired.filter((o) => !isExpiredOffer(o))
+  }, [allOffersIncludingExpired])
 
   // Selected PDL from global store + reference offer for shared PDLs
   const { selectedPdl, setSelectedPdl, impersonation, referenceOffers, setReferenceOffer } = usePdlStore()
@@ -597,8 +602,19 @@ export default function Simulator() {
         throw new Error(`Aucune offre disponible pour la puissance souscrite de ${subscribedPower} kVA`)
       }
 
+      // Inclure l'offre de l'utilisateur dans la simulation même si périmée
+      const userOfferId = selectedPdlData?.selected_offer_id
+      let offersToSimulate = filteredOffers
+      if (userOfferId && !filteredOffers.some((o) => o.id === userOfferId)) {
+        const userOffer = allOffersIncludingExpired.find((o) => o.id === userOfferId)
+        if (userOffer) {
+          offersToSimulate = [...filteredOffers, userOffer]
+          logger.log('[Simulator] Including expired user offer in simulation:', userOffer.name)
+        }
+      }
+
       // Calculer les simulations pour chaque offre
-      const result = calculateSimulationsForAllOffers(allData, filteredOffers, providersData || [], tempoColors, pdl)
+      const result = calculateSimulationsForAllOffers(allData, offersToSimulate, providersData || [], tempoColors, pdl)
 
       logger.log('Simulation result:', result)
 
@@ -614,7 +630,7 @@ export default function Simulator() {
     } finally {
       setIsSimulating(false)
     }
-  }, [selectedPdl, pdlsData, offersData, providersData, cachedConsumptionData, simulationStartDate, simulationEndDate, periodLabel])
+  }, [selectedPdl, pdlsData, offersData, allOffersIncludingExpired, providersData, cachedConsumptionData, simulationStartDate, simulationEndDate, periodLabel])
 
   const calculateSimulationsForAllOffers = (consumptionData: any[], offers: EnergyOffer[], providers: EnergyProvider[], tempoColors: TempoDay[], pdl?: PDL) => {
     // Create a map of date -> TEMPO color for fast lookup
@@ -998,21 +1014,21 @@ export default function Simulator() {
           energyCost: energyCost.toFixed(2)
         })
       } else if (offer.offer_type === 'EJP' && offer.ejp_normal && offer.ejp_peak) {
-        // EJP calculation: 343 jours normaux + 22 jours de pointe mobile
-        // Approximation : les jours RED TEMPO servent de proxy pour les jours EJP
+        // EJP calculation: 345 jours normaux + 20 jours de pointe mobile (par an)
+        // Approximation : les 20 premiers jours RED TEMPO servent de proxy pour les jours EJP
         logger.log(`[SIMULATOR] EJP calculation for ${offer.name}`)
 
-        // Collecter les jours RED TEMPO comme approximation des jours de pointe EJP
-        const ejpPeakDays = new Set<string>()
+        // Collecter les jours RED TEMPO, triés chronologiquement, limités à 20
+        const redDays = new Set<string>()
         allConsumptionFinal.forEach((item) => {
           const color = tempoColorMap.get(item.dateOnly)
-          if (color === 'RED' && !ejpPeakDays.has(item.dateOnly)) {
-            ejpPeakDays.add(item.dateOnly)
-          }
+          if (color === 'RED') redDays.add(item.dateOnly)
         })
+        const sortedRedDays = Array.from(redDays).sort()
+        const ejpPeakDays = new Set(sortedRedDays.slice(0, 20))
 
         ejpPeakDaysCount = ejpPeakDays.size
-        logger.log(`[EJP] Found ${ejpPeakDaysCount} RED days as EJP peak days`)
+        logger.log(`[EJP] Found ${redDays.size} RED days, using first ${ejpPeakDaysCount} as EJP peak days`)
 
         allConsumptionFinal.forEach((item) => {
           const kwh = item.value / 1000
@@ -2271,7 +2287,7 @@ export default function Simulator() {
 
         currentPage = checkNewPage(30, currentPage)
 
-        pdf.text(`  🟢 JOURS NORMAUX (~343 jours/an):`, margin + 3, y)
+        pdf.text(`  🟢 JOURS NORMAUX (~345 jours/an):`, margin + 3, y)
         y += 5
         const ejpNormalCost = result.breakdown.ejpNormalKwh * result.offer.ejp_normal
         pdf.text(`    -> ${result.breakdown.ejpNormalKwh?.toFixed(0)} kWh × ${formatPrice(result.offer.ejp_normal, 5)} €/kWh = ${ejpNormalCost.toFixed(2)} €`, margin + 3, y)
@@ -2850,6 +2866,7 @@ export default function Simulator() {
                     const isExpanded = expandedRows.has(result.offerId)
                     // Check if this is the user's current offer
                     const isCurrentOffer = currentOfferResult?.offerId === result.offerId
+                    const isCurrentOfferExpired = isCurrentOffer && result.offer && isExpiredOffer(result.offer)
                     // Calculate difference from current offer (if exists) or best offer
                     const referenceResult = currentOfferResult || filteredAndSortedResults[0]
                     const costDifferenceFromReference = result.totalCost - referenceResult.totalCost
@@ -2859,7 +2876,9 @@ export default function Simulator() {
                         <tr
                           onClick={() => toggleRowExpansion(result.offerId)}
                           className={`border-t border-gray-200 dark:border-gray-700 cursor-pointer transition-all duration-200 group ${
-                            isCurrentOffer
+                            isCurrentOfferExpired
+                              ? 'bg-gradient-to-r from-amber-50 to-orange-50/50 dark:from-amber-900/20 dark:to-orange-900/10 hover:from-amber-100 hover:to-orange-100/50 dark:hover:from-amber-900/30 dark:hover:to-orange-900/20 ring-2 ring-amber-400 dark:ring-amber-500 ring-inset'
+                              : isCurrentOffer
                               ? 'bg-gradient-to-r from-primary-50 to-blue-50/50 dark:from-primary-900/20 dark:to-blue-900/10 hover:from-primary-100 hover:to-blue-100/50 dark:hover:from-primary-900/30 dark:hover:to-blue-900/20 ring-2 ring-primary-400 dark:ring-primary-500 ring-inset'
                               : index === 0
                                 ? 'bg-gradient-to-r from-green-50 to-emerald-50/50 dark:from-green-900/20 dark:to-emerald-900/10 hover:from-green-100 hover:to-emerald-100/50 dark:hover:from-green-900/30 dark:hover:to-emerald-900/20'
@@ -2919,9 +2938,16 @@ export default function Simulator() {
                           </td>
                           <td className="p-2 text-right w-28">
                             {isCurrentOffer ? (
-                              <span className="px-2 py-0.5 text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full font-medium">
-                                Offre actuelle
-                              </span>
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span className="px-2 py-0.5 text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full font-medium">
+                                  Offre actuelle
+                                </span>
+                                {isCurrentOfferExpired && (
+                                  <span className="px-2 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full font-medium">
+                                    Périmée
+                                  </span>
+                                )}
+                              </div>
                             ) : costDifferenceFromReference === 0 ? (
                               <span className="text-xs text-green-600 dark:text-green-400 font-medium">Meilleur</span>
                             ) : costDifferenceFromReference < 0 ? (
@@ -3302,7 +3328,7 @@ export default function Simulator() {
                                         <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
                                           <span className="flex-shrink-0 text-base">⚠️</span>
                                           <div>
-                                            <strong>Estimation des jours de pointe :</strong> Les jours EJP sont estimés à partir des jours Tempo Rouge ({result.breakdown.ejpPeakDaysCount} jours détectés sur la période). Les jours EJP réels sont signalés par EDF et peuvent différer légèrement.
+                                            <strong>Estimation des jours de pointe :</strong> Les 20 jours EJP sont estimés à partir des 20 premiers jours Tempo Rouge ({result.breakdown.ejpPeakDaysCount} jours retenus sur la période). Les jours EJP réels sont signalés par EDF et peuvent différer.
                                           </div>
                                         </div>
                                       </div>
@@ -3707,7 +3733,7 @@ export default function Simulator() {
                                             {result.offerType === 'EJP' && (
                                               <div className="space-y-2">
                                                 <p className="text-xs text-gray-600 dark:text-gray-400 italic">
-                                                  L'option EJP applique un tarif normal 343 jours/an et un tarif de pointe mobile 22 jours/an. Les jours de pointe sont estimés via les jours Tempo Rouge.
+                                                  L'option EJP applique un tarif normal 345 jours/an et un tarif de pointe mobile 20 jours/an. Les jours de pointe sont estimés à partir des 20 premiers jours Tempo Rouge.
                                                 </p>
                                                 <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-300 dark:border-green-700 font-mono text-xs">
                                                   <div className="text-green-700 dark:text-green-300 font-semibold mb-1">🟢 Jours Normaux (~343j/an)</div>

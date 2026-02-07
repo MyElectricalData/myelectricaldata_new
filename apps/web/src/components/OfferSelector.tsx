@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Building2, Zap, Tag, X } from 'lucide-react'
+import { Building2, Zap, Tag, X, AlertTriangle } from 'lucide-react'
 import { energyApi, EnergyOffer } from '@/api/energy'
 
 interface OfferSelectorProps {
@@ -34,6 +34,7 @@ export default function OfferSelector({
   // sont ignorées au profit des valeurs dérivées de l'offre.
   const [userProviderId, setUserProviderId] = useState<string | null>(null)
   const [userOfferType, setUserOfferType] = useState<string | null>(null)
+  const [showExpired, setShowExpired] = useState(false)
 
   // Fetch providers
   const { data: providersResponse, isLoading: isLoadingProviders } = useQuery({
@@ -42,10 +43,10 @@ export default function OfferSelector({
     staleTime: 5 * 60 * 1000,
   })
 
-  // Fetch all offers
+  // Fetch all offers (incluant les offres périmées pour permettre leur sélection)
   const { data: offersResponse, isLoading: isLoadingOffers } = useQuery({
-    queryKey: ['energy-offers'],
-    queryFn: () => energyApi.getOffers(),
+    queryKey: ['energy-offers', 'with-history'],
+    queryFn: () => energyApi.getOffers(undefined, true),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -53,23 +54,29 @@ export default function OfferSelector({
   const providers = useMemo(() => providersResponse?.data || [], [providersResponse?.data])
   const allOffers = useMemo(() => offersResponse?.data || [], [offersResponse?.data])
 
-  // Filter offers by subscribed power
-  const filteredOffers = useMemo(() => {
-    if (!subscribedPower) {
-      return allOffers.filter(o => o.is_active !== false)
-    }
-    return allOffers.filter(offer => {
-      if (offer.is_active === false) return false
-      if (offer.power_kva && offer.power_kva !== subscribedPower) return false
-      return true
-    })
-  }, [allOffers, subscribedPower])
+  // Détecte si une offre est périmée (désactivée ou hors période de validité)
+  const isExpiredOffer = (offer: EnergyOffer): boolean => {
+    if (offer.is_active === false) return true
+    if (offer.valid_to && new Date(offer.valid_to) < new Date()) return true
+    return false
+  }
 
   // Find selected offer details
   const selectedOffer = useMemo(() => {
     if (!selectedOfferId) return null
     return allOffers.find(o => o.id === selectedOfferId) || null
   }, [selectedOfferId, allOffers])
+
+  // Détecter si l'offre sélectionnée est périmée (pour le style du résumé)
+  const isSelectedOfferExpired = selectedOffer ? isExpiredOffer(selectedOffer) : false
+
+  // Offres filtrées par puissance uniquement (base pour tous les sélecteurs)
+  const powerFilteredOffers = useMemo(() => {
+    return allOffers.filter(offer => {
+      if (subscribedPower && offer.power_kva && offer.power_kva !== subscribedPower) return false
+      return true
+    })
+  }, [allOffers, subscribedPower])
 
   // Valeurs effectives des sélecteurs : dérivées de l'offre sélectionnée
   // si elle existe, sinon des choix manuels de l'utilisateur.
@@ -84,32 +91,45 @@ export default function OfferSelector({
     return userOfferType
   }, [selectedOffer, userOfferType])
 
-  // Get providers that have offers (after power filtering)
+  // Offres visibles selon le toggle (toujours toutes si showExpired, sinon actives uniquement)
+  // Exception : si l'offre sélectionnée est périmée, on inclut toujours les périmées
+  const effectiveShowExpired = showExpired || isSelectedOfferExpired
+  const visibleOffers = useMemo(() => {
+    if (effectiveShowExpired) return powerFilteredOffers
+    return powerFilteredOffers.filter(o => !isExpiredOffer(o))
+  }, [powerFilteredOffers, effectiveShowExpired])
+
+  // Détecte s'il existe des offres périmées (pour afficher/masquer le toggle)
+  const hasExpiredOffers = useMemo(() => {
+    return powerFilteredOffers.some(o => isExpiredOffer(o))
+  }, [powerFilteredOffers])
+
+  // Get providers that have offers
   const availableProviders = useMemo(() => {
-    const providerIds = new Set(filteredOffers.map(o => o.provider_id))
+    const providerIds = new Set(visibleOffers.map(o => o.provider_id))
     return providers
       .filter(p => providerIds.has(p.id))
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [filteredOffers, providers])
+  }, [visibleOffers, providers])
 
   // Get offer types available for effective provider
   const availableOfferTypes = useMemo(() => {
     if (!effectiveProviderId) return []
     const types = new Set(
-      filteredOffers
+      visibleOffers
         .filter(o => o.provider_id === effectiveProviderId)
         .map(o => o.offer_type)
     )
     return Array.from(types).sort()
-  }, [filteredOffers, effectiveProviderId])
+  }, [visibleOffers, effectiveProviderId])
 
   // Get offers for effective provider and offer type
   const availableOffers = useMemo(() => {
     if (!effectiveProviderId || !effectiveOfferType) return []
-    return filteredOffers
+    return visibleOffers
       .filter(o => o.provider_id === effectiveProviderId && o.offer_type === effectiveOfferType)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [filteredOffers, effectiveProviderId, effectiveOfferType])
+  }, [visibleOffers, effectiveProviderId, effectiveOfferType])
 
   // Reset offer type and clear selected offer when provider changes manually
   const handleProviderChange = (providerId: string | null) => {
@@ -400,8 +420,22 @@ export default function OfferSelector({
     cursor-pointer
   `
 
+
   return (
     <div className={`space-y-3 ${className}`}>
+      {/* Toggle offres périmées */}
+      {hasExpiredOffers && (
+        <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-600 dark:text-gray-400">
+          <input
+            type="checkbox"
+            checked={showExpired}
+            onChange={(e) => setShowExpired(e.target.checked)}
+            className="rounded border-gray-300 dark:border-gray-600 text-amber-500 focus:ring-amber-500"
+          />
+          <span>Afficher les offres périmées</span>
+        </label>
+      )}
+
       {/* All selectors on one line */}
       <div className="grid grid-cols-3 gap-2">
         {/* Provider Selector */}
@@ -459,34 +493,74 @@ export default function OfferSelector({
             className={selectClassName}
           >
             <option value="">--</option>
-            {availableOffers.map(offer => {
-              // Retirer le suffixe de puissance du nom (ex: "Tempo - 12 kVA" → "Tempo")
-              const displayName = offer.name.replace(/\s*-\s*\d+\s*kVA$/i, '')
+            {(() => {
+              const active = availableOffers.filter(o => !isExpiredOffer(o))
+              const expired = availableOffers.filter(o => isExpiredOffer(o))
+              const formatName = (offer: EnergyOffer) =>
+                offer.name.replace(/\s*-\s*\d+\s*kVA$/i, '')
+              const formatExpiredLabel = (offer: EnergyOffer) => {
+                const name = formatName(offer)
+                if (offer.valid_to) {
+                  const date = new Date(offer.valid_to).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
+                  return `${name} (jusqu'à ${date})`
+                }
+                return `${name} (périmée)`
+              }
               return (
-                <option key={offer.id} value={offer.id}>
-                  {displayName}
-                </option>
+                <>
+                  {active.map(offer => (
+                    <option key={offer.id} value={offer.id}>
+                      {formatName(offer)}
+                    </option>
+                  ))}
+                  {expired.length > 0 && (
+                    <optgroup label="Offres périmées">
+                      {expired.map(offer => (
+                        <option key={offer.id} value={offer.id}>
+                          {formatExpiredLabel(offer)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </>
               )
-            })}
+            })()}
           </select>
         </div>
       </div>
 
       {/* Selected offer summary */}
       {selectedOffer && (
-        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+        <div className={`p-3 rounded-lg border ${
+          isSelectedOfferExpired
+            ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700'
+            : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+        }`}>
+          {/* Avertissement offre périmée */}
+          {isSelectedOfferExpired && (
+            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-amber-200 dark:border-amber-700">
+              <AlertTriangle size={14} className="text-amber-600 dark:text-amber-400 flex-shrink-0" />
+              <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                Cette offre n'est plus commercialisée
+              </span>
+            </div>
+          )}
           {/* Header with provider and offer name */}
           <div className="flex items-start justify-between gap-2 mb-3">
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-blue-900 dark:text-blue-100">
+                <span className={`font-medium ${isSelectedOfferExpired ? 'text-amber-900 dark:text-amber-100' : 'text-blue-900 dark:text-blue-100'}`}>
                   {providers.find(p => p.id === selectedOffer.provider_id)?.name}
                 </span>
-                <span className="text-blue-400">-</span>
-                <span className="text-blue-700 dark:text-blue-300">
+                <span className={isSelectedOfferExpired ? 'text-amber-400' : 'text-blue-400'}>-</span>
+                <span className={isSelectedOfferExpired ? 'text-amber-700 dark:text-amber-300' : 'text-blue-700 dark:text-blue-300'}>
                   {selectedOffer.name.replace(/\s*-\s*\d+\s*kVA$/i, '')}
                 </span>
-                <span className="px-1.5 py-0.5 text-xs rounded bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-300">
+                <span className={`px-1.5 py-0.5 text-xs rounded ${
+                  isSelectedOfferExpired
+                    ? 'bg-amber-100 dark:bg-amber-800 text-amber-700 dark:text-amber-300'
+                    : 'bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-300'
+                }`}>
                   {OFFER_TYPE_LABELS[selectedOffer.offer_type] || selectedOffer.offer_type}
                 </span>
               </div>
