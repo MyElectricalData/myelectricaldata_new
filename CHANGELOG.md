@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.21.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.20.0...1.21.0) (2026-02-11)
+
+### Features
+
+* add ValidityPeriodManager component with tests and utility functions ([f61dc23](https://github.com/MyElectricalData/myelectricaldata_new/commit/f61dc23c809e7e99885ee321cd02e27d490d5a46))
+* ajouter la gestion des offres périmées dans le sélecteur d'offres et le composant PDLCard ([2b93057](https://github.com/MyElectricalData/myelectricaldata_new/commit/2b93057acaf79dd1a115dbeae4a87f0de89d1988))
+* mettre à jour la version de l'API et améliorer la gestion des offres dans le client API ([35a67dc](https://github.com/MyElectricalData/myelectricaldata_new/commit/35a67dcaa2ef90c6218bb296f70cf8f956ff1cfe))
+
 ## [1.20.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.19.0...1.20.0) (2026-02-07)
 
 ### Features
