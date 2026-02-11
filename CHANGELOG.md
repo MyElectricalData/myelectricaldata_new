@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.20.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.19.0...1.20.0) (2026-02-07)
+
+### Features
+
+* inclure le support des offres périmées dans le simulateur et l'affichage des sélecteurs ([ed0f2d3](https://github.com/MyElectricalData/myelectricaldata_new/commit/ed0f2d3b6d4ab34b1d19c6170318625166ec3dd6))
+
 ## [1.19.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.18.4...1.19.0) (2026-02-06)
 
 ### Features
