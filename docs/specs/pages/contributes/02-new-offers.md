@@ -25,6 +25,7 @@ Fichier : `apps/web/src/pages/Contribute/components/tabs/NewContribution.tsx`
 | Import JSON batch                | FAIT   |
 | Mode edition                     | FAIT   |
 | Documentation obligatoire        | FAIT   |
+| Gestion multi-périodes           | FAIT   |
 
 ## Details implementation
 
@@ -70,9 +71,13 @@ Fichier : `apps/web/src/pages/Contribute/components/tabs/NewContribution.tsx`
 - Toggle pour afficher/masquer la section
 - Textarea pour coller le JSON
 - Support d'un objet unique ou tableau d'offres
+- Tri automatique par `valid_from` (les anciennes offres sont créées en premier)
 - Barre de progression pendant l'import
 - Affichage des erreurs par offre
 - Invalidation cache apres import
+- Prompt AI explicatif avec exemple de format
+
+**Documentation complète** : Voir `exemple-import-json.md` pour des exemples détaillés
 
 ### Mode edition (FAIT)
 
@@ -88,7 +93,36 @@ Fichier : `apps/web/src/pages/Contribute/components/tabs/NewContribution.tsx`
 - Champ obligatoire : Lien fiche des prix (URL)
 - Champ optionnel : Screenshot ou PDF (URL)
 - Texte explicatif pour chaque champ
-- `valid_from` auto-rempli avec date du jour
+
+### Gestion multi-periodes (FAIT)
+
+**Composant** : `ValidityPeriodManager.tsx`
+
+**Problème résolu** : Quand une offre a connu plusieurs grilles tarifaires dans le temps (ex: tarifs 2024, puis nouveaux tarifs 2025), il fallait créer manuellement plusieurs contributions. Maintenant, le système permet d'ajouter plusieurs périodes de validité et crée automatiquement une contribution par période.
+
+**Fonctionnalités** :
+
+- Ajout/suppression de périodes de validité
+- Détection automatique des chevauchements de périodes (avec alerte visuelle)
+- Validation : périodes ne doivent pas se chevaucher
+- Badge "Offre active" pour les périodes sans date de fin
+- Une contribution est créée par période lors de la soumission
+- Mode édition : une seule période autorisée (modification de contribution existante)
+
+**Validation** :
+
+- Au moins une période requise
+- Pas de chevauchement autorisé
+- Date de début obligatoire pour chaque période
+- Date de fin optionnelle (vide = offre active)
+
+**Feedback utilisateur** :
+
+- Compteur de périodes configurées
+- Alerte si chevauchement détecté
+- Message explicatif sur la création multiple de contributions
+- Barre de progression lors de la soumission multiple
+- Rapport détaillé des succès/échecs par période
 
 ## Types d'offres supportes
 
@@ -113,6 +147,8 @@ Fichier : `apps/web/src/pages/Contribute/components/tabs/NewContribution.tsx`
 ## Composants utilises
 
 - `PowerVariantForm` : Formulaire ajout variante de puissance
+- `ValidityPeriodManager` : Gestion multi-periodes de validite
+- `SingleDatePicker` : Selecteur de date individuel (utilise par ValidityPeriodManager)
 - `toast` : Notifications succes/erreur
 - `formatPrice` : Formatage des prix en centimes
 

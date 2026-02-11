@@ -252,7 +252,7 @@ class OctopusScraper(BasePriceScraper):
         for power, data in sorted(base_data.items()):
             offers.append(
                 OfferData(
-                    name=f"Octopus {offer_prefix} - Base {power} kVA",
+                    name=f"Octopus {offer_prefix}",
                     offer_type="BASE",
                     description=f"Offre Octopus {offer_prefix} - Option Base - {power} kVA",
                     subscription_price=data["subscription"],
@@ -266,7 +266,7 @@ class OctopusScraper(BasePriceScraper):
         for power, data in sorted(hchp_data.items()):
             offers.append(
                 OfferData(
-                    name=f"Octopus {offer_prefix} - Heures Creuses {power} kVA",
+                    name=f"Octopus {offer_prefix}",
                     offer_type="HC_HP",
                     description=f"Offre Octopus {offer_prefix} - Option Heures Creuses - {power} kVA",
                     subscription_price=data["subscription"],
@@ -291,7 +291,7 @@ class OctopusScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["ECO_CONSO_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Octopus Eco-conso - Base {power} kVA",
+                    name="Octopus Eco-conso",
                     offer_type="BASE",
                     description=f"Offre Octopus Eco-conso Fixe - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -305,7 +305,7 @@ class OctopusScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["ECO_CONSO_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Octopus Eco-conso - Heures Creuses {power} kVA",
+                    name="Octopus Eco-conso",
                     offer_type="HC_HP",
                     description=f"Offre Octopus Eco-conso Fixe - Option Heures Creuses - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -320,7 +320,7 @@ class OctopusScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["ECO_SAISON_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Octopus Eco-saison - Base {power} kVA",
+                    name="Octopus Eco-saison",
                     offer_type="BASE",
                     description=f"Offre Octopus Eco-saison - Option Base - {power} kVA (20% moins cher avril-octobre)",
                     subscription_price=prices["subscription"],
@@ -334,7 +334,7 @@ class OctopusScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["ECO_SAISON_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Octopus Eco-saison - Heures Creuses {power} kVA",
+                    name="Octopus Eco-saison",
                     offer_type="HC_HP",
                     description=f"Offre Octopus Eco-saison - Option Heures Creuses - {power} kVA (20% moins cher avril-octobre)",
                     subscription_price=prices["subscription"],

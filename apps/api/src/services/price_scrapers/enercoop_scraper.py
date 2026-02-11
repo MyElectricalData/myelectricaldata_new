@@ -273,7 +273,7 @@ class EnercoopPriceScraper(BasePriceScraper):
             if power in subscription_prices:
                 offers.append(
                     OfferData(
-                        name=f"Basic Watt - Base {power} kVA",
+                        name="Basic Watt",
                         offer_type="BASE",
                         description=f"Électricité 100% renouvelable et coopérative - Tarif unique - {power} kVA",
                         subscription_price=subscription_prices[power],
@@ -331,7 +331,7 @@ class EnercoopPriceScraper(BasePriceScraper):
             if power in subscription_prices:
                 offers.append(
                     OfferData(
-                        name=f"Flexi Watt - Heures Creuses {power} kVA",
+                        name="Flexi Watt",
                         offer_type="HC_HP",
                         description=f"Électricité 100% renouvelable - Heures Creuses Enedis - {power} kVA",
                         subscription_price=subscription_prices[power],
@@ -388,7 +388,7 @@ class EnercoopPriceScraper(BasePriceScraper):
             if power in subscription_prices:
                 offers.append(
                     OfferData(
-                        name=f"Flexi Watt - Nuit & Week-end {power} kVA",
+                        name="Flexi Watt - Nuit & Week-end",
                         offer_type="HC_NUIT_WEEKEND",
                         description=f"Électricité 100% renouvelable - HC nuit (23h-6h) et week-end - {power} kVA",
                         subscription_price=subscription_prices[power],
@@ -450,7 +450,7 @@ class EnercoopPriceScraper(BasePriceScraper):
             if power in subscription_prices:
                 offers.append(
                     OfferData(
-                        name=f"Flexi Watt - 2 saisons {power} kVA",
+                        name="Flexi Watt - 2 saisons",
                         offer_type="SEASONAL",
                         description=f"Électricité 100% renouvelable - Tarifs hiver/été avec heures creuses - {power} kVA",
                         subscription_price=subscription_prices[power],
@@ -479,7 +479,7 @@ class EnercoopPriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Offre Particuliers - Base {power} kVA",
+                    name="Basic Watt",
                     offer_type="BASE",
                     description=f"Électricité 100% renouvelable et coopérative - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -493,7 +493,7 @@ class EnercoopPriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Flexi Watt - Heures Creuses {power} kVA",
+                    name="Flexi Watt",
                     offer_type="HC_HP",
                     description=f"Électricité 100% renouvelable - Heures Creuses Enedis - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -508,7 +508,7 @@ class EnercoopPriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["HC_NUIT_WEEKEND"].items():
             offers.append(
                 OfferData(
-                    name=f"Flexi Watt - Nuit & Week-end {power} kVA",
+                    name="Flexi Watt - Nuit & Week-end",
                     offer_type="HC_NUIT_WEEKEND",
                     description=f"Électricité 100% renouvelable - HC nuit (23h-6h) et week-end - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -523,7 +523,7 @@ class EnercoopPriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["SEASONAL"].items():
             offers.append(
                 OfferData(
-                    name=f"Flexi Watt - 2 saisons {power} kVA",
+                    name="Flexi Watt - 2 saisons",
                     offer_type="SEASONAL",
                     description=f"Électricité 100% renouvelable - Tarifs hiver/été avec heures creuses - {power} kVA",
                     subscription_price=prices["subscription"],

@@ -276,7 +276,7 @@ class AlternaScraper(BasePriceScraper):
             for i, power in enumerate(powers_base):
                 if i < len(subscriptions_base):
                     offers.append(OfferData(
-                        name=f"{offer_name} - Base {power} kVA",
+                        name=offer_name,
                         offer_type="BASE",
                         description=f"Offre d'électricité verte {offer_name} à prix fixe - Option Base - {power} kVA - Prix TTC",
                         subscription_price=subscriptions_base[i],
@@ -289,7 +289,7 @@ class AlternaScraper(BasePriceScraper):
             for i, power in enumerate(powers_hchp):
                 if i < len(subscriptions_hchp):
                     offers.append(OfferData(
-                        name=f"{offer_name} - Heures Creuses {power} kVA",
+                        name=offer_name,
                         offer_type="HC_HP",
                         description=f"Offre d'électricité verte {offer_name} à prix fixe - Heures Creuses - {power} kVA - Prix TTC",
                         subscription_price=subscriptions_hchp[i],
@@ -317,7 +317,7 @@ class AlternaScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["LOCALE_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Électricité verte 100% locale - Base {power} kVA",
+                    name="Électricité verte 100% locale",
                     offer_type="BASE",
                     description=f"Offre d'électricité verte 100% locale à prix fixe - Option Base - {power} kVA - Garanties d'origine émises par des producteurs locaux",
                     subscription_price=prices["subscription"],
@@ -331,7 +331,7 @@ class AlternaScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["LOCALE_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Électricité verte 100% locale - Heures Creuses {power} kVA",
+                    name="Électricité verte 100% locale",
                     offer_type="HC_HP",
                     description=f"Offre d'électricité verte 100% locale à prix fixe - Heures Creuses - {power} kVA - Garanties d'origine émises par des producteurs locaux",
                     subscription_price=prices["subscription"],
@@ -346,7 +346,7 @@ class AlternaScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["FRANCAISE_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Électricité verte 100% française - Base {power} kVA",
+                    name="Électricité verte 100% française",
                     offer_type="BASE",
                     description=f"Offre d'électricité verte 100% française à prix fixe - Option Base - {power} kVA - Garanties d'origine françaises",
                     subscription_price=prices["subscription"],
@@ -360,7 +360,7 @@ class AlternaScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["FRANCAISE_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Électricité verte 100% française - Heures Creuses {power} kVA",
+                    name="Électricité verte 100% française",
                     offer_type="HC_HP",
                     description=f"Offre d'électricité verte 100% française à prix fixe - Heures Creuses - {power} kVA - Garanties d'origine françaises",
                     subscription_price=prices["subscription"],

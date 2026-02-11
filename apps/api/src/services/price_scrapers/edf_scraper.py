@@ -227,7 +227,7 @@ class EDFPriceScraper(BasePriceScraper):
                     for power, prices in base_prices.items():
                         offers.append(
                             OfferData(
-                                name=f"Tarif Bleu - BASE {power} kVA",
+                                name="Tarif Bleu",
                                 offer_type="BASE",
                                 description=f"Tarif réglementé EDF option base - {power} kVA",
                                 subscription_price=prices["subscription"],
@@ -243,7 +243,7 @@ class EDFPriceScraper(BasePriceScraper):
                     for power, prices in hc_hp_prices.items():
                         offers.append(
                             OfferData(
-                                name=f"Tarif Bleu - HC/HP {power} kVA",
+                                name="Tarif Bleu",
                                 offer_type="HC_HP",
                                 description=f"Tarif réglementé EDF option heures creuses - {power} kVA",
                                 subscription_price=prices["subscription"],
@@ -260,7 +260,7 @@ class EDFPriceScraper(BasePriceScraper):
                     for power, prices in tempo_prices.items():
                         offers.append(
                             OfferData(
-                                name=f"Tarif Bleu - TEMPO {power} kVA",
+                                name="Tarif Bleu",
                                 offer_type="TEMPO",
                                 description=f"Tarif réglementé EDF option Tempo - {power} kVA",
                                 subscription_price=prices["subscription"],
@@ -633,7 +633,7 @@ class EDFPriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Tarif Bleu - Base {power} kVA",
+                    name="Tarif Bleu",
                     offer_type="BASE",
                     description=f"Tarif réglementé EDF option base - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -647,7 +647,7 @@ class EDFPriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Tarif Bleu - Heures Creuses {power} kVA",
+                    name="Tarif Bleu",
                     offer_type="HC_HP",
                     description=f"Tarif réglementé EDF option heures creuses - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -662,7 +662,7 @@ class EDFPriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["TEMPO"].items():
             offers.append(
                 OfferData(
-                    name=f"Tarif Bleu - Tempo {power} kVA",
+                    name="Tarif Bleu",
                     offer_type="TEMPO",
                     description=f"Tarif réglementé EDF option Tempo - {power} kVA",
                     subscription_price=prices["subscription"],

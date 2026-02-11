@@ -25,8 +25,9 @@ function isWeekend(dateString: string): boolean {
   return dayOfWeek === 0 || dayOfWeek === 6 // 0 = Sunday, 6 = Saturday
 }
 
-// Vérifie si une offre est expirée (valid_to défini et dans le passé)
-function isExpiredOffer(offer: { valid_to?: string | null }): boolean {
+// Vérifie si une offre est expirée (inactive ou hors période de validité)
+function isExpiredOffer(offer: { valid_to?: string | null; is_active?: boolean }): boolean {
+  if (offer.is_active === false) return true
   if (!offer.valid_to) return false
   return new Date(offer.valid_to) < new Date()
 }
@@ -223,6 +224,10 @@ export default function Simulator() {
       return
     }
 
+    // Reset immédiatement au changement de PDL pour éviter d'afficher
+    // les données de l'ancien PDL pendant le chargement du nouveau
+    setCachedConsumptionData(null)
+
     // Subscribe to future changes (when setQueryData is called)
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
       // Listen to 'updated' events for this query (setQueryData triggers 'updated')
@@ -244,10 +249,10 @@ export default function Simulator() {
     if (!selectedPdl || isRestoring) return
 
     // Hydration complete - read current data from cache
+    // IMPORTANT: toujours mettre à jour (même null) pour éviter de garder
+    // les données d'un ancien PDL quand le nouveau n'en a pas
     const initialData = queryClient.getQueryData(['consumptionDetail', selectedPdl])
-    if (initialData) {
-      setCachedConsumptionData(initialData)
-    }
+    setCachedConsumptionData(initialData ?? null)
   }, [selectedPdl, queryClient, isRestoring])
 
   // Simulation state
@@ -279,7 +284,7 @@ export default function Simulator() {
   const [refOfferFilterType, setRefOfferFilterType] = useState<string>('all')
 
   // Period selection state - initialise depuis les preferences utilisateur
-  type PeriodOption = 'rolling' | '2025' | '2024' | 'profile' | 'custom'
+  type PeriodOption = 'rolling' | '2025' | '2024' | 'profile' | 'custom' | 'tempo-season' | 'tempo-year'
   const { preset: userPreset, customDate: userCustomDate } = useDatePreferencesStore()
   const profileRange = useMemo(() => getDateRangeFromPreset(userPreset, userCustomDate), [userPreset, userCustomDate])
   const profileLabel = DATE_PRESET_LABELS[userPreset]
@@ -314,6 +319,65 @@ export default function Simulator() {
         startDate = start.toISOString().split('T')[0]
         endDate = yesterdayStr
         label = 'Année glissante'
+        break
+      }
+      case 'tempo-year': {
+        // Tempo year: September 1st to August 31st
+        const currentMonth = today.getMonth() // 0-11 (0=Jan, 8=Sep)
+        let tempoStartYear: number
+
+        if (currentMonth >= 8) {
+          // Sep-Dec: use current tempo year (Sep current year → Aug next year)
+          tempoStartYear = today.getFullYear()
+        } else {
+          // Jan-Aug: use previous tempo year (Sep previous year → Aug current year)
+          tempoStartYear = today.getFullYear() - 1
+        }
+
+        startDate = `${tempoStartYear}-09-01`
+        const tempoEndDate = `${tempoStartYear + 1}-08-31`
+        const tempoEnd = new Date(tempoEndDate)
+
+        // If tempo end is in the future, cap at yesterday
+        if (tempoEnd > yesterday) {
+          endDate = yesterdayStr
+        } else {
+          endDate = tempoEndDate
+        }
+        label = `Année Tempo ${tempoStartYear}-${tempoStartYear + 1}`
+        break
+      }
+      case 'tempo-season': {
+        // Tempo season: November 1st to March 31st
+        // Determine which season to use based on current date
+        const currentMonth = today.getMonth() // 0-11
+        let seasonStartYear: number
+        let seasonEndYear: number
+
+        if (currentMonth >= 10) {
+          // Nov-Dec: use current season (Nov current year → Mar next year)
+          seasonStartYear = today.getFullYear()
+          seasonEndYear = today.getFullYear() + 1
+        } else if (currentMonth <= 2) {
+          // Jan-Mar: use current season (Nov previous year → Mar current year)
+          seasonStartYear = today.getFullYear() - 1
+          seasonEndYear = today.getFullYear()
+        } else {
+          // Apr-Oct: use previous complete season (Nov previous year → Mar current year)
+          seasonStartYear = today.getFullYear() - 1
+          seasonEndYear = today.getFullYear()
+        }
+
+        startDate = `${seasonStartYear}-11-01`
+        const seasonEndDate = `${seasonEndYear}-03-31`
+        // If season end is in the future, cap at yesterday
+        const seasonEnd = new Date(seasonEndDate)
+        if (seasonEnd > yesterday) {
+          endDate = yesterdayStr
+        } else {
+          endDate = seasonEndDate
+        }
+        label = `Saison Tempo ${seasonStartYear}-${seasonEndYear}`
         break
       }
       case '2025': {
@@ -585,11 +649,17 @@ export default function Simulator() {
       // Filter offers by subscribed power if available
       const filteredOffers = subscribedPower && offersArray.length > 0
         ? offersArray.filter((offer) => {
+            // Use power_kva column if available, fallback to name extraction
+            if (offer.power_kva) {
+              return offer.power_kva === subscribedPower
+            }
+            // Fallback: extract from name for legacy offers
             const match = offer.name.match(/(\d+)\s*kVA/i)
             if (match) {
               const offerPower = parseInt(match[1])
               return offerPower === subscribedPower
             }
+            // If no power info found, include the offer (might be power-agnostic)
             return true
           })
         : offersArray
@@ -1018,7 +1088,7 @@ export default function Simulator() {
         // Approximation : les 20 premiers jours RED TEMPO servent de proxy pour les jours EJP
         logger.log(`[SIMULATOR] EJP calculation for ${offer.name}`)
 
-        // Collecter les jours RED TEMPO, triés chronologiquement, limités à 20
+        // Collecter les jours RED TEMPO de la période sélectionnée, triés chronologiquement, limités à 20
         const redDays = new Set<string>()
         allConsumptionFinal.forEach((item) => {
           const color = tempoColorMap.get(item.dateOnly)
@@ -1028,7 +1098,8 @@ export default function Simulator() {
         const ejpPeakDays = new Set(sortedRedDays.slice(0, 20))
 
         ejpPeakDaysCount = ejpPeakDays.size
-        logger.log(`[EJP] Found ${redDays.size} RED days, using first ${ejpPeakDaysCount} as EJP peak days`)
+        logger.log(`[EJP] Found ${redDays.size} RED days in period, using first ${ejpPeakDaysCount} as EJP peak days`)
+        logger.log(`[EJP] Peak days:`, Array.from(ejpPeakDays).sort())
 
         allConsumptionFinal.forEach((item) => {
           const kwh = item.value / 1000
@@ -1260,7 +1331,10 @@ export default function Simulator() {
       return sortOrder === 'asc' ? comparison : -comparison
     })
 
-    return filtered
+    // Limit to 80 results maximum
+    const limitedResults = filtered.slice(0, 80)
+
+    return limitedResults
   }, [simulationResult, filterType, filterProvider, sortBy, sortOrder])
 
   // Check if viewing a shared PDL (impersonation mode)
@@ -1294,6 +1368,23 @@ export default function Simulator() {
     // Find the result matching the selected offer ID (search in all results)
     return simulationResult.find((r) => r.offerId === currentPdl.selected_offer_id) || null
   }, [simulationResult, pdlsData, selectedPdl, isSharedPdl, referenceOffer])
+
+  // Ensure current offer is always included at the end if not in top 80
+  const displayResults = useMemo(() => {
+    if (!currentOfferResult) return filteredAndSortedResults
+
+    // Check if current offer is already in the limited results
+    const isCurrentOfferInResults = filteredAndSortedResults.some(
+      (r) => r.offerId === currentOfferResult.offerId
+    )
+
+    // If not in results, append it at the end
+    if (!isCurrentOfferInResults) {
+      return [...filteredAndSortedResults, currentOfferResult]
+    }
+
+    return filteredAndSortedResults
+  }, [filteredAndSortedResults, currentOfferResult])
 
   // Get unique providers and types for filter options
   // IMPORTANT: These hooks must be before any early returns to respect React's rules of hooks
@@ -2702,7 +2793,7 @@ export default function Simulator() {
                 {isSimulating
                   ? 'Recalcul en cours…'
                   : simulationResult && Array.isArray(simulationResult) && simulationResult.length > 0
-                    ? `Comparaison des offres (${filteredAndSortedResults.length} résultat${filteredAndSortedResults.length > 1 ? 's' : ''})`
+                    ? `Comparaison des offres (${displayResults.length} résultat${displayResults.length > 1 ? 's' : ''})`
                     : 'Comparaison des offres'
                 }
               </h2>
@@ -2737,16 +2828,21 @@ export default function Simulator() {
                 minDate={selectedPDLDetails?.oldest_available_data_date || selectedPDLDetails?.activation_date}
                 availableDates={availableDates}
                 shortcuts={[
-                  ...(userPreset !== 'rolling' ? [{
+                  {
                     label: `Mon profil (${profileLabel})`,
                     onClick: () => setSelectedPeriod('profile'),
                     active: selectedPeriod === 'profile'
+                  },
+                  ...(userPreset !== 'tempo' ? [{
+                    label: 'Année Tempo',
+                    onClick: () => setSelectedPeriod('tempo-year'),
+                    active: selectedPeriod === 'tempo-year'
                   }] : []),
-                  {
+                  ...(userPreset !== 'rolling' ? [{
                     label: 'Année glissante',
                     onClick: () => setSelectedPeriod('rolling'),
                     active: selectedPeriod === 'rolling'
-                  },
+                  }] : []),
                   {
                     label: '2025',
                     onClick: () => setSelectedPeriod('2025'),
@@ -2862,13 +2958,13 @@ export default function Simulator() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAndSortedResults.map((result, index) => {
+                  {displayResults.map((result, index) => {
                     const isExpanded = expandedRows.has(result.offerId)
                     // Check if this is the user's current offer
                     const isCurrentOffer = currentOfferResult?.offerId === result.offerId
                     const isCurrentOfferExpired = isCurrentOffer && result.offer && isExpiredOffer(result.offer)
                     // Calculate difference from current offer (if exists) or best offer
-                    const referenceResult = currentOfferResult || filteredAndSortedResults[0]
+                    const referenceResult = currentOfferResult || displayResults[0]
                     const costDifferenceFromReference = result.totalCost - referenceResult.totalCost
 
                     return (
@@ -3328,7 +3424,14 @@ export default function Simulator() {
                                         <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
                                           <span className="flex-shrink-0 text-base">⚠️</span>
                                           <div>
-                                            <strong>Estimation des jours de pointe :</strong> Les 20 jours EJP sont estimés à partir des 20 premiers jours Tempo Rouge ({result.breakdown.ejpPeakDaysCount} jours retenus sur la période). Les jours EJP réels sont signalés par EDF et peuvent différer.
+                                            <strong>Estimation des jours de pointe :</strong> Les 20 jours EJP sont estimés à partir des 20 premiers jours Tempo Rouge.
+                                            {result.breakdown.ejpPeakDaysCount < 20 && (
+                                              <> Seulement <strong>{result.breakdown.ejpPeakDaysCount} jours détectés</strong> sur votre période (saison Tempo incomplète). Le tarif EJP utilise 20 jours de pointe par an (novembre à mars).</>
+                                            )}
+                                            {result.breakdown.ejpPeakDaysCount >= 20 && (
+                                              <> {result.breakdown.ejpPeakDaysCount} jours retenus sur la période.</>
+                                            )}
+                                            {' '}Les jours EJP réels sont signalés par EDF et peuvent différer.
                                           </div>
                                         </div>
                                       </div>
@@ -3734,6 +3837,9 @@ export default function Simulator() {
                                               <div className="space-y-2">
                                                 <p className="text-xs text-gray-600 dark:text-gray-400 italic">
                                                   L'option EJP applique un tarif normal 345 jours/an et un tarif de pointe mobile 20 jours/an. Les jours de pointe sont estimés à partir des 20 premiers jours Tempo Rouge.
+                                                  {result.breakdown.ejpPeakDaysCount < 20 && (
+                                                    <span className="text-amber-600 dark:text-amber-400 font-semibold"> ⚠️ Seulement {result.breakdown.ejpPeakDaysCount} jours détectés (période incomplète).</span>
+                                                  )}
                                                 </p>
                                                 <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-300 dark:border-green-700 font-mono text-xs">
                                                   <div className="text-green-700 dark:text-green-300 font-semibold mb-1">🟢 Jours Normaux (~343j/an)</div>
@@ -3791,16 +3897,16 @@ export default function Simulator() {
               </table>
             </div>
 
-            {filteredAndSortedResults.length > 0 && (
+            {displayResults.length > 0 && (
               <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
                 <p>
                   📊 Consommation totale sur la période : <strong>{simulationResult[0].totalKwh.toFixed(2)} kWh</strong>
                 </p>
-                {filteredAndSortedResults.length > 1 && (
+                {displayResults.length > 1 && (
                   <p className="mt-1">
                     💡 {filterType !== 'all' || filterProvider !== 'all' ? 'Parmi les offres affichées, l' : 'L'}'offre la moins chère vous permet d'économiser{' '}
                     <strong className="text-green-600 dark:text-green-400">
-                      {(filteredAndSortedResults[filteredAndSortedResults.length - 1].totalCost - filteredAndSortedResults[0].totalCost).toFixed(2)} €
+                      {(displayResults[displayResults.length - 1].totalCost - displayResults[0].totalCost).toFixed(2)} €
                     </strong>
                     {' '}par an par rapport à l'offre la plus chère{filterType !== 'all' || filterProvider !== 'all' ? ' (affichée)' : ''}.
                   </p>
@@ -3809,7 +3915,7 @@ export default function Simulator() {
             )}
 
             {/* No results message */}
-            {filteredAndSortedResults.length === 0 && simulationResult.length > 0 && (
+            {displayResults.length === 0 && simulationResult.length > 0 && (
               <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                 <p className="text-sm text-yellow-800 dark:text-yellow-200">
                   Aucune offre ne correspond à vos critères de filtrage. Essayez de modifier les filtres ou de les réinitialiser.
@@ -3896,6 +4002,7 @@ export default function Simulator() {
                     <p className="font-medium mb-1">📅 Choix de la période</p>
                     <ul className="list-disc list-inside space-y-0.5 ml-2 text-gray-600 dark:text-gray-400">
                       <li><strong>Année glissante</strong> : 365 derniers jours</li>
+                      <li><strong>Saison Tempo</strong> : 1er nov → 31 mars (22 jours Rouge)</li>
                       <li><strong>Année civile</strong> : année complète</li>
                       <li><strong>Personnalisée</strong> : dates au choix</li>
                     </ul>

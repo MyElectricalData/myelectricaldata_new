@@ -160,7 +160,7 @@ export function getDateRangeFromPreset(
 export const useDatePreferencesStore = create<DatePreferencesState>()(
   persist(
     (set) => ({
-      preset: 'rolling', // Année glissante par défaut
+      preset: 'tempo', // Année Tempo par défaut
       customDate: { day: 1, month: 1 }, // 1er janvier par défaut pour custom
       setPreset: (preset) => set({ preset }),
       setCustomDate: (date) => set({ customDate: date }),

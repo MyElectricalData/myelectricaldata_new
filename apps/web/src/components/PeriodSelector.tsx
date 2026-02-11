@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { DayPicker } from 'react-day-picker'
+import { Info } from 'lucide-react'
 import 'react-day-picker/style.css'
 
 // Create a custom French locale with capitalized month names
@@ -30,6 +31,7 @@ interface PeriodSelectorProps {
     label: string
     onClick: () => void
     active?: boolean
+    tooltip?: string
   }>
 }
 
@@ -389,21 +391,33 @@ export function PeriodSelector({
         {shortcuts.length > 0 && (
           <div className="flex flex-wrap gap-2 lg:flex-shrink-0">
             {shortcuts.map((shortcut, index) => (
-              <button
-                key={index}
-                onClick={shortcut.onClick}
-                disabled={disabled}
-                className={`
-                  px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 border
-                  ${shortcut.active
-                    ? 'bg-primary-600 text-white dark:bg-primary-500 border-primary-600 dark:border-primary-500'
-                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
-                  }
-                  ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-                `}
-              >
-                {shortcut.label}
-              </button>
+              <div key={index} className="relative group">
+                <button
+                  onClick={shortcut.onClick}
+                  disabled={disabled}
+                  className={`
+                    px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 border flex items-center gap-1.5
+                    ${shortcut.active
+                      ? 'bg-primary-600 text-white dark:bg-primary-500 border-primary-600 dark:border-primary-500'
+                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                    }
+                    ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                  `}
+                >
+                  {shortcut.label}
+                  {shortcut.tooltip && (
+                    <Info size={14} className={shortcut.active ? 'text-white' : 'text-primary-500 dark:text-primary-400'} />
+                  )}
+                </button>
+                {shortcut.tooltip && (
+                  <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 hidden group-hover:block z-50 pointer-events-none">
+                    <div className="bg-gray-900 dark:bg-gray-800 text-white text-sm rounded-lg px-4 py-3 shadow-xl max-w-sm w-max leading-relaxed">
+                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-0 h-0 border-l-[6px] border-r-[6px] border-b-[6px] border-transparent border-b-gray-900 dark:border-b-gray-800"></div>
+                      {shortcut.tooltip}
+                    </div>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}

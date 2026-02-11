@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Package, Send, X, Link, AlertCircle, Plus, Trash2, Undo2, Eye, Pencil, Info, Building2, ArrowDownToLine, Sparkles, Copy, Zap, ChevronDown, ChevronRight, Clock } from 'lucide-react'
+import { Package, Send, X, Link, AlertCircle, Plus, Trash2, Undo2, Eye, Pencil, Info, Building2, ArrowDownToLine, Sparkles, Copy, Zap, ChevronDown, ChevronRight, Clock, RotateCcw, Calendar } from 'lucide-react'
 import { energyApi, type EnergyProvider, type ContributionData, type EnergyOffer } from '@/api/energy'
+import { pdlApi } from '@/api/pdl'
 import { toast } from '@/stores/notificationStore'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -65,6 +66,9 @@ export default function AllOffers() {
   const [newGroups, setNewGroups] = useState<Array<{
     name: string
     validFrom: string  // Date de mise en service (YYYY-MM-DD)
+    validTo: string    // Date de fin (YYYY-MM-DD), vide = offre active
+    offer_type?: string  // Type d'offre (pour import IA multi-types)
+    alreadyInDb?: boolean  // Offre identique déjà en base (afficher "Déjà en base" dans le récap)
     powers: Array<{
       power: number
       fields: Record<string, string>
@@ -73,9 +77,18 @@ export default function AllOffers() {
 
   // Modal du récapitulatif
   const [showRecapModal, setShowRecapModal] = useState(false)
+  // Puissances exclues de la soumission dans le récapitulatif
+  // Clés : "group-{groupIdx}-{powerIdx}" pour newGroups, "newpower-{groupKey}-{powerIdx}" pour newPowersData
+  const [recapExcludedPowers, setRecapExcludedPowers] = useState<Set<string>>(new Set())
 
   // Section offres expirées (pliable, fermée par défaut)
   const [showExpiredSection, setShowExpiredSection] = useState(false)
+  // Groupes d'offres en cours de réactivation (loading state)
+  const [reactivatingGroups, setReactivatingGroups] = useState<Set<string>>(new Set())
+  // Groupes d'offres en cours de suppression (loading state, admin only)
+  const [deletingGroups, setDeletingGroups] = useState<Set<string>>(new Set())
+  // Modal de confirmation de suppression
+  const [deleteConfirm, setDeleteConfirm] = useState<{ groupName: string; offers: EnergyOffer[] } | null>(null)
 
   // Dropdown de duplication des tarifs
   const [duplicateDropdownId, setDuplicateDropdownId] = useState<string | null>(null)
@@ -103,6 +116,8 @@ export default function AllOffers() {
       warning?: string
     }>
   } | null>(null)
+  // Offres inchangées détectées lors de l'import IA (pour affichage dans le récap)
+  const [unchangedOfferIds, setUnchangedOfferIds] = useState<Set<string>>(new Set())
   // Offres signalées comme supprimées/deprecated par l'IA
   const [deprecatedOffers, setDeprecatedOffers] = useState<Array<{
     offer_type: string
@@ -141,10 +156,27 @@ export default function AllOffers() {
     staleTime: 0,
   })
 
+  // Récupérer les PDLs pour pré-sélectionner le fournisseur de l'offre du 1er PDL
+  const { data: pdlsData, isFetched: pdlsFetched } = useQuery({
+    queryKey: ['pdls'],
+    queryFn: () => pdlApi.list(),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Ref pour ne faire l'initialisation basée sur le PDL qu'une seule fois
+  const pdlInitDoneRef = useRef(false)
+  // Type d'offre cible à appliquer lors de l'initialisation (positionné par l'init PDL)
+  const targetOfferTypeRef = useRef<string | null>(null)
+
   // Normaliser offersData en tableau (protection contre les données corrompues du cache)
   const offersArray = useMemo(() => {
     return Array.isArray(offersData) ? offersData : []
   }, [offersData])
+
+  // Offres actives uniquement (sans valid_to et is_active !== false) — pour les compteurs
+  const activeOffersArray = useMemo(() => {
+    return offersArray.filter(o => !o.valid_to && o.is_active !== false)
+  }, [offersArray])
 
   // Trier les fournisseurs avec EDF en premier
   const sortedProviders = useMemo(() => {
@@ -186,17 +218,39 @@ export default function AllOffers() {
     return creatableTypes.filter(type => !usedTypes.has(type))
   }, [filterProvider, offersArray])
 
-  // Initialiser avec EDF par défaut
+  // Initialiser avec le fournisseur de l'offre du 1er PDL, ou EDF par défaut
   useEffect(() => {
-    if (sortedProviders.length > 0 && !filterProvider) {
-      const edf = sortedProviders.find(p => p.name.toUpperCase() === 'EDF')
-      if (edf) {
-        setFilterProvider(edf.id)
-      } else {
-        setFilterProvider(sortedProviders[0].id)
+    if (sortedProviders.length === 0 || offersArray.length === 0 || filterProvider) return
+    // Attendre que la query PDL soit terminée (succès ou erreur) avant de choisir le fallback
+    if (!pdlsFetched) return
+
+    // Tentative d'initialisation via l'offre sélectionnée du 1er PDL (une seule fois)
+    if (!pdlInitDoneRef.current) {
+      pdlInitDoneRef.current = true
+      const pdls = Array.isArray(pdlsData) ? pdlsData : (pdlsData as { data?: unknown[] })?.data || []
+      const firstPdlWithOffer = (pdls as { selected_offer_id?: string }[]).find(p => p.selected_offer_id)
+      if (firstPdlWithOffer?.selected_offer_id) {
+        const offer = offersArray.find(o => o.id === firstPdlWithOffer.selected_offer_id)
+        if (offer) {
+          const provider = sortedProviders.find(p => p.id === offer.provider_id)
+          if (provider) {
+            // Stocker le type cible pour que le useEffect de reset provider l'applique
+            targetOfferTypeRef.current = offer.offer_type
+            setFilterProvider(provider.id)
+            return
+          }
+        }
       }
     }
-  }, [sortedProviders, filterProvider])
+
+    // Fallback : EDF ou le premier fournisseur
+    const edf = sortedProviders.find(p => p.name.toUpperCase() === 'EDF')
+    if (edf) {
+      setFilterProvider(edf.id)
+    } else {
+      setFilterProvider(sortedProviders[0].id)
+    }
+  }, [sortedProviders, filterProvider, offersArray, pdlsData, pdlsFetched])
 
   // Reset le filtre de type d'offre et les propositions de puissances quand on change de fournisseur
   // Ignore les refetch React Query (changement de référence offersArray sans changement de provider)
@@ -210,6 +264,7 @@ export default function AllOffers() {
       setNewPowersData([])
       setNewGroups([])
       setDeprecatedOffers([])
+      setUnchangedOfferIds(new Set())
       setIsAddingOffer(false)
       setNewOfferType('')
       return
@@ -230,7 +285,19 @@ export default function AllOffers() {
       if (indexB === -1) return -1
       return indexA - indexB
     })
-    if (sortedTypes.length > 0) {
+
+    // Si l'init PDL a positionné un type cible, l'utiliser (une seule fois)
+    if (targetOfferTypeRef.current) {
+      const target = targetOfferTypeRef.current
+      targetOfferTypeRef.current = null
+      if (sortedTypes.includes(target)) {
+        setFilterOfferType(target)
+      } else if (sortedTypes.length > 0) {
+        setFilterOfferType(sortedTypes[0])
+      } else {
+        setFilterOfferType('all')
+      }
+    } else if (sortedTypes.length > 0) {
       setFilterOfferType(sortedTypes[0])
     } else {
       setFilterOfferType('all')
@@ -245,6 +312,7 @@ export default function AllOffers() {
     setAiJsonInput('')
     setAiImportResult(null)
     setDeprecatedOffers([])
+    setUnchangedOfferIds(new Set())
   }, [filterProvider, offersArray])
 
   // Reset les propositions de puissances et les modifications quand on change de type d'offre
@@ -258,6 +326,7 @@ export default function AllOffers() {
     setNewPowersData([])
     setNewGroups([])
     setDeprecatedOffers([])
+    setUnchangedOfferIds(new Set())
     setEditedOffers({})
     setEditedOfferNames({})
   }, [filterOfferType])
@@ -292,8 +361,8 @@ export default function AllOffers() {
     const edited = editedOffers[offer.id]
     if (!edited) return false
     return Object.entries(edited).some(([key, value]) => {
-      // valid_from est une date, comparaison en string (pas numérique)
-      if (key === 'valid_from') {
+      // valid_from et valid_to sont des dates, comparaison en string (pas numérique)
+      if (key === 'valid_from' || key === 'valid_to') {
         const origStr = String((offer as unknown as Record<string, unknown>)[key] || '')
         return value !== origStr
       }
@@ -314,6 +383,7 @@ export default function AllOffers() {
   )
 
   // Calculer le nombre total de modifications pour le badge
+  // Exclut les groupes 100% doublons (toutes les puissances déjà en base)
   const totalModificationsCount = useMemo(() => {
     const modifiedOffersCount = offersArray.filter(offer => isOfferModified(offer)).length
     const renamedGroupsCount = Object.entries(editedOfferNames).filter(
@@ -323,8 +393,33 @@ export default function AllOffers() {
       }
     ).length
     const deprecatedCount = deprecatedOffers.reduce((sum, d) => sum + d.offer_ids.length, 0)
-    return modifiedOffersCount + newPowersData.length + powersToRemove.length + providersToRemove.length + newGroups.length + renamedGroupsCount + deprecatedCount
-  }, [offersArray, editedOffers, editedOfferNames, newPowersData, powersToRemove, providersToRemove, newGroups, deprecatedOffers])
+    // Ne compter que les newGroups qui ont au moins une puissance non-doublon (exclure alreadyInDb)
+    const provOffers = offersArray.filter(o => o.provider_id === filterProvider && o.is_active !== false)
+    const newGroupsWithNewPowers = newGroups.filter(group => {
+      if (group.alreadyInDb) return false
+      const groupType = group.offer_type || filterOfferType
+      return group.powers.some(p => {
+        if (p.power <= 0) return true
+        // Vérifier si cette puissance existe déjà dans les offres du fournisseur
+        return !provOffers.some(o =>
+          (o.power_kva || 0) === p.power && o.offer_type === groupType &&
+          (() => {
+            // Inline periodsOverlap
+            const s1 = group.validFrom ? new Date(group.validFrom) : null
+            const e1 = group.validTo ? new Date(group.validTo) : null
+            const s2 = o.valid_from ? new Date(o.valid_from) : null
+            const e2 = o.valid_to ? new Date(o.valid_to) : null
+            if (!s1 && !s2) return true
+            if (!s1 || !s2) return true
+            const end1 = e1 || new Date('9999-12-31')
+            const end2 = e2 || new Date('9999-12-31')
+            return s1 <= end2 && s2 <= end1
+          })()
+        )
+      })
+    }).length
+    return modifiedOffersCount + newPowersData.length + powersToRemove.length + providersToRemove.length + newGroupsWithNewPowers + renamedGroupsCount + deprecatedCount
+  }, [offersArray, editedOffers, editedOfferNames, newPowersData, powersToRemove, providersToRemove, newGroups, deprecatedOffers, filterOfferType, filterProvider])
 
   // Vérifier s'il y a des modifications à afficher
   const hasAnyModifications = totalModificationsCount > 0
@@ -345,7 +440,7 @@ export default function AllOffers() {
       },
       onSubmit: () => {
         setConfirmDialog(null)
-        setShowRecapModal(true)
+        openRecapModal()
       }
     })
   }
@@ -426,7 +521,7 @@ export default function AllOffers() {
         if (!groups[key]) {
           groups[key] = { type: offer.offer_type, name: cleanName, powers: [], sample: offer }
         }
-        const power = offer.power_kva || parseInt(offer.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
+        const power = offer.power_kva || 0
         if (power > 0) groups[key].powers.push(power)
       }
 
@@ -566,7 +661,7 @@ Exemple :
 \`\`\`
 
 ### EJP — Effacement Jours de Pointe
-Tarif normal la plupart du temps, tarif pointe très élevé 22 jours par an.
+Tarif normal la plupart du temps, tarif pointe très élevé 20 jours par an.
 
 | Champ | Description |
 |-------|-------------|
@@ -707,8 +802,22 @@ Puis retourne le JSON complet.`
   }
 
   // Importer un JSON multi-offres généré par une IA
-  const importAIJson = () => {
+  const importAIJson = async () => {
     try {
+      // Rafraîchir les offres depuis le serveur avant comparaison
+      // (évite les faux "Déjà en base" si des offres ont été supprimées ailleurs)
+      const freshOffers = await queryClient.fetchQuery({
+        queryKey: ['energy-offers', 'with-history'],
+        queryFn: async () => {
+          const response = await energyApi.getOffers(undefined, true)
+          if (response.success && Array.isArray(response.data)) {
+            return response.data as EnergyOffer[]
+          }
+          return []
+        },
+        staleTime: 0,
+      })
+      const freshOffersArray = Array.isArray(freshOffers) ? freshOffers : []
       // Nettoyer le JSON (retirer les blocs markdown ```json ... ```)
       let cleaned = aiJsonInput.trim()
       const codeBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/)
@@ -812,6 +921,7 @@ Puis retourne le JSON complet.`
         offer_name: string
         matched: number
         added: number
+        unchanged?: number
         deprecated?: boolean
         warning?: string
       }> = []
@@ -819,6 +929,8 @@ Puis retourne le JSON complet.`
       const updatedOffers = { ...editedOffers }
       const addedPowers: Array<{ power: number; fields: Record<string, string>; offer_type: string; offer_name: string; valid_from?: string; valid_to?: string }> = []
       const newDeprecated: typeof deprecatedOffers = []
+      const historicalGroups: typeof newGroups = []
+      const unchangedIds = new Set<string>()
 
       // Mapping des types synonymes : certains types IA correspondent à des types différents en base
       // Ex: le scraper EDF crée les offres Zen Weekend avec le type BASE_WEEKEND, pas ZEN_WEEK_END
@@ -832,19 +944,69 @@ Puis retourne le JSON complet.`
         'SEASONAL': ['ZEN_FLEX'],
       }
 
-      // Cherche les offres du fournisseur par type, avec fallback sur les types synonymes
-      const findOffersByType = (offerType: string): { offers: typeof offersArray; resolvedType: string } => {
-        const direct = offersArray.filter(o => o.provider_id === filterProvider && o.offer_type === offerType)
+      // Cherche les offres ACTIVES du fournisseur par type, avec fallback sur les types synonymes
+      // Filtre is_active !== false pour exclure les anciennes versions (même condition que l'export)
+      const findOffersByType = (offerType: string): { offers: typeof freshOffersArray; resolvedType: string } => {
+        const direct = freshOffersArray.filter(o => o.provider_id === filterProvider && o.offer_type === offerType && o.is_active !== false)
         if (direct.length > 0) return { offers: direct, resolvedType: offerType }
         // Fallback sur les synonymes
         for (const synonym of (typeSynonyms[offerType] || [])) {
-          const synOffers = offersArray.filter(o => o.provider_id === filterProvider && o.offer_type === synonym)
+          const synOffers = freshOffersArray.filter(o => o.provider_id === filterProvider && o.offer_type === synonym && o.is_active !== false)
           if (synOffers.length > 0) return { offers: synOffers, resolvedType: synonym }
         }
         return { offers: [], resolvedType: offerType }
       }
 
-      for (const offer of data.offers) {
+      // Dédupliquer les offres du JSON : quand une offre individuelle ("Tarif Bleu - BASE 18 kVA",
+      // 1 seule variante) coexiste avec une offre groupée ("Tarif Bleu", 9 variantes) du même type,
+      // les individuelles sont redondantes → on les supprime pour éviter la double-écriture
+      const deduplicatedOffers = (() => {
+        // Regrouper par (offer_type + nom nettoyé)
+        const groups = new Map<string, typeof data.offers>()
+        for (const offer of data.offers) {
+          const cleanName = (offer.offer_name || '')
+            .replace(/\s*-?\s*\d+\s*kVA/gi, '')
+            .replace(/\s*-?\s*(BASE|HC[_\s]?HP|TEMPO|EJP)/gi, '')
+            .replace(/\s*-\s*-\s*/g, ' - ')
+            .replace(/\s+/g, ' ')
+            .replace(/\s*-\s*$/, '')
+            .trim()
+            .toLowerCase() || (offer.offer_name || '').toLowerCase()
+          const key = `${offer.offer_type}##${cleanName}`
+          if (!groups.has(key)) groups.set(key, [])
+          groups.get(key)!.push(offer)
+        }
+        // Pour chaque groupe, garder la groupée (multi-variantes) et ignorer les individuelles
+        const result: typeof data.offers = []
+        for (const [, offersInGroup] of groups) {
+          if (offersInGroup.length === 1) {
+            result.push(offersInGroup[0])
+            continue
+          }
+          // Séparer : offres multi-variantes (groupées) vs mono-variante (individuelles)
+          const multiVariant = offersInGroup.filter((o: typeof offersInGroup[0]) => (o.power_variants?.length || 0) > 1)
+          const singleVariant = offersInGroup.filter((o: typeof offersInGroup[0]) => (o.power_variants?.length || 0) <= 1)
+          // Garder toutes les offres multi-variantes (groupées)
+          result.push(...multiVariant)
+          // Garder les individuelles UNIQUEMENT si aucune groupée ne couvre la même puissance
+          const coveredPowers = new Set<number>()
+          for (const mv of multiVariant) {
+            for (const v of (mv.power_variants || [])) {
+              if (v.power_kva) coveredPowers.add(v.power_kva)
+            }
+          }
+          for (const sv of singleVariant) {
+            const power = sv.power_variants?.[0]?.power_kva
+            if (!power || !coveredPowers.has(power)) {
+              result.push(sv)
+            }
+            // Sinon : individuelle redondante avec la groupée → ignorée
+          }
+        }
+        return result
+      })()
+
+      for (const offer of deduplicatedOffers) {
         // Flag pour les offres dépréciées avec données de prix (import historique)
         let isHistoricalImport = false
 
@@ -856,7 +1018,7 @@ Puis retourne le JSON complet.`
             // Ne pas `continue` → le traitement régulier s'applique ci-dessous
           } else {
             // Offre dépréciée SANS données de prix → marquer les offres existantes pour suppression
-            const matchingOffers = offersArray.filter(o =>
+            const matchingOffers = freshOffersArray.filter(o =>
               o.provider_id === filterProvider && o.offer_type === offer.offer_type
             )
             const byName = matchingOffers.filter(o =>
@@ -912,32 +1074,41 @@ Puis retourne le JSON complet.`
           continue
         }
 
+        // Dédupliquer les variantes par puissance (garder celle avec l'abo le plus élevé = tarif le plus récent)
+        const variantsByPower = new Map<number, typeof offer.power_variants[0]>()
+        for (const variant of offer.power_variants) {
+          if (!variant.power_kva) continue
+          const existing = variantsByPower.get(variant.power_kva)
+          if (!existing || (variant.subscription_price || 0) > (existing.subscription_price || 0)) {
+            variantsByPower.set(variant.power_kva, variant)
+          }
+        }
+        offer.power_variants = Array.from(variantsByPower.values())
+
         // Chercher les offres existantes du fournisseur pour ce type (ou types synonymes)
         const { offers: existingForType } = findOffersByType(offer.offer_type)
 
         // Affiner par nom de groupe pour éviter de matcher une offre JSON
         // sur un groupe existant portant un nom différent
         // Ex: "Zen Online - Base" ne doit pas écraser "Tarif Bleu - BASE"
+        // Matching strict : fournisseur (filterProvider) + type (findOffersByType) + nom
         let existingFiltered = existingForType
         if (isHistoricalImport) {
           // Import historique (offre dépréciée) : toujours créer de nouvelles entrées
           existingFiltered = []
         } else if (offer.offer_name && existingForType.length > 0) {
+          const cleanJson = getCleanOfferName(offer.offer_name).toLowerCase()
           const nameMatch = existingForType.filter(o => {
             const cleanDb = getCleanOfferName(o.name).toLowerCase()
-            const cleanJson = offer.offer_name.toLowerCase()
-            return cleanDb.includes(cleanJson) || cleanJson.includes(cleanDb)
+            return cleanDb === cleanJson || cleanDb.includes(cleanJson) || cleanJson.includes(cleanDb)
           })
-          // Si aucun nom ne correspond, ce sont de nouvelles offres → pas de matching
-          if (nameMatch.length > 0) {
-            existingFiltered = nameMatch
-          } else {
-            existingFiltered = []
-          }
+          // Pas de match par nom → nouvelle offre (même si le type existe déjà)
+          existingFiltered = nameMatch.length > 0 ? nameMatch : []
         }
 
         let matched = 0
         let added = 0
+        let unchanged = 0
         const fieldKeys = getFieldKeysForOfferType(offer.offer_type)
 
         // Vérifier les champs de prix sur la première variante
@@ -966,48 +1137,187 @@ Puis retourne le JSON complet.`
           }
         }
 
-        for (const variant of offer.power_variants) {
-          if (!variant.power_kva || !variant.subscription_price) continue
-
-          // Chercher une offre existante avec cette puissance (dans le groupe filtré par nom)
-          const existing = existingFiltered.find(o => {
-            const power = o.power_kva || parseInt(o.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
-            return power === variant.power_kva
-          })
-
-          if (existing) {
-            // Injecter dans editedOffers
-            updatedOffers[existing.id] = { ...(updatedOffers[existing.id] || {}) }
-            updatedOffers[existing.id].subscription_price = String(variant.subscription_price)
-            for (const key of fieldKeys) {
-              if (variant[key] !== undefined) {
-                updatedOffers[existing.id][key] = String(variant[key])
-              }
-            }
-            // Stocker la date de validité importée depuis le JSON
-            if (offer.valid_from) {
-              updatedOffers[existing.id].valid_from = offer.valid_from
-            }
-            matched++
-          } else {
-            // Puissance non existante : créer dans newPowersData avec offer_type
-            const fields: Record<string, string> = {
-              subscription_price: String(variant.subscription_price),
-            }
-            for (const key of fieldKeys) {
-              if (variant[key] !== undefined) {
-                fields[key] = String(variant[key])
-              }
-            }
-            addedPowers.push({
-              power: variant.power_kva,
-              fields,
-              offer_type: offer.offer_type,
-              offer_name: offer.offer_name || offer.offer_type,
-              valid_from: offer.valid_from,
-              ...(isHistoricalImport && offer.valid_until ? { valid_to: offer.valid_until } : {}),
+        // Import historique : vérifier d'abord si l'offre existe déjà en BDD
+        // avant de créer un nouveau groupe
+        if (isHistoricalImport) {
+          // Chercher les offres existantes (y compris inactives) pour ce type et nom
+          const allExistingForType = freshOffersArray.filter(o =>
+            o.provider_id === filterProvider && o.offer_type === offer.offer_type
+          )
+          const cleanJson = getCleanOfferName(offer.offer_name || '').toLowerCase()
+          const matchingExisting = cleanJson
+            ? allExistingForType.filter(o => {
+              const cleanDb = getCleanOfferName(o.name).toLowerCase()
+              return cleanDb === cleanJson || cleanDb.includes(cleanJson) || cleanJson.includes(cleanDb)
             })
-            added++
+            : allExistingForType
+
+          // Vérifier si toutes les variantes existent déjà avec les mêmes prix et période
+          const importDate = offer.valid_from ? new Date(offer.valid_from).toLocaleDateString('sv-SE') : ''
+          const importDateTo = offer.valid_until ? new Date(offer.valid_until).toLocaleDateString('sv-SE') : ''
+          let allUnchanged = true
+          for (const variant of offer.power_variants) {
+            if (!variant.power_kva || !variant.subscription_price) continue
+            // Chercher une offre existante avec cette puissance et la même période
+            // Comparaison en heure locale pour éviter les décalages UTC (ex: 23:00 UTC = lendemain en CET)
+            const existingMatch = matchingExisting.find(o => {
+              if ((o.power_kva || 0) !== variant.power_kva) return false
+              const existDate = o.valid_from ? new Date(o.valid_from).toLocaleDateString('sv-SE') : ''
+              const existDateTo = o.valid_to ? new Date(o.valid_to).toLocaleDateString('sv-SE') : ''
+              return existDate === importDate && existDateTo === importDateTo
+            })
+            if (!existingMatch) {
+              allUnchanged = false
+              break
+            }
+            // Vérifier que les prix sont identiques
+            const allFieldsToCheck = ['subscription_price', ...fieldKeys]
+            for (const key of allFieldsToCheck) {
+              const origVal = Number((existingMatch as unknown as Record<string, unknown>)[key])
+              const newVal = key === 'subscription_price' ? Number(variant.subscription_price) : Number(variant[key])
+              if (!isNaN(origVal) && !isNaN(newVal) && Math.abs(origVal - newVal) > 0.00001) {
+                allUnchanged = false
+                break
+              }
+            }
+            if (!allUnchanged) break
+          }
+
+          if (allUnchanged) {
+            // Offre historique identique en BDD → ajouter au récap avec flag "alreadyInDb"
+            // Ne PAS ajouter à unchangedIds pour éviter de mélanger avec l'offre courante
+            const groupPowersUnchanged: Array<{ power: number; fields: Record<string, string> }> = []
+            for (const variant of offer.power_variants) {
+              if (!variant.power_kva || !variant.subscription_price) continue
+              const fields: Record<string, string> = {
+                subscription_price: String(variant.subscription_price),
+              }
+              for (const key of fieldKeys) {
+                if (variant[key] !== undefined) {
+                  fields[key] = String(variant[key])
+                }
+              }
+              groupPowersUnchanged.push({ power: variant.power_kva, fields })
+              unchanged++
+            }
+            if (groupPowersUnchanged.length > 0) {
+              historicalGroups.push({
+                name: offer.offer_name || offer.offer_type,
+                validFrom: offer.valid_from || '',
+                validTo: offer.valid_until || '',
+                offer_type: offer.offer_type,
+                alreadyInDb: true,
+                powers: groupPowersUnchanged,
+              })
+            }
+          } else {
+            // Des différences existent → créer un nouveau groupe
+            const groupPowers: Array<{ power: number; fields: Record<string, string> }> = []
+            for (const variant of offer.power_variants) {
+              if (!variant.power_kva || !variant.subscription_price) continue
+              const fields: Record<string, string> = {
+                subscription_price: String(variant.subscription_price),
+              }
+              for (const key of fieldKeys) {
+                if (variant[key] !== undefined) {
+                  fields[key] = String(variant[key])
+                }
+              }
+              groupPowers.push({ power: variant.power_kva, fields })
+              added++
+            }
+            if (groupPowers.length > 0) {
+              historicalGroups.push({
+                name: offer.offer_name || offer.offer_type,
+                validFrom: offer.valid_from || '',
+                validTo: offer.valid_until || '',
+                offer_type: offer.offer_type,
+                powers: groupPowers,
+              })
+            }
+          }
+        } else {
+          for (const variant of offer.power_variants) {
+            if (!variant.power_kva || !variant.subscription_price) continue
+
+            // Chercher une offre existante avec cette puissance (dans le groupe filtré par nom)
+            // Prioriser les offres actives (sans valid_to) pour éviter de matcher avec une ancienne version
+            const candidatesByPower = existingFiltered.filter(o => (o.power_kva || 0) === variant.power_kva)
+            let existing = candidatesByPower.find(o => !o.valid_to)
+            if (!existing && candidatesByPower.length > 0) {
+              // Fallback : prendre la plus récente (valid_from le plus récent)
+              existing = candidatesByPower.sort((a, b) => {
+                const dateA = a.valid_from ? new Date(a.valid_from).getTime() : 0
+                const dateB = b.valid_from ? new Date(b.valid_from).getTime() : 0
+                return dateB - dateA
+              })[0]
+            }
+
+            if (existing) {
+              // Vérifier si les prix ont réellement changé avant d'écraser
+              const allFieldsToCheck = ['subscription_price', ...fieldKeys]
+              let hasRealChange = false
+              for (const key of allFieldsToCheck) {
+                const origVal = Number((existing as unknown as Record<string, unknown>)[key])
+                const newVal = key === 'subscription_price' ? Number(variant.subscription_price) : Number(variant[key])
+                if (!isNaN(origVal) && !isNaN(newVal) && Math.abs(origVal - newVal) > 0.00001) {
+                  hasRealChange = true
+                  break
+                }
+                if (isNaN(origVal) !== isNaN(newVal)) {
+                  hasRealChange = true
+                  break
+                }
+              }
+              // Vérifier aussi le valid_from (uniquement si l'offre existante a déjà un valid_from)
+              // Si l'existante n'a pas de valid_from, l'import ajoute juste l'info sans constituer un changement
+              // Comparaison sur la date uniquement (YYYY-MM-DD), l'heure n'est pas significative
+              if (offer.valid_from) {
+                const existingValidFrom = (existing as unknown as Record<string, unknown>).valid_from
+                if (existingValidFrom) {
+                  const importDate = new Date(offer.valid_from).toLocaleDateString('sv-SE')
+                  const existingDate = new Date(String(existingValidFrom)).toLocaleDateString('sv-SE')
+                  if (importDate !== existingDate) {
+                    hasRealChange = true
+                  }
+                }
+              }
+              if (hasRealChange) {
+                // Injecter dans editedOffers uniquement si changement réel
+                updatedOffers[existing.id] = { ...(updatedOffers[existing.id] || {}) }
+                updatedOffers[existing.id].subscription_price = String(variant.subscription_price)
+                for (const key of fieldKeys) {
+                  if (variant[key] !== undefined) {
+                    updatedOffers[existing.id][key] = String(variant[key])
+                  }
+                }
+                if (offer.valid_from) {
+                  updatedOffers[existing.id].valid_from = offer.valid_from
+                }
+                matched++
+              } else {
+                unchangedIds.add(existing.id)
+                unchanged++
+              }
+            } else {
+              // Puissance non existante : créer dans newPowersData avec offer_type
+              const fields: Record<string, string> = {
+                subscription_price: String(variant.subscription_price),
+              }
+              for (const key of fieldKeys) {
+                if (variant[key] !== undefined) {
+                  fields[key] = String(variant[key])
+                }
+              }
+              addedPowers.push({
+                power: variant.power_kva,
+                fields,
+                offer_type: offer.offer_type,
+                offer_name: offer.offer_name || offer.offer_type,
+                valid_from: offer.valid_from,
+              })
+              added++
+            }
           }
         }
 
@@ -1016,19 +1326,18 @@ Puis retourne le JSON complet.`
           offer_name: offer.offer_name || offer.offer_type,
           matched,
           added,
+          unchanged,
           deprecated: isHistoricalImport || undefined,
           warning: offer.warning,
         })
       }
 
-      // Appliquer les modifications
+      // Appliquer les modifications (reset avant pour éviter les doublons lors d'un réimport)
       setEditedOffers(updatedOffers)
-      if (addedPowers.length > 0) {
-        setNewPowersData(prev => [...prev, ...addedPowers])
-      }
-      if (newDeprecated.length > 0) {
-        setDeprecatedOffers(prev => [...prev, ...newDeprecated])
-      }
+      setUnchangedOfferIds(unchangedIds)
+      setNewPowersData(addedPowers)
+      setNewGroups(historicalGroups)
+      setDeprecatedOffers(newDeprecated)
 
       // Si l'import a touché des types différents du filtre actuel, on passe en mode "all"
       const importedTypes = details.map(d => d.offer_type)
@@ -1041,9 +1350,16 @@ Puis retourne le JSON complet.`
 
       const totalMatched = details.reduce((sum, d) => sum + d.matched, 0)
       const totalAdded = details.reduce((sum, d) => sum + d.added, 0)
+      const totalUnchanged = details.reduce((sum, d) => sum + (d.unchanged || 0), 0)
       const totalDeprecated = details.filter(d => d.deprecated).length
 
-      const parts = [`${totalMatched} mise(s) à jour`]
+      const parts: string[] = []
+      if (totalMatched > 0) {
+        parts.push(`${totalMatched} mise(s) à jour`)
+      }
+      if (totalUnchanged > 0) {
+        parts.push(`${totalUnchanged} inchangée(s)`)
+      }
       if (totalAdded > 0) {
         parts.push(`${totalAdded} nouvelle(s) puissance(s)`)
       }
@@ -1051,17 +1367,22 @@ Puis retourne le JSON complet.`
         parts.push(`${totalDeprecated} offre(s) à supprimer`)
       }
 
+      const summary = parts.length > 0 ? parts.join(', ') : 'aucune modification'
       setAiImportResult({
         success: true,
-        message: `${details.length} offre(s) importée(s) : ${parts.join(', ')}.`,
+        message: `${details.length} offre(s) importée(s) : ${summary}.`,
         details,
       })
 
-      toast.success(`Import IA réussi : ${parts.join(', ')}`)
-
-      // Fermer le mode IA et ouvrir le récapitulatif de soumission
-      setShowAIMode(false)
-      setShowRecapModal(true)
+      const hasChanges = totalMatched > 0 || totalAdded > 0 || totalDeprecated > 0 || historicalGroups.length > 0
+      if (hasChanges) {
+        toast.success(`Import IA réussi : ${summary}`)
+        // Fermer le mode IA et ouvrir le récapitulatif de soumission
+        setShowAIMode(false)
+        openRecapModal()
+      } else {
+        toast.info(`Import IA : ${summary}`)
+      }
     } catch (e) {
       setAiImportResult({
         success: false,
@@ -1193,7 +1514,7 @@ Puis retourne le JSON complet.`
 
   // Helper pour rendre une ligne de nouvelle puissance
   const renderNewPowerRow = (newPower: typeof newPowersData[0], index: number) => {
-    const isDuplicate = isPowerAlreadyUsed(newPower.power, index, newPower.offer_type, newPower.offer_name)
+    const isDuplicate = isPowerAlreadyUsed(newPower.power, index, newPower.offer_type, newPower.offer_name, newPower.valid_from, newPower.valid_to)
     const isIncomplete = !isNewPowerComplete(newPower)
     const hasError = isDuplicate || isIncomplete
     const effectiveType = newPower.offer_type || filterOfferType
@@ -1373,10 +1694,97 @@ Puis retourne le JSON complet.`
     return name || nameAfterKva || offerName
   }
 
-  // Helper pour extraire la puissance
-  const getPower = (offerName: string): string | null => {
-    const match = offerName.match(/(\d+)\s*kVA/i)
-    return match ? `${match[1]} kVA` : null
+  // Helper pour générer le JSON d'export d'un ensemble d'offres
+  // Utilisé par : copie fournisseur, copie type, copie offre individuelle
+  const buildOfferExportJson = (offers: typeof offersArray, providerName: string) => {
+    const grouped: Record<string, typeof offers> = {}
+    for (const offer of offers) {
+      const groupName = offer.name.replace(/\s*-\s*\d+\s*kVA$/i, '').trim()
+      const periodKey = offer.valid_to
+        ? `${offer.valid_from || ''}|${offer.valid_to}`
+        : 'active'
+      const key = `${offer.offer_type}##${groupName}##${periodKey}`
+      if (!grouped[key]) grouped[key] = []
+      grouped[key].push(offer)
+    }
+    const exportOffers: Record<string, unknown>[] = []
+    for (const [key, grp] of Object.entries(grouped)) {
+      const [offerType, groupName, periodKey] = key.split('##')
+      const isDeprecated = periodKey !== 'active'
+      const priceFields = getFieldKeysForOfferType(offerType)
+      const byPower = new Map<number, typeof grp[0]>()
+      for (const o of grp) {
+        const p = o.power_kva || 0
+        const existing = byPower.get(p)
+        if (!existing || (o.subscription_price || 0) > (existing.subscription_price || 0)) {
+          byPower.set(p, o)
+        }
+      }
+      const sortedOffers = Array.from(byPower.values()).sort((a, b) => (a.power_kva || 0) - (b.power_kva || 0))
+      const variants = sortedOffers.map(o => {
+        const variant: Record<string, unknown> = {
+          power_kva: typeof o.power_kva === 'number' ? o.power_kva : Number(o.power_kva) || 0,
+          subscription_price: typeof o.subscription_price === 'number' ? o.subscription_price : Number(o.subscription_price) || 0,
+        }
+        for (const field of priceFields) {
+          const val = (o as unknown as Record<string, unknown>)[field]
+          variant[field] = (val != null) ? (typeof val === 'number' ? val : Number(val) || 0) : 0
+        }
+        return variant
+      })
+      const entry: Record<string, unknown> = {
+        offer_name: groupName,
+        offer_type: offerType,
+        power_variants: variants,
+      }
+      if (isDeprecated) {
+        entry.deprecated = true
+        if (grp[0].valid_from) entry.valid_from = grp[0].valid_from
+        if (grp[0].valid_to) entry.valid_until = grp[0].valid_to
+      } else if (grp[0].valid_from) {
+        entry.valid_from = grp[0].valid_from
+      }
+      exportOffers.push(entry)
+    }
+    return {
+      provider_name: providerName,
+      data_source: 'Export MyElectricalData',
+      extraction_date: new Date().toISOString().split('T')[0],
+      offers: exportOffers,
+    }
+  }
+
+  // Helper pour copier un JSON dans le presse-papier
+  const copyJsonToClipboard = (data: unknown, successMessage: string) => {
+    const json = JSON.stringify(data, null, 2)
+    navigator.clipboard.writeText(json).then(() => {
+      toast.success(successMessage)
+    }).catch(() => {
+      toast.error('Impossible de copier dans le presse-papier')
+    })
+  }
+
+  // Helper pour formater la puissance
+  const formatPower = (offer: { power_kva?: number }): string | null => {
+    return offer.power_kva ? `${offer.power_kva} kVA` : null
+  }
+
+  // Helper pour extraire le nom sans la période depuis une clé de groupe
+  const getGroupNameWithoutPeriod = (groupKey: string): string => {
+    return groupKey.split('##')[0]
+  }
+
+  // Helper pour extraire et formater la période depuis une clé de groupe
+  const getGroupPeriodLabel = (groupKey: string): string => {
+    const parts = groupKey.split('##')
+    if (parts.length < 2) return ''
+    const validFrom = parts[1]
+    const validTo = parts[2]
+    if (validFrom === 'active') return ''
+    if (validTo === 'active' || !validTo) {
+      return `Valide depuis ${new Date(validFrom).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`
+    }
+    return `${new Date(validFrom).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })} → ${new Date(validTo).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`
   }
 
   // Helper pour soumettre toutes les modifications en un seul lot (batch)
@@ -1396,7 +1804,7 @@ Puis retourne le JSON complet.`
       : currentProvider ? `${currentProvider.name} - ${filterOfferType}` : ''
 
     const modifiedOffers = providerOffers.filter(offer => isOfferModified(offer))
-    const hasProviderModifications = modifiedOffers.length > 0 || newPowersData.length > 0 || powersToRemove.length > 0 || newGroups.length > 0 || hasModifiedGroupNames || deprecatedOffers.length > 0
+    const hasProviderModifications = modifiedOffers.length > 0 || newPowersData.length > 0 || powersToRemove.length > 0 || newGroups.some(g => !g.alreadyInDb) || hasModifiedGroupNames || deprecatedOffers.length > 0
     const hasProviderDeletions = providersToRemove.length > 0
 
     if (!hasProviderModifications && !hasProviderDeletions) return
@@ -1415,45 +1823,72 @@ Puis retourne le JSON complet.`
     // Collecter toutes les contributions dans un tableau
     const allContributions: ContributionData[] = []
 
-    // Modifications de tarifs existants
+    // Modifications de tarifs existants (filtrer les offres exclues du récap)
     if (currentProvider) {
-      for (const offer of modifiedOffers) {
+      for (const offer of modifiedOffers.filter(o => !recapExcludedPowers.has(`modified-${o.id}`))) {
         const edited = editedOffers[offer.id] || {}
-        const powerMatch = offer.name.match(/(\d+)\s*kVA/i)
-        const powerKva = powerMatch ? parseInt(powerMatch[1]) : offer.power_kva || 6
+        const powerKva = offer.power_kva || 6
 
-        allContributions.push({
-          contribution_type: 'UPDATE_OFFER',
-          existing_provider_id: offer.provider_id,
-          existing_offer_id: offer.id,
-          provider_name: currentProvider.name,
-          offer_name: offer.name,
-          offer_type: offer.offer_type,
-          power_kva: powerKva,
-          pricing_data: {
-            subscription_price: parsePrice(edited.subscription_price, offer.subscription_price),
-            base_price: parsePrice(edited.base_price, offer.base_price),
-            hc_price: parsePrice(edited.hc_price, offer.hc_price),
-            hp_price: parsePrice(edited.hp_price, offer.hp_price),
-            base_price_weekend: parsePrice(edited.base_price_weekend, offer.base_price_weekend),
-            hc_price_weekend: parsePrice(edited.hc_price_weekend, offer.hc_price_weekend),
-            hp_price_weekend: parsePrice(edited.hp_price_weekend, offer.hp_price_weekend),
-            tempo_blue_hc: parsePrice(edited.tempo_blue_hc, offer.tempo_blue_hc),
-            tempo_blue_hp: parsePrice(edited.tempo_blue_hp, offer.tempo_blue_hp),
-            tempo_white_hc: parsePrice(edited.tempo_white_hc, offer.tempo_white_hc),
-            tempo_white_hp: parsePrice(edited.tempo_white_hp, offer.tempo_white_hp),
-            tempo_red_hc: parsePrice(edited.tempo_red_hc, offer.tempo_red_hc),
-            tempo_red_hp: parsePrice(edited.tempo_red_hp, offer.tempo_red_hp),
-            ejp_normal: parsePrice(edited.ejp_normal, offer.ejp_normal),
-            ejp_peak: parsePrice(edited.ejp_peak, offer.ejp_peak),
-            hc_price_winter: parsePrice(edited.hc_price_winter, offer.hc_price_winter),
-            hp_price_winter: parsePrice(edited.hp_price_winter, offer.hp_price_winter),
-            hc_price_summer: parsePrice(edited.hc_price_summer, offer.hc_price_summer),
-            hp_price_summer: parsePrice(edited.hp_price_summer, offer.hp_price_summer),
-          },
-          price_sheet_url: priceSheetUrl,
-          valid_from: edited.valid_from || offer.valid_from || new Date().toISOString().split('T')[0],
-        })
+        // Si valid_from ET valid_to sont définis et différents de l'offre existante,
+        // c'est un ajout d'offre historique (pas un remplacement de l'offre en cours)
+        const hasNewValidTo = edited.valid_to !== undefined && edited.valid_to !== '' && edited.valid_to !== (offer.valid_to || '')
+        const hasNewValidFrom = edited.valid_from && edited.valid_from !== (offer.valid_from || '')
+        const isHistoricalAdd = hasNewValidTo && hasNewValidFrom && !offer.valid_to
+
+        const pricingData: Record<string, unknown> = {
+          subscription_price: parsePrice(edited.subscription_price, offer.subscription_price),
+          base_price: parsePrice(edited.base_price, offer.base_price),
+          hc_price: parsePrice(edited.hc_price, offer.hc_price),
+          hp_price: parsePrice(edited.hp_price, offer.hp_price),
+          base_price_weekend: parsePrice(edited.base_price_weekend, offer.base_price_weekend),
+          hc_price_weekend: parsePrice(edited.hc_price_weekend, offer.hc_price_weekend),
+          hp_price_weekend: parsePrice(edited.hp_price_weekend, offer.hp_price_weekend),
+          tempo_blue_hc: parsePrice(edited.tempo_blue_hc, offer.tempo_blue_hc),
+          tempo_blue_hp: parsePrice(edited.tempo_blue_hp, offer.tempo_blue_hp),
+          tempo_white_hc: parsePrice(edited.tempo_white_hc, offer.tempo_white_hc),
+          tempo_white_hp: parsePrice(edited.tempo_white_hp, offer.tempo_white_hp),
+          tempo_red_hc: parsePrice(edited.tempo_red_hc, offer.tempo_red_hc),
+          tempo_red_hp: parsePrice(edited.tempo_red_hp, offer.tempo_red_hp),
+          ejp_normal: parsePrice(edited.ejp_normal, offer.ejp_normal),
+          ejp_peak: parsePrice(edited.ejp_peak, offer.ejp_peak),
+          hc_price_winter: parsePrice(edited.hc_price_winter, offer.hc_price_winter),
+          hp_price_winter: parsePrice(edited.hp_price_winter, offer.hp_price_winter),
+          hc_price_summer: parsePrice(edited.hc_price_summer, offer.hc_price_summer),
+          hp_price_summer: parsePrice(edited.hp_price_summer, offer.hp_price_summer),
+          // Inclure valid_to si modifié (vide = réactivation/offre active)
+          ...(edited.valid_to !== undefined ? { valid_to: edited.valid_to || '' } : {}),
+        }
+
+        if (isHistoricalAdd) {
+          // Ajout d'une version historique : NEW_OFFER avec les dates spécifiées
+          const cleanName = getCleanOfferName(offer.name)
+          allContributions.push({
+            contribution_type: 'NEW_OFFER',
+            existing_provider_id: offer.provider_id,
+            provider_name: currentProvider.name,
+            offer_name: `${cleanName} - ${powerKva} kVA`,
+            offer_type: offer.offer_type,
+            power_kva: powerKva,
+            description: `Ajout d'une version historique de l'offre "${cleanName}" (${edited.valid_from} → ${edited.valid_to})`,
+            pricing_data: pricingData,
+            price_sheet_url: priceSheetUrl,
+            valid_from: edited.valid_from,
+          })
+        } else {
+          // Mise à jour de l'offre existante
+          allContributions.push({
+            contribution_type: 'UPDATE_OFFER',
+            existing_provider_id: offer.provider_id,
+            existing_offer_id: offer.id,
+            provider_name: currentProvider.name,
+            offer_name: offer.name,
+            offer_type: offer.offer_type,
+            power_kva: powerKva,
+            pricing_data: pricingData,
+            price_sheet_url: priceSheetUrl,
+            valid_from: edited.valid_from || offer.valid_from || new Date().toISOString().split('T')[0],
+          })
+        }
       }
 
       // Suppressions de puissances
@@ -1493,8 +1928,10 @@ Puis retourne le JSON complet.`
         }
       }
 
-      // Ajout de nouvelles puissances
-      for (const newPower of newPowersData) {
+      // Ajout de nouvelles puissances (filtrer les puissances exclues du récap)
+      for (let npIdx = 0; npIdx < newPowersData.length; npIdx++) {
+        if (recapExcludedPowers.has(`newpower-${npIdx}`)) continue
+        const newPower = newPowersData[npIdx]
         const effectiveType = newPower.offer_type || filterOfferType
         const effectiveName = newPower.offer_name || existingBaseOfferName
         const pricingData: Record<string, number | undefined> = {}
@@ -1525,24 +1962,50 @@ Puis retourne le JSON complet.`
         })
       }
 
-      // Nouveaux groupes d'offres
-      for (const group of newGroups) {
+      // Nouveaux groupes d'offres (filtrer les puissances exclues du récap et les groupes déjà en base)
+      for (let gIdx = 0; gIdx < newGroups.length; gIdx++) {
+        const group = newGroups[gIdx]
+        if (group.alreadyInDb) continue
         if (!group.name || group.powers.length === 0) continue
-        for (const power of group.powers) {
+        const groupOfferType = group.offer_type || filterOfferType
+        for (let pIdx = 0; pIdx < group.powers.length; pIdx++) {
+          if (recapExcludedPowers.has(`group-${gIdx}-${pIdx}`)) continue
+          const power = group.powers[pIdx]
           if (!power.power || power.power <= 0) continue
           allContributions.push({
             contribution_type: 'NEW_OFFER',
             existing_provider_id: currentProvider.id,
             provider_name: currentProvider.name,
             offer_name: `${group.name} - ${power.power} kVA`,
-            offer_type: filterOfferType,
-            description: `Création d'un nouveau groupe d'offres "${group.name}" avec la puissance ${power.power} kVA pour ${currentProvider.name} (${filterOfferType})`,
+            offer_type: groupOfferType,
+            description: `Création d'un nouveau groupe d'offres "${group.name}" avec la puissance ${power.power} kVA pour ${currentProvider.name} (${groupOfferType})`,
             power_kva: power.power,
             pricing_data: {
               subscription_price: parsePrice(power.fields.subscription_price, undefined),
               base_price: parsePrice(power.fields.base_price, undefined),
               hc_price: parsePrice(power.fields.hc_price, undefined),
               hp_price: parsePrice(power.fields.hp_price, undefined),
+              // Tempo
+              tempo_blue_hc: parsePrice(power.fields.tempo_blue_hc, undefined),
+              tempo_blue_hp: parsePrice(power.fields.tempo_blue_hp, undefined),
+              tempo_white_hc: parsePrice(power.fields.tempo_white_hc, undefined),
+              tempo_white_hp: parsePrice(power.fields.tempo_white_hp, undefined),
+              tempo_red_hc: parsePrice(power.fields.tempo_red_hc, undefined),
+              tempo_red_hp: parsePrice(power.fields.tempo_red_hp, undefined),
+              // EJP
+              ejp_normal: parsePrice(power.fields.ejp_normal, undefined),
+              ejp_peak: parsePrice(power.fields.ejp_peak, undefined),
+              // Seasonal
+              hc_price_summer: parsePrice(power.fields.hc_price_summer, undefined),
+              hp_price_summer: parsePrice(power.fields.hp_price_summer, undefined),
+              hc_price_winter: parsePrice(power.fields.hc_price_winter, undefined),
+              hp_price_winter: parsePrice(power.fields.hp_price_winter, undefined),
+              // Base Weekend
+              base_price_weekend: parsePrice(power.fields.base_price_weekend, undefined),
+              // HC Weekend
+              hc_price_weekend: parsePrice(power.fields.hc_price_weekend, undefined),
+              hp_price_weekend: parsePrice(power.fields.hp_price_weekend, undefined),
+              ...(group.validTo ? { valid_to: group.validTo } : {}),
             },
             price_sheet_url: priceSheetUrl,
             valid_from: group.validFrom || new Date().toISOString().split('T')[0],
@@ -1558,7 +2021,7 @@ Puis retourne le JSON complet.`
           getCleanOfferName(o.name) === originalName && o.offer_type === offerType
         )
         for (const offer of offersInGroup) {
-          const power = getPower(offer.name)
+          const power = formatPower(offer)
           const newOfferName = power ? `${newName} - ${power}` : newName
           allContributions.push({
             contribution_type: 'UPDATE_OFFER',
@@ -1627,6 +2090,7 @@ Puis retourne le JSON complet.`
           setNewGroups([])
           setProvidersToRemove([])
           setDeprecatedOffers([])
+          setUnchangedOfferIds(new Set())
           queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
           queryClient.invalidateQueries({ queryKey: ['energy-providers'] })
           queryClient.invalidateQueries({ queryKey: ['energy-offers'] })
@@ -1660,29 +2124,37 @@ Puis retourne le JSON complet.`
   // Get provider offers filtered and sorted by power
   const providerOffers = offersArray
     .filter((offer) =>
-      offer.provider_id === filterProvider && (filterOfferType === 'all' || offer.offer_type === filterOfferType)
+      offer.provider_id === filterProvider && offer.is_active !== false && (filterOfferType === 'all' || offer.offer_type === filterOfferType)
     )
     .sort((a, b) => {
-      const powerA = a.power_kva || parseInt(a.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
-      const powerB = b.power_kva || parseInt(b.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
+      const powerA = a.power_kva || 0
+      const powerB = b.power_kva || 0
       return powerA - powerB
     })
 
-  // Regrouper les offres par nom (clean name)
+  // Regrouper les offres par nom (clean name) ET période de validité
   const groupedOffers = useMemo(() => {
     const groups: Record<string, typeof providerOffers> = {}
     for (const offer of providerOffers) {
       const cleanName = getCleanOfferName(offer.name)
-      if (!groups[cleanName]) {
-        groups[cleanName] = []
+      // Créer une clé unique : nom + période (date uniquement, sans heure/timezone)
+      const fromDate = offer.valid_from ? new Date(offer.valid_from).toLocaleDateString('sv-SE') : ''
+      const toDate = offer.valid_to ? new Date(offer.valid_to).toLocaleDateString('sv-SE') : ''
+      const periodKey = fromDate
+        ? (toDate ? `${fromDate}##${toDate}` : `${fromDate}##active`)
+        : 'active'
+      const groupKey = `${cleanName}##${periodKey}`
+
+      if (!groups[groupKey]) {
+        groups[groupKey] = []
       }
-      groups[cleanName].push(offer)
+      groups[groupKey].push(offer)
     }
     // Trier chaque groupe par puissance
     for (const groupName of Object.keys(groups)) {
       groups[groupName].sort((a, b) => {
-        const powerA = a.power_kva || parseInt(a.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
-        const powerB = b.power_kva || parseInt(b.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
+        const powerA = a.power_kva || 0
+        const powerB = b.power_kva || 0
         return powerA - powerB
       })
     }
@@ -1703,30 +2175,8 @@ Puis retourne le JSON complet.`
     return groupNames.filter(g => groupedOffers[g]?.every(offer => offer.valid_to))
   }, [groupNames, groupedOffers])
 
-  // Regrouper les offres expirées par date d'expiration (mois/année)
-  const expiredByDate = useMemo(() => {
-    const byDate: Record<string, string[]> = {}
-    for (const gName of expiredGroupNames) {
-      const offers = groupedOffers[gName]
-      if (!offers || offers.length === 0) continue
-      // Prendre la date valid_to la plus récente du groupe
-      const latestValidTo = offers.reduce((latest, offer) => {
-        if (!offer.valid_to) return latest
-        if (!latest) return offer.valid_to
-        return new Date(offer.valid_to) > new Date(latest) ? offer.valid_to : latest
-      }, null as string | null)
-      if (!latestValidTo) continue
-      const date = new Date(latestValidTo)
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-      if (!byDate[key]) byDate[key] = []
-      byDate[key].push(gName)
-    }
-    // Trier par date décroissante (plus récent en premier)
-    const sorted = Object.entries(byDate).sort(([a], [b]) => b.localeCompare(a))
-    return sorted
-  }, [expiredGroupNames, groupedOffers])
-
   // Groupes visibles dans la zone principale = uniquement les offres actives
+  // Les offres expirées sont toujours dans la section pliable dédiée en bas
   const visibleGroupNames = useMemo(() => {
     return activeGroupNames
   }, [activeGroupNames])
@@ -1741,28 +2191,82 @@ Puis retourne le JSON complet.`
   // Calculer les puissances existantes pour ce fournisseur/type
   const existingPowers = useMemo(() => {
     return providerOffers.map(offer => {
-      const powerMatch = offer.name.match(/(\d+)\s*kVA/i)
-      const power = powerMatch ? parseInt(powerMatch[1]) : (offer.power_kva || 0)
-      return { power, offer_type: offer.offer_type, offer_name: getCleanOfferName(offer.name) }
+      const power = offer.power_kva || 0
+      return {
+        power,
+        offer_type: offer.offer_type,
+        offer_name: getCleanOfferName(offer.name),
+        valid_from: offer.valid_from,
+        valid_to: offer.valid_to
+      }
     }).filter(p => p.power > 0)
   }, [providerOffers])
 
+  // Vérifier si deux périodes se chevauchent
+  const periodsOverlap = (
+    start1: string | undefined,
+    end1: string | undefined,
+    start2: string | undefined,
+    end2: string | undefined
+  ): boolean => {
+    // Une offre sans valid_from est "permanente" → couvre toute la période
+    // Si aucune des deux n'a de date, elles se chevauchent
+    if (!start1 && !start2) return true
+    // Si une seule n'a pas de date de début, elle est permanente → chevauche toujours
+    if (!start1 || !start2) return true
+
+    const s1 = new Date(start1)
+    const e1 = end1 ? new Date(end1) : new Date('9999-12-31')
+    const s2 = new Date(start2)
+    const e2 = end2 ? new Date(end2) : new Date('9999-12-31')
+
+    // Chevauchement si : start1 <= end2 ET start2 <= end1
+    return s1 <= e2 && s2 <= e1
+  }
+
+  // Ouvrir le récapitulatif en initialisant les exclusions (auto-exclure les doublons)
+  const openRecapModal = () => {
+    const initialExclusions = new Set<string>()
+    // Auto-exclure les puissances de newGroups qui sont des doublons en BDD
+    newGroups.forEach((group, groupIdx) => {
+      const groupType = group.offer_type || filterOfferType
+      group.powers.forEach((power, powerIdx) => {
+        if (power.power > 0 && existingPowers.some(ep =>
+          ep.power === power.power && ep.offer_type === groupType &&
+          periodsOverlap(group.validFrom || undefined, group.validTo || undefined, ep.valid_from, ep.valid_to)
+        )) {
+          initialExclusions.add(`group-${groupIdx}-${powerIdx}`)
+        }
+      })
+    })
+    setRecapExcludedPowers(initialExclusions)
+    setShowRecapModal(true)
+  }
+
   // Vérifier si une puissance est déjà utilisée (existante ou dans les nouvelles puissances ajoutées)
-  // Prend en compte le offer_type ET offer_name pour distinguer les puissances d'offres différentes
-  const isPowerAlreadyUsed = (power: number, currentIndex?: number, offerType?: string, offerName?: string): boolean => {
+  // Prend en compte le offer_type, offer_name ET les périodes de validité pour distinguer les offres
+  const isPowerAlreadyUsed = (
+    power: number,
+    currentIndex?: number,
+    offerType?: string,
+    offerName?: string,
+    validFrom?: string,
+    validTo?: string
+  ): boolean => {
     const effectiveType = offerType || filterOfferType
     // Vérifier dans les offres existantes (sauf celles marquées pour suppression)
-    // Compare power + offer_type + offer_name pour éviter les faux doublons entre offres différentes du même type
+    // Compare power + offer_type + offer_name + chevauchement de périodes
     const existsInOffers = existingPowers.some(ep => {
       if (ep.power !== power || ep.offer_type !== effectiveType) return false
       if (powersToRemove.some(p => p.power === power && (!offerName || p.groupName === offerName))) return false
       // Si un offer_name est fourni, comparer aussi par nom d'offre
       if (offerName && ep.offer_name && offerName !== ep.offer_name) return false
-      return true
+      // Vérifier le chevauchement de périodes de validité
+      return periodsOverlap(validFrom, validTo, ep.valid_from, ep.valid_to)
     })
     if (existsInOffers) return true
     // Vérifier dans les nouvelles puissances ajoutées (sauf l'index courant)
-    // Même power + même offer_type + même offer_name = doublon
+    // Même power + même offer_type + même offer_name + périodes qui se chevauchent = doublon
     return newPowersData.some((p, i) => {
       if (i === currentIndex) return false
       if (p.power !== power) return false
@@ -1770,14 +2274,18 @@ Puis retourne le JSON complet.`
       if (pType !== effectiveType) return false
       // Si les deux ont un offer_name, comparer aussi par nom
       if (offerName && p.offer_name && offerName !== p.offer_name) return false
-      return true
+      // Vérifier le chevauchement de périodes de validité
+      return periodsOverlap(validFrom, validTo, p.valid_from, p.valid_to)
     })
   }
 
   // Vérifier s'il y a des doublons dans les nouvelles puissances
   const hasDuplicatePowers = useMemo(() => {
-    return newPowersData.some((newPower, index) => isPowerAlreadyUsed(newPower.power, index, newPower.offer_type, newPower.offer_name))
-  }, [newPowersData, existingPowers, powersToRemove])
+    return newPowersData.some((newPower, index) =>
+      !recapExcludedPowers.has(`newpower-${index}`) &&
+      isPowerAlreadyUsed(newPower.power, index, newPower.offer_type, newPower.offer_name, newPower.valid_from, newPower.valid_to)
+    )
+  }, [newPowersData, existingPowers, powersToRemove, recapExcludedPowers])
 
   // Détecter les champs de prix requis pour le type d'offre actuel
   const getRequiredPriceFields = (offerType?: string): string[] => {
@@ -1839,20 +2347,38 @@ Puis retourne le JSON complet.`
   const hasIncompleteGroups = useMemo(() => {
     if (newGroups.length === 0) return false
     return newGroups.some(group => {
+      // Les groupes déjà en base ne sont pas soumis, ignorer la validation
+      if (group.alreadyInDb) return false
       // Le nom du groupe est obligatoire
       if (!group.name || group.name.trim() === '') return true
-      // Chaque puissance doit être complète
-      return group.powers.some(p => !isNewPowerComplete(p))
+      // Chaque puissance doit être complète (utiliser le offer_type du groupe si disponible)
+      return group.powers.some(p => !isNewPowerComplete({ ...p, offer_type: group.offer_type }))
     })
   }, [newGroups, filterOfferType])
 
-  // Vérifier s'il y a des doublons dans les nouveaux groupes
+  // Vérifier s'il y a des doublons dans les nouveaux groupes (internes ou avec les offres existantes)
   const hasGroupDuplicatePowers = useMemo(() => {
-    return newGroups.some(group => {
-      const powers = group.powers.map(p => p.power).filter(p => p > 0)
-      return powers.length !== new Set(powers).size
+    return newGroups.some((group, groupIdx) => {
+      // Les groupes déjà en base ne sont pas soumis, ignorer la validation
+      if (group.alreadyInDb) return false
+      // Ne considérer que les puissances non exclues du récap
+      const includedPowers = group.powers
+        .filter((_, pi) => !recapExcludedPowers.has(`group-${groupIdx}-${pi}`))
+      const powers = includedPowers.map(p => p.power).filter(p => p > 0)
+      // Doublons internes au groupe (parmi les puissances sélectionnées)
+      if (powers.length !== new Set(powers).size) return true
+      // Doublons avec les offres existantes (même type + même puissance + périodes qui se chevauchent)
+      const groupType = group.offer_type || filterOfferType
+      return includedPowers.some(p => {
+        if (!p.power || p.power <= 0) return false
+        return existingPowers.some(ep =>
+          ep.power === p.power &&
+          ep.offer_type === groupType &&
+          periodsOverlap(group.validFrom || undefined, group.validTo || undefined, ep.valid_from, ep.valid_to)
+        )
+      })
     })
-  }, [newGroups])
+  }, [newGroups, existingPowers, filterOfferType, recapExcludedPowers])
 
   // Détecter dynamiquement les champs de prix utilisés par les offres existantes du type sélectionné
   const dynamicPriceFields = useMemo(() => {
@@ -1934,11 +2460,11 @@ Puis retourne le JSON complet.`
           </h2>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
             {(() => {
-              if (offersArray.length === 0) return '0 offre'
+              if (activeOffersArray.length === 0) return '0 offre'
               const selectedProvider = sortedProviders.find(p => p.id === filterProvider)
               const totalCount = filterProvider
-                ? offersArray.filter(o => o.provider_id === filterProvider).length
-                : offersArray.length
+                ? activeOffersArray.filter(o => o.provider_id === filterProvider).length
+                : activeOffersArray.length
               return `${totalCount} offre(s)${selectedProvider ? ` pour ${selectedProvider.name}` : ''}`
             })()}
           </p>
@@ -1973,6 +2499,7 @@ Puis retourne le JSON complet.`
                   setAiJsonInput('')
                   setAiImportResult(null)
                   setDeprecatedOffers([])
+                  setUnchangedOfferIds(new Set())
                   setIsEditMode(false)
                 })
                 return
@@ -2029,10 +2556,10 @@ Puis retourne le JSON complet.`
           <div className="flex flex-wrap justify-center gap-2">
             {sortedProviders.map((provider) => {
               const isSelected = filterProvider === provider.id
-              const providerOffersCount = offersArray.filter(o => o.provider_id === provider.id).length
+              const providerOffersCount = activeOffersArray.filter(o => o.provider_id === provider.id).length
               const isMarkedForRemoval = providersToRemove.includes(provider.id)
-              // Masquer les fournisseurs sans offre en mode lecture
-              if (!isEditMode && providerOffersCount === 0) return null
+              // Masquer les fournisseurs sans offre en mode lecture (vérifier aussi les offres expirées)
+              if (!isEditMode && providerOffersCount === 0 && !offersArray.some(o => o.provider_id === provider.id)) return null
               return (
                 <div
                   key={provider.id}
@@ -2073,52 +2600,8 @@ Puis retourne le JSON complet.`
                       onClick={(e) => {
                         e.stopPropagation()
                         const providerOffers = offersArray.filter(o => o.provider_id === provider.id && o.is_active !== false)
-                        // Regrouper par offer_type puis par nom de groupe (sans le suffixe " - X kVA")
-                        const grouped: Record<string, Record<string, typeof providerOffers>> = {}
-                        for (const offer of providerOffers) {
-                          if (!grouped[offer.offer_type]) grouped[offer.offer_type] = {}
-                          const groupName = offer.name.replace(/\s*-\s*\d+\s*kVA$/i, '').trim()
-                          if (!grouped[offer.offer_type][groupName]) grouped[offer.offer_type][groupName] = []
-                          grouped[offer.offer_type][groupName].push(offer)
-                        }
-                        // Construire le JSON d'export
-                        const exportOffers: Record<string, unknown>[] = []
-                        for (const [offerType, groups] of Object.entries(grouped)) {
-                          const priceFields = getFieldKeysForOfferType(offerType)
-                          for (const [groupName, offers] of Object.entries(groups)) {
-                            const sortedOffers = [...offers].sort((a, b) => (a.power_kva || 0) - (b.power_kva || 0))
-                            const variants = sortedOffers.map(o => {
-                              const variant: Record<string, unknown> = {
-                                power_kva: typeof o.power_kva === 'number' ? o.power_kva : Number(o.power_kva) || 0,
-                                subscription_price: typeof o.subscription_price === 'number' ? o.subscription_price : Number(o.subscription_price) || 0,
-                              }
-                              for (const field of priceFields) {
-                                const val = (o as unknown as Record<string, unknown>)[field]
-                                if (val != null) {
-                                  variant[field] = typeof val === 'number' ? val : Number(val) || 0
-                                }
-                              }
-                              return variant
-                            })
-                            exportOffers.push({
-                              offer_name: groupName,
-                              offer_type: offerType,
-                              power_variants: variants,
-                            })
-                          }
-                        }
-                        const exportData = {
-                          provider_name: provider.name,
-                          data_source: 'Export MyElectricalData',
-                          extraction_date: new Date().toISOString().split('T')[0],
-                          offers: exportOffers,
-                        }
-                        const json = JSON.stringify(exportData, null, 2)
-                        navigator.clipboard.writeText(json).then(() => {
-                          toast.success(`${providerOffersCount} offre(s) ${provider.name} copiées dans le presse-papier`)
-                        }).catch(() => {
-                          toast.error('Impossible de copier dans le presse-papier')
-                        })
+                        const exportData = buildOfferExportJson(providerOffers, provider.name)
+                        copyJsonToClipboard(exportData, `${providerOffersCount} offre(s) ${provider.name} copiées dans le presse-papier`)
                       }}
                       className={`p-1 rounded transition-all ${
                         isSelected
@@ -2319,6 +2802,14 @@ Puis retourne le JSON complet.`
                     setShowAIMode(false)
                     setAiJsonInput('')
                     setAiImportResult(null)
+                    // Nettoyer les contributions générées par l'import AI
+                    setNewPowersData([])
+                    setEditedOffers({})
+                    setPowersToRemove([])
+                    setDeprecatedOffers([])
+                    setUnchangedOfferIds(new Set())
+                    setNewGroups([])
+                    setEditedOfferNames({})
                   }}
                   className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                 >
@@ -2453,50 +2944,41 @@ Puis retourne le JSON complet.`
               <div className="mt-1 h-0.5 w-full bg-primary-500 rounded-full" />
             </div>
             <div className="flex items-center justify-between mb-3">
-              {isEditMode && (() => {
-                // Regrouper par nom ET type pour éviter les collisions entre offres homonymes de types différents
+              {isEditMode && isPrivilegedUser && (() => {
                 const providerOffers = offersArray.filter(o => o.provider_id === filterProvider)
-                const groups: Record<string, { name: string; offer_type: string; offers: typeof providerOffers }> = {}
-                for (const offer of providerOffers) {
-                  const name = getCleanOfferName(offer.name)
-                  const key = `${name}::${offer.offer_type}`
-                  if (!groups[key]) groups[key] = { name, offer_type: offer.offer_type, offers: [] }
-                  groups[key].offers.push(offer)
-                }
-                const groupEntries = Object.values(groups)
-                if (groupEntries.length === 0) return null
-                const allDeprecated = groupEntries.every(({ name, offer_type }) =>
-                  deprecatedOffers.some(d => d.offer_name === name && d.offer_type === offer_type)
-                )
+                if (providerOffers.length === 0) return null
+                const providerName = sortedProviders.find(p => p.id === filterProvider)?.name || ''
                 return (
                   <button
-                    onClick={() => {
-                      if (allDeprecated) {
-                        const groupKeys = new Set(groupEntries.map(({ name, offer_type }) => `${name}::${offer_type}`))
-                        setDeprecatedOffers(prev => prev.filter(d => !groupKeys.has(`${d.offer_name}::${d.offer_type}`)))
-                        toast.info('Suppression de toutes les offres annulée')
-                      } else {
-                        const newDeprecated = groupEntries
-                          .filter(({ name, offer_type }) => !deprecatedOffers.some(d => d.offer_name === name && d.offer_type === offer_type))
-                          .map(({ name, offer_type, offers }) => ({
-                            offer_type,
-                            offer_name: name,
-                            offer_ids: offers.map(o => o.id),
-                            warning: 'Suppression groupée demandée par l\'utilisateur.',
-                          }))
-                        setDeprecatedOffers(prev => [...prev, ...newDeprecated])
-                        toast.success(`${newDeprecated.length} groupe(s) d'offres marqué(s) pour suppression`)
+                    onClick={async () => {
+                      if (!confirm(`Supprimer définitivement toutes les offres de ${providerName} (${providerOffers.length} offres) ?\n\nCette action est irréversible.`)) return
+                      try {
+                        const loadingId = toast.loading(`Suppression des offres de ${providerName}...`)
+                        const response = await energyApi.purgeProviderOffers(providerName)
+                        toast.dismiss(loadingId)
+                        if (response.success) {
+                          toast.success(`${response.data?.deleted_count || providerOffers.length} offre(s) supprimée(s)`)
+                          // Réinitialiser l'état local
+                          setEditedOffers({})
+                          setDeprecatedOffers([])
+                          setUnchangedOfferIds(new Set())
+                          setNewGroups([])
+                          setNewPowersData([])
+                          setPowersToRemove([])
+                          // Rafraîchir les offres depuis le serveur
+                          await queryClient.invalidateQueries({ queryKey: ['energy-offers'] })
+                        } else {
+                          toast.error(`Erreur : ${response.error?.message || 'suppression échouée'}`)
+                        }
+                      } catch (e) {
+                        toast.error(`Erreur : ${e instanceof Error ? e.message : 'suppression échouée'}`)
                       }
                     }}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-                      allDeprecated
-                        ? 'text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'
-                        : 'text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50'
-                    }`}
-                    title={allDeprecated ? 'Annuler la suppression de toutes les offres' : 'Marquer toutes les offres pour suppression'}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50"
+                    title="Supprimer définitivement toutes les offres de ce fournisseur"
                   >
-                    {allDeprecated ? <Undo2 size={14} /> : <Trash2 size={14} />}
-                    {allDeprecated ? 'Annuler la suppression' : 'Supprimer toutes les offres du fournisseur'}
+                    <Trash2 size={14} />
+                    Supprimer toutes les offres du fournisseur
                   </button>
                 )
               })()}
@@ -2573,7 +3055,7 @@ Puis retourne le JSON complet.`
                   <div className="flex flex-wrap justify-center gap-2">
                     {(isEditMode ? typeOrder : availableOfferTypes).map((type) => {
                       const isSelected = filterOfferType === type
-                      const typeCount = offersArray.filter(o => o.provider_id === filterProvider && o.offer_type === type).length
+                      const typeCount = activeOffersArray.filter(o => o.provider_id === filterProvider && o.offer_type === type).length
                       const isEmpty = typeCount === 0
                       const typeLabels: Record<string, string> = {
                         'BASE': 'Base',
@@ -2594,7 +3076,7 @@ Puis retourne le JSON complet.`
                               setFilterOfferType(type)
                               if (isEditMode && isEmpty) {
                                 if (newGroups.length === 0) {
-                                  setNewGroups([{ name: '', validFrom: new Date().toISOString().split('T')[0], powers: [{ power: 0, fields: {} }] }])
+                                  setNewGroups([{ name: '', validFrom: new Date().toISOString().split('T')[0], validTo: '', powers: [{ power: 0, fields: {} }] }])
                                 }
                               }
                             })
@@ -2640,6 +3122,27 @@ Puis retourne le JSON complet.`
                             >
                               <Info size={14} />
                             </button>
+                            {!isEmpty && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  const currentProv = sortedProviders.find(p => p.id === filterProvider)
+                                  if (!currentProv) return
+                                  const typeOffers = offersArray.filter(o => o.provider_id === filterProvider && o.offer_type === type && o.is_active !== false)
+                                  const exportData = buildOfferExportJson(typeOffers, currentProv.name)
+                                  copyJsonToClipboard(exportData, `${typeCount} offre(s) ${typeLabels[type] || type} copiées`)
+                                }}
+                                className={`p-1 rounded transition-all ${
+                                  isSelected
+                                    ? 'text-white/70 hover:text-white hover:bg-white/20'
+                                    : 'text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                }`}
+                                title={`Copier les offres ${typeLabels[type] || type} en JSON`}
+                              >
+                                <Copy size={14} />
+                              </button>
+                            )}
                           </span>
                         </div>
                       )
@@ -2725,8 +3228,8 @@ Puis retourne le JSON complet.`
                 <>
                   <p>Offre historique (non commercialisée depuis 1998) avec 2 périodes :</p>
                   <ul className="list-disc list-inside ml-2 space-y-1">
-                    <li><strong>Jours Normaux</strong> (343 jours/an) : tarif avantageux</li>
-                    <li><strong>Jours de Pointe</strong> (22 jours/an, hiver) : tarif très élevé. Prévenus la veille à 17h.</li>
+                    <li><strong>Jours Normaux</strong> (345 jours/an) : tarif avantageux</li>
+                    <li><strong>Jours de Pointe</strong> (20 jours/an, hiver) : tarif très élevé. Prévenus la veille à 17h.</li>
                   </ul>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     <strong>Tarifs à renseigner :</strong> Abonnement + Prix Normal (€/kWh) + Prix Pointe (€/kWh)
@@ -3105,7 +3608,7 @@ Puis retourne le JSON complet.`
                   Créez un nouveau groupe d'offres pour proposer des tarifs
                 </p>
                 <button
-                  onClick={() => setNewGroups(prev => [...prev, { name: '', validFrom: new Date().toISOString().split('T')[0], powers: [{ power: 0, fields: {} }] }])}
+                  onClick={() => setNewGroups(prev => [...prev, { name: '', validFrom: new Date().toISOString().split('T')[0], validTo: '', powers: [{ power: 0, fields: {} }] }])}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all"
                 >
                   <Package size={18} />
@@ -3116,7 +3619,7 @@ Puis retourne le JSON complet.`
             )}
 
             {/* Afficher les nouveaux groupes - design bleu cohérent avec le contexte "type vide" */}
-            {newGroups.map((group, groupIndex) => (
+            {newGroups.map((group, groupIndex) => group.alreadyInDb ? null : (
               <div key={`new-group-empty-${groupIndex}`} className="space-y-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border-2 border-dashed border-blue-400 dark:border-blue-600">
                 {/* En-tête du nouveau groupe */}
                 <div className="flex items-center gap-3 pb-2 border-b border-blue-300 dark:border-blue-700">
@@ -3129,13 +3632,35 @@ Puis retourne le JSON complet.`
                     data-new-group-name
                     className="flex-1 max-w-md px-3 py-1.5 text-sm font-semibold rounded-lg border-2 border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
-                  {/* Date de mise en service */}
-                  <SingleDatePicker
-                    value={group.validFrom}
-                    onChange={(date) => setNewGroups(prev => prev.map((g, i) => i === groupIndex ? { ...g, validFrom: date } : g))}
-                    minDate="2020-01-01"
-                    required
-                  />
+                  {/* Dates de validité */}
+                  <div className="flex items-center gap-2">
+                    <SingleDatePicker
+                      value={group.validFrom}
+                      onChange={(date) => setNewGroups(prev => prev.map((g, i) => i === groupIndex ? { ...g, validFrom: date } : g))}
+                      minDate="2020-01-01"
+                      required
+                    />
+                    <span className="text-xs text-gray-500 dark:text-gray-400">→</span>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="date"
+                        value={group.validTo}
+                        onChange={(e) => setNewGroups(prev => prev.map((g, i) => i === groupIndex ? { ...g, validTo: e.target.value } : g))}
+                        min={group.validFrom || '2020-01-01'}
+                        placeholder="jj/mm/aaaa"
+                        className="px-2 py-1.5 text-sm rounded-lg border-2 border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none [color-scheme:dark] dark:[color-scheme:dark]"
+                      />
+                      {group.validTo && (
+                        <button
+                          onClick={() => setNewGroups(prev => prev.map((g, i) => i === groupIndex ? { ...g, validTo: '' } : g))}
+                          className="p-1 text-red-500 hover:text-red-700 dark:hover:text-red-300"
+                          title="Effacer la date de fin (offre active)"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">Nouveau groupe</span>
                   <button
                     onClick={() => setNewGroups(prev => prev.filter((_, i) => i !== groupIndex))}
@@ -3426,7 +3951,7 @@ Puis retourne le JSON complet.`
                 {/* Bouton ajouter une puissance au nouveau groupe */}
                 {(() => {
                   const lastPower = group.powers[group.powers.length - 1]
-                  const requiredFields = getFieldKeysForOfferType(filterOfferType)
+                  const requiredFields = getFieldKeysForOfferType(group.offer_type || filterOfferType)
                   const isLastComplete = !lastPower || (
                     lastPower.power > 0 &&
                     lastPower.fields.subscription_price?.trim() &&
@@ -3462,7 +3987,7 @@ Puis retourne le JSON complet.`
             {/* Bouton pour créer un autre groupe d'offres */}
             {newGroups.length > 0 && (
               <button
-                onClick={() => setNewGroups(prev => [...prev, { name: '', validFrom: new Date().toISOString().split('T')[0], powers: [{ power: 0, fields: {} }] }])}
+                onClick={() => setNewGroups(prev => [...prev, { name: '', validFrom: new Date().toISOString().split('T')[0], validTo: '', powers: [{ power: 0, fields: {} }] }])}
                 className="w-full bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 border border-dashed border-blue-300 dark:border-blue-700 hover:border-blue-400 dark:hover:border-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-all flex items-center justify-center gap-2"
               >
                 <Package size={18} className="text-blue-600 dark:text-blue-400" />
@@ -3488,7 +4013,7 @@ Puis retourne le JSON complet.`
                           <span>Nouveaux groupes d'offres ({newGroups.length})</span>
                         </div>
                         <div className="space-y-3">
-                          {newGroups.map((group, index) => (
+                          {newGroups.map((group, index) => group.alreadyInDb ? null : (
                             <div key={`recap-empty-group-${index}`} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-blue-200 dark:border-blue-700">
                               <div className="font-semibold text-blue-700 dark:text-blue-300 mb-2 flex items-center gap-2">
                                 <Plus size={14} />
@@ -3586,7 +4111,7 @@ Puis retourne le JSON complet.`
           {/* Bouton pour créer un nouveau groupe d'offres (en haut, uniquement en mode édition) */}
           {isEditMode && (
             <button
-              onClick={() => setNewGroups(prev => [...prev, { name: '', validFrom: new Date().toISOString().split('T')[0], powers: [{ power: 0, fields: {} }] }])}
+              onClick={() => setNewGroups(prev => [...prev, { name: '', validFrom: new Date().toISOString().split('T')[0], validTo: '', powers: [{ power: 0, fields: {} }] }])}
               className="w-full rounded-lg p-3 border-2 border-dashed border-primary-300 dark:border-primary-700 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:border-primary-400 dark:hover:border-primary-600 transition-all flex items-center justify-center gap-2"
             >
               <Package size={18} />
@@ -3595,8 +4120,8 @@ Puis retourne le JSON complet.`
             </button>
           )}
 
-          {/* Nouveaux groupes d'offres (uniquement en mode édition) */}
-          {isEditMode && newGroups.map((group, groupIndex) => (
+          {/* Nouveaux groupes d'offres (uniquement en mode édition, exclure ceux déjà en base) */}
+          {isEditMode && newGroups.map((group, groupIndex) => group.alreadyInDb ? null : (
             <div key={`new-group-${groupIndex}`} className="space-y-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border-2 border-dashed border-blue-400 dark:border-blue-600">
               {/* En-tête du nouveau groupe */}
               <div className="flex items-center gap-3 pb-2 border-b border-blue-300 dark:border-blue-700">
@@ -3609,13 +4134,38 @@ Puis retourne le JSON complet.`
                   data-new-group-name
                   className="flex-1 max-w-md px-3 py-1.5 text-sm font-semibold rounded-lg border-2 border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
-                {/* Date de mise en service */}
-                <SingleDatePicker
-                  value={group.validFrom}
-                  onChange={(date) => setNewGroups(prev => prev.map((g, i) => i === groupIndex ? { ...g, validFrom: date } : g))}
-                  minDate="2020-01-01"
-                  required
-                />
+                {/* Dates de validité */}
+                <div className="flex items-center gap-2">
+                  <SingleDatePicker
+                    value={group.validFrom}
+                    onChange={(date) => setNewGroups(prev => prev.map((g, i) => i === groupIndex ? { ...g, validFrom: date } : g))}
+                    minDate="2020-01-01"
+                    required
+                  />
+                  <span className="text-xs text-gray-500 dark:text-gray-400">→</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="date"
+                      value={group.validTo}
+                      onChange={(e) => setNewGroups(prev => prev.map((g, i) => i === groupIndex ? { ...g, validTo: e.target.value } : g))}
+                      min={group.validFrom || '2020-01-01'}
+                      placeholder="jj/mm/aaaa"
+                      className="px-2 py-1.5 text-sm rounded-lg border-2 border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none [color-scheme:dark] dark:[color-scheme:dark]"
+                    />
+                    {group.validTo && (
+                      <button
+                        onClick={() => setNewGroups(prev => prev.map((g, i) => i === groupIndex ? { ...g, validTo: '' } : g))}
+                        className="p-1 text-red-500 hover:text-red-700 dark:hover:text-red-300"
+                        title="Effacer la date de fin (offre active)"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {group.offer_type && (
+                  <span className="text-xs text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 px-1.5 py-0.5 rounded">{group.offer_type}</span>
+                )}
                 <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">Nouveau groupe</span>
                 <button
                   onClick={() => setNewGroups(prev => prev.filter((_, i) => i !== groupIndex))}
@@ -3629,15 +4179,29 @@ Puis retourne le JSON complet.`
               {/* Puissances du nouveau groupe */}
               {group.powers.map((power, powerIndex) => {
                 const isIncomplete = !power.power || power.power <= 0 || !power.fields.subscription_price
+                const effectiveGroupType = group.offer_type || filterOfferType
+                const isDuplicateInDb = power.power > 0 && existingPowers.some(ep =>
+                  ep.power === power.power &&
+                  ep.offer_type === effectiveGroupType &&
+                  periodsOverlap(group.validFrom || undefined, group.validTo || undefined, ep.valid_from, ep.valid_to)
+                )
                 return (
                   <div
                     key={`new-group-${groupIndex}-power-${powerIndex}`}
                     className={`rounded-lg p-3 border transition-all ${
-                      isIncomplete
-                        ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-400 dark:border-amber-600'
-                        : 'bg-white dark:bg-gray-800 border-blue-300 dark:border-blue-600'
+                      isDuplicateInDb
+                        ? 'bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-600'
+                        : isIncomplete
+                          ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-400 dark:border-amber-600'
+                          : 'bg-white dark:bg-gray-800 border-blue-300 dark:border-blue-600'
                     }`}
                   >
+                    {isDuplicateInDb && (
+                      <div className="text-xs text-red-600 dark:text-red-400 mb-2 flex items-center gap-1">
+                        <AlertCircle size={12} />
+                        <span>Cette puissance existe déjà pour ce type d'offre sur une période qui chevauche</span>
+                      </div>
+                    )}
                     <div className="flex flex-wrap items-center gap-4">
                       {/* Puissance */}
                       <div className="w-20 shrink-0">
@@ -3685,7 +4249,7 @@ Puis retourne le JSON complet.`
 
                       {/* Tarifs selon le type d'offre */}
                       <div className="flex flex-wrap gap-x-3 gap-y-1 justify-end pr-4 flex-1">
-                        {filterOfferType === 'BASE' && (
+                        {effectiveGroupType === 'BASE' && (
                           <div className="flex items-center gap-2 w-[200px]">
                             <span className="text-sm font-semibold w-10 shrink-0 text-right text-gray-600 dark:text-gray-400">Base<span className="text-red-500">*</span></span>
                             <input
@@ -3703,7 +4267,7 @@ Puis retourne le JSON complet.`
                           </div>
                         )}
 
-                        {filterOfferType === 'HC_HP' && (
+                        {effectiveGroupType === 'HC_HP' && (
                           <>
                             <div className="flex items-center gap-2 w-[200px]">
                               <span className="text-sm font-semibold w-10 shrink-0 text-right text-blue-600 dark:text-blue-400">HC<span className="text-red-500">*</span></span>
@@ -3738,7 +4302,7 @@ Puis retourne le JSON complet.`
                           </>
                         )}
 
-                        {filterOfferType === 'SEASONAL' && (
+                        {effectiveGroupType === 'SEASONAL' && (
                           <>
                             {/* Ligne Été */}
                             <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
@@ -3771,7 +4335,7 @@ Puis retourne le JSON complet.`
                           </>
                         )}
 
-                        {filterOfferType === 'BASE_WEEKEND' && (
+                        {effectiveGroupType === 'BASE_WEEKEND' && (
                           <>
                             {/* Tarif semaine */}
                             <div className="flex items-center gap-2 w-[200px]">
@@ -3788,7 +4352,7 @@ Puis retourne le JSON complet.`
                           </>
                         )}
 
-                        {(filterOfferType === 'HC_WEEKEND' || filterOfferType === 'HC_NUIT_WEEKEND') && (
+                        {(effectiveGroupType === 'HC_WEEKEND' || effectiveGroupType === 'HC_NUIT_WEEKEND') && (
                           <>
                             {/* Ligne Semaine */}
                             <div className="w-full flex flex-wrap gap-x-3 gap-y-1 items-center justify-end">
@@ -3821,8 +4385,52 @@ Puis retourne le JSON complet.`
                           </>
                         )}
 
+                        {effectiveGroupType === 'TEMPO' && (
+                          <>
+                            <div className="flex items-center gap-2 w-[200px]">
+                              <span className="text-sm font-semibold w-16 shrink-0 text-right text-blue-600 dark:text-blue-400">Bleu HC<span className="text-red-500">*</span></span>
+                              <input type="number" step="0.0001" value={power.fields.tempo_blue_hc ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, tempo_blue_hc: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                            </div>
+                            <div className="flex items-center gap-2 w-[200px]">
+                              <span className="text-sm font-semibold w-16 shrink-0 text-right text-blue-600 dark:text-blue-400">Bleu HP<span className="text-red-500">*</span></span>
+                              <input type="number" step="0.0001" value={power.fields.tempo_blue_hp ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, tempo_blue_hp: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                            </div>
+                            <div className="flex items-center gap-2 w-[200px]">
+                              <span className="text-sm font-semibold w-16 shrink-0 text-right text-gray-600 dark:text-gray-400">Blanc HC<span className="text-red-500">*</span></span>
+                              <input type="number" step="0.0001" value={power.fields.tempo_white_hc ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, tempo_white_hc: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                            </div>
+                            <div className="flex items-center gap-2 w-[200px]">
+                              <span className="text-sm font-semibold w-16 shrink-0 text-right text-gray-600 dark:text-gray-400">Blanc HP<span className="text-red-500">*</span></span>
+                              <input type="number" step="0.0001" value={power.fields.tempo_white_hp ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, tempo_white_hp: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                            </div>
+                            <div className="flex items-center gap-2 w-[200px]">
+                              <span className="text-sm font-semibold w-16 shrink-0 text-right text-red-600 dark:text-red-400">Rouge HC<span className="text-red-500">*</span></span>
+                              <input type="number" step="0.0001" value={power.fields.tempo_red_hc ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, tempo_red_hc: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                            </div>
+                            <div className="flex items-center gap-2 w-[200px]">
+                              <span className="text-sm font-semibold w-16 shrink-0 text-right text-red-600 dark:text-red-400">Rouge HP<span className="text-red-500">*</span></span>
+                              <input type="number" step="0.0001" value={power.fields.tempo_red_hp ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, tempo_red_hp: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-24 px-2 py-1 text-sm font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                            </div>
+                          </>
+                        )}
+
+                        {effectiveGroupType === 'EJP' && (
+                          <>
+                            <div className="flex items-center gap-2 w-[200px]">
+                              <span className="text-sm font-semibold w-14 shrink-0 text-right text-green-600 dark:text-green-400">Normal<span className="text-red-500">*</span></span>
+                              <input type="number" step="0.0001" value={power.fields.ejp_normal ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, ejp_normal: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-28 px-3 py-2 text-base font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                              <span className="text-gray-500 dark:text-gray-400 text-sm w-12 shrink-0">€/kWh</span>
+                            </div>
+                            <div className="flex items-center gap-2 w-[200px]">
+                              <span className="text-sm font-semibold w-14 shrink-0 text-right text-red-600 dark:text-red-400">Pointe<span className="text-red-500">*</span></span>
+                              <input type="number" step="0.0001" value={power.fields.ejp_peak ?? ''} onChange={(e) => setNewGroups(prev => prev.map((g, gi) => gi === groupIndex ? { ...g, powers: g.powers.map((p, pi) => pi === powerIndex ? { ...p, fields: { ...p.fields, ejp_peak: e.target.value } } : p) } : g))} placeholder="0.0000" className="w-28 px-3 py-2 text-base font-bold border-2 rounded-lg border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                              <span className="text-gray-500 dark:text-gray-400 text-sm w-12 shrink-0">€/kWh</span>
+                            </div>
+                          </>
+                        )}
+
                         {/* Champs dynamiques pour les types non standard (détectés depuis les offres existantes) */}
-                        {!['BASE', 'HC_HP', 'TEMPO', 'EJP', 'SEASONAL', 'BASE_WEEKEND', 'HC_WEEKEND', 'HC_NUIT_WEEKEND'].includes(filterOfferType) && dynamicPriceFields.map(field => (
+                        {!['BASE', 'HC_HP', 'TEMPO', 'EJP', 'SEASONAL', 'BASE_WEEKEND', 'HC_WEEKEND', 'HC_NUIT_WEEKEND'].includes(effectiveGroupType) && dynamicPriceFields.map(field => (
                           <div key={field.key} className="flex items-center gap-2 w-[200px]">
                             <span className={`text-sm font-semibold w-16 shrink-0 text-right ${field.color || 'text-gray-600 dark:text-gray-400'}`}>
                               {field.label}<span className="text-red-500">*</span>
@@ -3908,8 +4516,9 @@ Puis retourne le JSON complet.`
               {activeGroupNames.map((gName) => {
                 const isActive = selectedGroupName === gName
                 const count = groupedOffers[gName]?.length || 0
+                const cleanName = getGroupNameWithoutPeriod(gName)
                 const isDeprecated = deprecatedOffers.some(d =>
-                  d.offer_name === gName && d.offer_type === groupedOffers[gName]?.[0]?.offer_type
+                  d.offer_name === cleanName && d.offer_type === groupedOffers[gName]?.[0]?.offer_type
                 )
                 return (
                   <button
@@ -3931,7 +4540,26 @@ Puis retourne le JSON complet.`
                     }`}>
                       {count}
                     </span>
-                    <span className="flex-1 text-center truncate">{gName}</span>
+                    <span className="flex-1 text-center truncate">{cleanName}</span>
+                    <span
+                      role="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const currentProv = sortedProviders.find(p => p.id === filterProvider)
+                        if (!currentProv) return
+                        const groupOffers = groupedOffers[gName] || []
+                        const exportData = buildOfferExportJson(groupOffers, currentProv.name)
+                        copyJsonToClipboard(exportData, `${count} offre(s) "${cleanName}" copiées en JSON`)
+                      }}
+                      className={`p-1 rounded shrink-0 transition-colors ${
+                        isActive
+                          ? 'text-white/50 hover:text-white hover:bg-white/20'
+                          : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-300/50 dark:hover:bg-gray-500/50'
+                      }`}
+                      title={`Copier "${cleanName}" en JSON`}
+                    >
+                      <Copy size={14} />
+                    </span>
                   </button>
                 )
               })}
@@ -3943,9 +4571,10 @@ Puis retourne le JSON complet.`
           {(isEditMode ? visibleGroupNames : visibleGroupNames.filter(g => g === selectedGroupName)).map((groupName) => {
             const offersInGroup = groupedOffers[groupName]
             const groupOfferType = offersInGroup[0]?.offer_type || filterOfferType
-            const renameKey = `${groupName}::${groupOfferType}`
+            const cleanGroupName = getGroupNameWithoutPeriod(groupName)
+            const renameKey = `${cleanGroupName}::${groupOfferType}`
             const editedName = editedOfferNames[renameKey]
-            const isNameModified = editedName !== undefined && editedName !== groupName
+            const isNameModified = editedName !== undefined && editedName !== cleanGroupName
 
             // Calculer la date de validité du groupe (la plus récente parmi les offres)
             const groupValidFrom = offersInGroup.reduce((latest, offer) => {
@@ -3954,20 +4583,23 @@ Puis retourne le JSON complet.`
               return new Date(offer.valid_from) > new Date(latest) ? offer.valid_from : latest
             }, null as string | null)
 
-            // Vérifier si le groupe contient des offres expirées
-            const hasExpiredOffers = offersInGroup.some(offer => offer.valid_to)
+            // Calculer la date de fin du groupe (la plus récente parmi les offres)
+            const groupValidTo = offersInGroup.reduce((latest, offer) => {
+              if (!offer.valid_to) return latest
+              if (!latest) return offer.valid_to
+              return new Date(offer.valid_to) > new Date(latest) ? offer.valid_to : latest
+            }, null as string | null)
 
             const isGroupDeprecated = deprecatedOffers.some(d =>
-              d.offer_name === groupName && d.offer_type === groupOfferType
+              d.offer_name === cleanGroupName && d.offer_type === groupOfferType
             )
-
             return (
               <div key={`${groupName}::${groupOfferType}`} className={`space-y-2 ${isGroupDeprecated ? 'opacity-50' : ''}`}>
                 {/* En-tête du groupe avec nom éditable (mode édition uniquement, en lecture les onglets suffisent) */}
                 {isEditMode && <div className={`flex items-center gap-3 pb-2 border-b ${isGroupDeprecated ? 'border-red-300 dark:border-red-700' : 'border-gray-200 dark:border-gray-700'}`}>
                     <input
                       type="text"
-                      value={editedName ?? groupName}
+                      value={editedName ?? cleanGroupName}
                       onChange={(e) => setEditedOfferNames(prev => ({ ...prev, [renameKey]: e.target.value }))}
                       className={`flex-1 max-w-md px-3 py-1.5 text-sm font-semibold rounded-lg border-2 bg-white dark:bg-gray-800 focus:ring-2 focus:outline-none ${
                         isNameModified
@@ -3976,6 +4608,88 @@ Puis retourne le JSON complet.`
                       }`}
                       placeholder="Nom de l'offre"
                     />
+                  {/* Dates de validité éditables au niveau du groupe */}
+                  {(() => {
+                    const firstOfferId = offersInGroup[0]?.id
+                    const editedGroupDateFrom = editedOffers[firstOfferId]?.valid_from
+                    const editedGroupDateTo = editedOffers[firstOfferId]?.valid_to
+                    const groupDateFromYMD = groupValidFrom ? groupValidFrom.split('T')[0] : ''
+                    const groupDateToYMD = groupValidTo ? groupValidTo.split('T')[0] : ''
+                    const currentDateFrom = editedGroupDateFrom ?? groupDateFromYMD
+                    const currentDateTo = editedGroupDateTo ?? groupDateToYMD
+                    const isDateFromModified = editedGroupDateFrom !== undefined && editedGroupDateFrom !== groupDateFromYMD
+                    const isDateToModified = editedGroupDateTo !== undefined && editedGroupDateTo !== groupDateToYMD
+                    return (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Calendar size={14} className="text-gray-400 shrink-0" />
+                        <input
+                          type="date"
+                          value={currentDateFrom}
+                          onChange={(e) => {
+                            const newDate = e.target.value
+                            setEditedOffers(prev => {
+                              const updated = { ...prev }
+                              for (const o of offersInGroup) {
+                                updated[o.id] = { ...updated[o.id], valid_from: newDate }
+                              }
+                              return updated
+                            })
+                          }}
+                          className={`w-[130px] px-2 py-1.5 text-sm rounded-lg border-2 bg-white dark:bg-gray-800 focus:ring-2 focus:outline-none ${
+                            isDateFromModified
+                              ? 'border-amber-400 dark:border-amber-600 focus:ring-amber-500'
+                              : 'border-gray-300 dark:border-gray-600 focus:ring-primary-500'
+                          }`}
+                          title="Date de début de validité"
+                        />
+                        <span className="text-xs text-gray-400">→</span>
+                        <input
+                          type="date"
+                          value={currentDateTo}
+                          onChange={(e) => {
+                            const newDate = e.target.value
+                            setEditedOffers(prev => {
+                              const updated = { ...prev }
+                              for (const o of offersInGroup) {
+                                updated[o.id] = { ...updated[o.id], valid_to: newDate }
+                              }
+                              return updated
+                            })
+                          }}
+                          className={`w-[130px] px-2 py-1.5 text-sm rounded-lg border-2 bg-white dark:bg-gray-800 focus:ring-2 focus:outline-none ${
+                            isDateToModified
+                              ? 'border-amber-400 dark:border-amber-600 focus:ring-amber-500'
+                              : 'border-gray-300 dark:border-gray-600 focus:ring-primary-500'
+                          }`}
+                          title="Date de fin de validité (vide = offre active)"
+                          placeholder="Fin"
+                        />
+                        {currentDateTo && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditedOffers(prev => {
+                                const updated = { ...prev }
+                                for (const o of offersInGroup) {
+                                  updated[o.id] = { ...updated[o.id], valid_to: '' }
+                                }
+                                return updated
+                              })
+                            }}
+                            className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300"
+                            title="Effacer la date de fin (offre active)"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                        {(isDateFromModified || isDateToModified) && (
+                          <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded whitespace-nowrap">
+                            {isDateToModified && !currentDateTo ? 'Réactivée' : 'Date modifiée'}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })()}
                   {isNameModified && (
                     <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">Nom modifié</span>
                   )}
@@ -4021,8 +4735,8 @@ Puis retourne le JSON complet.`
                 {/* Offres du groupe */}
                 {offersInGroup.map((offer) => {
                   const modified = isOfferModified(offer)
-                  const power = getPower(offer.name)
-                  const powerNum = power ? parseInt(power) : null
+                  const power = formatPower(offer)
+                  const powerNum = offer.power_kva || null
                   const isMarkedForRemoval = powerNum !== null && powersToRemove.some(p => p.power === powerNum && p.groupName === groupName)
 
                   return (
@@ -4236,20 +4950,25 @@ Puis retourne le JSON complet.`
                   )
                 })()}
 
-                {/* Date de validité du groupe - en bas */}
-                {groupValidFrom && (
-                  <div className="flex justify-end pt-2">
-                    <span
-                      className={`text-sm font-medium px-3 py-1 rounded-lg border ${
-                        hasExpiredOffers
-                          ? 'text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-700'
-                          : 'text-primary-700 dark:text-primary-300 bg-primary-100 dark:bg-primary-900/40 border-primary-300 dark:border-primary-700'
-                      }`}
-                      title={`Tarif en vigueur depuis le ${new Date(groupValidFrom).toLocaleDateString('fr-FR')}`}
-                    >
-                      {hasExpiredOffers ? 'Expiré le ' : 'Depuis le '}
-                      {new Date(groupValidFrom).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                    </span>
+                {/* Dates de validité du groupe - en bas */}
+                {(groupValidFrom || groupValidTo) && (
+                  <div className="flex justify-end pt-2 gap-2">
+                    {groupValidFrom && (
+                      <span
+                        className="text-sm font-medium px-3 py-1 rounded-lg border text-primary-700 dark:text-primary-300 bg-primary-100 dark:bg-primary-900/40 border-primary-300 dark:border-primary-700"
+                        title={`Tarif en vigueur depuis le ${new Date(groupValidFrom).toLocaleDateString('fr-FR')}`}
+                      >
+                        Depuis le {new Date(groupValidFrom).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                      </span>
+                    )}
+                    {groupValidTo && (
+                      <span
+                        className="text-sm font-medium px-3 py-1 rounded-lg border text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-700"
+                        title={`Tarif expiré le ${new Date(groupValidTo).toLocaleDateString('fr-FR')}`}
+                      >
+                        Jusqu'au {new Date(groupValidTo).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -4264,12 +4983,12 @@ Puis retourne le JSON complet.`
           })}
 
 
-          {/* Section pliable : Offres expirées (mode lecture uniquement) */}
-          {!isEditMode && expiredByDate.length > 0 && (
-            <div className="mt-6">
+          {/* Section pliable : Offres expirées */}
+          {expiredGroupNames.length > 0 && (
+            <div className="mt-6 rounded-lg border border-amber-200 dark:border-amber-700 overflow-hidden">
               <button
                 onClick={() => setShowExpiredSection(!showExpiredSection)}
-                className="w-full flex items-center gap-2 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors cursor-pointer"
+                className="w-full flex items-center gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors cursor-pointer"
               >
                 {showExpiredSection ? <ChevronDown size={16} className="text-amber-500" /> : <ChevronRight size={16} className="text-amber-500" />}
                 <Clock size={16} className="text-amber-500" />
@@ -4282,22 +5001,19 @@ Puis retourne le JSON complet.`
               </button>
 
               {showExpiredSection && (
-                <div className="mt-3 space-y-4">
-                  {expiredByDate.map(([dateKey, gNames]) => {
-                    const [year, month] = dateKey.split('-')
-                    const dateLabel = new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
-                    return (
-                      <div key={dateKey}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="h-px flex-1 bg-amber-300 dark:bg-amber-700" />
-                          <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase">
-                            {dateLabel}
-                          </span>
-                          <div className="h-px flex-1 bg-amber-300 dark:bg-amber-700" />
-                        </div>
-                        {gNames.sort((a, b) => a.localeCompare(b)).map((gName) => {
+                <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {[...expiredGroupNames].sort((a, b) => {
+                    const offersA = groupedOffers[a] || []
+                    const offersB = groupedOffers[b] || []
+                    const maxDateA = offersA.reduce((m, o) => o.valid_to && (!m || o.valid_to > m) ? o.valid_to : m, '' as string)
+                    const maxDateB = offersB.reduce((m, o) => o.valid_to && (!m || o.valid_to > m) ? o.valid_to : m, '' as string)
+                    if (maxDateA !== maxDateB) return maxDateB.localeCompare(maxDateA)
+                    return getGroupNameWithoutPeriod(a).localeCompare(getGroupNameWithoutPeriod(b))
+                  }).map((gName) => {
                           const offers = groupedOffers[gName]
                           if (!offers) return null
+                          const cleanName = getGroupNameWithoutPeriod(gName)
+                          const periodLabel = getGroupPeriodLabel(gName)
                           const latestValidTo = offers.reduce((latest, offer) => {
                             if (!offer.valid_to) return latest
                             if (!latest) return offer.valid_to
@@ -4306,48 +5022,203 @@ Puis retourne le JSON complet.`
                           return (
                             <div
                               key={gName}
-                              className="bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden mb-2 opacity-80"
+                              className="opacity-80"
                             >
-                              <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-700 flex items-center justify-between">
-                                <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">{gName}</span>
-                                {latestValidTo && (
-                                  <span className="text-xs text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-600 px-2 py-0.5 rounded">
-                                    Expiré le {new Date(latestValidTo).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                                  </span>
-                                )}
+                              <div className="px-4 py-2 bg-amber-50/50 dark:bg-amber-900/10 flex items-center justify-between">
+                                <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">{cleanName}</span>
+                                <div className="flex items-center gap-2">
+                                  {latestValidTo && (
+                                    <span className="text-xs text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-600 px-2 py-0.5 rounded">
+                                      Expiré le {new Date(latestValidTo).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={async (e) => {
+                                      e.stopPropagation()
+                                      if (reactivatingGroups.has(gName)) return
+                                      setReactivatingGroups(prev => new Set(prev).add(gName))
+                                      try {
+                                        if (isPrivilegedUser) {
+                                          // Admin : réactivation directe via API
+                                          for (const offer of offers) {
+                                              await energyApi.updateOffer(offer.id, { valid_to: null, is_active: true } as unknown as Partial<EnergyOffer>)
+                                          }
+                                          toast.success(`${cleanName}${periodLabel ? ` (${periodLabel})` : ''} réactivé`)
+                                          queryClient.invalidateQueries({ queryKey: ['energy-offers'] })
+                                        } else {
+                                          // Utilisateur : soumission d'une contribution
+                                          const provider = sortedProviders.find(p => p.id === filterProvider)
+                                          const contributions = offers.map(offer => ({
+                                            contribution_type: 'UPDATE_OFFER' as const,
+                                            existing_provider_id: filterProvider,
+                                            existing_offer_id: offer.id,
+                                            provider_name: provider?.name || '',
+                                            offer_name: `[REACTIVATION] ${offer.name}`,
+                                            offer_type: offer.offer_type,
+                                            description: `Demande de réactivation de l'offre ${cleanName}${periodLabel ? ` (${periodLabel})` : ''} (${offer.power_kva || '?'} kVA)`,
+                                            power_kva: offer.power_kva || 0,
+                                            price_sheet_url: '',
+                                            valid_from: new Date().toISOString().split('T')[0],
+                                          }))
+                                          await energyApi.submitContributionBatch(contributions, '')
+                                          toast.success(`Demande de réactivation soumise pour ${cleanName}${periodLabel ? ` (${periodLabel})` : ''}`)
+                                          queryClient.invalidateQueries({ queryKey: ['contributions'] })
+                                        }
+                                      } catch {
+                                        toast.error('Erreur lors de la réactivation')
+                                      } finally {
+                                        setReactivatingGroups(prev => {
+                                          const next = new Set(prev)
+                                          next.delete(gName)
+                                          return next
+                                        })
+                                      }
+                                    }}
+                                    disabled={reactivatingGroups.has(gName)}
+                                    className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-amber-100 dark:bg-amber-800/40 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800/60 border border-amber-300 dark:border-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                                  >
+                                    <RotateCcw size={12} className={reactivatingGroups.has(gName) ? 'animate-spin' : ''} />
+                                    {reactivatingGroups.has(gName) ? 'Envoi...' : 'Réactiver'}
+                                  </button>
+                                  {/* Bouton supprimer (admin uniquement) */}
+                                  {isPrivilegedUser && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setDeleteConfirm({ groupName: gName, offers })
+                                      }}
+                                      disabled={deletingGroups.has(gName)}
+                                      className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-red-100 dark:bg-red-800/40 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-800/60 border border-red-300 dark:border-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                                    >
+                                      <Trash2 size={12} className={deletingGroups.has(gName) ? 'animate-pulse' : ''} />
+                                      {deletingGroups.has(gName) ? 'Suppression...' : 'Supprimer'}
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                              <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                                {offers.sort((a, b) => (a.power_kva || 0) - (b.power_kva || 0)).map((offer) => (
-                                  <div key={offer.id} className="px-4 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                                    <span className="font-medium text-gray-700 dark:text-gray-300 min-w-[60px]">
-                                      {offer.power_kva || '?'} kVA
-                                    </span>
-                                    <span className="text-gray-500 dark:text-gray-400 text-xs">
-                                      Abo. <span className="font-semibold text-gray-700 dark:text-gray-300">{offer.subscription_price}</span> €/mois
-                                    </span>
-                                    {offer.base_price != null && (
-                                      <span className="text-gray-500 dark:text-gray-400 text-xs">
-                                        Base <span className="font-semibold text-gray-700 dark:text-gray-300">{offer.base_price}</span> €/kWh
-                                      </span>
-                                    )}
-                                    {offer.hc_price != null && (
-                                      <span className="text-gray-500 dark:text-gray-400 text-xs">
-                                        HC <span className="font-semibold text-gray-700 dark:text-gray-300">{offer.hc_price}</span> €/kWh
-                                      </span>
-                                    )}
-                                    {offer.hp_price != null && (
-                                      <span className="text-gray-500 dark:text-gray-400 text-xs">
-                                        HP <span className="font-semibold text-gray-700 dark:text-gray-300">{offer.hp_price}</span> €/kWh
-                                      </span>
-                                    )}
-                                  </div>
-                                ))}
+                              <div className={isEditMode ? 'space-y-2 p-3' : 'divide-y divide-gray-200 dark:divide-gray-700'}>
+                                {offers.sort((a, b) => (a.power_kva || 0) - (b.power_kva || 0)).map((offer) => {
+                                  if (!isEditMode) {
+                                    return (
+                                      <div key={offer.id} className="px-4 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                                        <span className="font-medium text-gray-700 dark:text-gray-300 min-w-[60px]">
+                                          {offer.power_kva || '?'} kVA
+                                        </span>
+                                        <span className="text-gray-500 dark:text-gray-400 text-xs">
+                                          Abo. <span className="font-semibold text-gray-700 dark:text-gray-300">{offer.subscription_price}</span> €/mois
+                                        </span>
+                                        {offer.base_price != null && (
+                                          <span className="text-gray-500 dark:text-gray-400 text-xs">
+                                            Base <span className="font-semibold text-gray-700 dark:text-gray-300">{offer.base_price}</span> €/kWh
+                                          </span>
+                                        )}
+                                        {offer.hc_price != null && (
+                                          <span className="text-gray-500 dark:text-gray-400 text-xs">
+                                            HC <span className="font-semibold text-gray-700 dark:text-gray-300">{offer.hc_price}</span> €/kWh
+                                          </span>
+                                        )}
+                                        {offer.hp_price != null && (
+                                          <span className="text-gray-500 dark:text-gray-400 text-xs">
+                                            HP <span className="font-semibold text-gray-700 dark:text-gray-300">{offer.hp_price}</span> €/kWh
+                                          </span>
+                                        )}
+                                      </div>
+                                    )
+                                  }
+
+                                  // Mode édition : même grille que les offres actives
+                                  const modified = isOfferModified(offer)
+                                  const power = formatPower(offer)
+                                  const cols = getTariffColumns(offer.offer_type)
+                                  const gridCols = `70px 1fr ${Array(cols).fill('1fr').join(' ')}`
+
+                                  return (
+                                    <div
+                                      key={offer.id}
+                                      className={`bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border transition-all ${
+                                        modified
+                                          ? 'border-amber-400 dark:border-amber-600'
+                                          : 'border-gray-200 dark:border-gray-700'
+                                      }`}
+                                    >
+                                      <div
+                                        className="grid items-center gap-x-2 gap-y-1"
+                                        style={{ gridTemplateColumns: gridCols }}
+                                      >
+                                        {/* Puissance + badge */}
+                                        <div className="flex flex-col items-start gap-1">
+                                          <span className="text-sm font-medium px-2 py-1 rounded text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700">
+                                            {power || '-'}
+                                          </span>
+                                          {modified && (
+                                            <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">Modifié</span>
+                                          )}
+                                        </div>
+
+                                        {/* Abonnement */}
+                                        {renderEditableField('Abo.', 'subscription_price', '€/mois', offer, cols >= 4)}
+
+                                        {/* Colonnes tarifs selon le type */}
+                                        {offer.offer_type === 'BASE' && (
+                                          renderEditableField('Base', 'base_price', '€/kWh', offer)
+                                        )}
+
+                                        {offer.offer_type === 'BASE_WEEKEND' && (
+                                          <>
+                                            {renderEditableField('Base', 'base_price', '€/kWh', offer)}
+                                            {renderEditableField('WE', 'base_price_weekend', '€/kWh', offer)}
+                                          </>
+                                        )}
+
+                                        {offer.offer_type === 'HC_HP' && (
+                                          <>
+                                            {renderEditableField('HC', 'hc_price', '€/kWh', offer)}
+                                            {renderEditableField('HP', 'hp_price', '€/kWh', offer)}
+                                          </>
+                                        )}
+
+                                        {(offer.offer_type === 'HC_WEEKEND' || offer.offer_type === 'HC_NUIT_WEEKEND') && (
+                                          <>
+                                            {renderEditableField('HC', 'hc_price', '€/kWh', offer, true)}
+                                            {renderEditableField('HP', 'hp_price', '€/kWh', offer, true)}
+                                            {renderEditableField('HC WE', 'hc_price_weekend', '€/kWh', offer, true)}
+                                            {renderEditableField('HP WE', 'hp_price_weekend', '€/kWh', offer, true)}
+                                          </>
+                                        )}
+
+                                        {offer.offer_type === 'TEMPO' && (
+                                          <>
+                                            {renderEditableField('HC Bleu', 'tempo_blue_hc', '€/kWh', offer, true)}
+                                            {renderEditableField('HP Bleu', 'tempo_blue_hp', '€/kWh', offer, true)}
+                                            {renderEditableField('HC Blanc', 'tempo_white_hc', '€/kWh', offer, true)}
+                                            {renderEditableField('HP Blanc', 'tempo_white_hp', '€/kWh', offer, true)}
+                                            {renderEditableField('HC Rouge', 'tempo_red_hc', '€/kWh', offer, true)}
+                                            {renderEditableField('HP Rouge', 'tempo_red_hp', '€/kWh', offer, true)}
+                                          </>
+                                        )}
+
+                                        {offer.offer_type === 'SEASONAL' && (
+                                          <>
+                                            {renderEditableField('HC Été', 'hc_price_summer', '€/kWh', offer, true)}
+                                            {renderEditableField('HP Été', 'hp_price_summer', '€/kWh', offer, true)}
+                                            {renderEditableField('HC Hiver', 'hc_price_winter', '€/kWh', offer, true)}
+                                            {renderEditableField('HP Hiver', 'hp_price_winter', '€/kWh', offer, true)}
+                                          </>
+                                        )}
+
+                                        {offer.offer_type === 'EJP' && (
+                                          <>
+                                            {renderEditableField('Normal', 'ejp_normal', '€/kWh', offer)}
+                                            {renderEditableField('Pointe', 'ejp_peak', '€/kWh', offer)}
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
                               </div>
                             </div>
                           )
-                        })}
-                      </div>
-                    )
                   })}
                 </div>
               )}
@@ -4368,7 +5239,7 @@ Puis retourne le JSON complet.`
         <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-gradient-to-t from-gray-900/90 via-gray-900/70 to-transparent pointer-events-none">
           <div className="max-w-3xl mx-auto pointer-events-auto">
             <button
-              onClick={() => setShowRecapModal(true)}
+              onClick={() => openRecapModal()}
               className="w-full rounded-xl p-3.5 bg-primary-600 hover:bg-primary-700 text-white shadow-lg shadow-primary-600/30 hover:shadow-primary-600/50 transition-all flex items-center justify-center gap-3"
             >
               <Send size={20} />
@@ -4413,84 +5284,190 @@ Puis retourne le JSON complet.`
             {/* Contenu scrollable */}
             <div className="flex-1 overflow-y-auto p-6">
               <div className="space-y-4">
-                {/* Modifications de tarifs — regroupées par offre */}
+                {/* Bouton global Tout sélectionner / Tout désélectionner */}
                 {(() => {
-                  // Toutes les offres modifiées du fournisseur (tous types confondus)
-                  const allModifiedOffers = offersArray
-                    .filter(o => o.provider_id === filterProvider && isOfferModified(o))
-                    .sort((a, b) => {
-                      const powerA = a.power_kva || parseInt(a.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
-                      const powerB = b.power_kva || parseInt(b.name.match(/(\d+)\s*kVA/i)?.[1] || '0')
-                      return powerA - powerB
-                    })
-                  // Regrouper par clean name
-                  const groups: Record<string, typeof allModifiedOffers> = {}
-                  for (const offer of allModifiedOffers) {
-                    const edited = editedOffers[offer.id] || {}
-                    const hasRealChanges = Object.entries(edited).some(([key, value]) => {
-                      if (key === 'valid_from') {
-                        const origStr = String((offer as unknown as Record<string, unknown>)[key] || '')
-                        return value !== origStr
-                      }
-                      const orig = Number((offer as unknown as Record<string, unknown>)[key])
-                      const next = Number(value)
-                      if (isNaN(orig) && isNaN(next)) return false
-                      if (isNaN(orig) || isNaN(next)) return true
-                      return Math.abs(orig - next) > 0.00001
-                    })
-                    if (!hasRealChanges) continue
-                    const cleanName = getCleanOfferName(offer.name)
-                    if (!groups[cleanName]) groups[cleanName] = []
-                    groups[cleanName].push(offer)
-                  }
-                  return Object.entries(groups).map(([groupName, offers]) => (
-                    <div key={groupName} className="bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-                      <div className="px-4 py-2.5 bg-gray-100 dark:bg-gray-800 font-semibold text-sm text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700">
-                        {groupName}
-                      </div>
-                      <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {offers.map(offer => {
-                          const edited = editedOffers[offer.id] || {}
-                          const changes = Object.entries(edited).filter(([key, value]) => {
-                            if (key === 'valid_from') return false
-                            const orig = Number((offer as unknown as Record<string, unknown>)[key])
-                            const next = Number(value)
-                            if (isNaN(orig) && isNaN(next)) return false
-                            if (isNaN(orig) || isNaN(next)) return true
-                            return Math.abs(orig - next) > 0.00001
+                  const allModified = offersArray.filter(o => o.provider_id === filterProvider && isOfferModified(o))
+                  if (allModified.length === 0) return null
+                  const allGlobalSelected = allModified.every(o => !recapExcludedPowers.has(`modified-${o.id}`))
+                  const noneGlobalSelected = allModified.every(o => recapExcludedPowers.has(`modified-${o.id}`))
+                  return (
+                    <div className="flex items-center gap-3 px-1">
+                      <input
+                        type="checkbox"
+                        checked={allGlobalSelected}
+                        ref={el => { if (el) el.indeterminate = !allGlobalSelected && !noneGlobalSelected }}
+                        onChange={() => {
+                          setRecapExcludedPowers(prev => {
+                            const next = new Set(prev)
+                            if (allGlobalSelected) {
+                              allModified.forEach(o => next.add(`modified-${o.id}`))
+                            } else {
+                              allModified.forEach(o => next.delete(`modified-${o.id}`))
+                            }
+                            return next
                           })
-                          const power = getPower(offer.name)
-                          const validFromChanged = edited.valid_from && edited.valid_from !== String((offer as unknown as Record<string, unknown>).valid_from || '')
-                          return (
-                            <div key={offer.id} className="px-4 py-2">
-                              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{power || offer.name}</div>
-                              <div className="flex flex-wrap gap-x-4 gap-y-1">
-                                {validFromChanged && (
-                                  <span className="text-xs flex items-center gap-1">
-                                    <span className="text-gray-500 dark:text-gray-400">Valide depuis</span>
-                                    <span className="text-green-600 dark:text-green-400 font-semibold">{new Date(edited.valid_from).toLocaleDateString('fr-FR', { year: 'numeric', month: 'short' })}</span>
-                                  </span>
+                        }}
+                        className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        {allGlobalSelected ? 'Tout désélectionner' : noneGlobalSelected ? 'Tout sélectionner' : `${allModified.filter(o => !recapExcludedPowers.has(`modified-${o.id}`)).length}/${allModified.length} sélectionnés`}
+                      </span>
+                    </div>
+                  )
+                })()}
+
+                {/* Offres importées — tableau unifié par groupe (modifiées + inchangées) */}
+                {(() => {
+                  // Toutes les offres du fournisseur concernées par l'import (modifiées OU inchangées)
+                  const allRelevantOffers = offersArray
+                    .filter(o => o.provider_id === filterProvider && o.is_active !== false && (isOfferModified(o) || unchangedOfferIds.has(o.id)))
+                    .sort((a, b) => (a.power_kva || 0) - (b.power_kva || 0))
+                  // Regrouper par (clean name + offer_type)
+                  const groups: Record<string, typeof allRelevantOffers> = {}
+                  for (const offer of allRelevantOffers) {
+                    const cleanName = getCleanOfferName(offer.name)
+                    const groupKey = `${cleanName}##${offer.offer_type}`
+                    if (!groups[groupKey]) groups[groupKey] = []
+                    groups[groupKey].push(offer)
+                  }
+                  // Trier : groupes avec modifications en premier, doublons (100% unchanged) en dernier
+                  const sortedEntries = Object.entries(groups).sort(([, offersA], [, offersB]) => {
+                    const hasModA = offersA.some(o => isOfferModified(o))
+                    const hasModB = offersB.some(o => isOfferModified(o))
+                    if (hasModA && !hasModB) return -1
+                    if (!hasModA && hasModB) return 1
+                    return 0
+                  })
+                  return sortedEntries.map(([groupKey, offers]) => {
+                    const [groupName, groupType] = groupKey.split('##')
+                    const groupFieldKeys = getFieldKeysForOfferType(groupType)
+                    const modifiedOffers = offers.filter(o => isOfferModified(o))
+                    const modifiedCount = modifiedOffers.length
+                    const allUnchanged = modifiedCount === 0
+                    // Compteur de sélection (uniquement les offres modifiées)
+                    const selectedCount = modifiedOffers.filter(o => !recapExcludedPowers.has(`modified-${o.id}`)).length
+                    const allSelected = selectedCount === modifiedCount
+                    const noneSelected = selectedCount === 0
+                    return (
+                    <div key={groupKey} className={`rounded-lg border overflow-hidden ${allUnchanged ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'}`}>
+                      <div className={`px-4 py-2.5 font-semibold text-sm border-b flex items-center gap-2 ${allUnchanged ? 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border-red-200 dark:border-red-700' : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white border-gray-200 dark:border-gray-700'}`}>
+                        {groupName}
+                        <span className="text-xs text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 px-1.5 py-0.5 rounded font-medium">{groupType}</span>
+                        {allUnchanged ? (
+                          <span className="text-xs bg-red-200 dark:bg-red-800 text-red-700 dark:text-red-200 px-2 py-0.5 rounded-full font-medium flex items-center gap-1 ml-auto">
+                            <AlertCircle size={10} /> Déjà en base
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-2 ml-auto">
+                            <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded font-medium">
+                              {modifiedCount} modif.
+                            </span>
+                            <span className="text-xs font-normal text-gray-500 dark:text-gray-400">{selectedCount}/{modifiedCount}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className={allUnchanged ? 'bg-red-100/50 dark:bg-red-900/20' : 'bg-gray-100/50 dark:bg-gray-800/50'}>
+                              <th className="px-2 py-1.5 w-8">
+                                {modifiedCount > 0 && (
+                                  <input
+                                    type="checkbox"
+                                    checked={allSelected}
+                                    ref={el => { if (el) el.indeterminate = !allSelected && !noneSelected }}
+                                    onChange={() => {
+                                      setRecapExcludedPowers(prev => {
+                                        const next = new Set(prev)
+                                        if (allSelected) {
+                                          modifiedOffers.forEach(o => next.add(`modified-${o.id}`))
+                                        } else {
+                                          modifiedOffers.forEach(o => next.delete(`modified-${o.id}`))
+                                        }
+                                        return next
+                                      })
+                                    }}
+                                    className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                  />
                                 )}
-                                {changes.map(([key, value]) => {
-                                  const orig = Number((offer as unknown as Record<string, unknown>)[key])
-                                  const next = Number(value)
-                                  const isSub = key === 'subscription_price'
-                                  return (
-                                    <span key={key} className="text-xs flex items-center gap-1">
-                                      <span className="text-gray-500 dark:text-gray-400">{fieldLabels[key] || key}</span>
-                                      <span className="text-red-500 line-through font-mono">{isNaN(orig) ? '-' : orig.toFixed(isSub ? 2 : 4)}</span>
-                                      <span className="text-gray-400">→</span>
-                                      <span className="text-green-600 dark:text-green-400 font-semibold font-mono">{isNaN(next) ? '-' : next.toFixed(isSub ? 2 : 4)}</span>
-                                    </span>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          )
-                        })}
+                              </th>
+                              <th className="px-3 py-1.5 text-left font-semibold text-gray-600 dark:text-gray-400 w-16">kVA</th>
+                              <th className="px-3 py-1.5 text-right font-semibold text-gray-600 dark:text-gray-400">Abo.</th>
+                              {groupFieldKeys.map(k => (
+                                <th key={k} className={`px-2 py-1.5 text-right font-semibold ${getLabelColor(fieldLabels[k] || k)}`}>
+                                  {fieldLabels[k] || k}
+                                </th>
+                              ))}
+                              {offers.some(o => unchangedOfferIds.has(o.id)) && <th className="px-2 py-1.5 w-8"></th>}
+                            </tr>
+                          </thead>
+                          <tbody className={`divide-y ${allUnchanged ? 'divide-red-200 dark:divide-red-800' : 'divide-gray-200 dark:divide-gray-700'}`}>
+                            {offers.map(offer => {
+                              const isModified = isOfferModified(offer)
+                              const isUnchanged = !isModified && unchangedOfferIds.has(offer.id)
+                              const exclusionKey = `modified-${offer.id}`
+                              const isExcluded = isModified && recapExcludedPowers.has(exclusionKey)
+                              const edited = editedOffers[offer.id] || {}
+                              const allFields = ['subscription_price', ...groupFieldKeys]
+                              return (
+                                <tr key={offer.id} className={`${isModified && !isExcluded ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''} ${isUnchanged ? 'bg-red-50/50 dark:bg-red-900/10' : ''} ${isExcluded ? 'opacity-30' : ''}`}>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {isModified ? (
+                                      <input
+                                        type="checkbox"
+                                        checked={!isExcluded}
+                                        onChange={() => {
+                                          setRecapExcludedPowers(prev => {
+                                            const next = new Set(prev)
+                                            if (next.has(exclusionKey)) next.delete(exclusionKey)
+                                            else next.add(exclusionKey)
+                                            return next
+                                          })
+                                        }}
+                                        className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                      />
+                                    ) : isUnchanged ? (
+                                      <AlertCircle size={14} className="text-red-500 dark:text-red-400 inline" />
+                                    ) : null}
+                                  </td>
+                                  <td className="px-3 py-1.5 font-bold text-gray-900 dark:text-white">{offer.power_kva || '?'}</td>
+                                  {allFields.map(key => {
+                                    const origVal = Number((offer as unknown as Record<string, unknown>)[key])
+                                    const isSub = key === 'subscription_price'
+                                    const editedVal = edited[key]
+                                    const hasChange = editedVal !== undefined && (() => {
+                                      const next = Number(editedVal)
+                                      if (isNaN(origVal) && isNaN(next)) return false
+                                      if (isNaN(origVal) || isNaN(next)) return true
+                                      return Math.abs(origVal - next) > 0.00001
+                                    })()
+                                    return (
+                                      <td key={key} className={`${isSub ? 'px-3' : 'px-2'} py-1.5 text-right font-mono`}>
+                                        {hasChange ? (
+                                          <span className="flex items-center justify-end gap-1">
+                                            <span className="text-red-500 line-through">{isNaN(origVal) ? '-' : origVal.toFixed(isSub ? 2 : 4)}</span>
+                                            <span className="text-gray-400">→</span>
+                                            <span className="text-green-600 dark:text-green-400 font-semibold">{Number(editedVal).toFixed(isSub ? 2 : 4)}</span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-gray-700 dark:text-gray-300">{isNaN(origVal) ? '-' : origVal.toFixed(isSub ? 2 : 4)}{isSub ? ' €' : ''}</span>
+                                        )}
+                                      </td>
+                                    )
+                                  })}
+                                  {offers.some(o => unchangedOfferIds.has(o.id)) && (
+                                    <td className="px-2 py-1.5 text-center">
+                                      {isUnchanged && <AlertCircle size={12} className="text-red-500 inline" />}
+                                    </td>
+                                  )}
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
-                  ))
+                  )})
                 })()}
 
                 {/* Fournisseurs à supprimer */}
@@ -4539,45 +5516,133 @@ Puis retourne le JSON complet.`
                   </div>
                 )}
 
-                {/* Modifications de puissances */}
-                {(newPowersData.length > 0 || powersToRemove.length > 0) && (
-                  <div className="bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-                    <div className="px-4 py-2.5 bg-gray-100 dark:bg-gray-800 font-semibold text-sm text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700">
-                      Puissances
-                      {sortedProviders.find(p => p.id === filterProvider) && (
-                        <span className="text-xs font-normal text-gray-500 ml-2">
-                          {sortedProviders.find(p => p.id === filterProvider)?.name} — {filterOfferType}
-                        </span>
-                      )}
+                {/* Modifications de puissances — regroupées par offre et période */}
+                {(newPowersData.length > 0 || powersToRemove.length > 0) && (() => {
+                  // Regrouper les nouvelles puissances par offre + période, en gardant l'index global
+                  const groupedByOfferAndPeriod: Record<string, Array<{ data: typeof newPowersData[0]; globalIndex: number }>> = {}
+                  for (let i = 0; i < newPowersData.length; i++) {
+                    const newPower = newPowersData[i]
+                    const offerKey = `${newPower.offer_name || 'Sans nom'} (${newPower.offer_type || filterOfferType})`
+                    const periodKey = newPower.valid_from
+                      ? (newPower.valid_to
+                        ? `${new Date(newPower.valid_from).toLocaleDateString('fr-FR', { year: 'numeric', month: 'short' })} → ${new Date(newPower.valid_to).toLocaleDateString('fr-FR', { year: 'numeric', month: 'short' })}`
+                        : `Valide depuis ${new Date(newPower.valid_from).toLocaleDateString('fr-FR', { year: 'numeric', month: 'short' })}`)
+                      : 'Offre active'
+                    const groupKey = `${offerKey}##${periodKey}`
+                    if (!groupedByOfferAndPeriod[groupKey]) groupedByOfferAndPeriod[groupKey] = []
+                    groupedByOfferAndPeriod[groupKey].push({ data: newPower, globalIndex: i })
+                  }
+
+                  return Object.entries(groupedByOfferAndPeriod).map(([groupKey, powersWithIndex]) => {
+                    const [offerInfo, periodInfo] = groupKey.split('##')
+                    const powerFieldKeys = powersWithIndex[0] ? getFieldKeysForOfferType(powersWithIndex[0].data.offer_type || filterOfferType) : []
+                    const selectedCount = powersWithIndex.filter(p => !recapExcludedPowers.has(`newpower-${p.globalIndex}`)).length
+                    const allSelected = selectedCount === powersWithIndex.length
+                    const noneSelected = selectedCount === 0
+                    return (
+                      <div key={groupKey} className="bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-700 overflow-hidden">
+                        <div className="px-4 py-2.5 bg-green-100 dark:bg-green-900/40 font-semibold text-sm text-green-800 dark:text-green-300 border-b border-green-200 dark:border-green-700 flex items-center gap-2 flex-wrap">
+                          <Plus size={14} />
+                          {offerInfo}
+                          <span className="text-xs font-normal text-green-600 dark:text-green-400">{periodInfo}</span>
+                          {/* Boutons Tous / Aucun */}
+                          <div className="flex items-center gap-1 ml-auto">
+                            <span className="text-xs font-normal text-green-600 dark:text-green-400">{selectedCount}/{powersWithIndex.length}</span>
+                            <button
+                              onClick={() => {
+                                setRecapExcludedPowers(prev => {
+                                  const next = new Set(prev)
+                                  powersWithIndex.forEach(p => next.delete(`newpower-${p.globalIndex}`))
+                                  return next
+                                })
+                              }}
+                              disabled={allSelected}
+                              className={`text-xs px-2 py-0.5 rounded font-medium transition-colors ${allSelected ? 'text-gray-400 dark:text-gray-600 cursor-default' : 'text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-800/30'}`}
+                            >
+                              Tous
+                            </button>
+                            <button
+                              onClick={() => {
+                                setRecapExcludedPowers(prev => {
+                                  const next = new Set(prev)
+                                  powersWithIndex.forEach(p => next.add(`newpower-${p.globalIndex}`))
+                                  return next
+                                })
+                              }}
+                              disabled={noneSelected}
+                              className={`text-xs px-2 py-0.5 rounded font-medium transition-colors ${noneSelected ? 'text-gray-400 dark:text-gray-600 cursor-default' : 'text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30'}`}
+                            >
+                              Aucun
+                            </button>
+                          </div>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-green-100/50 dark:bg-green-900/20">
+                                <th className="px-2 py-1.5 w-8"></th>
+                                <th className="px-3 py-1.5 text-left font-semibold text-gray-600 dark:text-gray-400 w-16">kVA</th>
+                                <th className="px-3 py-1.5 text-right font-semibold text-gray-600 dark:text-gray-400">Abo.</th>
+                                {powerFieldKeys.map(k => (
+                                  <th key={k} className={`px-2 py-1.5 text-right font-semibold ${getLabelColor(fieldLabels[k] || k)}`}>
+                                    {fieldLabels[k] || k}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-green-200 dark:divide-green-800">
+                              {powersWithIndex.map(({ data: newPower, globalIndex }) => {
+                                const exclusionKey = `newpower-${globalIndex}`
+                                const isExcluded = recapExcludedPowers.has(exclusionKey)
+                                return (
+                                  <tr key={`add-${globalIndex}`} className={isExcluded ? 'opacity-40' : ''}>
+                                    <td className="px-2 py-1.5 text-center">
+                                      <input
+                                        type="checkbox"
+                                        checked={!isExcluded}
+                                        onChange={() => {
+                                          setRecapExcludedPowers(prev => {
+                                            const next = new Set(prev)
+                                            if (next.has(exclusionKey)) next.delete(exclusionKey)
+                                            else next.add(exclusionKey)
+                                            return next
+                                          })
+                                        }}
+                                        className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                      />
+                                    </td>
+                                    <td className="px-3 py-1.5 font-bold text-gray-900 dark:text-white">{newPower.power}</td>
+                                    <td className="px-3 py-1.5 text-right font-medium text-gray-700 dark:text-gray-300">
+                                      {newPower.fields.subscription_price ? `${newPower.fields.subscription_price} €` : '-'}
+                                    </td>
+                                    {powerFieldKeys.map(k => (
+                                      <td key={k} className="px-2 py-1.5 text-right font-mono text-gray-700 dark:text-gray-300">
+                                        {newPower.fields[k] || '-'}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )
+                  })
+                })()}
+
+                {/* Puissances à supprimer */}
+                {powersToRemove.length > 0 && (
+                  <div className="bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 overflow-hidden">
+                    <div className="px-4 py-2.5 bg-red-100 dark:bg-red-900/40 font-semibold text-sm text-red-800 dark:text-red-300 border-b border-red-200 dark:border-red-700 flex items-center gap-2">
+                      <Trash2 size={14} />
+                      Suppression de puissances
                     </div>
-                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                    <div className="divide-y divide-red-200 dark:divide-red-800">
                       {[...powersToRemove].sort((a, b) => a.power - b.power).map(({ power, groupName }) => (
                         <div key={`remove-${groupName}-${power}`} className="px-4 py-2 flex items-center justify-between text-red-600 dark:text-red-400">
                           <span className="text-xs flex items-center gap-1"><Trash2 size={12} /> Supprimer <span className="text-gray-500 dark:text-gray-400">({groupName})</span></span>
                           <span className="text-xs font-semibold">{power} kVA</span>
-                        </div>
-                      ))}
-                      {newPowersData.map((newPower, index) => (
-                        <div key={`add-${index}`} className="px-4 py-2">
-                          <div className="flex items-center justify-between text-green-600 dark:text-green-400">
-                            <span className="text-xs flex items-center gap-1">
-                              <Plus size={12} /> Ajouter
-                              {newPower.offer_type && (
-                                <span className="text-purple-500 dark:text-purple-400 ml-1">({newPower.offer_type})</span>
-                              )}
-                            </span>
-                            <span className="text-xs font-semibold">{newPower.power} kVA</span>
-                          </div>
-                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-                            {newPower.fields.subscription_price && (
-                              <span className="text-xs text-gray-500">Abo: {newPower.fields.subscription_price} €/mois</span>
-                            )}
-                            {Object.entries(newPower.fields)
-                              .filter(([k]) => k !== 'subscription_price' && newPower.fields[k as keyof typeof newPower.fields])
-                              .map(([k, v]) => (
-                                <span key={k} className="text-xs text-gray-500">{fieldLabels[k] || k}: {v} €/kWh</span>
-                              ))}
-                          </div>
                         </div>
                       ))}
                     </div>
@@ -4613,36 +5678,151 @@ Puis retourne le JSON complet.`
                 )}
 
                 {/* Nouveaux groupes d'offres */}
-                {newGroups.length > 0 && (
-                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700 overflow-hidden">
-                    <div className="px-4 py-2.5 bg-blue-100 dark:bg-blue-900/40 font-semibold text-sm text-blue-800 dark:text-blue-300 border-b border-blue-200 dark:border-blue-700 flex items-center gap-2">
-                      <Package size={14} />
-                      Nouveaux groupes ({newGroups.length})
+                {newGroups.length > 0 && newGroups.map((group, index) => {
+                  const groupType = group.offer_type || filterOfferType
+                  const groupFieldKeys = getFieldKeysForOfferType(groupType)
+                  const isAlreadyInDb = group.alreadyInDb === true
+                  const hasDuplicates = !isAlreadyInDb && group.powers.some(p => p.power > 0 && existingPowers.some(ep =>
+                    ep.power === p.power && ep.offer_type === groupType &&
+                    periodsOverlap(group.validFrom || undefined, group.validTo || undefined, ep.valid_from, ep.valid_to)
+                  ))
+                  // Compter les puissances sélectionnées dans ce groupe
+                  const selectedCount = group.powers.filter((_, pi) => !recapExcludedPowers.has(`group-${index}-${pi}`)).length
+                  const allSelected = selectedCount === group.powers.length
+                  const noneSelected = selectedCount === 0
+                  // Styles : rouge pour doublons, gris pour déjà en base, bleu pour nouveau
+                  const containerClass = hasDuplicates
+                    ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700'
+                    : isAlreadyInDb
+                      ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700'
+                      : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
+                  const headerClass = hasDuplicates
+                    ? 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border-red-200 dark:border-red-700'
+                    : isAlreadyInDb
+                      ? 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 border-red-200 dark:border-red-700'
+                      : 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-700'
+                  return (
+                    <div key={`recap-group-${index}`} className={`rounded-lg border overflow-hidden ${containerClass}`}>
+                      {/* En-tête du groupe */}
+                      <div className={`px-4 py-2.5 font-semibold text-sm border-b flex items-center gap-2 flex-wrap ${headerClass}`}>
+                        <Package size={14} />
+                        {group.name || <span className="italic text-gray-400">Sans nom</span>}
+                        {group.offer_type && (
+                          <span className="text-xs text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 px-1.5 py-0.5 rounded font-medium">{group.offer_type}</span>
+                        )}
+                        {(group.validFrom || group.validTo) && (
+                          <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                            {group.validFrom && group.validTo
+                              ? `${new Date(group.validFrom).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })} → ${new Date(group.validTo).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}`
+                              : group.validFrom ? `Depuis ${new Date(group.validFrom).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+                          </span>
+                        )}
+                        {isAlreadyInDb && (
+                          <span className="text-xs bg-red-200 dark:bg-red-800 text-red-700 dark:text-red-200 px-2 py-0.5 rounded-full font-medium flex items-center gap-1 ml-auto">
+                            <AlertCircle size={10} /> Déjà en base
+                          </span>
+                        )}
+                        {hasDuplicates && (
+                          <span className="text-xs bg-red-200 dark:bg-red-800 text-red-700 dark:text-red-200 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                            <AlertCircle size={10} /> Doublons détectés
+                          </span>
+                        )}
+                        {!isAlreadyInDb && <span className="text-xs font-normal text-gray-500 dark:text-gray-400 ml-auto">{selectedCount}/{group.powers.length}</span>}
+                      </div>
+
+                      {/* Tableau des puissances */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className={`${hasDuplicates ? 'bg-red-100/50 dark:bg-red-900/20' : isAlreadyInDb ? 'bg-red-100/50 dark:bg-red-900/20' : 'bg-blue-100/50 dark:bg-blue-900/20'}`}>
+                              <th className="px-2 py-1.5 w-8">
+                                {!isAlreadyInDb && (
+                                  <input
+                                    type="checkbox"
+                                    checked={allSelected}
+                                    ref={el => { if (el) el.indeterminate = !allSelected && !noneSelected }}
+                                    onChange={() => {
+                                      setRecapExcludedPowers(prev => {
+                                        const next = new Set(prev)
+                                        if (allSelected) {
+                                          group.powers.forEach((_, pi) => next.add(`group-${index}-${pi}`))
+                                        } else {
+                                          group.powers.forEach((_, pi) => next.delete(`group-${index}-${pi}`))
+                                        }
+                                        return next
+                                      })
+                                    }}
+                                    className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                  />
+                                )}
+                              </th>
+                              <th className="px-3 py-1.5 text-left font-semibold text-gray-600 dark:text-gray-400 w-16">kVA</th>
+                              <th className="px-3 py-1.5 text-right font-semibold text-gray-600 dark:text-gray-400">Abo.</th>
+                              {groupFieldKeys.map(k => (
+                                <th key={k} className={`px-2 py-1.5 text-right font-semibold ${getLabelColor(fieldLabels[k] || k)}`}>
+                                  {fieldLabels[k] || k}
+                                </th>
+                              ))}
+                              {hasDuplicates && <th className="px-2 py-1.5 w-8"></th>}
+                            </tr>
+                          </thead>
+                          <tbody className={`divide-y ${hasDuplicates ? 'divide-red-200 dark:divide-red-800' : isAlreadyInDb ? 'divide-gray-200 dark:divide-gray-700' : 'divide-blue-200 dark:divide-blue-700'}`}>
+                            {group.powers.map((power, powerIndex) => {
+                              const isDup = power.power > 0 && existingPowers.some(ep =>
+                                ep.power === power.power && ep.offer_type === groupType &&
+                                periodsOverlap(group.validFrom || undefined, group.validTo || undefined, ep.valid_from, ep.valid_to)
+                              )
+                              const exclusionKey = `group-${index}-${powerIndex}`
+                              const isExcluded = recapExcludedPowers.has(exclusionKey)
+                              return (
+                                <tr key={`recap-group-${index}-power-${powerIndex}`} className={`${isDup ? 'bg-red-50/50 dark:bg-red-900/10' : ''} ${isExcluded && !isAlreadyInDb ? 'opacity-40' : ''}`}>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {isAlreadyInDb ? (
+                                      <AlertCircle size={14} className="text-red-500 dark:text-red-400 inline" />
+                                    ) : (
+                                      <input
+                                        type="checkbox"
+                                        checked={!isExcluded}
+                                        onChange={() => {
+                                          setRecapExcludedPowers(prev => {
+                                            const next = new Set(prev)
+                                            if (next.has(exclusionKey)) next.delete(exclusionKey)
+                                            else next.add(exclusionKey)
+                                            return next
+                                          })
+                                        }}
+                                        className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                      />
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-1.5 font-bold text-gray-900 dark:text-white">{power.power || '?'}</td>
+                                  <td className="px-3 py-1.5 text-right font-medium text-gray-700 dark:text-gray-300">
+                                    {power.fields.subscription_price ? `${power.fields.subscription_price} €` : '-'}
+                                  </td>
+                                  {groupFieldKeys.map(k => (
+                                    <td key={k} className="px-2 py-1.5 text-right font-mono text-gray-700 dark:text-gray-300">
+                                      {power.fields[k] || '-'}
+                                    </td>
+                                  ))}
+                                  {hasDuplicates && (
+                                    <td className="px-2 py-1.5 text-center">
+                                      {isDup && <AlertCircle size={12} className="text-red-500 inline" />}
+                                    </td>
+                                  )}
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                    <div className="divide-y divide-blue-200 dark:divide-blue-700">
-                      {newGroups.map((group, index) => (
-                        <div key={`recap-group-${index}`} className="px-4 py-2">
-                          <div className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">
-                            {group.name || <span className="italic text-gray-400">Nom non défini</span>}
-                          </div>
-                          {group.powers.map((power, powerIndex) => (
-                            <div key={`recap-group-${index}-power-${powerIndex}`} className="text-xs text-blue-600 dark:text-blue-400 flex flex-wrap gap-x-3">
-                              <span className="font-medium">{power.power || '?'} kVA</span>
-                              {power.fields.subscription_price && <span>Abo: {power.fields.subscription_price} €/mois</span>}
-                              {power.fields.base_price && <span>Base: {power.fields.base_price}</span>}
-                              {power.fields.hc_price && <span>HC: {power.fields.hc_price}</span>}
-                              {power.fields.hp_price && <span>HP: {power.fields.hp_price}</span>}
-                            </div>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                  )
+                })}
                 {/* Warning si aucune modification significative */}
                 {(() => {
                   const hasAnyContent =
                     offersArray.some(o => o.provider_id === filterProvider && isOfferModified(o)) ||
+                    unchangedOfferIds.size > 0 ||
                     newPowersData.length > 0 ||
                     powersToRemove.length > 0 ||
                     providersToRemove.length > 0 ||
@@ -4762,6 +5942,7 @@ Puis retourne le JSON complet.`
                       setNewGroups([])
                       setEditedOfferNames({})
                       setDeprecatedOffers([])
+                      setUnchangedOfferIds(new Set())
                       setShowRecapModal(false)
                     }}
                     className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg transition-colors"
@@ -4778,6 +5959,62 @@ Puis retourne le JSON complet.`
                   Fermer
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modale de confirmation de suppression d'offres expirées */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setDeleteConfirm(null)}>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-shrink-0 w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <Trash2 className="text-red-600 dark:text-red-400" size={24} />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Supprimer définitivement
+              </h3>
+            </div>
+            <p className="text-gray-700 dark:text-gray-300 mb-2">
+              Supprimer le groupe <strong>{getGroupNameWithoutPeriod(deleteConfirm.groupName)}</strong>{getGroupPeriodLabel(deleteConfirm.groupName) ? ` (${getGroupPeriodLabel(deleteConfirm.groupName)})` : ''} ?
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              {deleteConfirm.offers.length} offre{deleteConfirm.offers.length > 1 ? 's' : ''} ({deleteConfirm.offers.map(o => `${o.power_kva} kVA`).join(', ')}) seront supprimées de la base de données. Cette action est irréversible.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium text-sm"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={async () => {
+                  const { groupName, offers } = deleteConfirm
+                  setDeleteConfirm(null)
+                  setDeletingGroups(prev => new Set(prev).add(groupName))
+                  try {
+                    for (const offer of offers) {
+                      await energyApi.deleteOffer(offer.id)
+                    }
+                    toast.success(`${offers.length} offre${offers.length > 1 ? 's' : ''} supprimée${offers.length > 1 ? 's' : ''} (${getGroupNameWithoutPeriod(groupName)}${getGroupPeriodLabel(groupName) ? ` - ${getGroupPeriodLabel(groupName)}` : ''})`)
+                    queryClient.invalidateQueries({ queryKey: ['energy-offers'] })
+                  } catch {
+                    toast.error('Erreur lors de la suppression')
+                  } finally {
+                    setDeletingGroups(prev => {
+                      const next = new Set(prev)
+                      next.delete(groupName)
+                      return next
+                    })
+                  }
+                }}
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors font-medium flex items-center gap-2 text-sm"
+              >
+                <Trash2 size={16} />
+                Supprimer
+              </button>
             </div>
           </div>
         </div>

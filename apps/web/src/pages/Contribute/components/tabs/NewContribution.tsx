@@ -3,9 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, FileJson, X } from 'lucide-react'
 import { energyApi, type EnergyProvider, type ContributionData } from '@/api/energy'
 import { toast } from '@/stores/notificationStore'
-import { SingleDatePicker } from '@/components/SingleDatePicker'
 import PowerVariantForm from '../forms/PowerVariantForm'
-import { type PowerVariant } from '../../types'
+import ValidityPeriodManager from '../ValidityPeriodManager'
+import { type PowerVariant, type ValidityPeriod } from '../../types'
 import { formatPrice } from '../../utils'
 
 interface NewContributionProps {
@@ -22,7 +22,7 @@ interface NewContributionProps {
     powerVariants: PowerVariant[]
     priceSheetUrl: string
     screenshotUrl: string
-    validFrom: string
+    validityPeriods: ValidityPeriod[]
   }
   onFormStateChange: (key: string, value: unknown) => void
 }
@@ -93,7 +93,13 @@ export default function NewContribution({
     onFormStateChange('providerName', '')
     onFormStateChange('providerWebsite', '')
     onFormStateChange('selectedProviderId', '')
-    onFormStateChange('validFrom', new Date().toISOString().split('T')[0])
+    onFormStateChange('validityPeriods', [
+      {
+        id: `period-${Date.now()}`,
+        validFrom: new Date().toISOString().split('T')[0],
+        validTo: '',
+      },
+    ])
     setEditingContributionId(null)
   }
 
@@ -105,7 +111,31 @@ export default function NewContribution({
     onFormStateChange('powerVariants', formState.powerVariants.filter((_, i) => i !== index))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  /**
+   * Vérifie si les périodes se chevauchent
+   */
+  const hasOverlappingPeriods = (periods: ValidityPeriod[]): boolean => {
+    for (let i = 0; i < periods.length; i++) {
+      for (let j = i + 1; j < periods.length; j++) {
+        const p1 = periods[i]
+        const p2 = periods[j]
+
+        if (!p1.validFrom || !p2.validFrom) continue
+
+        const start1 = new Date(p1.validFrom)
+        const end1 = p1.validTo ? new Date(p1.validTo) : new Date('9999-12-31')
+        const start2 = new Date(p2.validFrom)
+        const end2 = p2.validTo ? new Date(p2.validTo) : new Date('9999-12-31')
+
+        if (start1 <= end2 && start2 <= end1) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     // Validation : au moins une variante de puissance
@@ -114,46 +144,155 @@ export default function NewContribution({
       return
     }
 
-    const contributionData: ContributionData = {
-      contribution_type: formState.contributionType,
-      offer_name: formState.offerName,
-      offer_type: formState.offerType,
-      description: formState.description || undefined,
-      power_variants: formState.powerVariants,
-      price_sheet_url: formState.priceSheetUrl,
-      screenshot_url: formState.screenshotUrl || undefined,
-      valid_from: formState.validFrom || new Date().toISOString().split('T')[0],
+    // Validation : au moins une période de validité
+    if (formState.validityPeriods.length === 0) {
+      toast.error('Veuillez ajouter au moins une période de validité')
+      return
     }
 
-    if (formState.contributionType === 'NEW_PROVIDER') {
-      contributionData.provider_name = formState.providerName
-      contributionData.provider_website = formState.providerWebsite || undefined
-    } else {
-      contributionData.existing_provider_id = formState.selectedProviderId
+    // Validation : pas de chevauchement de périodes
+    if (hasOverlappingPeriods(formState.validityPeriods)) {
+      toast.error('Les périodes de validité ne doivent pas se chevaucher')
+      return
     }
 
-    // If editing an existing contribution, update it. Otherwise, create a new one.
+    // Mode édition : une seule période autorisée (modification de contribution existante)
     if (editingContributionId) {
+      if (formState.validityPeriods.length > 1) {
+        toast.error('En mode édition, une seule période est autorisée')
+        return
+      }
+
+      const period = formState.validityPeriods[0]
+      const contributionData: ContributionData = {
+        contribution_type: formState.contributionType,
+        offer_name: formState.offerName,
+        offer_type: formState.offerType,
+        description: formState.description || undefined,
+        power_variants: formState.powerVariants,
+        price_sheet_url: formState.priceSheetUrl,
+        screenshot_url: formState.screenshotUrl || undefined,
+        valid_from: period.validFrom || new Date().toISOString().split('T')[0],
+        ...(period.validTo ? { pricing_data: { valid_to: period.validTo } } : {}),
+      }
+
+      if (formState.contributionType === 'NEW_PROVIDER') {
+        contributionData.provider_name = formState.providerName
+        contributionData.provider_website = formState.providerWebsite || undefined
+      } else {
+        contributionData.existing_provider_id = formState.selectedProviderId
+      }
+
       updateMutation.mutate({ contributionId: editingContributionId, data: contributionData })
-    } else {
-      submitMutation.mutate(contributionData)
+      return
+    }
+
+    // Mode création : créer une contribution par période
+    const loadingId = toast.loading(`Soumission de ${formState.validityPeriods.length} contribution(s) en cours...`)
+    let successCount = 0
+    let errorCount = 0
+    const errors: string[] = []
+
+    try {
+      for (const period of formState.validityPeriods) {
+        const contributionData: ContributionData = {
+          contribution_type: formState.contributionType,
+          offer_name: formState.offerName,
+          offer_type: formState.offerType,
+          description: formState.description || undefined,
+          power_variants: formState.powerVariants,
+          price_sheet_url: formState.priceSheetUrl,
+          screenshot_url: formState.screenshotUrl || undefined,
+          valid_from: period.validFrom || new Date().toISOString().split('T')[0],
+          ...(period.validTo ? { pricing_data: { valid_to: period.validTo } } : {}),
+        }
+
+        if (formState.contributionType === 'NEW_PROVIDER') {
+          contributionData.provider_name = formState.providerName
+          contributionData.provider_website = formState.providerWebsite || undefined
+        } else {
+          contributionData.existing_provider_id = formState.selectedProviderId
+        }
+
+        try {
+          await energyApi.submitContribution(contributionData)
+          successCount++
+        } catch (error: unknown) {
+          errorCount++
+          const errorMessage = (error as Error)?.message || 'Erreur inconnue'
+          const periodLabel = period.validTo
+            ? `${period.validFrom} → ${period.validTo}`
+            : `${period.validFrom} → active`
+          errors.push(`Période ${periodLabel}: ${errorMessage}`)
+        }
+      }
+
+      // Invalider le cache des contributions
+      queryClient.invalidateQueries({ queryKey: ['my-contributions'] })
+
+      // Afficher le résultat
+      toast.dismiss(loadingId)
+      if (errorCount === 0) {
+        toast.success(`${successCount} contribution(s) soumise(s) avec succès ! Les administrateurs vont les vérifier.`)
+        resetForm()
+      } else if (successCount > 0) {
+        toast.warning(`${successCount} contribution(s) réussie(s), ${errorCount} échec(s). Vérifiez les détails ci-dessous.`)
+        if (errors.length > 0) {
+          errors.forEach((err) => toast.error(err, { duration: 8000 }))
+        }
+      } else {
+        toast.error(`Toutes les contributions ont échoué. Vérifiez les détails ci-dessous.`)
+        if (errors.length > 0) {
+          errors.forEach((err) => toast.error(err, { duration: 8000 }))
+        }
+      }
+    } catch (error: unknown) {
+      toast.dismiss(loadingId)
+      const errorMessage = (error as Error)?.message || 'Une erreur est survenue'
+      toast.error(`Erreur globale: ${errorMessage}`)
     }
   }
 
   const handleJsonImport = async () => {
     try {
       const data = JSON.parse(jsonImportData)
-      const contributions = Array.isArray(data) ? data : [data]
+
+      // Support pour deux formats :
+      // 1. Format avec wrapper : { provider_name, data_source, extraction_date, offers: [...] }
+      // 2. Format direct : [...] ou {...}
+      let contributions: unknown[]
+      if (data.offers && Array.isArray(data.offers)) {
+        // Format avec wrapper structure
+        contributions = data.offers
+      } else if (Array.isArray(data)) {
+        // Format direct array
+        contributions = data
+      } else {
+        // Format objet unique
+        contributions = [data]
+      }
+
+      // Validation : détecter l'erreur courante "valid_until" au lieu de "valid_to" dans "pricing_data"
+      const invalidContributions = contributions.filter((contrib: any) =>
+        contrib.valid_until && (!contrib.pricing_data || !contrib.pricing_data.valid_to)
+      )
+      if (invalidContributions.length > 0) {
+        toast.error(
+          `❌ Format incorrect détecté : ${invalidContributions.length} offre(s) utilisent "valid_until" au lieu de "valid_to" dans "pricing_data". Ces offres seront créées comme ACTIVES au lieu d'expirées !`,
+          { duration: 10000 }
+        )
+        return
+      }
 
       setImportProgress({ current: 0, total: contributions.length, errors: [] })
       const errors: string[] = []
 
       for (let i = 0; i < contributions.length; i++) {
         try {
-          await energyApi.submitContribution(contributions[i])
+          await energyApi.submitContribution(contributions[i] as ContributionData)
           setImportProgress({ current: i + 1, total: contributions.length, errors })
         } catch (error: unknown) {
-          const offerName = contributions[i].offer_name || 'Inconnue'
+          const offerName = (contributions[i] as any).offer_name || 'Inconnue'
           const errorMessage = (error as Error)?.message || 'Erreur inconnue'
           const errorMsg = `Offre ${i + 1} (${offerName}): ${errorMessage}`
           errors.push(errorMsg)
@@ -214,10 +353,75 @@ export default function NewContribution({
       {showJsonImport ? (
         <div className="space-y-4">
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-lg">
-            <h3 className="font-semibold mb-2 text-blue-900 dark:text-blue-100">📋 Structure du fichier JSON</h3>
+            <h3 className="font-semibold mb-2 text-blue-900 dark:text-blue-100">📋 Formats JSON supportés</h3>
             <p className="text-sm text-blue-800 dark:text-blue-200 mb-3">
-              Vous pouvez importer une ou plusieurs offres en utilisant un tableau JSON.
+              Le système supporte deux formats d'import. Les offres sont automatiquement triées par date de validité.
             </p>
+
+            {/* Format 1 : Wrapper avec métadonnées (recommandé) */}
+            <div className="mt-3 p-3 bg-white dark:bg-gray-800 rounded border border-green-300 dark:border-green-700">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-mono text-gray-700 dark:text-gray-300">Format 1 : Wrapper avec métadonnées</p>
+                <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded">Recommandé</span>
+              </div>
+              <pre className="text-xs text-gray-600 dark:text-gray-400 overflow-x-auto">
+{`{
+  "provider_name": "EDF",
+  "data_source": "https://www.edf.fr/grille-tarifaire.pdf",
+  "extraction_date": "2026-02-09",
+  "offers": [
+    {
+      "contribution_type": "NEW_OFFER",
+      "existing_provider_id": "uuid-fournisseur",
+      "offer_name": "Mon offre (2024)",
+      "offer_type": "BASE",
+      "valid_from": "2024-01-01",
+      "pricing_data": { "valid_to": "2024-12-31" },
+      "price_sheet_url": "https://...",
+      "power_variants": [
+        {
+          "power_kva": 6,
+          "subscription_price": 13.95,
+          "base_price": 18.50
+        }
+      ]
+    }
+  ]
+}`}
+              </pre>
+              <p className="text-xs text-green-700 dark:text-green-400 mt-2">
+                ✅ <strong>Recommandé</strong> : Ce format permet de tracer la source des données (fournisseur, origine, date d'extraction)
+              </p>
+            </div>
+
+            {/* Format 2 : Array direct */}
+            <div className="mt-3 p-3 bg-white dark:bg-gray-800 rounded border border-blue-300 dark:border-blue-700">
+              <p className="text-xs font-mono text-gray-700 dark:text-gray-300 mb-2">Format 2 : Array direct (simple)</p>
+              <pre className="text-xs text-gray-600 dark:text-gray-400 overflow-x-auto">
+{`[
+  {
+    "contribution_type": "NEW_OFFER",
+    "existing_provider_id": "uuid-fournisseur",
+    "offer_name": "Mon offre (2024)",
+    "offer_type": "BASE",
+    "valid_from": "2024-01-01",
+    "pricing_data": { "valid_to": "2024-12-31" },
+    "price_sheet_url": "https://...",
+    "power_variants": [...]
+  }
+]`}
+              </pre>
+            </div>
+
+            {/* Avertissements importants */}
+            <div className="mt-3 space-y-2">
+              <p className="text-xs text-orange-700 dark:text-orange-400">
+                ⚠️ <strong>Important</strong> : Pour les offres expirées, mettez <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">valid_to</code> dans <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">pricing_data</code>, pas à la racine !
+              </p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                💡 Les prix doivent être en <strong>centimes</strong> (ex: 18.50 = 1850 centimes)
+              </p>
+            </div>
           </div>
 
           <div>
@@ -507,20 +711,22 @@ export default function NewContribution({
             </div>
           </div>
 
-          {/* Date de mise en service */}
-          {/* Date de mise en service */}
-          <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-            <SingleDatePicker
-              value={formState.validFrom || new Date().toISOString().split('T')[0]}
-              onChange={(date) => onFormStateChange('validFrom', date)}
-              label="Date de mise en service du tarif"
-              required
-              minDate="2020-01-01"
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-              Par défaut : la date du jour. Modifiez si le tarif est entré en vigueur à une date antérieure.
-            </p>
-          </div>
+          {/* Periods de validité */}
+          <ValidityPeriodManager
+            periods={formState.validityPeriods}
+            onAdd={(period) => {
+              onFormStateChange('validityPeriods', [...formState.validityPeriods, period])
+            }}
+            onRemove={(id) => {
+              onFormStateChange('validityPeriods', formState.validityPeriods.filter((p) => p.id !== id))
+            }}
+            onUpdate={(id, field, value) => {
+              onFormStateChange(
+                'validityPeriods',
+                formState.validityPeriods.map((p) => (p.id === id ? { ...p, [field]: value } : p))
+              )
+            }}
+          />
 
           {/* Submit */}
           <div className="flex justify-end gap-4">

@@ -25,7 +25,13 @@ export default function Contribute({ initialTab = 'new' }: ContributeProps) {
     powerVariants: [] as PowerVariant[],
     priceSheetUrl: '',
     screenshotUrl: '',
-    validFrom: new Date().toISOString().split('T')[0], // Date du jour par défaut (YYYY-MM-DD)
+    validityPeriods: [
+      {
+        id: `period-${Date.now()}`,
+        validFrom: new Date().toISOString().split('T')[0],
+        validTo: '',
+      },
+    ] as Array<{ id: string; validFrom: string; validTo: string }>,
   })
 
   const handleFormStateChange = (key: string, value: unknown) => {
@@ -76,9 +82,15 @@ export default function Contribute({ initialTab = 'new' }: ContributeProps) {
         ),
       priceSheetUrl: contribution.price_sheet_url || '',
       screenshotUrl: contribution.screenshot_url || '',
-      validFrom: contribution.valid_from
-        ? contribution.valid_from.split('T')[0]  // Convertir ISO en YYYY-MM-DD
-        : new Date().toISOString().split('T')[0],
+      validityPeriods: [
+        {
+          id: `period-${Date.now()}`,
+          validFrom: contribution.valid_from
+            ? contribution.valid_from.split('T')[0]
+            : new Date().toISOString().split('T')[0],
+          validTo: '', // Pas de valid_to sur les contributions existantes
+        },
+      ],
     })
   }
 

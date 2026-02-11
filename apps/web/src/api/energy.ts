@@ -137,6 +137,8 @@ export interface ContributionData {
     hp_price_summer?: number
     // Peak day pricing
     peak_day_price?: number
+    // Date de fin de validité (offres historiques ou expirées)
+    valid_to?: string
   }
   hc_schedules?: Record<string, string>
   power_kva?: number // LEGACY: Power in kVA (use power_variants for new contributions)

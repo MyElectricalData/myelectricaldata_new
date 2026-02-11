@@ -44,6 +44,12 @@ export interface PowerVariant {
   }
 }
 
+export interface ValidityPeriod {
+  id: string // ID unique pour React key
+  validFrom: string // Date de début (YYYY-MM-DD)
+  validTo: string // Date de fin (YYYY-MM-DD) ou vide si offre active
+}
+
 export interface ContributionFormState {
   // Type de contribution
   contributionType: 'NEW_PROVIDER' | 'NEW_OFFER'
@@ -87,8 +93,8 @@ export interface ContributionFormState {
   currentVariantPower: string
   currentVariantPrice: string
 
-  // Validity date
-  validFrom: string
+  // Validity periods (multi-period support)
+  validityPeriods: ValidityPeriod[]
 
   // Documentation
   priceSheetUrl: string

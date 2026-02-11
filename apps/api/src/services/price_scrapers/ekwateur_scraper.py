@@ -121,7 +121,7 @@ class EkwateurScraper(BasePriceScraper):
             if base_key in kwh_data and base_key in subscription_data:
                 offers.append(
                     OfferData(
-                        name=f"Électricité verte - Prix fixe - Base {power} kVA",
+                        name="Électricité verte - Prix fixe",
                         offer_type="BASE",
                         description=f"Offre d'électricité 100% verte à prix fixe - Option Base - {power} kVA",
                         subscription_price=subscription_data[base_key],
@@ -139,7 +139,7 @@ class EkwateurScraper(BasePriceScraper):
             if hp_key in kwh_data and hc_key in kwh_data and sub_key in subscription_data:
                 offers.append(
                     OfferData(
-                        name=f"Électricité verte - Prix fixe - Heures Creuses {power} kVA",
+                        name="Électricité verte - Prix fixe",
                         offer_type="HC_HP",
                         description=f"Offre d'électricité 100% verte à prix fixe - Heures Creuses - {power} kVA",
                         subscription_price=subscription_data[sub_key],
@@ -285,7 +285,7 @@ class EkwateurScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["FIXE_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Électricité verte - Prix fixe - Base {power} kVA",
+                    name="Électricité verte - Prix fixe",
                     offer_type="BASE",
                     description=f"Offre d'électricité 100% verte à prix fixe - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -299,7 +299,7 @@ class EkwateurScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["FIXE_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Électricité verte - Prix fixe - Heures Creuses {power} kVA",
+                    name="Électricité verte - Prix fixe",
                     offer_type="HC_HP",
                     description=f"Offre d'électricité 100% verte à prix fixe - Heures Creuses - {power} kVA",
                     subscription_price=prices["subscription"],

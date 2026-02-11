@@ -423,7 +423,7 @@ class EngieScraper(BasePriceScraper):
         try:
             if offer_type == "BASE":
                 return OfferData(
-                    name=f"{offer_name} - Base {power} kVA",
+                    name=offer_name,
                     offer_type="BASE",
                     description=f"{offer_name} - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -433,7 +433,7 @@ class EngieScraper(BasePriceScraper):
                 )
             elif offer_type == "HC_HP":
                 return OfferData(
-                    name=f"{offer_name} - Heures Creuses {power} kVA",
+                    name=offer_name,
                     offer_type="HC_HP",
                     description=f"{offer_name} - Option Heures Creuses - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -456,7 +456,7 @@ class EngieScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["REFERENCE_3ANS_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Elec Référence 3 ans - Base {power} kVA",
+                    name="Elec Référence 3 ans",
                     offer_type="BASE",
                     description=f"Elec Référence 3 ans - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -470,7 +470,7 @@ class EngieScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["REFERENCE_3ANS_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Elec Référence 3 ans - Heures Creuses {power} kVA",
+                    name="Elec Référence 3 ans",
                     offer_type="HC_HP",
                     description=f"Elec Référence 3 ans - Option Heures Creuses - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -485,7 +485,7 @@ class EngieScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["TRANQUILLITE_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Elec Tranquillité - Base {power} kVA",
+                    name="Elec Tranquillité",
                     offer_type="BASE",
                     description=f"Elec Tranquillité - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -499,7 +499,7 @@ class EngieScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["TRANQUILLITE_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Elec Tranquillité - Heures Creuses {power} kVA",
+                    name="Elec Tranquillité",
                     offer_type="HC_HP",
                     description=f"Elec Tranquillité - Option Heures Creuses - {power} kVA",
                     subscription_price=prices["subscription"],

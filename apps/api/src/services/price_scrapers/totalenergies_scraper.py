@@ -175,7 +175,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
                     for power, prices in base_prices.items():
                         offers.append(
                             OfferData(
-                                name=f"{offer_prefix} - Base {power} kVA",
+                                name=offer_prefix,
                                 offer_type="BASE",
                                 description=f"Offre TotalEnergies - Option Base - {power} kVA",
                                 subscription_price=prices["subscription"],
@@ -187,7 +187,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
                     for power, prices in hc_hp_prices.items():
                         offers.append(
                             OfferData(
-                                name=f"{offer_prefix} - Heures Creuses {power} kVA",
+                                name=offer_prefix,
                                 offer_type="HC_HP",
                                 description=f"Offre TotalEnergies - Heures Creuses - {power} kVA",
                                 subscription_price=prices["subscription"],
@@ -229,7 +229,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
                     kwh_price_ttc = float(base_match.group(8).replace(',', '.'))
                     offers.append(
                         OfferData(
-                            name=f"Essentielle - Base {power} kVA",
+                            name="Essentielle",
                             offer_type="BASE",
                             description=f"Offre Essentielle indexée TRV - Option Base - {power} kVA",
                             subscription_price=subscription_ttc,
@@ -260,7 +260,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
                         hc_price_ttc = float(hc_match.group(13).replace(',', '.'))
                         offers.append(
                             OfferData(
-                                name=f"Essentielle - Heures Creuses {power} kVA",
+                                name="Essentielle",
                                 offer_type="HC_HP",
                                 description=f"Offre Essentielle indexée TRV - Heures Creuses - {power} kVA",
                                 subscription_price=subscription_ttc,
@@ -303,7 +303,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
                     kwh_price_ttc = float(base_match.group(5).replace(',', '.'))
                     offers.append(
                         OfferData(
-                            name=f"Verte Fixe - Base {power} kVA",
+                            name="Verte Fixe",
                             offer_type="BASE",
                             description=f"Offre électricité verte à prix fixe pendant 1 an - Option Base - {power} kVA",
                             subscription_price=subscription_ttc,
@@ -334,7 +334,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
                         hc_price_ttc = float(hc_match.group(7).replace(',', '.'))
                         offers.append(
                             OfferData(
-                                name=f"Verte Fixe - Heures Creuses {power} kVA",
+                                name="Verte Fixe",
                                 offer_type="HC_HP",
                                 description=f"Offre électricité verte à prix fixe pendant 1 an - Heures Creuses - {power} kVA",
                                 subscription_price=subscription_ttc,
@@ -501,7 +501,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["VERTE_FIXE_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Verte Fixe - Base {power} kVA",
+                    name="Verte Fixe",
                     offer_type="BASE",
                     description=f"Offre électricité verte à prix fixe pendant 2 ans - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -515,7 +515,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["VERTE_FIXE_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Verte Fixe - Heures Creuses {power} kVA",
+                    name="Verte Fixe",
                     offer_type="HC_HP",
                     description=f"Offre électricité verte à prix fixe pendant 2 ans - Heures Creuses - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -530,7 +530,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["ONLINE_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Online - Base {power} kVA",
+                    name="Online",
                     offer_type="BASE",
                     description=f"Offre 100% en ligne avec remise - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -544,7 +544,7 @@ class TotalEnergiesPriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["ONLINE_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Online - Heures Creuses {power} kVA",
+                    name="Online",
                     offer_type="HC_HP",
                     description=f"Offre 100% en ligne avec remise - Heures Creuses - {power} kVA",
                     subscription_price=prices["subscription"],

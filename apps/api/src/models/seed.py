@@ -303,14 +303,17 @@ async def init_default_energy_offers(db: AsyncSession) -> None:
         result = await db.execute(
             select(EnergyOffer).where(EnergyOffer.provider_id == provider.id)
         )
-        existing_offers = {offer.name for offer in result.scalars().all()}
+        existing_offers = {
+            (offer.name, offer.offer_type, offer.power_kva)
+            for offer in result.scalars().all()
+        }
 
         offers_created = 0
 
         # Create BASE offers
         for kva, subscription, base_price in DEFAULT_BASE_OFFERS:
-            offer_name = f"Tarif Bleu - BASE {kva} kVA"
-            if offer_name not in existing_offers:
+            offer_name = "Tarif Bleu"
+            if (offer_name, "BASE", kva) not in existing_offers:
                 offer = EnergyOffer(
                     provider_id=provider.id,
                     name=offer_name,
@@ -326,8 +329,8 @@ async def init_default_energy_offers(db: AsyncSession) -> None:
 
         # Create HC/HP offers
         for kva, subscription, hp_price, hc_price in DEFAULT_HCHP_OFFERS:
-            offer_name = f"Tarif Bleu - HC/HP {kva} kVA"
-            if offer_name not in existing_offers:
+            offer_name = "Tarif Bleu"
+            if (offer_name, "HC_HP", kva) not in existing_offers:
                 offer = EnergyOffer(
                     provider_id=provider.id,
                     name=offer_name,
@@ -344,8 +347,8 @@ async def init_default_energy_offers(db: AsyncSession) -> None:
 
         # Create TEMPO offers
         for kva, subscription, blue_hc, blue_hp, white_hc, white_hp, red_hc, red_hp in DEFAULT_TEMPO_OFFERS:
-            offer_name = f"Tarif Bleu - TEMPO {kva} kVA"
-            if offer_name not in existing_offers:
+            offer_name = "Tarif Bleu"
+            if (offer_name, "TEMPO", kva) not in existing_offers:
                 offer = EnergyOffer(
                     provider_id=provider.id,
                     name=offer_name,

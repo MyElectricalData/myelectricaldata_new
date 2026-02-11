@@ -333,7 +333,7 @@ class AlpiqScraper(BasePriceScraper):
         for power in standard_powers_base:
             if power in self.SUBSCRIPTIONS_BASE:
                 offers.append(OfferData(
-                    name=f"{offer_name} - Base {power} kVA",
+                    name=offer_name,
                     offer_type="BASE",
                     description=f"{offer_name} - {description_suffix} - Option Base - {power} kVA - Prix TTC",
                     subscription_price=self.SUBSCRIPTIONS_BASE[power],
@@ -346,7 +346,7 @@ class AlpiqScraper(BasePriceScraper):
         for power in standard_powers_hchp:
             if power in self.SUBSCRIPTIONS_HCHP:
                 offers.append(OfferData(
-                    name=f"{offer_name} - Heures Creuses {power} kVA",
+                    name=offer_name,
                     offer_type="HC_HP",
                     description=f"{offer_name} - {description_suffix} - Heures Creuses - {power} kVA - Prix TTC",
                     subscription_price=self.SUBSCRIPTIONS_HCHP[power],

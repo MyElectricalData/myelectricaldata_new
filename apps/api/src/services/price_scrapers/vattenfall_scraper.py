@@ -127,7 +127,7 @@ class VattenfallScraper(BasePriceScraper):
                 for power, prices in base_prices.items():
                     offers.append(
                         OfferData(
-                            name=f"Électricité Verte Équilibre - Base {power} kVA",
+                            name="Électricité Verte Équilibre",
                             offer_type="BASE",
                             description=f"Électricité verte - Tarif indexé sur le TRV - {power} kVA",
                             subscription_price=prices["subscription"],
@@ -144,7 +144,7 @@ class VattenfallScraper(BasePriceScraper):
                 for power, prices in hc_hp_prices.items():
                     offers.append(
                         OfferData(
-                            name=f"Électricité Verte Équilibre - Heures Creuses {power} kVA",
+                            name="Électricité Verte Équilibre",
                             offer_type="HC_HP",
                             description=f"Électricité verte - Tarif indexé sur le TRV - {power} kVA",
                             subscription_price=prices["subscription"],
@@ -279,7 +279,7 @@ class VattenfallScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Électricité Verte Équilibre - Base {power} kVA",
+                    name="Électricité Verte Équilibre",
                     offer_type="BASE",
                     description=f"Électricité verte - Tarif indexé sur le TRV - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -293,7 +293,7 @@ class VattenfallScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Électricité Verte Équilibre - Heures Creuses {power} kVA",
+                    name="Électricité Verte Équilibre",
                     offer_type="HC_HP",
                     description=f"Électricité verte - Tarif indexé sur le TRV - {power} kVA",
                     subscription_price=prices["subscription"],

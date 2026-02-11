@@ -522,7 +522,7 @@ export default function Settings() {
 
           {/* Preset Selection */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {(['rolling', 'calendar', 'tempo', 'custom'] as DatePreset[]).map((presetKey) => (
+            {(['tempo', 'rolling', 'calendar', 'custom'] as DatePreset[]).map((presetKey) => (
               <button
                 key={presetKey}
                 onClick={() => setPreset(presetKey)}
@@ -592,10 +592,17 @@ export default function Settings() {
                 })
               }
               return (
-                <p className="text-sm text-teal-700 dark:text-teal-300">
-                  Du <span className="font-semibold">{formatDisplayDate(start)}</span> au{' '}
-                  <span className="font-semibold">{formatDisplayDate(end)}</span>
-                </p>
+                <>
+                  <p className="text-sm text-teal-700 dark:text-teal-300 mb-3">
+                    Du <span className="font-semibold">{formatDisplayDate(start)}</span> au{' '}
+                    <span className="font-semibold">{formatDisplayDate(end)}</span>
+                  </p>
+                  {preset === 'tempo' && (
+                    <p className="text-xs text-teal-600 dark:text-teal-400 border-t border-teal-200 dark:border-teal-700 pt-3">
+                      💡 <strong>Période recommandée pour le simulateur</strong> : l'Année Tempo (1er septembre → 31 août) est idéale pour comparer les offres tarifaires, car elle correspond à la saison Tempo complète avec ses 22 jours Rouge. Cela permet une comparaison précise des offres EJP, Tempo et autres tarifs saisonniers.
+                    </p>
+                  )}
+                </>
               )
             })()}
           </div>

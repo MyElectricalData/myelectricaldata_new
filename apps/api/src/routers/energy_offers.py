@@ -113,6 +113,17 @@ async def apply_contribution_changes(
             # Format nouveau : une offre par variante de puissance
             # Les prix peuvent être dans chaque variant (prioritaire) ou dans pricing_data (fallback)
             pricing_common = contribution.pricing_data or {}
+            # Extraire valid_to depuis pricing_data si présent (offres historiques)
+            valid_to_date = None
+            valid_to_raw = pricing_common.pop("valid_to", None)
+            if valid_to_raw:
+                try:
+                    if isinstance(valid_to_raw, str):
+                        valid_to_date = datetime.fromisoformat(valid_to_raw.replace("Z", "+00:00"))
+                        if valid_to_date.tzinfo is None:
+                            valid_to_date = valid_to_date.replace(tzinfo=UTC)
+                except (ValueError, TypeError):
+                    logger.warning(f"[CONTRIBUTION] Invalid valid_to format: {valid_to_raw}")
             for variant in contribution.power_variants:
                 power_kva = variant.get("power_kva")
                 subscription_price = variant.get("subscription_price")
@@ -145,10 +156,13 @@ async def apply_contribution_changes(
                     hc_schedules=contribution.hc_schedules,
                     power_kva=power_kva,
                     valid_from=valid_from_date,
+                    valid_to=valid_to_date,
                     offer_url=contribution.price_sheet_url,
                     price_updated_at=datetime.now(UTC),
                 )
                 db.add(offer)
+            if valid_to_date:
+                logger.info(f"[CONTRIBUTION] Created historical offers: {contribution.offer_name} valid_to={valid_to_date}")
         else:
             # Format legacy : une seule offre
             pricing = contribution.pricing_data or {}
@@ -222,6 +236,21 @@ async def apply_contribution_changes(
                         f"with {len(offers_to_delete)} offers"
                     )
 
+        elif contribution.offer_name and contribution.offer_name.startswith("[REACTIVATION]"):
+            # Réactivation d'une offre expirée
+            if contribution.existing_offer_id:
+                offer_result = await db.execute(
+                    select(EnergyOffer).where(EnergyOffer.id == contribution.existing_offer_id)
+                )
+                offer_maybe = offer_result.scalar_one_or_none()
+                if offer_maybe:
+                    offer_maybe.valid_to = None
+                    offer_maybe.is_active = True
+                    offer_maybe.updated_at = datetime.now(UTC)
+                    logger.info(f"[CONTRIBUTION] Reactivated offer: {offer_maybe.name} (id={offer_maybe.id})")
+                else:
+                    logger.warning(f"[CONTRIBUTION] Offer not found for reactivation: {contribution.existing_offer_id}")
+
         elif contribution.offer_name and contribution.offer_name.startswith("[SUPPRESSION]"):
             # Suppression d'une offre spécifique
             offer_to_delete = None
@@ -293,6 +322,26 @@ async def apply_contribution_changes(
                 offer.hp_price_summer = pricing.get("hp_price_summer")
                 offer.peak_day_price = pricing.get("peak_day_price")
                 offer.hc_schedules = contribution.hc_schedules
+                if contribution.valid_from:
+                    offer.valid_from = contribution.valid_from
+                # Gérer valid_to depuis pricing_data
+                valid_to_raw = pricing.get("valid_to")
+                if valid_to_raw is not None:
+                    if valid_to_raw == "" or valid_to_raw is False:
+                        # Valeur vide = réactivation (supprimer la date de fin)
+                        offer.valid_to = None
+                        offer.is_active = True
+                        logger.info(f"[CONTRIBUTION] Réactivation offre via valid_to vide: {offer.name} (id={offer.id})")
+                    else:
+                        try:
+                            if isinstance(valid_to_raw, str):
+                                valid_to_date = datetime.fromisoformat(valid_to_raw.replace("Z", "+00:00"))
+                                if valid_to_date.tzinfo is None:
+                                    valid_to_date = valid_to_date.replace(tzinfo=UTC)
+                                offer.valid_to = valid_to_date
+                                logger.info(f"[CONTRIBUTION] Mise à jour valid_to: {offer.name} (id={offer.id}) -> {valid_to_date}")
+                        except (ValueError, TypeError):
+                            logger.warning(f"[CONTRIBUTION] Invalid valid_to format: {valid_to_raw}")
                 offer.updated_at = datetime.now(UTC)
 
     # Marquer la contribution comme approuvée
@@ -541,22 +590,35 @@ async def create_contributions_batch(
         return APIResponse(success=False, error=ErrorDetail(code="FORBIDDEN", message="L'application directe est réservée aux administrateurs et modérateurs"))
 
     # Valider le lien vers la fiche tarifaire (obligatoire pour les non-privilégiés)
+    # Exception : les réactivations n'ont pas besoin de fiche tarifaire
     price_sheet_url = batch_data.get("price_sheet_url", "")
-    if not price_sheet_url and not is_privileged:
+    has_only_reactivations = all(
+        "[REACTIVATION]" in c.get("offer_name", "") for c in contributions_list
+    )
+    if not price_sheet_url and not is_privileged and not has_only_reactivations:
         return APIResponse(success=False, error=ErrorDetail(code="MISSING_FIELD", message="Le lien vers la fiche des prix est obligatoire"))
 
     created_contributions: list[OfferContribution] = []
     errors: list[str] = []
 
-    for i, contribution_data in enumerate(contributions_list):
+    # Trier les contributions par valid_from pour éviter les conflits de désactivation
+    # (les anciennes offres doivent être créées avant les nouvelles)
+    sorted_contributions = sorted(
+        enumerate(contributions_list),
+        key=lambda x: x[1].get("valid_from", "9999-12-31")  # Les offres sans date en dernier
+    )
+
+    for original_index, contribution_data in sorted_contributions:
+        i = original_index  # Garder l'index original pour les messages d'erreur
         try:
             offer_name = contribution_data.get("offer_name", "")
             is_deletion = "[SUPPRESSION" in offer_name
+            is_reactivation = "[REACTIVATION]" in offer_name
 
             power_variants = contribution_data.get("power_variants")
             power_kva_legacy = contribution_data.get("power_kva")
 
-            if not power_variants and power_kva_legacy is None and not is_deletion:
+            if not power_variants and power_kva_legacy is None and not is_deletion and not is_reactivation:
                 errors.append(f"Contribution {i + 1}: puissance (kVA) manquante")
                 continue
 
@@ -1378,6 +1440,22 @@ async def bulk_approve_contributions(
                         else:
                             logger.warning(f"[BULK APPROVE] Offer not found for rename: {contribution.existing_offer_id}")
 
+                # Check if this is a reactivation request (offer_name starts with [REACTIVATION])
+                elif contribution.offer_name and contribution.offer_name.startswith("[REACTIVATION]"):
+                    if contribution.existing_offer_id:
+                        offer_result = await db.execute(select(EnergyOffer).where(EnergyOffer.id == contribution.existing_offer_id))
+                        offer_maybe = offer_result.scalar_one_or_none()
+
+                        if offer_maybe:
+                            offer_maybe.valid_to = None
+                            offer_maybe.is_active = True
+                            offer_maybe.updated_at = datetime.now(UTC)
+                            logger.info(
+                                f"[BULK APPROVE] Reactivated offer: {offer_maybe.name} (id={offer_maybe.id})"
+                            )
+                        else:
+                            logger.warning(f"[BULK APPROVE] Offer not found for reactivation: {contribution.existing_offer_id}")
+
                 # Check if this is a deletion request (offer_name starts with [SUPPRESSION])
                 elif contribution.offer_name and contribution.offer_name.startswith("[SUPPRESSION]"):
                     offer_to_delete = None
@@ -1456,6 +1534,8 @@ async def bulk_approve_contributions(
                         offer.hp_price_summer = pricing.get("hp_price_summer")
                         offer.peak_day_price = pricing.get("peak_day_price")
                         offer.hc_schedules = contribution.hc_schedules
+                        if contribution.valid_from:
+                            offer.valid_from = contribution.valid_from
                         offer.updated_at = datetime.now(UTC)
 
             # Mark contribution as approved
@@ -1751,6 +1831,26 @@ async def update_offer(
             offer.ejp_peak = offer_data["ejp_peak"]
         if "is_active" in offer_data:
             offer.is_active = offer_data["is_active"]
+        if "valid_to" in offer_data:
+            if offer_data["valid_to"] is None or offer_data["valid_to"] == "":
+                offer.valid_to = None
+            else:
+                vt = offer_data["valid_to"]
+                if isinstance(vt, str):
+                    valid_to_date = datetime.fromisoformat(vt.replace("Z", "+00:00"))
+                    if valid_to_date.tzinfo is None:
+                        valid_to_date = valid_to_date.replace(tzinfo=UTC)
+                    offer.valid_to = valid_to_date
+        if "valid_from" in offer_data:
+            if offer_data["valid_from"] is None or offer_data["valid_from"] == "":
+                offer.valid_from = None
+            else:
+                vf = offer_data["valid_from"]
+                if isinstance(vf, str):
+                    valid_from_date = datetime.fromisoformat(vf.replace("Z", "+00:00"))
+                    if valid_from_date.tzinfo is None:
+                        valid_from_date = valid_from_date.replace(tzinfo=UTC)
+                    offer.valid_from = valid_from_date
 
         offer.updated_at = datetime.now(UTC)
         offer.price_updated_at = datetime.now(UTC)

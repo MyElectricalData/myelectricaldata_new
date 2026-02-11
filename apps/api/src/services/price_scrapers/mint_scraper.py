@@ -219,7 +219,7 @@ class MintEnergieScraper(BasePriceScraper):
                 for power, prices in base_prices.items():
                     offers.append(
                         OfferData(
-                            name=f"{offer_name} - Base {power} kVA",
+                            name=offer_name,
                             offer_type="BASE",
                             description=f"{offer_description} - Option Base - {power} kVA",
                             subscription_price=prices["subscription"],
@@ -235,7 +235,7 @@ class MintEnergieScraper(BasePriceScraper):
                 for power, prices in hc_hp_prices.items():
                     offers.append(
                         OfferData(
-                            name=f"{offer_name} - Heures Creuses {power} kVA",
+                            name=offer_name,
                             offer_type="HC_HP",
                             description=f"{offer_description} - Option Heures Creuses - {power} kVA",
                             subscription_price=prices["subscription"],
@@ -405,7 +405,7 @@ class MintEnergieScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["ONLINE_GREEN_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Online & Green - Base {power} kVA",
+                    name="Online & Green",
                     offer_type="BASE",
                     description=f"{self.OFFER_INFO['ONLINE_GREEN']['description']} - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -420,7 +420,7 @@ class MintEnergieScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["ONLINE_GREEN_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Online & Green - Heures Creuses {power} kVA",
+                    name="Online & Green",
                     offer_type="HC_HP",
                     description=f"{self.OFFER_INFO['ONLINE_GREEN']['description']} - Option Heures Creuses - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -436,7 +436,7 @@ class MintEnergieScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["CLASSIC_GREEN_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Classic & Green - Base {power} kVA",
+                    name="Classic & Green",
                     offer_type="BASE",
                     description=f"{self.OFFER_INFO['CLASSIC_GREEN']['description']} - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -451,7 +451,7 @@ class MintEnergieScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["CLASSIC_GREEN_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Classic & Green - Heures Creuses {power} kVA",
+                    name="Classic & Green",
                     offer_type="HC_HP",
                     description=f"{self.OFFER_INFO['CLASSIC_GREEN']['description']} - Option Heures Creuses - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -467,7 +467,7 @@ class MintEnergieScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["SMART_GREEN_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Smart & Green - Base {power} kVA",
+                    name="Smart & Green",
                     offer_type="BASE",
                     description=f"{self.OFFER_INFO['SMART_GREEN']['description']} - Option Base - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -482,7 +482,7 @@ class MintEnergieScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["SMART_GREEN_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Smart & Green - Heures Creuses {power} kVA",
+                    name="Smart & Green",
                     offer_type="HC_HP",
                     description=f"{self.OFFER_INFO['SMART_GREEN']['description']} - Option Heures Creuses - {power} kVA",
                     subscription_price=prices["subscription"],

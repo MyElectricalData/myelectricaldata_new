@@ -214,6 +214,7 @@ export default function Contributions() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-pending-contributions'] })
       queryClient.invalidateQueries({ queryKey: ['admin-contribution-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['energy-offers'] })
       setNotification({ type: 'success', message: 'Contribution approuvée avec succès !' })
       setTimeout(() => setNotification(null), 5000)
       setSelectedContribution(null)
@@ -295,6 +296,7 @@ export default function Contributions() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-pending-contributions'] })
       queryClient.invalidateQueries({ queryKey: ['admin-contribution-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['energy-offers'] })
       setNotification({ type: 'success', message: `${selectedIds.size} contribution(s) approuvée(s) avec succès !` })
       setTimeout(() => setNotification(null), 5000)
       setSelectedIds(new Set())

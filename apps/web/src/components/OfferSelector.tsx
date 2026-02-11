@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Building2, Zap, Tag, X, AlertTriangle } from 'lucide-react'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
+import { Building2, Zap, Tag, X, AlertTriangle, Loader2 } from 'lucide-react'
 import { energyApi, EnergyOffer } from '@/api/energy'
 
 interface OfferSelectorProps {
@@ -37,10 +37,15 @@ export default function OfferSelector({
   const [showExpired, setShowExpired] = useState(false)
 
   // Fetch providers
+  // refetchOnMount: 'always' force un fetch frais à chaque mount pour éviter
+  // les sélecteurs vides quand les données ne sont pas en cache (bug race condition)
+  // placeholderData: garde les données précédentes pendant un refetch
   const { data: providersResponse, isLoading: isLoadingProviders } = useQuery({
     queryKey: ['energy-providers'],
     queryFn: energyApi.getProviders,
     staleTime: 5 * 60 * 1000,
+    refetchOnMount: 'always',
+    placeholderData: keepPreviousData,
   })
 
   // Fetch all offers (incluant les offres périmées pour permettre leur sélection)
@@ -48,6 +53,8 @@ export default function OfferSelector({
     queryKey: ['energy-offers', 'with-history'],
     queryFn: () => energyApi.getOffers(undefined, true),
     staleTime: 5 * 60 * 1000,
+    refetchOnMount: 'always',
+    placeholderData: keepPreviousData,
   })
 
   // Stabilize providers and offers arrays
@@ -105,14 +112,19 @@ export default function OfferSelector({
   }, [powerFilteredOffers])
 
   // Get providers that have offers
+  // Inclut toujours le provider de l'offre sélectionnée pour éviter
+  // que le changement de visibilité (toggle périmées) ne vide le sélecteur
   const availableProviders = useMemo(() => {
     const providerIds = new Set(visibleOffers.map(o => o.provider_id))
+    // Inclure le provider sélectionné même s'il n'a pas d'offres visibles
+    if (effectiveProviderId) providerIds.add(effectiveProviderId)
     return providers
       .filter(p => providerIds.has(p.id))
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [visibleOffers, providers])
+  }, [visibleOffers, providers, effectiveProviderId])
 
   // Get offer types available for effective provider
+  // Inclut toujours le type de l'offre sélectionnée pour stabilité du sélecteur
   const availableOfferTypes = useMemo(() => {
     if (!effectiveProviderId) return []
     const types = new Set(
@@ -120,16 +132,25 @@ export default function OfferSelector({
         .filter(o => o.provider_id === effectiveProviderId)
         .map(o => o.offer_type)
     )
+    // Inclure le type sélectionné même s'il n'est plus dans les offres visibles
+    if (effectiveOfferType) types.add(effectiveOfferType)
     return Array.from(types).sort()
-  }, [visibleOffers, effectiveProviderId])
+  }, [visibleOffers, effectiveProviderId, effectiveOfferType])
 
   // Get offers for effective provider and offer type
+  // Inclut toujours l'offre sélectionnée pour éviter qu'elle disparaisse du dropdown
   const availableOffers = useMemo(() => {
     if (!effectiveProviderId || !effectiveOfferType) return []
-    return visibleOffers
+    const filtered = visibleOffers
       .filter(o => o.provider_id === effectiveProviderId && o.offer_type === effectiveOfferType)
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [visibleOffers, effectiveProviderId, effectiveOfferType])
+    // Inclure l'offre sélectionnée même si elle n'est pas dans les offres visibles
+    if (selectedOffer && selectedOffer.provider_id === effectiveProviderId && selectedOffer.offer_type === effectiveOfferType) {
+      if (!filtered.some(o => o.id === selectedOffer.id)) {
+        filtered.push(selectedOffer)
+      }
+    }
+    return filtered.sort((a, b) => a.name.localeCompare(b.name))
+  }, [visibleOffers, effectiveProviderId, effectiveOfferType, selectedOffer])
 
   // Reset offer type and clear selected offer when provider changes manually
   const handleProviderChange = (providerId: string | null) => {
@@ -139,13 +160,24 @@ export default function OfferSelector({
   }
 
   // Reset offer when type changes manually
+  // Avant de désélectionner l'offre, on sauvegarde le provider actuel
+  // dans userProviderId pour qu'il survive à la perte de selectedOffer
   const handleOfferTypeChange = (offerType: string | null) => {
+    if (selectedOffer) {
+      setUserProviderId(selectedOffer.provider_id)
+    }
     setUserOfferType(offerType)
     if (selectedOfferId) onChange(null)
   }
 
   // Handle offer selection
+  // Sauvegarde provider + type avant de changer d'offre, pour que les
+  // sélecteurs parents restent stables si la nouvelle offre est null
   const handleOfferChange = (offerId: string | null) => {
+    if (selectedOffer && !offerId) {
+      setUserProviderId(selectedOffer.provider_id)
+      setUserOfferType(selectedOffer.offer_type)
+    }
     onChange(offerId)
   }
 
@@ -436,7 +468,28 @@ export default function OfferSelector({
         </label>
       )}
 
-      {/* All selectors on one line */}
+      {/* Skeleton de chargement quand une offre est sélectionnée mais les données pas encore chargées */}
+      {isLoading && selectedOfferId ? (
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { icon: <Building2 size={12} />, label: 'Fournisseur' },
+            { icon: <Zap size={12} />, label: 'Type' },
+            { icon: <Tag size={12} />, label: 'Offre' },
+          ].map(({ icon, label }) => (
+            <div key={label}>
+              <label className="flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                {icon}
+                {label}
+              </label>
+              <div className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border-2 border-blue-300 dark:border-blue-700 rounded-lg flex items-center gap-2">
+                <Loader2 size={14} className="animate-spin text-blue-400" />
+                <span className="text-gray-400 dark:text-gray-500">Chargement...</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+      /* All selectors on one line */
       <div className="grid grid-cols-3 gap-2">
         {/* Provider Selector */}
         <div>
@@ -450,7 +503,7 @@ export default function OfferSelector({
             disabled={disabled || isLoading}
             className={selectClassName}
           >
-            <option value="">--</option>
+            <option value="">{isLoading ? 'Chargement...' : '--'}</option>
             {availableProviders.map(provider => (
               <option key={provider.id} value={provider.id}>
                 {provider.name}
@@ -471,7 +524,7 @@ export default function OfferSelector({
             disabled={disabled || isLoading || !effectiveProviderId}
             className={selectClassName}
           >
-            <option value="">--</option>
+            <option value="">{isLoading ? 'Chargement...' : '--'}</option>
             {availableOfferTypes.map(type => (
               <option key={type} value={type}>
                 {OFFER_TYPE_LABELS[type] || type}
@@ -528,6 +581,7 @@ export default function OfferSelector({
           </select>
         </div>
       </div>
+      )}
 
       {/* Selected offer summary */}
       {selectedOffer && (
@@ -611,7 +665,7 @@ export default function OfferSelector({
       )}
 
       {/* Help text when no offer selected */}
-      {!selectedOffer && !isLoading && (
+      {!selectedOffer && !isLoading && !selectedOfferId && (
         <p className="text-xs text-gray-500 dark:text-gray-400">
           Sélectionnez un fournisseur, puis un type d'offre pour voir les offres disponibles
           {subscribedPower && ` pour ${subscribedPower} kVA`}.

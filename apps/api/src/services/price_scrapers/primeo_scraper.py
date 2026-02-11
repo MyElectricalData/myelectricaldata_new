@@ -128,7 +128,7 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
                 for power, prices in base_prices.items():
                     offers.append(
                         OfferData(
-                            name=f"Offre Fixe -20% - Base {power} kVA",
+                            name="Fixe -20%",
                             offer_type="BASE",
                             description=f"Prix bloqué jusqu'au 31/12/2026 - 20% de réduction sur le kWh HT vs TRV - {power} kVA",
                             subscription_price=prices["subscription"],
@@ -145,7 +145,7 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
                 for power, prices in hc_hp_prices.items():
                     offers.append(
                         OfferData(
-                            name=f"Offre Fixe -20% - Heures Creuses {power} kVA",
+                            name="Fixe -20%",
                             offer_type="HC_HP",
                             description=f"Prix bloqué jusqu'au 31/12/2026 - 20% de réduction sur le kWh HT vs TRV - {power} kVA",
                             subscription_price=prices["subscription"],
@@ -345,7 +345,7 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["FIXE_BASE"].items():
             offers.append(
                 OfferData(
-                    name=f"Offre Fixe -20% - Base {power} kVA",
+                    name="Fixe -20%",
                     offer_type="BASE",
                     description=f"Prix bloqué jusqu'au 31/12/2026 - 20% de réduction sur le kWh HT vs TRV - {power} kVA",
                     subscription_price=prices["subscription"],
@@ -359,7 +359,7 @@ class PrimeoEnergiePriceScraper(BasePriceScraper):
         for power, prices in self.FALLBACK_PRICES["FIXE_HC_HP"].items():
             offers.append(
                 OfferData(
-                    name=f"Offre Fixe -20% - Heures Creuses {power} kVA",
+                    name="Fixe -20%",
                     offer_type="HC_HP",
                     description=f"Prix bloqué jusqu'au 31/12/2026 - 20% de réduction sur le kWh HT vs TRV - {power} kVA",
                     subscription_price=prices["subscription"],
