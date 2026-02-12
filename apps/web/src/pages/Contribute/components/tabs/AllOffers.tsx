@@ -509,23 +509,10 @@ export default function AllOffers() {
     const provider = sortedProviders.find(p => p.id === filterProvider)
     const providerName = provider?.name || 'Inconnu'
 
-    // Construire la liste des offres actuelles du fournisseur avec structure détaillée
+    // Construire le JSON complet des offres existantes du fournisseur
     const currentOffers = offersArray.filter(o => o.provider_id === filterProvider)
     let currentOffersSection = ''
     if (currentOffers.length > 0) {
-      // Regrouper par offer_type + clean name, garder un exemple d'offre par groupe
-      const groups: Record<string, { type: string; name: string; powers: number[]; sample: typeof currentOffers[0] }> = {}
-      for (const offer of currentOffers) {
-        const cleanName = getCleanOfferName(offer.name)
-        const key = `${offer.offer_type}::${cleanName}`
-        if (!groups[key]) {
-          groups[key] = { type: offer.offer_type, name: cleanName, powers: [], sample: offer }
-        }
-        const power = offer.power_kva || 0
-        if (power > 0) groups[key].powers.push(power)
-      }
-
-      // Construire la description détaillée de chaque groupe
       const allPriceKeys = [
         'subscription_price', 'base_price', 'base_price_weekend',
         'hc_price', 'hp_price', 'hc_price_weekend', 'hp_price_weekend',
@@ -534,38 +521,71 @@ export default function AllOffers() {
         'tempo_red_hc', 'tempo_red_hp', 'ejp_normal', 'ejp_peak',
       ] as const
 
-      const groupValues = Object.values(groups)
-      const lines = groupValues.map(g => {
-        const sortedPowers = g.powers.sort((a, b) => a - b)
-        // Extraire les champs prix non-null de l'exemple
-        const sampleFields: Record<string, string> = {}
-        for (const key of allPriceKeys) {
-          const val = (g.sample as unknown as Record<string, unknown>)[key]
-          if (val !== null && val !== undefined) {
-            sampleFields[key] = String(val)
-          }
+      // Regrouper par offer_type + clean name + période de validité
+      const groups: Record<string, {
+        type: string
+        name: string
+        validFrom: string | null
+        validTo: string | null
+        powers: Array<{ power_kva: number; fields: Record<string, number> }>
+      }> = {}
+      for (const offer of currentOffers) {
+        const cleanName = getCleanOfferName(offer.name)
+        const validFrom = offer.valid_from ? new Date(offer.valid_from).toLocaleDateString('sv-SE') : null
+        const validTo = offer.valid_to ? new Date(offer.valid_to).toLocaleDateString('sv-SE') : null
+        const key = `${offer.offer_type}::${cleanName}::${validFrom || ''}::${validTo || ''}`
+        if (!groups[key]) {
+          groups[key] = { type: offer.offer_type, name: cleanName, validFrom, validTo, powers: [] }
         }
-        const fieldsStr = Object.entries(sampleFields)
-          .map(([k, v]) => `${k}: ${v}`)
-          .join(', ')
+        const power = offer.power_kva || 0
+        if (power > 0) {
+          const fields: Record<string, number> = {}
+          for (const k of allPriceKeys) {
+            const val = (offer as unknown as Record<string, unknown>)[k]
+            if (val !== null && val !== undefined && !isNaN(Number(val))) {
+              fields[k] = Number(val)
+            }
+          }
+          groups[key].powers.push({ power_kva: power, fields })
+        }
+      }
 
-        return `- "${g.name}" (${g.type}) : ${g.powers.length} puissance(s) — ${sortedPowers.join(', ')} kVA\n  Structure : { ${fieldsStr} }`
+      // Construire le JSON des offres existantes
+      const existingOffersJson = Object.values(groups).map(g => {
+        g.powers.sort((a, b) => a.power_kva - b.power_kva)
+        return {
+          offer_name: g.name,
+          offer_type: g.type,
+          valid_from: g.validFrom,
+          valid_until: g.validTo,
+          power_variants: g.powers.map(p => ({ power_kva: p.power_kva, ...p.fields })),
+        }
       })
+
       const totalOffers = currentOffers.length
+      const groupCount = Object.keys(groups).length
       currentOffersSection = `
 
-## Offres actuellement enregistrées pour "${providerName}"
+## Offres actuellement enregistrées en base pour "${providerName}"
 
-${lines.join('\n')}
+\`\`\`json
+${JSON.stringify(existingOffersJson, null, 2)}
+\`\`\`
 
-**Total : ${totalOffers} lignes tarifaires réparties sur ${groupValues.length} offre(s).**
+**Total : ${totalOffers} lignes tarifaires réparties sur ${groupCount} offre(s).**
 
-Utilise cette structure comme référence pour valider ton JSON : les champs prix de chaque type doivent correspondre.
+## IMPORTANT — Règles de comparaison avec la base existante
 
-Compare avec les offres actuelles du fournisseur :
-- Si une offre ci-dessus N'EXISTE PLUS chez le fournisseur, ajoute-la quand même dans le JSON avec un champ "deprecated": true et un "warning" expliquant qu'elle semble avoir été supprimée ou remplacée.
-- Si une offre a été RENOMMÉE, utilise le nouveau nom et ajoute un "warning" mentionnant l'ancien nom.
-- Si de NOUVELLES offres existent chez le fournisseur et ne figurent pas ci-dessus, ajoute-les normalement.`
+**NE RETOURNE QUE les offres qui ne sont PAS déjà en base** (nouvelles grilles tarifaires, nouvelles offres).
+
+Compare chaque offre trouvée avec le JSON ci-dessus :
+- **Offre identique** (même nom, même type, même période, mêmes prix) → **NE PAS l'inclure** dans ton JSON de retour.
+- **Offre avec nouveaux tarifs** (même nom, même type, mais période de validité différente) → L'inclure comme **nouvelle offre** avec le bon \`valid_from\`.
+- **Offre qui N'EXISTE PLUS** chez le fournisseur et qui est en base SANS \`valid_until\` → L'inclure avec \`"deprecated": true\` et un \`"warning"\` expliquant qu'elle semble avoir été supprimée ou remplacée.
+- **Offre RENOMMÉE** → Utiliser le nouveau nom et ajouter un \`"warning"\` mentionnant l'ancien nom.
+- **NOUVELLE offre** non présente en base → L'inclure normalement.
+
+Si TOUTES les offres trouvées sont déjà identiques en base, retourne un JSON avec un tableau \`"offers"\` vide et un message expliquant que tout est à jour.`
     }
 
     return `Tu es un assistant spécialisé dans les tarifs d'électricité en France.
@@ -1104,6 +1124,22 @@ Puis retourne le JSON complet.`
           })
           // Pas de match par nom → nouvelle offre (même si le type existe déjà)
           existingFiltered = nameMatch.length > 0 ? nameMatch : []
+
+          // Offre active (sans valid_until) avec valid_from : vérifier si c'est une nouvelle période
+          // Si le valid_from de l'import ne correspond à aucune offre active existante,
+          // c'est une nouvelle grille tarifaire → créer au lieu de modifier
+          if (existingFiltered.length > 0 && offer.valid_from && !offer.valid_until) {
+            const importDate = new Date(offer.valid_from).toLocaleDateString('sv-SE')
+            const hasMatchingPeriod = existingFiltered.some(o => {
+              if (o.valid_to) return false // ignorer les offres expirées
+              const existDate = o.valid_from ? new Date(o.valid_from).toLocaleDateString('sv-SE') : ''
+              return existDate === importDate
+            })
+            if (!hasMatchingPeriod) {
+              // Aucune offre active avec le même valid_from → nouvelle période tarifaire
+              existingFiltered = []
+            }
+          }
         }
 
         let matched = 0
@@ -2209,11 +2245,11 @@ Puis retourne le JSON complet.`
     start2: string | undefined,
     end2: string | undefined
   ): boolean => {
-    // Une offre sans valid_from est "permanente" → couvre toute la période
-    // Si aucune des deux n'a de date, elles se chevauchent
+    // Si aucune des deux n'a de date, elles sont considérées identiques → chevauchement
     if (!start1 && !start2) return true
-    // Si une seule n'a pas de date de début, elle est permanente → chevauche toujours
-    if (!start1 || !start2) return true
+    // Si l'une a un valid_from et l'autre non, ce sont des périodes différentes
+    // (l'une est une offre "legacy" sans date, l'autre est une nouvelle grille datée)
+    if (!start1 || !start2) return false
 
     const s1 = new Date(start1)
     const e1 = end1 ? new Date(end1) : new Date('9999-12-31')
@@ -5392,7 +5428,7 @@ Puis retourne le JSON complet.`
                                 )}
                               </th>
                               <th className="px-3 py-1.5 text-left font-semibold text-gray-600 dark:text-gray-400 w-16">kVA</th>
-                              <th className="px-3 py-1.5 text-right font-semibold text-gray-600 dark:text-gray-400">Abo.</th>
+                              <th className="px-3 py-1.5 text-right font-semibold text-gray-600 dark:text-gray-400">Abo. (€)</th>
                               {groupFieldKeys.map(k => (
                                 <th key={k} className={`px-2 py-1.5 text-right font-semibold ${getLabelColor(fieldLabels[k] || k)}`}>
                                   {fieldLabels[k] || k}
@@ -5450,7 +5486,7 @@ Puis retourne le JSON complet.`
                                             <span className="text-green-600 dark:text-green-400 font-semibold">{Number(editedVal).toFixed(isSub ? 2 : 4)}</span>
                                           </span>
                                         ) : (
-                                          <span className="text-gray-700 dark:text-gray-300">{isNaN(origVal) ? '-' : origVal.toFixed(isSub ? 2 : 4)}{isSub ? ' €' : ''}</span>
+                                          <span className="text-gray-700 dark:text-gray-300">{isNaN(origVal) ? '-' : origVal.toFixed(isSub ? 2 : 4)}</span>
                                         )}
                                       </td>
                                     )
@@ -5582,7 +5618,7 @@ Puis retourne le JSON complet.`
                               <tr className="bg-green-100/50 dark:bg-green-900/20">
                                 <th className="px-2 py-1.5 w-8"></th>
                                 <th className="px-3 py-1.5 text-left font-semibold text-gray-600 dark:text-gray-400 w-16">kVA</th>
-                                <th className="px-3 py-1.5 text-right font-semibold text-gray-600 dark:text-gray-400">Abo.</th>
+                                <th className="px-3 py-1.5 text-right font-semibold text-gray-600 dark:text-gray-400">Abo. (€)</th>
                                 {powerFieldKeys.map(k => (
                                   <th key={k} className={`px-2 py-1.5 text-right font-semibold ${getLabelColor(fieldLabels[k] || k)}`}>
                                     {fieldLabels[k] || k}
@@ -5613,7 +5649,7 @@ Puis retourne le JSON complet.`
                                     </td>
                                     <td className="px-3 py-1.5 font-bold text-gray-900 dark:text-white">{newPower.power}</td>
                                     <td className="px-3 py-1.5 text-right font-medium text-gray-700 dark:text-gray-300">
-                                      {newPower.fields.subscription_price ? `${newPower.fields.subscription_price} €` : '-'}
+                                      {newPower.fields.subscription_price || '-'}
                                     </td>
                                     {powerFieldKeys.map(k => (
                                       <td key={k} className="px-2 py-1.5 text-right font-mono text-gray-700 dark:text-gray-300">
@@ -5757,7 +5793,7 @@ Puis retourne le JSON complet.`
                                 )}
                               </th>
                               <th className="px-3 py-1.5 text-left font-semibold text-gray-600 dark:text-gray-400 w-16">kVA</th>
-                              <th className="px-3 py-1.5 text-right font-semibold text-gray-600 dark:text-gray-400">Abo.</th>
+                              <th className="px-3 py-1.5 text-right font-semibold text-gray-600 dark:text-gray-400">Abo. (€)</th>
                               {groupFieldKeys.map(k => (
                                 <th key={k} className={`px-2 py-1.5 text-right font-semibold ${getLabelColor(fieldLabels[k] || k)}`}>
                                   {fieldLabels[k] || k}
@@ -5797,7 +5833,7 @@ Puis retourne le JSON complet.`
                                   </td>
                                   <td className="px-3 py-1.5 font-bold text-gray-900 dark:text-white">{power.power || '?'}</td>
                                   <td className="px-3 py-1.5 text-right font-medium text-gray-700 dark:text-gray-300">
-                                    {power.fields.subscription_price ? `${power.fields.subscription_price} €` : '-'}
+                                    {power.fields.subscription_price || '-'}
                                   </td>
                                   {groupFieldKeys.map(k => (
                                     <td key={k} className="px-2 py-1.5 text-right font-mono text-gray-700 dark:text-gray-300">
