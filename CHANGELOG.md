@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.22.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.21.0...1.22.0) (2026-02-12)
+
+### Features
+
+* améliorer la gestion des offres en ajoutant la période de validité et en construisant un JSON détaillé des offres existantes ([db73162](https://github.com/MyElectricalData/myelectricaldata_new/commit/db73162170323992a6b681f768f02955e10e02b2))
+
 ## [1.21.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.20.0...1.21.0) (2026-02-11)
 
 ### Features

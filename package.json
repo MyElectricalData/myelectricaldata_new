@@ -1,6 +1,6 @@
 {
   "name": "myelectricaldata",
-  "version": "1.21.0",
+  "version": "1.22.0",
   "private": true,
   "description": "Secure API gateway for Linky electricity data via Enedis APIs",
   "repository": {
