@@ -1,5 +1,38 @@
 # Changelog
 
+## [2.0.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.22.0...2.0.0) (2026-10-04)
+
+### ⚠ BREAKING CHANGES
+
+* **web:** le front attend une passerelle au format Data Connect 2026 ; le cache persiste des navigateurs est vide au premier chargement.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+* **api:** le client local attend une passerelle au format Data Connect 2026 et rend ce format a son front ; il lit encore une passerelle v5 pendant la transition.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+* **api:** les routes /enedis/* de la passerelle rendent le format Data Connect 2026 ; les clients locaux en version anterieure ne savent plus les lire.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+* **api:** les methodes de mesure, contrat, adresse et client de EnedisAdapter rendent le format Data Connect 2026 au lieu du JSON v5 (meter_reading, customer.usage_points).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Features
+
+* **api:** MED-14 / adapter Enedis sur les API Data Connect 2026 ([2eebb6f](https://github.com/MyElectricalData/myelectricaldata_new/commit/2eebb6f752a75111ba5f9d0cf80f04a9530d2757))
+* **api:** MED-14 / compte de demo au format Data Connect 2026 ([1fdf227](https://github.com/MyElectricalData/myelectricaldata_new/commit/1fdf2277cb440a1b1827dc14a2691ce30c491a15))
+* **api:** MED-14 / configuration Data Connect 2026 (ENEDIS_API_MODE, URL authorize) ([3170dee](https://github.com/MyElectricalData/myelectricaldata_new/commit/3170dee693cd5d45caf4753c3dfd92359a721f5e))
+* **api:** MED-14 / mode client au format Data Connect 2026 ([c455cdb](https://github.com/MyElectricalData/myelectricaldata_new/commit/c455cdba3efcf7c163a7b3de25b2e777523f237a))
+* **api:** MED-14 / parseur de contrat unique et callback autorisation_id ([b6d0c56](https://github.com/MyElectricalData/myelectricaldata_new/commit/b6d0c5654a0aabad17f1d30a84e588d1099d27ed))
+* **api:** MED-14 / routers serveur au format Data Connect 2026 ([6416495](https://github.com/MyElectricalData/myelectricaldata_new/commit/6416495cf9269d89c2b3927093caa7e67a2811f6))
+* **web:** MED-14 / couche d acces aux reponses Enedis Data Connect 2026 ([38d8fcf](https://github.com/MyElectricalData/myelectricaldata_new/commit/38d8fcfda1e77af0f682595ea117626e531278c1))
+* **web:** MED-14 / front au format Enedis Data Connect 2026 ([b8ecd37](https://github.com/MyElectricalData/myelectricaldata_new/commit/b8ecd3751d36b6043199877976dde517f1acf919))
+
+### Bug Fixes
+
+* **api:** MED-14 / corrections de la revue Data Connect 2026 ([065d89d](https://github.com/MyElectricalData/myelectricaldata_new/commit/065d89db914940fadca9049b8330867a4707eb6d))
+* **web:** MED-14 / corrections de la revue Data Connect 2026 ([18c4d71](https://github.com/MyElectricalData/myelectricaldata_new/commit/18c4d7168b812644f20024b19f3003adfef8bd41))
+
 ## [1.22.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.21.0...1.22.0) (2026-02-12)
 
 ### Features
