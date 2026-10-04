@@ -274,7 +274,10 @@ class SyncService:
         response = await self.adapter.get_contract(usage_point_id)
         # Enveloppe {success, data} de la passerelle ; contrat Data Connect 2026 (ou v5 converti)
         contract = contract_v5_to_2026(_unwrap(response))
-        parsed = parse_contract(contract) if "situation_contrat" in contract else {}
+        if not isinstance(contract, dict) or "situation_contrat" not in contract:
+            logger.warning(f"[SYNC] Contrat illisible pour {usage_point_id}, valeurs en base conservées")
+            return
+        parsed = parse_contract(contract)
 
         # Check if contract already exists
         result = await self.db.execute(
@@ -283,10 +286,10 @@ class SyncService:
         existing = result.scalar_one_or_none()
 
         if existing:
-            # Update existing contract
-            existing.subscribed_power = parsed.get("subscribed_power")
-            existing.offpeak_hours = parsed.get("offpeak_hours")
-            existing.segment = parsed.get("segment")
+            # Update existing contract : un champ absent (comptage indisponible…) ne remplace pas la valeur en base
+            for field in ("subscribed_power", "offpeak_hours", "segment"):
+                if parsed.get(field) is not None:
+                    setattr(existing, field, parsed[field])
             existing.raw_data = contract
             existing.last_sync_at = datetime.now(UTC)
         else:

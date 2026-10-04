@@ -1,6 +1,7 @@
 import logging
 import re
 import uuid
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, Path, Query, Request
@@ -132,7 +133,8 @@ async def oauth_callback(
                 return_url += f"&usage_point_id={usage_point_id}"
             if autorisation_id:
                 return_url += f"&autorisation_id={autorisation_id}"
-            return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?redirect={return_url}")
+            # Encodée : sinon usage_point_id / autorisation_id deviennent des paramètres de /login
+            return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?redirect={quote(return_url, safe='')}")
 
         user_id = user.id
         logger.info(f"[OAUTH CALLBACK] Utilisateur authentifie: {user.email} (ID: {user_id})")

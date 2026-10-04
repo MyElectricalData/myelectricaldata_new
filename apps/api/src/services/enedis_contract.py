@@ -92,6 +92,17 @@ def parse_offpeak_hours(comptage: Optional[dict[str, Any]]) -> Optional[dict[str
     return raw if isinstance(raw, dict) else {"default": raw}
 
 
+def offpeak_hours_to_text(offpeak: Any) -> Any:
+    """Plages HC stockées ({"ranges": ["22:00-06:00"]} ou {"default": ...}) → forme relais.plageHeuresCreuses"""
+    if not isinstance(offpeak, dict):
+        return offpeak
+    if offpeak.get("ranges"):
+        return "HC (" + ";".join(r.replace(":", "H") for r in offpeak["ranges"]) + ")"
+    if "default" in offpeak:
+        return offpeak["default"]
+    return offpeak
+
+
 def parse_contract(contract: dict[str, Any]) -> dict[str, Any]:
     """Champs utiles du contrat agrégé : puissance, heures creuses, dates, production"""
     situations = contract.get("situation_contrat") or []

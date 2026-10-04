@@ -121,8 +121,12 @@ class TestModeNew:
 
         result = await adapter.get_contract(PRM, TOKEN)
 
-        assert result == {"situation_contrat": situation, "synthese_contrat": synthese, "comptage": None}
+        assert result["synthese_contrat"] == synthese
+        assert result["comptage"] is None
         assert all(call["params"] in (None, {}) for call in fake.calls)
+        # Pas d'identité du titulaire dans le contrat (cache, raw_data client, admin)
+        assert result["situation_contrat"][0]["subscribed_power"] == {"unit": "kVA", "value": "12"}
+        assert not {"customer", "contact_data", "person"} & set(result["situation_contrat"][0])
 
     async def test_adresse(self, enedis_fixture):
         adresse = enedis_fixture("donnees_generales")
@@ -193,7 +197,7 @@ class TestContratModeAuto:
 
         result = await adapter.get_contract(PRM, TOKEN)
 
-        assert result["situation_contrat"] == situation
+        assert result["situation_contrat"][0]["segment"] == situation[0]["segment"]
         assert result["comptage"] == {"relais": {"plageHeuresCreuses": "HC (22H00-6H00)"}}
         assert fake.paths()[-1] == "/customers_upc/v5/usage_points/contracts"
 
@@ -205,6 +209,23 @@ class TestContratModeAuto:
         assert result["situation_contrat"][0]["subscribed_power"] == {"value": "6", "unit": "kVA"}
         assert result["synthese_contrat"] == {"consumption_last_activation_date": "2018-08-31+02:00"}
         assert result["comptage"] == {"relais": {"plageHeuresCreuses": "HC (22H00-6H00)"}}
+
+
+class TestRevue:
+    async def test_pas_de_repli_v5_sur_404_pas_de_mesure(self):
+        adapter, fake = make_adapter(
+            "auto", {f"{M}/consommation_quotidienne": 404, "/metering_data_dc/v5/daily_consumption": {"x": 1}}
+        )
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await adapter.get_consumption_daily(PRM, "2026-09-29", "2026-10-01", TOKEN)
+        assert fake.paths() == [f"{M}/consommation_quotidienne"]
+
+    async def test_service_en_demande_retenu(self):
+        services = {"serviceSouscrit": [{"pointId": PRM, "etatCode": "DEMANDE"}]}
+        adapter, _ = make_adapter("new", {"/subscribed_services/v1": services})
+
+        assert await adapter.get_usage_points_from_authorization(1, TOKEN) == [PRM]
 
 
 class TestModeLegacy:

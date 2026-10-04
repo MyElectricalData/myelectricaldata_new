@@ -20,7 +20,7 @@ from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..adapters.enedis_format import address_v5_to_2026, build_measure, contract_v5_to_2026
-from ..services.enedis_contract import parse_address, parse_contract
+from ..services.enedis_contract import offpeak_hours_to_text, parse_address, parse_contract
 from ..models.client_mode import (
     ConsumptionData,
     ProductionData,
@@ -116,11 +116,14 @@ class LocalDataService:
             return None
 
         # Contrat agrégé Data Connect 2026, tel que reçu de la passerelle si possible
-        raw = contract.raw_data if isinstance(contract.raw_data, dict) else {}
+        raw = contract_v5_to_2026(contract.raw_data) if isinstance(contract.raw_data, dict) else {}
+        offpeak = contract.offpeak_hours
         if "situation_contrat" in raw:
             data = dict(raw)
+            # comptage_auto indisponible lors de la dernière synchro : plages HC gardées en base
+            if not data.get("comptage") and offpeak:
+                data["comptage"] = {"relais": {"plageHeuresCreuses": offpeak_hours_to_text(offpeak)}}
         else:
-            offpeak = contract.offpeak_hours
             data = {
                 "situation_contrat": [
                     {
@@ -131,7 +134,7 @@ class LocalDataService:
                     }
                 ],
                 "synthese_contrat": {},
-                "comptage": {"relais": {"plageHeuresCreuses": offpeak}} if offpeak else None,
+                "comptage": {"relais": {"plageHeuresCreuses": offpeak_hours_to_text(offpeak)}} if offpeak else None,
             }
         data["_cached"] = True
         data["_cached_at"] = contract.updated_at.isoformat() if contract.updated_at else None
@@ -178,9 +181,10 @@ class LocalDataService:
         existing = result.scalar_one_or_none()
 
         if existing:
-            existing.subscribed_power = contract_info.get("subscribed_power")
-            existing.offpeak_hours = contract_info.get("offpeak_hours")
-            existing.segment = contract_info.get("segment")
+            # Un champ absent (comptage indisponible…) ne remplace pas la valeur en base
+            for field in ("subscribed_power", "offpeak_hours", "segment"):
+                if contract_info.get(field) is not None:
+                    setattr(existing, field, contract_info[field])
             existing.raw_data = _unwrap(data)
             existing.last_sync_at = datetime.now()
         else:

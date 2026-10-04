@@ -76,7 +76,7 @@ def v5_to_2026(
 
     Une réponse sans `meter_reading` (erreur ADAM-ERR0123 par exemple) est rendue telle quelle.
     """
-    if "meter_reading" not in response:
+    if not isinstance(response, dict) or "meter_reading" not in response:
         return response
 
     meter_reading = response["meter_reading"]
@@ -120,7 +120,7 @@ def contract_v5_to_2026(response: dict[str, Any]) -> dict[str, Any]:
     Même forme que EnedisAdapter.get_contract en mode new : situation_contrat (liste),
     synthese_contrat et comptage (plages heures creuses dans relais.plageHeuresCreuses).
     """
-    if "customer" not in response:
+    if not isinstance(response, dict) or "customer" not in response:
         return response
 
     contracts = _first_usage_point(response).get("contracts", {})
@@ -144,7 +144,7 @@ def contract_v5_to_2026(response: dict[str, Any]) -> dict[str, Any]:
 
 def address_v5_to_2026(response: dict[str, Any]) -> dict[str, Any]:
     """Adresse v5 (`usage_point_addresses`) → forme donnees_generales_auto {"address": {...}}"""
-    if "customer" not in response:
+    if not isinstance(response, dict) or "customer" not in response:
         return response
 
     address = _first_usage_point(response).get("usage_point", {}).get("usage_point_addresses", {})
@@ -160,7 +160,7 @@ def address_v5_to_2026(response: dict[str, Any]) -> dict[str, Any]:
 
 def customer_v5_to_2026(response: dict[str, Any]) -> Any:
     """Identité / contact v5 → forme situation_contrat_auto ([{person, contact_data}])"""
-    if "customer" not in response:
+    if not isinstance(response, dict) or "customer" not in response:
         return response
 
     customer = response["customer"]

@@ -48,6 +48,21 @@ class RateLimiter:
             self.calls.append(now)
 
 
+# Données personnelles de situation_contrat_auto : servies par get_customer / get_contact
+# uniquement, jamais recopiées dans le contrat (cache Redis, raw_data du client, admin)
+IDENTITY_KEYS = ("customer", "contact_data", "person")
+# États d'un service souscrit retenus au callback (défaut du Swagger subscribed_services)
+ACTIVE_SERVICE_STATES = ("ACTIF", "DEMANDE")
+
+
+def _without_identity(situations: Any) -> Any:
+    if not isinstance(situations, list):
+        return situations
+    return [
+        {k: v for k, v in s.items() if k not in IDENTITY_KEYS} if isinstance(s, dict) else s for s in situations
+    ]
+
+
 class EnedisAdapter:
     """Adapter for Enedis API with rate limiting"""
 
@@ -253,9 +268,9 @@ class EnedisAdapter:
     ) -> Any:
         """Appelle l'API 2026 (`new`) ou la v5 (`legacy`) selon le mode.
 
-        En mode auto, un échec HTTP de l'API 2026 retombe sur la v5. Les erreurs
-        métier rendues en dict (ADAM-ERR0123) ne déclenchent pas de repli : la v5
-        répondrait la même chose.
+        En mode auto, un échec HTTP de l'API 2026 retombe sur la v5, sauf 404 (pas de
+        mesure). Les erreurs métier rendues en dict (ADAM-ERR0123) ne déclenchent pas
+        de repli : la v5 répondrait la même chose.
         """
         if self.api_mode == "legacy":
             return await legacy()
@@ -263,8 +278,14 @@ class EnedisAdapter:
             return await new()
         try:
             return await new()
-        except (httpx.HTTPStatusError, httpx.TransportError) as e:
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                # « Pas de mesure trouvée pour ce point » : la v5 n'en aurait pas davantage (quota)
+                raise
             logger.warning(f"[ENEDIS] {label} : API 2026 en échec ({e}), repli sur la v5")
+            return await legacy()
+        except httpx.TransportError as e:
+            logger.warning(f"[ENEDIS] {label} : API 2026 injoignable ({e}), repli sur la v5")
             return await legacy()
 
     async def _get_measure(
@@ -406,7 +427,7 @@ class EnedisAdapter:
                 comptage = None
             if comptage is None and self.api_mode == "auto":
                 comptage = await self._offpeak_from_v5(usage_point_id, access_token)
-            return {"situation_contrat": situation, "synthese_contrat": synthese, "comptage": comptage}
+            return {"situation_contrat": _without_identity(situation), "synthese_contrat": synthese, "comptage": comptage}
 
         async def legacy() -> dict[str, Any]:
             response = await self._get_v5_customer(
@@ -461,7 +482,7 @@ class EnedisAdapter:
     async def get_usage_points_from_authorization(self, autorisation_id: int, access_token: str) -> list[str]:
         """PRM d'un consentement Data Connect v2 (callback `autorisation_id`), via POST /subscribed_services/v1
 
-        Seuls les services ACTIF sont retenus ; un PRM en autoconsommation porte deux
+        Seuls les services ACTIF ou DEMANDE sont retenus ; un PRM en autoconsommation porte deux
         services (soutirage et injection) mais n'est rendu qu'une fois.
         """
         url = f"{self.base_url}/subscribed_services/v1"
@@ -470,7 +491,7 @@ class EnedisAdapter:
         prms: list[str] = []
         for service in response.get("serviceSouscrit", []):
             prm = service.get("pointId")
-            if prm and service.get("etatCode") == "ACTIF" and prm not in prms:
+            if prm and service.get("etatCode") in ACTIVE_SERVICE_STATES and prm not in prms:
                 prms.append(prm)
         return prms
 
