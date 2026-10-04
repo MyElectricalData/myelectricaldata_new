@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.client_mode import ConsumptionData, DataGranularity, ProductionData
 from ..models.tempo_day import TempoDay
+from .exporters.tariff import is_offpeak_slot
 
 logger = logging.getLogger(__name__)
 
@@ -265,54 +266,38 @@ class StatisticsService:
     # HP/HC STATISTICS (Peak/Off-peak based on detailed data)
     # =========================================================================
 
-    def _is_offpeak_hour(self, interval_start: str | None, offpeak_hours: list[dict[str, str]]) -> bool:
-        """Check if an interval is during off-peak hours
+    def _is_offpeak_hour(
+        self,
+        day: date,
+        interval_start: str | None,
+        offpeak_ranges: list[tuple[int, int]],
+        weekend_offpeak: bool = False,
+    ) -> bool:
+        """Check if a detailed interval is during off-peak hours
 
         Args:
+            day: Date of the interval
             interval_start: Time string like "00:00", "00:30", etc.
-            offpeak_hours: List of offpeak periods like [{"start": "22:00", "end": "06:00"}]
-
-        Returns:
-            True if the interval is during off-peak hours
+            offpeak_ranges: Off-peak ranges in minutes (cf. exporters.tariff.parse_offpeak_ranges)
+            weekend_offpeak: Saturday and Sunday fully off-peak (HC_WEEKEND offers)
         """
-        if not interval_start or not offpeak_hours:
-            return False
-
-        try:
-            hour, minute = map(int, interval_start.split(":"))
-            time_minutes = hour * 60 + minute
-
-            for period in offpeak_hours:
-                start_h, start_m = map(int, period["start"].split(":"))
-                end_h, end_m = map(int, period["end"].split(":"))
-
-                start_minutes = start_h * 60 + start_m
-                end_minutes = end_h * 60 + end_m
-
-                # Handle overnight periods (e.g., 22:00 - 06:00)
-                if start_minutes > end_minutes:
-                    if time_minutes >= start_minutes or time_minutes < end_minutes:
-                        return True
-                elif start_minutes <= time_minutes < end_minutes:
-                    return True
-
-            return False
-        except (ValueError, KeyError):
-            return False
+        return bool(is_offpeak_slot(day, interval_start, offpeak_ranges, weekend_offpeak))
 
     async def get_hp_hc_year_total(
         self,
         usage_point_id: str,
         year: int,
-        offpeak_hours: list[dict[str, str]],
+        offpeak_ranges: list[tuple[int, int]],
         direction: str = "consumption",
+        weekend_offpeak: bool = False,
     ) -> tuple[int, int]:
         """Get HP/HC totals for a calendar year
 
         Args:
             usage_point_id: PDL number
             year: Calendar year
-            offpeak_hours: List of offpeak periods
+            offpeak_ranges: Off-peak ranges in minutes (cf. exporters.tariff)
+            weekend_offpeak: Saturday and Sunday fully off-peak
             direction: 'consumption' or 'production'
 
         Returns:
@@ -323,7 +308,7 @@ class StatisticsService:
         end_date = date(year, 12, 31)
 
         result = await self.db.execute(
-            select(model.interval_start, model.value)
+            select(model.date, model.interval_start, model.value)
             .where(model.usage_point_id == usage_point_id)
             .where(model.granularity == DataGranularity.DETAILED)
             .where(model.date >= start_date)
@@ -334,7 +319,7 @@ class StatisticsService:
         hc_total = 0
 
         for row in result.all():
-            if self._is_offpeak_hour(row.interval_start, offpeak_hours):
+            if self._is_offpeak_hour(row.date, row.interval_start, offpeak_ranges, weekend_offpeak):
                 hc_total += row.value
             else:
                 hp_total += row.value
@@ -346,8 +331,9 @@ class StatisticsService:
         usage_point_id: str,
         year: int,
         month: int,
-        offpeak_hours: list[dict[str, str]],
+        offpeak_ranges: list[tuple[int, int]],
         direction: str = "consumption",
+        weekend_offpeak: bool = False,
     ) -> tuple[int, int]:
         """Get HP/HC totals for a specific month
 
@@ -355,7 +341,8 @@ class StatisticsService:
             usage_point_id: PDL number
             year: Calendar year
             month: Month number (1-12)
-            offpeak_hours: List of offpeak periods
+            offpeak_ranges: Off-peak ranges in minutes (cf. exporters.tariff)
+            weekend_offpeak: Saturday and Sunday fully off-peak
             direction: 'consumption' or 'production'
 
         Returns:
@@ -370,7 +357,7 @@ class StatisticsService:
             end_date = date(year, month + 1, 1) - timedelta(days=1)
 
         result = await self.db.execute(
-            select(model.interval_start, model.value)
+            select(model.date, model.interval_start, model.value)
             .where(model.usage_point_id == usage_point_id)
             .where(model.granularity == DataGranularity.DETAILED)
             .where(model.date >= start_date)
@@ -381,7 +368,7 @@ class StatisticsService:
         hc_total = 0
 
         for row in result.all():
-            if self._is_offpeak_hour(row.interval_start, offpeak_hours):
+            if self._is_offpeak_hour(row.date, row.interval_start, offpeak_ranges, weekend_offpeak):
                 hc_total += row.value
             else:
                 hp_total += row.value
@@ -393,8 +380,9 @@ class StatisticsService:
         usage_point_id: str,
         year: int,
         week: int,
-        offpeak_hours: list[dict[str, str]],
+        offpeak_ranges: list[tuple[int, int]],
         direction: str = "consumption",
+        weekend_offpeak: bool = False,
     ) -> tuple[int, int]:
         """Get HP/HC totals for a specific ISO week
 
@@ -409,7 +397,7 @@ class StatisticsService:
         end_date = start_date + timedelta(days=6)
 
         result = await self.db.execute(
-            select(model.interval_start, model.value)
+            select(model.date, model.interval_start, model.value)
             .where(model.usage_point_id == usage_point_id)
             .where(model.granularity == DataGranularity.DETAILED)
             .where(model.date >= start_date)
@@ -420,7 +408,7 @@ class StatisticsService:
         hc_total = 0
 
         for row in result.all():
-            if self._is_offpeak_hour(row.interval_start, offpeak_hours):
+            if self._is_offpeak_hour(row.date, row.interval_start, offpeak_ranges, weekend_offpeak):
                 hc_total += row.value
             else:
                 hp_total += row.value
@@ -430,8 +418,9 @@ class StatisticsService:
     async def get_hp_hc_current_week_by_day(
         self,
         usage_point_id: str,
-        offpeak_hours: list[dict[str, str]],
+        offpeak_ranges: list[tuple[int, int]],
         direction: str = "consumption",
+        weekend_offpeak: bool = False,
     ) -> dict[str, tuple[int, int]]:
         """Get HP/HC totals for each day of the current week
 
@@ -447,7 +436,7 @@ class StatisticsService:
             day_date = monday + timedelta(days=i)
 
             query_result = await self.db.execute(
-                select(model.interval_start, model.value)
+                select(model.date, model.interval_start, model.value)
                 .where(model.usage_point_id == usage_point_id)
                 .where(model.granularity == DataGranularity.DETAILED)
                 .where(model.date == day_date)
@@ -457,7 +446,7 @@ class StatisticsService:
             hc_total = 0
 
             for row in query_result.all():
-                if self._is_offpeak_hour(row.interval_start, offpeak_hours):
+                if self._is_offpeak_hour(row.date, row.interval_start, offpeak_ranges, weekend_offpeak):
                     hc_total += row.value
                 else:
                     hp_total += row.value
@@ -752,8 +741,9 @@ class StatisticsService:
         self,
         usage_point_id: str,
         target_date: date,
-        offpeak_hours: list[dict[str, str]],
+        offpeak_ranges: list[tuple[int, int]],
         direction: str = "consumption",
+        weekend_offpeak: bool = False,
     ) -> tuple[int, int]:
         """HP/HC pour un jour spécifique (données DETAILED requises)
 
@@ -763,7 +753,7 @@ class StatisticsService:
         model = self._get_model(direction)
 
         result = await self.db.execute(
-            select(model.interval_start, model.value)
+            select(model.date, model.interval_start, model.value)
             .where(model.usage_point_id == usage_point_id)
             .where(model.granularity == DataGranularity.DETAILED)
             .where(model.date == target_date)
@@ -773,7 +763,7 @@ class StatisticsService:
         hc_total = 0
 
         for row in result.all():
-            if self._is_offpeak_hour(row.interval_start, offpeak_hours):
+            if self._is_offpeak_hour(row.date, row.interval_start, offpeak_ranges, weekend_offpeak):
                 hc_total += row.value
             else:
                 hp_total += row.value

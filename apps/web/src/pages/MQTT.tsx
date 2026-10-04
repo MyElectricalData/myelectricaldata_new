@@ -248,6 +248,7 @@ export default function MQTT() {
         <div className="font-mono text-xs text-gray-600 dark:text-gray-400 space-y-1">
           <p><span className="text-primary-600 dark:text-primary-400">{topicPrefix || 'myelectricaldata'}</span>/&lt;pdl&gt;/consumption/daily</p>
           <p><span className="text-primary-600 dark:text-primary-400">{topicPrefix || 'myelectricaldata'}</span>/&lt;pdl&gt;/consumption/detailed</p>
+          <p><span className="text-primary-600 dark:text-primary-400">{topicPrefix || 'myelectricaldata'}</span>/&lt;pdl&gt;/consumption/stats <span className="text-gray-500">(totaux, + HP/HC si contrat heures creuses)</span></p>
           <p><span className="text-primary-600 dark:text-primary-400">{topicPrefix || 'myelectricaldata'}</span>/&lt;pdl&gt;/production/daily</p>
           <p><span className="text-primary-600 dark:text-primary-400">{topicPrefix || 'myelectricaldata'}</span>/tempo/today</p>
           <p><span className="text-primary-600 dark:text-primary-400">{topicPrefix || 'myelectricaldata'}</span>/ecowatt/today</p>

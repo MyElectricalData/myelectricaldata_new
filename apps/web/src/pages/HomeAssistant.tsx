@@ -178,6 +178,14 @@ const GLOBAL_ENTITIES: BaseEntity[] = [
   },
 ]
 
+/** Périodes des capteurs HP/HC (cf. tariff.summarize_hp_hc_kwh côté API) */
+const HP_HC_PERIODS = [
+  { key: 'yesterday', label: 'hier' },
+  { key: 'this_week', label: 'semaine' },
+  { key: 'this_month', label: 'mois' },
+  { key: 'this_year', label: 'année' },
+] as const
+
 /**
  * Génère les entités spécifiques à un PDL
  */
@@ -219,6 +227,17 @@ function getPdlEntities(pdl: string): BaseEntity[] {
       device_class: 'energy',
       description: 'Total consommation des 30 derniers jours',
     },
+    ...HP_HC_PERIODS.flatMap(({ key, label }) =>
+      (['hp', 'hc'] as const).map((tariff) => ({
+        entity_id: `sensor.myelectricaldata_linky_${pdl}_consumption_${key}_${tariff}`,
+        name: `Conso ${label} ${tariff.toUpperCase()} ${pdl}`,
+        device: `Linky ${pdl}`,
+        icon: tariff === 'hc' ? 'mdi:weather-night' : 'mdi:white-balance-sunny',
+        unit: 'kWh',
+        device_class: 'energy',
+        description: `Consommation ${tariff === 'hc' ? 'heures creuses' : 'heures pleines'} ${label} (contrat HC/HP avec données détaillées)`,
+      }))
+    ),
     {
       entity_id: `sensor.myelectricaldata_linky_${pdl}_production`,
       name: `Production ${pdl}`,

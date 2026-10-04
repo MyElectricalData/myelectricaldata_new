@@ -42,6 +42,7 @@ from sqlalchemy import String, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import BaseExporter
+from .tariff import DEFAULT_OFFPEAK_RANGES, is_offpeak, is_offpeak_slot, parse_offpeak_ranges, tariff_profile
 
 logger = logging.getLogger(__name__)
 
@@ -611,7 +612,7 @@ class HomeAssistantExporter(BaseExporter):
                 )
                 results["energy_dashboard"] = ws_results
                 if ws_results.get("success"):
-                    logger.info(f"[HA-WS] Import Energy Dashboard réussi")
+                    logger.info("[HA-WS] Import Energy Dashboard réussi")
                 else:
                     results["errors"].append(f"energy_dashboard: {ws_results.get('message')}")
             except Exception as e:
@@ -847,6 +848,8 @@ class HomeAssistantExporter(BaseExporter):
         - sensor.myelectricaldata_linky_{pdl}_consumption_last7day (last 7 days total)
         - sensor.myelectricaldata_linky_{pdl}_consumption_last14day (last 14 days total)
         - sensor.myelectricaldata_linky_{pdl}_consumption_last30day (last 30 days total)
+        - sensor.myelectricaldata_linky_{pdl}_consumption_{yesterday,this_week,this_month,this_year}_{hp,hc}
+          (off-peak contracts with detailed data only)
         """
         today = date.today()
         yesterday = today - timedelta(days=1)
@@ -911,6 +914,26 @@ class HomeAssistantExporter(BaseExporter):
                 device_class="energy",
                 state_class="total",
                 icon="mdi:chart-line",
+            )
+            count += 1
+
+        # HP/HC (contrats à heures creuses avec données détaillées) : 8 capteurs
+        # sensor.myelectricaldata_linky_{pdl}_consumption_{yesterday,this_week,this_month,this_year}_{hp,hc}
+        hp_hc = await self._get_hp_hc_summary(stats.db, pdl, today)
+        for key, value_kwh in (hp_hc or {}).items():
+            sensor_key = key.removesuffix("_kwh")
+            await self._publish_sensor_old_format(
+                client,
+                topic=f"myelectricaldata_consumption_{sensor_key}/{pdl}",
+                name=f"consumption {sensor_key.replace('_', ' ')}",
+                unique_id=f"myelectricaldata_linky_{pdl}_consumption_{sensor_key}",
+                device=device,
+                state=value_kwh,
+                attributes={"pdl": pdl, "last_updated": datetime.now().isoformat()},
+                unit="kWh",
+                device_class="energy",
+                state_class="total",
+                icon="mdi:weather-night" if sensor_key.endswith("_hc") else "mdi:white-balance-sunny",
             )
             count += 1
 
@@ -1022,98 +1045,6 @@ class HomeAssistantExporter(BaseExporter):
             return 0.0
         return round((current - previous) / previous * 100, 1)
 
-    @staticmethod
-    def _parse_offpeak_hours(raw: Any) -> list[dict[str, str]]:
-        """Convertit offpeak_hours du format DB en liste structurée
-
-        Formats d'entrée possibles :
-        - Déjà structuré : [{"start": "22:00", "end": "06:00"}]
-        - Dict Enedis : {"default": "HC (22H00-6H00)"}
-        - Dict multi-plages : {"default": "HC (2H30-6H30;13H00-15H00;21H30-23H30)"}
-
-        Returns:
-            Liste de périodes [{"start": "HH:MM", "end": "HH:MM"}, ...]
-        """
-        if not raw:
-            return []
-
-        # Déjà au bon format
-        if isinstance(raw, list):
-            return raw
-
-        # Format dict Enedis : extraire la valeur string
-        if isinstance(raw, dict):
-            raw_str = raw.get("default", "") or ""
-        elif isinstance(raw, str):
-            raw_str = raw
-        else:
-            return []
-
-        if not raw_str:
-            return []
-
-        # Extraire le contenu entre parenthèses : "HC (22H00-6H00)" → "22H00-6H00"
-        match = re.search(r"\(([^)]+)\)", raw_str)
-        if not match:
-            return []
-
-        periods_str = match.group(1)  # ex: "2H30-6H30;13H00-15H00;21H30-23H30"
-        result = []
-
-        for period in periods_str.split(";"):
-            parts = period.strip().split("-")
-            if len(parts) != 2:
-                continue
-
-            parsed = []
-            for part in parts:
-                # "22H00" → "22:00", "2H30" → "02:30"
-                time_match = re.match(r"(\d{1,2})H(\d{2})", part.strip(), re.IGNORECASE)
-                if not time_match:
-                    break
-                h = int(time_match.group(1))
-                m = int(time_match.group(2))
-                parsed.append(f"{h:02d}:{m:02d}")
-
-            if len(parsed) == 2:
-                result.append({"start": parsed[0], "end": parsed[1]})
-
-        return result
-
-    async def _get_pdl_contract_info(
-        self, db: AsyncSession, pdl: str
-    ) -> tuple[list[dict[str, str]], int | None]:
-        """Récupère offpeak_hours et subscribed_power pour un PDL
-
-        Essaie ContractData (mode client) puis PDL (mode serveur).
-        Convertit automatiquement le format Enedis en liste structurée.
-
-        Returns:
-            Tuple (offpeak_hours, subscribed_power_kva)
-        """
-        from ...models.client_mode import ContractData
-        from ...models.pdl import PDL
-
-        # Mode client : ContractData
-        result = await db.execute(
-            select(ContractData.offpeak_hours, ContractData.subscribed_power)
-            .where(ContractData.usage_point_id == pdl)
-        )
-        contract = result.first()
-        if contract and contract.offpeak_hours:
-            return self._parse_offpeak_hours(contract.offpeak_hours), contract.subscribed_power
-
-        # Mode serveur : PDL
-        result = await db.execute(
-            select(PDL.offpeak_hours, PDL.subscribed_power)
-            .where(PDL.usage_point_id == pdl)
-        )
-        pdl_data = result.first()
-        if pdl_data:
-            return self._parse_offpeak_hours(pdl_data.offpeak_hours), pdl_data.subscribed_power
-
-        return [], None
-
     async def _export_linky_card_stats(
         self,
         client: aiomqtt.Client,
@@ -1208,8 +1139,8 @@ class HomeAssistantExporter(BaseExporter):
         device = self._get_device_linky(pdl)
         oldest_date = today - timedelta(days=nb_days)
 
-        # Récupérer les infos contrat (offpeak_hours, subscribed_power)
-        offpeak_hours, subscribed_power_kva = await self._get_pdl_contract_info(db, pdl)
+        # Récupérer les infos contrat (plages HC, puissance souscrite, week-end creux)
+        offpeak_ranges, subscribed_power_kva, weekend_offpeak = await self._get_pdl_contract_info(db, pdl)
 
         # =====================================================================
         # BATCH QUERIES (minimiser les allers-retours DB)
@@ -1252,7 +1183,7 @@ class HomeAssistantExporter(BaseExporter):
             detailed_by_day[d].append((interval_start, value))
 
         has_detailed = len(detailed_records) > 0
-        has_offpeak = len(offpeak_hours) > 0
+        has_offpeak = len(offpeak_ranges) > 0
 
         # Calculer HP/HC et max power pour chaque jour
         daily_hp: dict[date, int] = {}   # Wh
@@ -1273,7 +1204,7 @@ class HomeAssistantExporter(BaseExporter):
                 wh = value / 2
 
                 # HP/HC
-                if has_offpeak and stats._is_offpeak_hour(interval_start, offpeak_hours):
+                if has_offpeak and is_offpeak_slot(day_date, interval_start, offpeak_ranges, weekend_offpeak):
                     hc_wh += wh
                 else:
                     hp_wh += wh
@@ -1408,7 +1339,7 @@ class HomeAssistantExporter(BaseExporter):
 
         if has_detailed and has_offpeak:
             hp_year_wh, hc_year_wh = await stats.get_hp_hc_year_total(
-                pdl, today.year, offpeak_hours, direction
+                pdl, today.year, offpeak_ranges, direction, weekend_offpeak
             )
             total_year_hp_hc = hp_year_wh + hc_year_wh
             peak_offpeak_percent = (
@@ -3338,6 +3269,10 @@ class HomeAssistantExporter(BaseExporter):
 
         logger.info(f"[HA-WS] PDL {pdl}: pricing_option={pricing_option}, offpeak_hours={offpeak_hours}, since_date={since_date}")
 
+        profile = tariff_profile(pricing_option)
+        # Plages HC du contrat, sinon 22h-6h (aucune plage connue)
+        parsed_offpeak = parse_offpeak_ranges(offpeak_hours) or DEFAULT_OFFPEAK_RANGES
+
         # 2. Try to get detailed data (30-min) first, fallback to daily
         # Apply since_date filter if provided (for incremental import)
         detailed_query = (
@@ -3378,7 +3313,7 @@ class HomeAssistantExporter(BaseExporter):
 
         # 3. For TEMPO, load the color calendar
         tempo_colors: dict[str, TempoColor] = {}
-        if "TEMPO" in pricing_option:
+        if profile.family == "TEMPO":
             tempo_result = await db.execute(select(TempoDay))
             for day in tempo_result.scalars().all():
                 # Store by date string YYYY-MM-DD
@@ -3389,14 +3324,14 @@ class HomeAssistantExporter(BaseExporter):
         stats_by_tariff: dict[str, list[dict[str, Any]]] = {}
         cumulative_by_tariff: dict[str, float] = {}
 
-        if "TEMPO" in pricing_option:
+        if profile.family == "TEMPO":
             # 6 buckets: blue_hc, blue_hp, white_hc, white_hp, red_hc, red_hp
             for color in ["blue", "white", "red"]:
                 for period in ["hc", "hp"]:
                     key = f"{color}_{period}"
                     stats_by_tariff[key] = []
                     cumulative_by_tariff[key] = 0.0
-        elif pricing_option in ("HC/HP", "HCHP", "HC_HP", "HC_WEEKEND", "EJP"):
+        elif profile.family == "HC_HP":
             # 2 buckets: hc, hp
             stats_by_tariff["hc"] = []
             stats_by_tariff["hp"] = []
@@ -3406,93 +3341,6 @@ class HomeAssistantExporter(BaseExporter):
             # BASE: 1 bucket
             stats_by_tariff["base"] = []
             cumulative_by_tariff["base"] = 0.0
-
-        # 5. Helper to parse offpeak_hours from various stored formats
-        def _parse_offpeak_ranges() -> list[tuple[int, int]]:
-            """Parse offpeak_hours into list of (start_minutes, end_minutes) tuples.
-
-            Handles multiple stored formats:
-            - {"ranges": ["22:30-06:30", "12:00-14:00"]}  (format normalisé)
-            - {"default": "HC (22H30-06H30)"}  (format brut Enedis)
-            - [{"start": "22:00", "end": "06:00"}]  (ancien format)
-            - list of strings ["22:30-06:30"]
-            """
-            if not offpeak_hours:
-                return []
-
-            ranges: list[str] = []
-
-            if isinstance(offpeak_hours, dict):
-                if "ranges" in offpeak_hours:
-                    # Format normalisé : {"ranges": ["22:30-06:30", ...]}
-                    ranges = offpeak_hours["ranges"]
-                elif "default" in offpeak_hours:
-                    # Format brut Enedis : {"default": "HC (22H30-06H30)"}
-                    raw = offpeak_hours["default"]
-                    if isinstance(raw, str):
-                        # Extraire les plages du format Enedis
-                        match = re.search(r'\(([^)]+)\)', raw)
-                        content = match.group(1) if match else raw
-                        ranges = [r.strip() for r in content.split(";")]
-                else:
-                    # Essayer comme liste de dicts [{"start": ..., "end": ...}]
-                    result = []
-                    for item in offpeak_hours.values() if isinstance(offpeak_hours, dict) else []:
-                        if isinstance(item, dict) and "start" in item and "end" in item:
-                            s = item["start"].replace("H", ":").replace("h", ":")
-                            e = item["end"].replace("H", ":").replace("h", ":")
-                            sp = s.split(":")
-                            ep = e.split(":")
-                            if len(sp) >= 2 and len(ep) >= 2:
-                                result.append((int(sp[0]) * 60 + int(sp[1]), int(ep[0]) * 60 + int(ep[1])))
-                    return result
-            elif isinstance(offpeak_hours, list):
-                # Liste directe de strings ou dicts
-                for item in offpeak_hours:
-                    if isinstance(item, str):
-                        ranges.append(item)
-                    elif isinstance(item, dict) and "start" in item and "end" in item:
-                        s = item["start"].replace("H", ":").replace("h", ":")
-                        e = item["end"].replace("H", ":").replace("h", ":")
-                        sp = s.split(":")
-                        ep = e.split(":")
-                        if len(sp) >= 2 and len(ep) >= 2:
-                            return [(int(sp[0]) * 60 + int(sp[1]), int(ep[0]) * 60 + int(ep[1]))]
-
-            # Parser les strings "HH:MM-HH:MM" ou "HHhMM-HHhMM" ou "HHMM-HHMM"
-            result = []
-            for r in ranges:
-                if not isinstance(r, str):
-                    continue
-                # Normaliser : remplacer H/h par :
-                normalized = r.replace("H", ":").replace("h", ":")
-                # Matcher "HH:MM-HH:MM"
-                m = re.match(r'(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})', normalized)
-                if m:
-                    start_min = int(m.group(1)) * 60 + int(m.group(2))
-                    end_min = int(m.group(3)) * 60 + int(m.group(4))
-                    result.append((start_min, end_min))
-            return result
-
-        parsed_offpeak = _parse_offpeak_ranges()
-        logger.debug(f"[HA-WS] Parsed offpeak ranges for {pdl}: {parsed_offpeak} (from {offpeak_hours})")
-
-        def is_offpeak_hour(hour: int, minute: int = 0) -> bool:
-            """Check if given time is in off-peak hours"""
-            if not parsed_offpeak:
-                # Default: 22h-6h = heures creuses
-                return hour < 6 or hour >= 22
-
-            time_minutes = hour * 60 + minute
-            for start_minutes, end_minutes in parsed_offpeak:
-                # Handle overnight periods (e.g., 22:00 -> 06:00)
-                if start_minutes > end_minutes:
-                    if time_minutes >= start_minutes or time_minutes < end_minutes:
-                        return True
-                else:
-                    if start_minutes <= time_minutes < end_minutes:
-                        return True
-            return False
 
         # 6. Helper to convert W → Wh based on interval_length
         def convert_w_to_wh(value_w: int, raw_data: dict | None) -> float:
@@ -3537,14 +3385,14 @@ class HomeAssistantExporter(BaseExporter):
             # Parse time
             if use_detailed and record.interval_start:
                 # Parse interval_start (e.g., "14:30")
-                hour, minute = map(int, record.interval_start.split(":"))
+                hour, minute = map(int, record.interval_start.split(":")[:2])
             else:
                 # Daily data: split into 24 hourly entries
-                hour = 0
+                hour, minute = 0, 0
 
-            # Determine tariff tag based on the hour (not the minute)
-            # The tariff is determined by the START of the hour
-            if "TEMPO" in pricing_option:
+            # Determine tariff tag: TEMPO by hour, HC/HP by the exact start of the slot
+            # (contract ranges can start on the half hour, e.g. 22:30-06:30)
+            if profile.family == "TEMPO":
                 # TEMPO logic: 6h-22h = HP, 22h-6h = HC
                 # For data between 00:00 and 06:00, the color is from the previous day
                 if 6 <= hour < 22:
@@ -3563,10 +3411,9 @@ class HomeAssistantExporter(BaseExporter):
                 color_name = color.value.lower() if hasattr(color, 'value') else str(color).lower()
                 tariff_tag = f"{color_name}_{period}"
 
-            elif pricing_option in ("HC/HP", "HCHP", "HC_HP", "HC_WEEKEND", "EJP"):
-                # HC/HP: use off-peak hours from contract
-                # Use start of hour for tariff determination
-                if is_offpeak_hour(hour, 0):
+            elif profile.family == "HC_HP":
+                # HC/HP: use off-peak hours from contract (weekend fully off-peak for weekend offers)
+                if is_offpeak(record.date, hour, minute, parsed_offpeak, profile.weekend_offpeak):
                     tariff_tag = "hc"
                 else:
                     tariff_tag = "hp"
@@ -3585,7 +3432,7 @@ class HomeAssistantExporter(BaseExporter):
                 hourly_value = value_kwh / 24
                 for h in range(24):
                     # Re-determine tariff for each hour
-                    if "TEMPO" in pricing_option:
+                    if profile.family == "TEMPO":
                         if 6 <= h < 22:
                             h_period = "hp"
                             h_tempo_date = record.date
@@ -3599,8 +3446,8 @@ class HomeAssistantExporter(BaseExporter):
                         h_color = tempo_colors.get(h_date_str, TempoColor.BLUE)
                         h_color_name = h_color.value.lower() if hasattr(h_color, 'value') else str(h_color).lower()
                         h_tariff_tag = f"{h_color_name}_{h_period}"
-                    elif pricing_option in ("HC/HP", "HCHP", "HC_HP", "HC_WEEKEND", "EJP"):
-                        h_tariff_tag = "hc" if is_offpeak_hour(h, 0) else "hp"
+                    elif profile.family == "HC_HP":
+                        h_tariff_tag = "hc" if is_offpeak(record.date, h, 0, parsed_offpeak, profile.weekend_offpeak) else "hp"
                     else:
                         h_tariff_tag = "base"
 
@@ -3686,8 +3533,9 @@ class HomeAssistantExporter(BaseExporter):
         # Build price map based on offer type
         # Convert Decimal to float for calculations
         prices: dict[str, float] = {}
+        family = tariff_profile(offer.offer_type).family
 
-        if offer.offer_type == "TEMPO":
+        if family == "TEMPO":
             # TEMPO has 6 tariffs
             if offer.tempo_blue_hc:
                 prices["blue_hc"] = float(offer.tempo_blue_hc)
@@ -3701,7 +3549,7 @@ class HomeAssistantExporter(BaseExporter):
                 prices["red_hc"] = float(offer.tempo_red_hc)
             if offer.tempo_red_hp:
                 prices["red_hp"] = float(offer.tempo_red_hp)
-        elif offer.offer_type in ("HC_HP", "HCHP", "HC/HP", "HC_WEEKEND", "EJP"):
+        elif family == "HC_HP":
             # HC/HP has 2 tariffs
             if offer.hc_price:
                 prices["hc"] = float(offer.hc_price)

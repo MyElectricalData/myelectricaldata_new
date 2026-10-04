@@ -7,6 +7,8 @@ without the HA-specific discovery protocol.
 Topic structure:
     {topic_prefix}/{pdl}/consumption/daily
     {topic_prefix}/{pdl}/consumption/detailed
+    {topic_prefix}/{pdl}/consumption/stats   (+ {yesterday,this_week,this_month,this_year}_{hp,hc}_kwh
+                                              pour un contrat à heures creuses avec données détaillées)
     {topic_prefix}/{pdl}/production/daily
     {topic_prefix}/tempo/today
     {topic_prefix}/tempo/tomorrow
@@ -337,6 +339,11 @@ class MQTTExporter(BaseExporter):
         result = await db.execute(stmt)
         week_wh = result.scalar()
         stats["this_week_kwh"] = round(week_wh / 1000, 2) if week_wh else 0
+
+        # HP/HC : contrats à heures creuses, à partir des données détaillées (30 min)
+        hp_hc = await self._get_hp_hc_summary(db, pdl, today)
+        if hp_hc:
+            stats.update(hp_hc)
 
         return stats if any(v for k, v in stats.items() if k.endswith("_kwh")) else None
 
