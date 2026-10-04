@@ -1,5 +1,61 @@
 # Helm Charts Changelog
 
+## [2.0.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/1.2.0...helm/2.0.0) (2026-10-04)
+
+### ⚠ BREAKING CHANGES
+
+* **web:** le front attend une passerelle au format Data Connect 2026 ; le cache persiste des navigateurs est vide au premier chargement.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+* **api:** le client local attend une passerelle au format Data Connect 2026 et rend ce format a son front ; il lit encore une passerelle v5 pendant la transition.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+* **api:** les routes /enedis/* de la passerelle rendent le format Data Connect 2026 ; les clients locaux en version anterieure ne savent plus les lire.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+* **api:** les methodes de mesure, contrat, adresse et client de EnedisAdapter rendent le format Data Connect 2026 au lieu du JSON v5 (meter_reading, customer.usage_points).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Features
+
+* add AI mode for JSON import of offers ([5d1875c](https://github.com/MyElectricalData/myelectricaldata_new/commit/5d1875c63aae93e9298ab70e42080b86fe1ce358))
+* add valid_from date handling in contributions and offers ([473c812](https://github.com/MyElectricalData/myelectricaldata_new/commit/473c812adcc4cad47c941309c34c0533f8bded4f))
+* add ValidityPeriodManager component with tests and utility functions ([f61dc23](https://github.com/MyElectricalData/myelectricaldata_new/commit/f61dc23c809e7e99885ee321cd02e27d490d5a46))
+* ajouter des champs pour la source de données et la date d'extraction dans le JSON des offres ([02aa60f](https://github.com/MyElectricalData/myelectricaldata_new/commit/02aa60fb0a97441dadba8d05a1cc54a20a7f2f85))
+* ajouter la gestion des offres périmées dans le sélecteur d'offres et le composant PDLCard ([2b93057](https://github.com/MyElectricalData/myelectricaldata_new/commit/2b93057acaf79dd1a115dbeae4a87f0de89d1988))
+* ajouter le support pour le tarif EJP dans le simulateur et améliorer l'affichage des offres ([802fb16](https://github.com/MyElectricalData/myelectricaldata_new/commit/802fb16389d58f1850de68d8cfccd1b788abce8c))
+* ajouter un sélecteur de période avec intégration des préférences utilisateur dans le simulateur ([ffd725d](https://github.com/MyElectricalData/myelectricaldata_new/commit/ffd725d6fef89ea8d125cc3f19e9fc1bec0d10ba))
+* ajouter une modale de confirmation pour éviter la perte de modifications non soumises ([1531d93](https://github.com/MyElectricalData/myelectricaldata_new/commit/1531d9390cd3c45153ee9c6074a2f7864df2fbc4))
+* améliorer la gestion des offres en ajoutant la période de validité et en construisant un JSON détaillé des offres existantes ([db73162](https://github.com/MyElectricalData/myelectricaldata_new/commit/db73162170323992a6b681f768f02955e10e02b2))
+* améliorer la gestion des plages de dates pour les profils dans le simulateur ([1922ec6](https://github.com/MyElectricalData/myelectricaldata_new/commit/1922ec62eb117e1f22cfb9bde427847bd182b370))
+* améliorer la logique de suppression des offres avec plusieurs méthodes de recherche ([4405e22](https://github.com/MyElectricalData/myelectricaldata_new/commit/4405e222147d65a447b04e7846a0d06e85c57c6b))
+* **api:** MED-14 / adapter Enedis sur les API Data Connect 2026 ([2eebb6f](https://github.com/MyElectricalData/myelectricaldata_new/commit/2eebb6f752a75111ba5f9d0cf80f04a9530d2757))
+* **api:** MED-14 / compte de demo au format Data Connect 2026 ([1fdf227](https://github.com/MyElectricalData/myelectricaldata_new/commit/1fdf2277cb440a1b1827dc14a2691ce30c491a15))
+* **api:** MED-14 / configuration Data Connect 2026 (ENEDIS_API_MODE, URL authorize) ([3170dee](https://github.com/MyElectricalData/myelectricaldata_new/commit/3170dee693cd5d45caf4753c3dfd92359a721f5e))
+* **api:** MED-14 / mode client au format Data Connect 2026 ([c455cdb](https://github.com/MyElectricalData/myelectricaldata_new/commit/c455cdba3efcf7c163a7b3de25b2e777523f237a))
+* **api:** MED-14 / parseur de contrat unique et callback autorisation_id ([b6d0c56](https://github.com/MyElectricalData/myelectricaldata_new/commit/b6d0c5654a0aabad17f1d30a84e588d1099d27ed))
+* **api:** MED-14 / routers serveur au format Data Connect 2026 ([6416495](https://github.com/MyElectricalData/myelectricaldata_new/commit/6416495cf9269d89c2b3927093caa7e67a2811f6))
+* inclure le support des offres périmées dans le simulateur et l'affichage des sélecteurs ([ed0f2d3](https://github.com/MyElectricalData/myelectricaldata_new/commit/ed0f2d3b6d4ab34b1d19c6170318625166ec3dd6))
+* mettre à jour la version de l'API et améliorer la gestion des offres dans le client API ([35a67dc](https://github.com/MyElectricalData/myelectricaldata_new/commit/35a67dcaa2ef90c6218bb296f70cf8f956ff1cfe))
+* **web:** ameliorer le simulateur avec selecteur de periode et UX ([ebbd1f1](https://github.com/MyElectricalData/myelectricaldata_new/commit/ebbd1f14e3299c55637b88ed970d5b6297e9cc91))
+* **web:** MED-14 / couche d acces aux reponses Enedis Data Connect 2026 ([38d8fcf](https://github.com/MyElectricalData/myelectricaldata_new/commit/38d8fcfda1e77af0f682595ea117626e531278c1))
+* **web:** MED-14 / front au format Enedis Data Connect 2026 ([b8ecd37](https://github.com/MyElectricalData/myelectricaldata_new/commit/b8ecd3751d36b6043199877976dde517f1acf919))
+
+### Bug Fixes
+
+* **api:** MED-14 / corrections de la revue Data Connect 2026 ([065d89d](https://github.com/MyElectricalData/myelectricaldata_new/commit/065d89db914940fadca9049b8330867a4707eb6d))
+* **contribute:** corriger les erreurs de build CI du mode IA ([0763519](https://github.com/MyElectricalData/myelectricaldata_new/commit/0763519dea06ff31cc9b973cfa429815c7aa909f))
+* supprimer la gestion des anciennes offres dans le simulateur ([b179546](https://github.com/MyElectricalData/myelectricaldata_new/commit/b179546921f6d25dcdf82cb471839deed839523b))
+* **web:** MED-14 / corrections de la revue Data Connect 2026 ([18c4d71](https://github.com/MyElectricalData/myelectricaldata_new/commit/18c4d7168b812644f20024b19f3003adfef8bd41))
+* **web:** retirer les imports Calendar inutilises qui cassent le build ([7176945](https://github.com/MyElectricalData/myelectricaldata_new/commit/71769459f402a882bfdf76b1fc222cb09fce8cd4))
+
+### Refactoring
+
+* améliorer la gestion des offres expirées dans le simulateur et réinitialiser les modifications dans AllOffers ([f4fcefc](https://github.com/MyElectricalData/myelectricaldata_new/commit/f4fcefccdc48dc0ad29b79e9f909871136a1eb46))
+* Simulator component: rename showOnlyRecent to showOldOffers and update related logic; enhance container runtime detection in scripts; remove UFC Que Choisir documentation; update README for offers; improve frontend and backend watch scripts for container compatibility. ([ebd8f7e](https://github.com/MyElectricalData/myelectricaldata_new/commit/ebd8f7e47128555fc961a6dea0a5f9de9b62adfd))
+* supprimer l'offre UFC de la configuration des sidebars ([48c677e](https://github.com/MyElectricalData/myelectricaldata_new/commit/48c677e54106e10104ba13c150550859fe5bb44f))
+
 ## [1.2.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/1.1.0...helm/1.2.0) (2026-02-01)
 
 ### Features
