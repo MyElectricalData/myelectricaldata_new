@@ -122,11 +122,10 @@ def test_contrainte_unique_prod_nulls_not_distinct():
 
 
 def test_modele_max_power_contrainte_unique():
+    """Une ligne par jour et par PDL (colonnes NOT NULL : NULLS NOT DISTINCT sans objet)."""
     from src.models.client_mode import MaxPowerData
 
-    ddl = _ddl(MaxPowerData)
-    assert "uq_max_power_data" in ddl
-    assert "NULLS NOT DISTINCT" in ddl
+    assert "CONSTRAINT uq_max_power_data UNIQUE (usage_point_id, date)" in _ddl(MaxPowerData)
 
 
 async def test_sync_max_power_ne_demande_jamais_au_dela_de_la_veille():

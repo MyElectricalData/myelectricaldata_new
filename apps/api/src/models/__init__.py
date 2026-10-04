@@ -12,6 +12,7 @@ from .refresh_tracker import RefreshTracker
 from .client_mode import (
     ConsumptionData,
     ProductionData,
+    MaxPowerData,
     SyncStatus,
     SyncStatusType,
     ExportConfig,
@@ -44,6 +45,7 @@ __all__ = [
     # Client mode models
     "ConsumptionData",
     "ProductionData",
+    "MaxPowerData",
     "SyncStatus",
     "SyncStatusType",
     "ExportConfig",
