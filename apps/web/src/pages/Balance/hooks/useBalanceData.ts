@@ -2,11 +2,11 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
-import type { PDL, APIResponse } from '@/types/api'
-import type { EnedisData } from '@/api/enedis'
+import type { PDL, APIResponse, EnedisMeasure } from '@/types/api'
+import { hasReadings } from '@/utils/enedisMeasure'
 import type { DateRange } from '../types/balance.types'
 
-type EnedisApiResponse = APIResponse<EnedisData>
+type EnedisApiResponse = APIResponse<EnedisMeasure>
 
 export function useBalanceData(selectedPDL: string, dateRange: DateRange | null) {
   const queryClient = useQueryClient()
@@ -145,10 +145,9 @@ export function useBalanceData(selectedPDL: string, dateRange: DateRange | null)
   const isLoading = consumptionResponse.isLoading || productionResponse.isLoading
 
   // Check if we have data in cache
-  const hasConsumptionData = !!consumptionData?.meter_reading?.interval_reading?.length
-  const hasProductionData = !!productionData?.meter_reading?.interval_reading?.length
-  const hasDetailedData = !!consumptionDetailData?.meter_reading?.interval_reading?.length &&
-                          !!productionDetailData?.meter_reading?.interval_reading?.length
+  const hasConsumptionData = hasReadings(consumptionData)
+  const hasProductionData = hasReadings(productionData)
+  const hasDetailedData = hasReadings(consumptionDetailData) && hasReadings(productionDetailData)
 
   return {
     pdls,

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, CheckCircle, Search } from 'lucide-react'
+import { getReadings, hasReadings } from '@/utils/enedisMeasure'
 
 /**
  * Composant de diagnostic des doublons dans le cache
@@ -66,14 +67,14 @@ export function DiagnosticDuplicates() {
 
       detailQueries.forEach(query => {
         const data = query.state.data as any
-        if (!data?.data?.meter_reading?.interval_reading) return
+        if (!hasReadings(data?.data)) return
 
-        const points = data.data.meter_reading.interval_reading
+        const points = getReadings(data.data)
         const date = query.queryKey[2] as string
         const type = query.queryKey[0] as string
 
         // Compter les timestamps uniques
-        const timestamps = points.map((p: any) => p.date)
+        const timestamps = points.map((p) => p.date)
         const uniqueTimestamps = new Set(timestamps)
 
         const duplicateCount = timestamps.length - uniqueTimestamps.size

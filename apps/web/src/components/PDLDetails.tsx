@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { enedisApi } from '@/api/enedis'
+import { getAddressSummary, getContractSummary } from '@/utils/enedisMeasure'
 import { X, Home, FileText, Loader2, Zap, TrendingUp, Battery, Sun, BarChart3 } from 'lucide-react'
 
 interface PDLDetailsProps {
@@ -145,64 +146,31 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
                     </div>
                     <div className="space-y-2 text-sm">
                     {(() => {
-                      const data = addressData.data as any
-                      const usagePoint = data?.customer?.usage_points?.[0]?.usage_point
+                      const address = getAddressSummary(addressData.data)
 
-                      // If data structure doesn't match expected format, show raw JSON
-                      if (!usagePoint) {
+                      // Structure illisible : JSON brut
+                      if (!address || !Object.values(address).some(Boolean)) {
                         return <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-auto max-h-64">{JSON.stringify(addressData.data, null, 2)}</pre>
                       }
 
-                      const addresses = usagePoint?.usage_point_addresses
-
                       return (
                         <>
-                          {usagePoint.usage_point_id && (
-                            <div>
-                              <span className="font-medium text-gray-500 dark:text-gray-400">PDL : </span>
-                              <span className="font-mono">{usagePoint.usage_point_id}</span>
-                            </div>
-                          )}
-                          {usagePoint.usage_point_status && (
-                            <div>
-                              <span className="font-medium text-gray-500 dark:text-gray-400">Statut : </span>
-                              <span>{usagePoint.usage_point_status}</span>
-                            </div>
-                          )}
-                          {usagePoint.meter_type && (
-                            <div>
-                              <span className="font-medium text-gray-500 dark:text-gray-400">Type de compteur : </span>
-                              <span>{usagePoint.meter_type}</span>
-                            </div>
-                          )}
-                          {addresses?.street && (
+                          {address.street && (
                             <div>
                               <span className="font-medium text-gray-500 dark:text-gray-400">Rue : </span>
-                              <span>{addresses.street}</span>
+                              <span>{address.street}</span>
                             </div>
                           )}
-                          {addresses?.postal_code && (
+                          {address.postalCodeCity && (
                             <div>
-                              <span className="font-medium text-gray-500 dark:text-gray-400">Code postal : </span>
-                              <span>{addresses.postal_code}</span>
+                              <span className="font-medium text-gray-500 dark:text-gray-400">Code postal et ville : </span>
+                              <span>{address.postalCodeCity}</span>
                             </div>
                           )}
-                          {addresses?.city && (
-                            <div>
-                              <span className="font-medium text-gray-500 dark:text-gray-400">Ville : </span>
-                              <span>{addresses.city}</span>
-                            </div>
-                          )}
-                          {addresses?.insee_code && (
+                          {address.inseeCode && (
                             <div>
                               <span className="font-medium text-gray-500 dark:text-gray-400">Code INSEE : </span>
-                              <span>{addresses.insee_code}</span>
-                            </div>
-                          )}
-                          {addresses?.country && (
-                            <div>
-                              <span className="font-medium text-gray-500 dark:text-gray-400">Pays : </span>
-                              <span>{addresses.country}</span>
+                              <span>{address.inseeCode}</span>
                             </div>
                           )}
                         </>
@@ -226,11 +194,10 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
                     </div>
                     <div className="space-y-2 text-sm">
                     {(() => {
-                      const data = contractData.data as any
-                      const contract = data?.customer?.usage_points?.[0]?.contracts
+                      const contract = getContractSummary(contractData.data)
 
-                      // If data structure doesn't match expected format, show raw JSON
-                      if (!contract) {
+                      // Structure illisible : JSON brut
+                      if (!contract || !Object.values(contract).some(Boolean)) {
                         return <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-auto max-h-64">{JSON.stringify(contractData.data, null, 2)}</pre>
                       }
 
@@ -242,46 +209,34 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
                               <span>{contract.segment}</span>
                             </div>
                           )}
-                          {contract.contract_type && (
+                          {contract.contractType && (
                             <div>
                               <span className="font-medium text-gray-500 dark:text-gray-400">Type : </span>
-                              <span>{contract.contract_type}</span>
+                              <span>{contract.contractType}</span>
                             </div>
                           )}
-                          {contract.contract_status && (
-                            <div>
-                              <span className="font-medium text-gray-500 dark:text-gray-400">Statut : </span>
-                              <span>{contract.contract_status}</span>
-                            </div>
-                          )}
-                          {contract.subscribed_power && (
+                          {contract.subscribedPower && (
                             <div>
                               <span className="font-medium text-gray-500 dark:text-gray-400">Puissance souscrite : </span>
-                              <span>{contract.subscribed_power}</span>
+                              <span>{contract.subscribedPower}</span>
                             </div>
                           )}
-                          {contract.distribution_tariff && (
+                          {contract.distributionTariff && (
                             <div>
                               <span className="font-medium text-gray-500 dark:text-gray-400">Tarif : </span>
-                              <span>{contract.distribution_tariff}</span>
+                              <span>{contract.distributionTariff}</span>
                             </div>
                           )}
-                          {contract.offpeak_hours && (
+                          {contract.offpeakHours && (
                             <div>
                               <span className="font-medium text-gray-500 dark:text-gray-400">Heures creuses : </span>
-                              <span>{contract.offpeak_hours}</span>
+                              <span>{contract.offpeakHours}</span>
                             </div>
                           )}
-                          {contract.last_activation_date && (
+                          {contract.lastActivationDate && (
                             <div>
                               <span className="font-medium text-gray-500 dark:text-gray-400">Date d'activation : </span>
-                              <span>{contract.last_activation_date.split('+')[0]}</span>
-                            </div>
-                          )}
-                          {contract.last_distribution_tariff_change_date && (
-                            <div>
-                              <span className="font-medium text-gray-500 dark:text-gray-400">Dernier changement tarif : </span>
-                              <span>{contract.last_distribution_tariff_change_date.split('+')[0]}</span>
+                              <span>{contract.lastActivationDate}</span>
                             </div>
                           )}
                         </>

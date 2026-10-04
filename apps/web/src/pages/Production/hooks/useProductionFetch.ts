@@ -4,7 +4,8 @@ import { enedisApi } from '@/api/enedis'
 import { adminApi } from '@/api/admin'
 import { logger } from '@/utils/logger'
 import { toast } from '@/stores/notificationStore'
-import type { PDL } from '@/types/api'
+import type { MeasureReading, PDL } from '@/types/api'
+import { buildMeasure, getReadings, getUnit, hasReadings } from '@/utils/enedisMeasure'
 import type { DateRange, LoadingProgress } from '../types/production.types'
 
 interface UseProductionFetchParams {
@@ -140,32 +141,28 @@ export function useProductionFetch({
           success: batchData?.success,
           hasError: !!batchData?.error,
           errorCode: batchData?.error?.code,
-          dataPoints: (batchData as any)?.data?.meter_reading?.interval_reading?.length || 0
+          dataPoints: getReadings(batchData?.data).length
         })
 
-        if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
-          const readings = (batchData as any).data.meter_reading.interval_reading
+        if (batchData?.success && hasReadings(batchData.data)) {
+          const readings = getReadings(batchData.data)
 
           // Deduplicate readings using a Map with timestamp as key
           const uniqueReadingsMap = new Map()
-          readings.forEach((point: any) => {
+          readings.forEach((point) => {
             uniqueReadingsMap.set(point.date, point)
           })
-          const uniqueReadings = Array.from(uniqueReadingsMap.values())
+          const uniqueReadings: MeasureReading[] = Array.from(uniqueReadingsMap.values())
 
           // Store ALL detail data in a SINGLE cache key (not per day!)
           // This avoids creating 730+ cache entries that overload IndexedDB
           queryClient.setQueryData(['productionDetail', selectedPDL], {
             success: true,
-            data: {
-              meter_reading: {
-                interval_reading: uniqueReadings
-              }
-            }
+            data: buildMeasure(uniqueReadings, { grandeurMetier: 'PROD', unite: getUnit(batchData.data) ?? 'W' })
           })
 
           // Calculate day count for display
-          const dates = new Set(uniqueReadings.map((p: any) => p.date.split(' ')[0].split('T')[0]))
+          const dates = new Set(uniqueReadings.map((p) => p.date.split(' ')[0].split('T')[0]))
           const dayCount = dates.size
           const years = Math.floor(dayCount / 365)
           const remainingDays = dayCount % 365

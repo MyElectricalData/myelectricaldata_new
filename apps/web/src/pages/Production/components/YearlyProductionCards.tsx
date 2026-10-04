@@ -1,5 +1,6 @@
 import { Download, TrendingUp, TrendingDown, Zap } from 'lucide-react'
 import { toast } from '@/stores/notificationStore'
+import { getIntervalLength, getReadings, getUnit } from '@/utils/enedisMeasure'
 
 interface YearlyProductionCardsProps {
   chartData: {
@@ -43,8 +44,8 @@ const cardColors = [
 
 export function YearlyProductionCards({ chartData, productionData }: YearlyProductionCardsProps) {
   const handleExportYear = (yearData: any) => {
-    const intervalLength = productionData?.meter_reading?.reading_type?.interval_length || 'P1D'
-    const unit = productionData?.meter_reading?.reading_type?.unit || 'W'
+    const intervalLength = getIntervalLength(productionData) || 'P1D'
+    const unit = getUnit(productionData) || 'W'
 
     const startDateFormatted = yearData.startDate.toLocaleDateString('fr-FR', {
       day: '2-digit',
@@ -59,7 +60,7 @@ export function YearlyProductionCards({ chartData, productionData }: YearlyProdu
 
     // Parse interval to duration in hours
     const parseIntervalToDurationInHours = (interval: string): number => {
-      const match = interval.match(/^P(\d+)([DHM])$/)
+      const match = interval.match(/^PT?(\d+)([DHM])$/)
       if (!match) return 1
       const value = parseInt(match[1], 10)
       const unit = match[2]
@@ -83,14 +84,14 @@ export function YearlyProductionCards({ chartData, productionData }: YearlyProdu
     const intervalMultiplier = getIntervalMultiplier(intervalLength, unit)
 
     // Filter interval readings for this year and apply multiplier
-    const yearReadings = productionData?.meter_reading?.interval_reading?.filter((reading: any) => {
+    const yearReadings = getReadings(productionData).filter((reading) => {
       const date = reading.date?.split('T')[0] || reading.date
       return date && date.startsWith(yearData.year)
-    }).map((reading: any) => ({
+    }).map((reading) => ({
       date: reading.date?.split('T')[0] || reading.date,
-      value_raw: parseFloat(reading.value || 0),
-      value_wh: parseFloat(reading.value || 0) * intervalMultiplier
-    })) || []
+      value_raw: reading.value,
+      value_wh: reading.value * intervalMultiplier
+    }))
 
     const jsonData = JSON.stringify({
       year: yearData.year,

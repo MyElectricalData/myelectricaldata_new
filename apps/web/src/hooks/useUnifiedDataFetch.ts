@@ -2,8 +2,9 @@ import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { enedisApi } from '@/api/enedis'
 import { logger } from '@/utils/logger'
+import { buildMeasure, getIntervalLength, getReadings, getUnit } from '@/utils/enedisMeasure'
 import { toast } from '@/stores/notificationStore'
-import type { PDL } from '@/types/api'
+import type { MeasureReading, PDL } from '@/types/api'
 import { useDataFetchStore } from '@/stores/dataFetchStore'
 import { useCacheBroadcast } from './useCacheBroadcast'
 
@@ -167,12 +168,12 @@ export function useUnifiedDataFetch({
               use_cache: true,
             })
 
-            if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
-              const readings = (batchData as any).data.meter_reading.interval_reading
+            if (batchData?.success && batchData.data) {
+              const readings = getReadings(batchData.data)
 
               // Deduplicate readings using a Map with timestamp as key
-              const uniqueReadingsMap = new Map()
-              readings.forEach((point: any) => {
+              const uniqueReadingsMap = new Map<string, MeasureReading>()
+              readings.forEach((point) => {
                 uniqueReadingsMap.set(point.date, point)
               })
               const uniqueReadings = Array.from(uniqueReadingsMap.values())
@@ -180,15 +181,17 @@ export function useUnifiedDataFetch({
               // Store all detail data in a single cache key
               queryClient.setQueryData(['consumptionDetail', selectedPDL], {
                 success: true,
-                data: {
-                  meter_reading: {
-                    interval_reading: uniqueReadings
-                  }
-                }
+                data: buildMeasure(uniqueReadings, {
+                  grandeurMetier: 'CONS',
+                  unite: getUnit(batchData.data) || 'W',
+                  pas: getIntervalLength(batchData.data),
+                  start: startDate2y,
+                  end: endDate,
+                })
               })
 
               // Calculate period statistics for toast
-              const dates = new Set(uniqueReadings.map((p: any) => p.date.split(' ')[0].split('T')[0]))
+              const dates = new Set(uniqueReadings.map((p) => p.date.split(' ')[0].split('T')[0]))
               const dayCount = dates.size
               const years = Math.floor(dayCount / 365)
               const remainingDays = dayCount % 365
@@ -284,12 +287,12 @@ export function useUnifiedDataFetch({
               use_cache: true,
             })
 
-            if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
-              const readings = (batchData as any).data.meter_reading.interval_reading
+            if (batchData?.success && batchData.data) {
+              const readings = getReadings(batchData.data)
 
               // Deduplicate readings using a Map with timestamp as key
-              const uniqueReadingsMap = new Map()
-              readings.forEach((point: any) => {
+              const uniqueReadingsMap = new Map<string, MeasureReading>()
+              readings.forEach((point) => {
                 uniqueReadingsMap.set(point.date, point)
               })
               const uniqueReadings = Array.from(uniqueReadingsMap.values())
@@ -297,15 +300,17 @@ export function useUnifiedDataFetch({
               // Store all detail data in a single cache key
               queryClient.setQueryData(['productionDetail', productionPdlUsagePointId], {
                 success: true,
-                data: {
-                  meter_reading: {
-                    interval_reading: uniqueReadings
-                  }
-                }
+                data: buildMeasure(uniqueReadings, {
+                  grandeurMetier: 'PROD',
+                  unite: getUnit(batchData.data) || 'W',
+                  pas: getIntervalLength(batchData.data),
+                  start: startDate2y,
+                  end: endDate,
+                })
               })
 
               // Calculate period statistics for toast
-              const dates = new Set(uniqueReadings.map((p: any) => p.date.split(' ')[0].split('T')[0]))
+              const dates = new Set(uniqueReadings.map((p) => p.date.split(' ')[0].split('T')[0]))
               const dayCount = dates.size
               const years = Math.floor(dayCount / 365)
               const remainingDays = dayCount % 365

@@ -2,6 +2,7 @@ import { useMemo, useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseOffpeakHours, isOffpeakTime } from '@/utils/offpeakHours'
 import { useDatePreferencesStore } from '@/stores/datePreferencesStore'
+import { getIntervalLength, getReadings, getUnit, hasReadings } from '@/utils/enedisMeasure'
 import type { ConsumptionAPIResponse, MaxPowerAPIResponse, DetailAPIResponse } from '../types/consumption.types'
 
 interface UseConsumptionCalcsProps {
@@ -29,17 +30,17 @@ export function useConsumptionCalcs({
 
   // Process consumption data for charts
   const chartData = useMemo(() => {
-    if (!consumptionData?.meter_reading?.interval_reading) {
+    if (!hasReadings(consumptionData)) {
       return { byYear: [], byMonth: [], byMonthComparison: [], total: 0, years: [], unit: 'W' }
     }
 
-    const readings = consumptionData.meter_reading.interval_reading
-    const unit = consumptionData.meter_reading.reading_type?.unit || 'W'
-    const intervalLength = consumptionData.meter_reading.reading_type?.interval_length || 'P1D'
+    const readings = getReadings(consumptionData)
+    const unit = getUnit(consumptionData) || 'W'
+    const intervalLength = getIntervalLength(consumptionData) || 'P1D'
 
     // Parse interval length to determine how to handle the values
     const parseIntervalToDurationInHours = (interval: string): number => {
-      const match = interval.match(/^P(\d+)([DHM])$/)
+      const match = interval.match(/^PT?(\d+)([DHM])$/)
       if (!match) return 1
 
       const value = parseInt(match[1], 10)
@@ -452,11 +453,11 @@ export function useConsumptionCalcs({
 
   // Process max power data by year
   const powerByYearData = useMemo(() => {
-    if (!maxPowerData?.meter_reading?.interval_reading) {
+    if (!hasReadings(maxPowerData)) {
       return []
     }
 
-    const readings = maxPowerData.meter_reading.interval_reading
+    const readings = getReadings(maxPowerData)
 
     // Extraire les années calendaires uniques (triées du plus récent au plus ancien)
     const calendarYears = [...new Set(
@@ -514,16 +515,16 @@ export function useConsumptionCalcs({
 
   // Process detailed consumption data by day (load curve)
   const detailByDayData = useMemo(() => {
-    if (!detailData?.meter_reading?.interval_reading) {
+    if (!hasReadings(detailData)) {
       return []
     }
 
-    const readings = detailData.meter_reading.interval_reading
-    const unit = detailData.meter_reading.reading_type?.unit || 'W'
-    const intervalLength = detailData.meter_reading.reading_type?.interval_length || 'P30M'
+    const readings = getReadings(detailData)
+    const unit = getUnit(detailData) || 'W'
+    const intervalLength = getIntervalLength(detailData) || 'P30M'
 
     const parseIntervalToDurationInHours = (interval: string): number => {
-      const match = interval.match(/^P(\d+)([DHM])$/)
+      const match = interval.match(/^PT?(\d+)([DHM])$/)
       if (!match) return 0.5
 
       const value = parseInt(match[1], 10)
@@ -629,15 +630,15 @@ export function useConsumptionCalcs({
       const response = query.state.data as any
       const data = response?.data
 
-      if (!data?.meter_reading?.interval_reading) return
+      if (!hasReadings(data)) return
 
-      const readings = data.meter_reading.interval_reading
-      const unit = data.meter_reading.reading_type?.unit || 'W'
-      const intervalLength = data.meter_reading.reading_type?.interval_length || 'P30M'
+      const readings = getReadings(data)
+      const unit = getUnit(data) || 'W'
+      const intervalLength = getIntervalLength(data) || 'P30M'
 
 
       const parseIntervalToDurationInHours = (interval: string): number => {
-        const match = interval.match(/^P(\d+)([DHM])$/)
+        const match = interval.match(/^PT?(\d+)([DHM])$/)
         if (!match) return 0.5
         const value = parseInt(match[1], 10)
         const unitType = match[2]
@@ -652,7 +653,7 @@ export function useConsumptionCalcs({
       const intervalMultiplier = unit === 'W' ? parseIntervalToDurationInHours(intervalLength) : 1
 
       readings.forEach((reading: any) => {
-        if (!reading.date || !reading.value) return
+        if (!reading.date || Number.isNaN(reading.value)) return
 
         const dateTimeStr = reading.date.includes('T')
           ? reading.date
@@ -744,15 +745,15 @@ export function useConsumptionCalcs({
       const response = query.state.data as any
       const data = response?.data
 
-      if (!data?.meter_reading?.interval_reading) return
+      if (!hasReadings(data)) return
 
-      const readings = data.meter_reading.interval_reading
-      const unit = data.meter_reading.reading_type?.unit || 'W'
-      const intervalLength = data.meter_reading.reading_type?.interval_length || 'P30M'
+      const readings = getReadings(data)
+      const unit = getUnit(data) || 'W'
+      const intervalLength = getIntervalLength(data) || 'P30M'
 
 
       const parseIntervalToDurationInHours = (interval: string): number => {
-        const match = interval.match(/^P(\d+)([DHM])$/)
+        const match = interval.match(/^PT?(\d+)([DHM])$/)
         if (!match) return 0.5
         const value = parseInt(match[1], 10)
         const unitType = match[2]
@@ -767,7 +768,7 @@ export function useConsumptionCalcs({
       const intervalMultiplier = unit === 'W' ? parseIntervalToDurationInHours(intervalLength) : 1
 
       readings.forEach((reading: any) => {
-        if (!reading.date || !reading.value) return
+        if (!reading.date || Number.isNaN(reading.value)) return
 
         const dateTimeStr = reading.date.includes('T') ? reading.date : reading.date.replace(' ', 'T')
         const apiDateTime = new Date(dateTimeStr)

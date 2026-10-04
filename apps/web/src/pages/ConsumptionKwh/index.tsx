@@ -3,6 +3,7 @@ import { Zap, TrendingUp, BarChart3, Database, ArrowRight, LineChart } from 'luc
 import { usePdlStore } from '@/stores/pdlStore'
 import { useDataFetchStore } from '@/stores/dataFetchStore'
 import { logger } from '@/utils/logger'
+import { getIntervalLength, getReadings } from '@/utils/enedisMeasure'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
 import { AnimatedSection } from '@/components/AnimatedSection'
@@ -256,8 +257,8 @@ export default function ConsumptionKwh() {
 
     if (detailQuery?.state.data) {
       const data = detailQuery.state.data as any
-      const readings = data?.data?.meter_reading?.interval_reading
-      if (readings && readings.length > 0) {
+      const readings = getReadings(data?.data)
+      if (readings.length > 0) {
         logger.log('[Cache] ✓ Found consumptionDetail:', readings.length, 'points')
         return true
       }
@@ -270,8 +271,8 @@ export default function ConsumptionKwh() {
 
     if (dailyQuery?.state.data) {
       const data = dailyQuery.state.data as any
-      const readings = data?.data?.meter_reading?.interval_reading
-      if (readings && readings.length > 0) {
+      const readings = getReadings(data?.data)
+      if (readings.length > 0) {
         logger.log('[Cache] ✓ Found consumptionDaily:', readings.length, 'days')
         return true
       }
@@ -754,9 +755,9 @@ export default function ConsumptionKwh() {
                 <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                   <p className="text-sm text-blue-800 dark:text-blue-200">
                     <strong>ℹ️ Note :</strong> Ces graphiques montrent votre consommation électrique détaillée avec des mesures à intervalles réguliers
-                    ({detailData?.meter_reading?.reading_type?.interval_length === 'P30M' ? '30 minutes' :
-                      detailData?.meter_reading?.reading_type?.interval_length === 'P15M' ? '15 minutes' :
-                      detailData?.meter_reading?.reading_type?.interval_length || 'variables'})
+                    ({getIntervalLength(detailData) === 'PT30M' ? '30 minutes' :
+                      getIntervalLength(detailData) === 'PT15M' ? '15 minutes' :
+                      getIntervalLength(detailData) || 'variables'})
                     pour les 7 derniers jours.
                     Cela vous permet d'identifier précisément vos pics de consommation et d'optimiser votre utilisation.
                     <br/><br/>

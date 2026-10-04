@@ -4,27 +4,8 @@ import { parseOffpeakHours, isOffpeakTime } from '@/utils/offpeakHours'
 import { tempoApi, type TempoDay } from '@/api/tempo'
 import type { EnergyOffer } from '@/api/energy'
 import type { YearlyCost, MonthlyCost, SelectedOfferWithProvider } from '../types/euro.types'
-import type { PDL } from '@/types/api'
-
-// Type for meter reading from API response
-interface MeterReading {
-  date: string
-  value: string | number
-}
-
-interface MeterReadingData {
-  meter_reading?: {
-    interval_reading?: MeterReading[]
-    reading_type?: {
-      unit?: string
-      interval_length?: string
-    }
-  }
-}
-
-interface APIResponse {
-  data?: MeterReadingData
-}
+import type { APIResponse, EnedisMeasure, MeasureReading, PDL } from '@/types/api'
+import { getIntervalLength, getReadings, getUnit, hasReadings } from '@/utils/enedisMeasure'
 
 interface UseConsumptionEuroCalcsProps {
   selectedPDL: string | null
@@ -180,17 +161,17 @@ export function useConsumptionEuroCalcs({
     }> = []
 
     allDetailQueries.forEach((query) => {
-      const response = query.state.data as APIResponse | null
+      const response = query.state.data as APIResponse<EnedisMeasure> | null
       const data = response?.data
 
-      if (!data?.meter_reading?.interval_reading) return
+      if (!hasReadings(data)) return
 
-      const readings = data.meter_reading.interval_reading
-      const unit = data.meter_reading.reading_type?.unit || 'W'
-      const intervalLength = data.meter_reading.reading_type?.interval_length || 'P30M'
+      const readings = getReadings(data)
+      const unit = getUnit(data) || 'W'
+      const intervalLength = getIntervalLength(data) || 'P30M'
 
       const parseIntervalToDurationInHours = (interval: string): number => {
-        const match = interval.match(/^P(\d+)([DHM])$/)
+        const match = interval.match(/^PT?(\d+)([DHM])$/)
         if (!match) return 0.5
         const value = parseInt(match[1], 10)
         const unitType = match[2]
@@ -204,8 +185,8 @@ export function useConsumptionEuroCalcs({
 
       const intervalMultiplier = unit === 'W' ? parseIntervalToDurationInHours(intervalLength) : 1
 
-      readings.forEach((reading: MeterReading) => {
-        if (!reading.date || !reading.value) return
+      readings.forEach((reading: MeasureReading) => {
+        if (!reading.date || Number.isNaN(reading.value)) return
 
         const dateTimeStr = reading.date.includes('T')
           ? reading.date
@@ -215,7 +196,7 @@ export function useConsumptionEuroCalcs({
         // Get date key for tempo lookup (YYYY-MM-DD)
         const dateKey = apiDateTime.toISOString().split('T')[0]
 
-        const energyWh = parseFloat(String(reading.value)) * intervalMultiplier
+        const energyWh = reading.value * intervalMultiplier
         const energyKwh = energyWh / 1000
 
         const hour = apiDateTime.getHours()

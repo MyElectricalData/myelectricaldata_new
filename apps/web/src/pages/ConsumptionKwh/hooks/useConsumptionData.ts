@@ -1,12 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 import { pdlApi } from '@/api/pdl'
-import { enedisApi, type EnedisData } from '@/api/enedis'
-import type { PDL, APIResponse } from '@/types/api'
+import { enedisApi } from '@/api/enedis'
+import type { PDL, APIResponse, EnedisMeasure, MeasureReading } from '@/types/api'
+import { buildMeasure, getIntervalLength, getReadings, getUnit } from '@/utils/enedisMeasure'
 import type { DateRange } from '../types/consumption.types'
 
 // Full response type for Enedis API
-type EnedisApiResponse = APIResponse<EnedisData>
+type EnedisApiResponse = APIResponse<EnedisMeasure>
 
 export function useConsumptionData(selectedPDL: string, dateRange: DateRange | null, _detailDateRange: DateRange | null) {
   const queryClient = useQueryClient()
@@ -102,11 +103,11 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
         return chunkResults[0]
       }
 
-      // Combine all interval_reading arrays
-      const allReadings: Array<{ date: string; value: string | number }> = []
+      // Concatène les lectures de tous les morceaux
+      const allReadings: MeasureReading[] = []
       for (const result of chunkResults) {
-        if (result?.success && result?.data?.meter_reading?.interval_reading) {
-          allReadings.push(...result.data.meter_reading.interval_reading)
+        if (result?.success) {
+          allReadings.push(...getReadings(result.data))
         }
       }
 
@@ -115,10 +116,13 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
         ...firstSuccess,
         data: {
           ...firstSuccess.data,
-          meter_reading: {
-            ...firstSuccess.data?.meter_reading,
-            interval_reading: allReadings
-          }
+          ...buildMeasure(allReadings, {
+            grandeurMetier: 'CONS',
+            unite: getUnit(firstSuccess.data) || 'Wh',
+            pas: getIntervalLength(firstSuccess.data),
+            start: dateRange.start,
+            end: dateRange.end,
+          }),
         }
       }
     },
@@ -197,11 +201,11 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
         return chunkResults[0]
       }
 
-      // Combine all interval_reading arrays
-      const allReadings: Array<{ date: string; value: string | number }> = []
+      // Concatène les lectures de tous les morceaux
+      const allReadings: MeasureReading[] = []
       for (const result of chunkResults) {
-        if (result?.success && result?.data?.meter_reading?.interval_reading) {
-          allReadings.push(...result.data.meter_reading.interval_reading)
+        if (result?.success) {
+          allReadings.push(...getReadings(result.data))
         }
       }
 
@@ -210,10 +214,14 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
         ...firstSuccess,
         data: {
           ...firstSuccess.data,
-          meter_reading: {
-            ...firstSuccess.data?.meter_reading,
-            interval_reading: allReadings
-          }
+          ...buildMeasure(allReadings, {
+            grandeurMetier: 'CONS',
+            unite: getUnit(firstSuccess.data) || 'VA',
+            grandeurPhysique: 'PMA',
+            pas: getIntervalLength(firstSuccess.data),
+            start: dateRange.start,
+            end: dateRange.end,
+          }),
         }
       }
     },

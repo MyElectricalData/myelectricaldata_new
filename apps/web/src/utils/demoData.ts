@@ -1,9 +1,11 @@
 /**
  * Demo data for testing when Enedis API is unavailable
  */
+import type { MeasureReading } from '@/types/api'
+import { buildMeasure } from './enedisMeasure'
 
 export const generateDemoConsumptionData = (days: number = 30) => {
-  const data = []
+  const data: MeasureReading[] = []
   const today = new Date()
 
   for (let i = days - 1; i >= 0; i--) {
@@ -30,19 +32,11 @@ export const generateDemoConsumptionData = (days: number = 30) => {
     })
   }
 
-  return {
-    interval_reading: data,
-    quality: "COMPLETE",
-    reading_type: {
-      unit: "KWH",
-      measurement_kind: "energy",
-      aggregate: "sum"
-    }
-  }
+  return buildMeasure(data, { grandeurMetier: 'CONS', unite: 'KWH', pas: 'P1D' })
 }
 
 export const generateDemoPowerData = (days: number = 30) => {
-  const data = []
+  const data: MeasureReading[] = []
   const today = new Date()
 
   for (let i = days - 1; i >= 0; i--) {
@@ -65,15 +59,7 @@ export const generateDemoPowerData = (days: number = 30) => {
     })
   }
 
-  return {
-    interval_reading: data,
-    quality: "COMPLETE",
-    reading_type: {
-      unit: "W",
-      measurement_kind: "power",
-      aggregate: "maximum"
-    }
-  }
+  return buildMeasure(data, { grandeurMetier: 'CONS', unite: 'W', grandeurPhysique: 'PMA', pas: 'P1D' })
 }
 
 export const DEMO_MODE_MESSAGE = "Mode démonstration : Les données affichées sont fictives pour illustrer le fonctionnement de l'application."

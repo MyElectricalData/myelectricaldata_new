@@ -5,6 +5,7 @@ import { toast } from '@/stores/notificationStore'
 import { useQueryClient } from '@tanstack/react-query'
 import { logger } from '@/utils/logger'
 import { useResponsiveDayCount } from '@/hooks/useResponsiveDayCount'
+import { getIntervalLength, getReadings, getUnit, hasReadings } from '@/utils/enedisMeasure'
 
 /**
  * Composant de bouton moderne réutilisable
@@ -220,9 +221,9 @@ export function DetailedCurve({
 
     for (const query of allDetailQueries) {
       const responseData = query.state.data as any
-      if (!responseData?.data?.meter_reading?.interval_reading) continue
+      if (!hasReadings(responseData?.data)) continue
 
-      const readings = responseData.data.meter_reading.interval_reading
+      const readings = getReadings(responseData.data)
 
       // Check for week-1
       if (!weekAvailable) {
@@ -334,24 +335,24 @@ export function DetailedCurve({
 
       for (const query of allDetailQueries) {
         const responseData = query.state.data as any
-        if (!responseData?.data?.meter_reading?.interval_reading) continue
+        if (!hasReadings(responseData?.data)) continue
 
-        const allReadings = responseData.data.meter_reading.interval_reading
+        const allReadings = getReadings(responseData.data)
         const filteredReadings = allReadings.filter((reading: any) =>
           reading.date && reading.date.startsWith(weekAgoDateStr)
         )
 
         if (filteredReadings.length > 0) {
           weekAgoReadings = filteredReadings
-          weekAgoMeterData = responseData.data.meter_reading
+          weekAgoMeterData = responseData.data
           break
         }
       }
 
       if (weekAgoReadings && weekAgoMeterData) {
         const readings = weekAgoReadings
-        const unit = weekAgoMeterData.reading_type?.unit || 'W'
-        const intervalLength = weekAgoMeterData.reading_type?.interval_length || 'PT30M'
+        const unit = getUnit(weekAgoMeterData) || 'W'
+        const intervalLength = getIntervalLength(weekAgoMeterData) || 'PT30M'
 
         const parseInterval = (interval: string): number => {
           const match = interval.match(/^P(?:T)?(\d+)([DHM])$/)
@@ -364,8 +365,8 @@ export function DetailedCurve({
 
         mergedData = mergedData.map((current, idx) => {
           const weekAgoReading = readings[idx]
-          const power = weekAgoReading?.value
-            ? (parseFloat(weekAgoReading.value) * intervalMultiplier) / 1000
+          const power = weekAgoReading
+            ? (weekAgoReading.value * intervalMultiplier) / 1000
             : null
           return {
             ...current,
@@ -399,24 +400,24 @@ export function DetailedCurve({
 
       for (const query of allDetailQueries2) {
         const responseData = query.state.data as any
-        if (!responseData?.data?.meter_reading?.interval_reading) continue
+        if (!hasReadings(responseData?.data)) continue
 
-        const allReadings = responseData.data.meter_reading.interval_reading
+        const allReadings = getReadings(responseData.data)
         const filteredReadings = allReadings.filter((reading: any) =>
           reading.date && reading.date.startsWith(yearAgoDateStr)
         )
 
         if (filteredReadings.length > 0) {
           yearAgoReadings = filteredReadings
-          yearAgoMeterData = responseData.data.meter_reading
+          yearAgoMeterData = responseData.data
           break
         }
       }
 
       if (yearAgoReadings && yearAgoMeterData) {
         const readings = yearAgoReadings
-        const unit = yearAgoMeterData.reading_type?.unit || 'W'
-        const intervalLength = yearAgoMeterData.reading_type?.interval_length || 'PT30M'
+        const unit = getUnit(yearAgoMeterData) || 'W'
+        const intervalLength = getIntervalLength(yearAgoMeterData) || 'PT30M'
 
         const parseInterval = (interval: string): number => {
           const match = interval.match(/^P(?:T)?(\d+)([DHM])$/)
@@ -429,8 +430,8 @@ export function DetailedCurve({
 
         mergedData = mergedData.map((current, idx) => {
           const yearAgoReading = readings[idx]
-          const power = yearAgoReading?.value
-            ? (parseFloat(yearAgoReading.value) * intervalMultiplier) / 1000
+          const power = yearAgoReading
+            ? (yearAgoReading.value * intervalMultiplier) / 1000
             : null
           return {
             ...current,
@@ -492,9 +493,9 @@ export function DetailedCurve({
 
         for (const query of allDetailQueries) {
           const responseData = query.state.data as any
-          if (!responseData?.data?.meter_reading?.interval_reading) continue
+          if (!hasReadings(responseData?.data)) continue
 
-          const readings = responseData.data.meter_reading.interval_reading
+          const readings = getReadings(responseData.data)
           hasData = readings.some((reading: any) => {
             if (!reading.date) return false
             const readingDate = reading.date.split(' ')[0].split('T')[0]

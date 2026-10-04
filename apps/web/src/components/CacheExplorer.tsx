@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Database, ChevronDown, ChevronRight, Trash2, Eye } from 'lucide-react'
 import { useCacheBroadcast } from '@/hooks/useCacheBroadcast'
+import { getReadings } from '@/utils/enedisMeasure'
 
 /**
  * Composant pour explorer et afficher toutes les données du cache React Query
@@ -194,10 +195,7 @@ export function CacheExplorer() {
   const getDataPoints = (entry: CacheEntry): number => {
     try {
       const data = entry.state.data as any
-      if (data?.data?.meter_reading?.interval_reading) {
-        return data.data.meter_reading.interval_reading.length
-      }
-      return 0
+      return getReadings(data?.data).length
     } catch {
       return 0
     }
@@ -446,9 +444,9 @@ export function CacheExplorer() {
                   {(() => {
                     try {
                       const data = selectedEntry.state.data as any
-                      const points = data?.data?.meter_reading?.interval_reading
+                      const points = getReadings(data?.data)
 
-                      if (points && Array.isArray(points)) {
+                      if (points.length > 0) {
                         return (
                           <div>
                             <h5 className="font-semibold text-gray-900 dark:text-white mb-2">
@@ -463,7 +461,7 @@ export function CacheExplorer() {
                               </div>
                               <div className="text-sm text-gray-700 dark:text-gray-300">
                                 <strong>Total kWh:</strong>{' '}
-                                {(points.reduce((sum: number, p: any) => sum + (parseFloat(p.value) || 0), 0) / 1000).toFixed(2)}
+                                {(points.reduce((sum, p) => sum + (p.value || 0), 0) / 1000).toFixed(2)}
                               </div>
                               <details className="mt-4">
                                 <summary className="cursor-pointer text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline">

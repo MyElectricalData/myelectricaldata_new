@@ -1,4 +1,4 @@
-import type { PDL } from '@/types/api'
+import type { EnedisMeasure, PDL } from '@/types/api'
 
 // Date range type
 export interface DateRange {
@@ -67,35 +67,12 @@ export interface ConsumptionResponse {
   message?: string
 }
 
-// Meter reading data structure from Enedis API
-export interface MeterReading {
-  usage_point_id?: string
-  start?: string
-  end?: string
-  reading_type?: {
-    aggregate?: string
-    unit?: string
-    interval_length?: string
-    measurement_kind?: string
-  }
-  interval_reading?: Array<{
-    date: string
-    value: string | number
-  }>
-}
+// Réponses de mesure Enedis (format 2026, cf. EnedisMeasure)
+export type ConsumptionAPIResponse = EnedisMeasure
 
-// API response with meter reading data
-export interface ConsumptionAPIResponse {
-  meter_reading?: MeterReading
-}
+export type MaxPowerAPIResponse = EnedisMeasure
 
-export interface MaxPowerAPIResponse {
-  meter_reading?: MeterReading
-}
-
-export interface DetailAPIResponse {
-  meter_reading?: MeterReading
-}
+export type DetailAPIResponse = EnedisMeasure
 
 // Component props types
 export interface PDLSelectorProps {

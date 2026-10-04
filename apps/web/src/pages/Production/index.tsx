@@ -4,6 +4,7 @@ import { usePdlStore } from '@/stores/pdlStore'
 import { useDataFetchStore } from '@/stores/dataFetchStore'
 import type { PDL } from '@/types/api'
 import { logger } from '@/utils/logger'
+import { getReadings, hasReadings } from '@/utils/enedisMeasure'
 import { useQuery } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
@@ -265,8 +266,8 @@ export default function Production() {
 
     const checkCache = () => {
       const cachedData = queryClient.getQueryData(['productionDetail', pdlToCheck]) as any
-      if (cachedData?.data?.meter_reading?.interval_reading?.length > 0) {
-        const readings = cachedData.data.meter_reading.interval_reading
+      if (hasReadings(cachedData?.data)) {
+        const readings = getReadings(cachedData.data)
         logger.log('[Cache Detection] ✓ Production cache found!', readings.length, 'points')
         setHasDataInCache(true)
         return true
@@ -299,7 +300,7 @@ export default function Production() {
       pollCount++
 
       const cachedData = queryClient.getQueryData(['productionDetail', pdlToCheck]) as any
-      if (cachedData?.data?.meter_reading?.interval_reading?.length > 0) {
+      if (hasReadings(cachedData?.data)) {
         logger.log('[Cache Poll] ✓ Production cache now available!')
         setHasDataInCache(true)
         clearInterval(interval)

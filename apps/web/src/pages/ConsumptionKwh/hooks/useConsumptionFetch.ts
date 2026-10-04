@@ -4,8 +4,9 @@ import { enedisApi } from '@/api/enedis'
 import { adminApi } from '@/api/admin'
 import { pdlApi } from '@/api/pdl'
 import { logger } from '@/utils/logger'
+import { buildMeasure, getReadings, getUnit, hasReadings } from '@/utils/enedisMeasure'
 import { toast } from '@/stores/notificationStore'
-import type { PDL } from '@/types/api'
+import type { MeasureReading, PDL } from '@/types/api'
 import type { DateRange, LoadingProgress } from '../types/consumption.types'
 
 export interface UseConsumptionFetchParams {
@@ -166,15 +167,15 @@ export function useConsumptionFetch({
           success: batchData?.success,
           hasError: !!batchData?.error,
           errorCode: batchData?.error?.code,
-          dataPoints: (batchData as any)?.data?.meter_reading?.interval_reading?.length || 0
+          dataPoints: getReadings(batchData?.data).length
         })
 
-        if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
-          const readings = (batchData as any).data.meter_reading.interval_reading
+        if (batchData?.success && hasReadings(batchData.data)) {
+          const readings = getReadings(batchData.data)
 
           // Deduplicate readings using a Map with timestamp as key
-          const uniqueReadingsMap = new Map()
-          readings.forEach((point: any) => {
+          const uniqueReadingsMap = new Map<string, MeasureReading>()
+          readings.forEach((point) => {
             uniqueReadingsMap.set(point.date, point)
           })
           const uniqueReadings = Array.from(uniqueReadingsMap.values())
@@ -183,11 +184,7 @@ export function useConsumptionFetch({
           // This avoids creating 730+ cache entries that overload IndexedDB
           queryClient.setQueryData(['consumptionDetail', selectedPDL], {
             success: true,
-            data: {
-              meter_reading: {
-                interval_reading: uniqueReadings
-              }
-            }
+            data: buildMeasure(uniqueReadings, { grandeurMetier: 'CONS', unite: getUnit(batchData.data) || 'W' })
           })
 
           // Calculate day count for display
@@ -334,12 +331,12 @@ export function useConsumptionFetch({
           end: endDate,
           use_cache: true,
         }).then(batchData => {
-          if (batchData?.success && (batchData as any)?.data?.meter_reading?.interval_reading) {
-            const readings = (batchData as any).data.meter_reading.interval_reading
+          if (batchData?.success && hasReadings(batchData.data)) {
+            const readings = getReadings(batchData.data)
 
             // Deduplicate readings using a Map with timestamp as key
-            const uniqueReadingsMap = new Map()
-            readings.forEach((point: any) => {
+            const uniqueReadingsMap = new Map<string, MeasureReading>()
+            readings.forEach((point) => {
               uniqueReadingsMap.set(point.date, point)
             })
             const uniqueReadings = Array.from(uniqueReadingsMap.values())
@@ -348,11 +345,7 @@ export function useConsumptionFetch({
             // This avoids creating 730+ cache entries that overload IndexedDB
             queryClient.setQueryData(['productionDetail', productionPdlUsagePointId], {
               success: true,
-              data: {
-                meter_reading: {
-                  interval_reading: uniqueReadings
-                }
-              }
+              data: buildMeasure(uniqueReadings, { grandeurMetier: 'PROD', unite: getUnit(batchData.data) || 'W' })
             })
 
             const dates = new Set(uniqueReadings.map((p: any) => p.date.split(' ')[0].split('T')[0]))

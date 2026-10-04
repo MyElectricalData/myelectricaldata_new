@@ -43,6 +43,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       persistOptions={{
         persister,
         maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days - keep persisted data for one week
+        // Version du format des réponses : la changer jette le cache persisté (passage Enedis Data Connect 2026)
+        buster: 'enedis-2026',
         dehydrateOptions: {
           shouldDehydrateQuery: (query) => {
             const queryKey = query.queryKey[0] as string

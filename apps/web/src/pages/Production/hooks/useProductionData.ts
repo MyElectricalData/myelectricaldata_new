@@ -2,7 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 import { pdlApi } from '@/api/pdl'
 import { enedisApi } from '@/api/enedis'
-import type { PDL } from '@/types/api'
+import type { EnedisMeasure, MeasureReading, PDL } from '@/types/api'
+import { buildMeasure, getReadings, getUnit } from '@/utils/enedisMeasure'
 import type { DateRange } from '../types/production.types'
 
 export function useProductionData(selectedPDL: string, dateRange: DateRange | null, _detailDateRange: DateRange | null) {
@@ -94,22 +95,26 @@ export function useProductionData(selectedPDL: string, dateRange: DateRange | nu
         return chunkResults[0]
       }
 
-      // Combine all interval_reading arrays
-      const allReadings: any[] = []
+      // Concatène les lectures de tous les morceaux
+      const allReadings: MeasureReading[] = []
       for (const result of chunkResults) {
-        if (result?.success && (result as any)?.data?.meter_reading?.interval_reading) {
-          allReadings.push(...(result as any).data.meter_reading.interval_reading)
+        if (result?.success) {
+          allReadings.push(...getReadings(result.data))
         }
       }
 
+      const firstData = firstSuccess.data as EnedisMeasure | undefined
       return {
         ...firstSuccess,
         data: {
-          ...(firstSuccess.data as any),
-          meter_reading: {
-            ...(firstSuccess.data as any)?.meter_reading,
-            interval_reading: allReadings
-          }
+          ...firstData,
+          ...buildMeasure(allReadings, {
+            grandeurMetier: 'PROD',
+            unite: getUnit(firstData) ?? 'Wh',
+            pas: firstData?.pas,
+            start: dateRange.start,
+            end: dateRange.end,
+          }),
         }
       }
     },

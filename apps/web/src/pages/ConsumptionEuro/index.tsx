@@ -12,8 +12,9 @@ import { AnimatedSection } from '@/components/AnimatedSection'
 import { useIsDemo } from '@/hooks/useIsDemo'
 import { useUnifiedDataFetch } from '@/hooks/useUnifiedDataFetch'
 import { logger } from '@/utils/logger'
+import { hasReadings } from '@/utils/enedisMeasure'
 import OfferSelector from '@/components/OfferSelector'
-import type { PDL } from '@/types/api'
+import type { APIResponse, EnedisMeasure, PDL } from '@/types/api'
 
 // Import hooks and components
 import { useConsumptionEuroCalcs } from './hooks/useConsumptionEuroCalcs'
@@ -149,15 +150,6 @@ export default function ConsumptionEuro() {
   }, [allOffers, selectedOfferWithProvider?.power_kva])
 
   // Check for cached detail data
-  // Type for cache data
-  interface CacheData {
-    data?: {
-      meter_reading?: {
-        interval_reading?: Array<{ date: string; value: string | number }>
-      }
-    }
-  }
-
   useEffect(() => {
     if (!selectedPDL) {
       setHasDataInCache(false)
@@ -169,9 +161,8 @@ export default function ConsumptionEuro() {
     })
 
     if (detailQuery?.state.data) {
-      const data = detailQuery.state.data as CacheData
-      const readings = data?.data?.meter_reading?.interval_reading
-      if (readings && readings.length > 0) {
+      const data = detailQuery.state.data as APIResponse<EnedisMeasure>
+      if (hasReadings(data?.data)) {
         setHasDataInCache(true)
         return
       }
@@ -227,9 +218,8 @@ export default function ConsumptionEuro() {
       })
 
       if (detailQuery?.state.data) {
-        const data = detailQuery.state.data as CacheData
-        const readings = data?.data?.meter_reading?.interval_reading
-        if (readings && readings.length > 0) {
+        const data = detailQuery.state.data as APIResponse<EnedisMeasure>
+        if (hasReadings(data?.data)) {
           setHasDataInCache(true)
           clearInterval(interval)
           return

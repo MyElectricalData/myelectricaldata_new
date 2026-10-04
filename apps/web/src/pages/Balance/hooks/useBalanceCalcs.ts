@@ -1,17 +1,9 @@
 import { useMemo } from 'react'
-import type { EnedisData } from '@/api/enedis'
+import type { EnedisMeasure, MeasureReading } from '@/types/api'
+import { getIntervalLength, getReadings, getUnit, hasReadings } from '@/utils/enedisMeasure'
 import type { BalanceChartData, YearlyBalance, MonthlyBalance, DailyBalance } from '../types/balance.types'
 
 const MONTH_LABELS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
-
-interface IntervalReading {
-  date: string
-  value: string | number
-}
-
-function parseValue(value: string | number): number {
-  return typeof value === 'string' ? parseFloat(value) : value
-}
 
 function getIntervalMultiplier(intervalLength?: string, unit?: string): number {
   // If unit is already Wh, no conversion needed
@@ -19,7 +11,7 @@ function getIntervalMultiplier(intervalLength?: string, unit?: string): number {
 
   // For W (power), multiply by interval duration in hours to get Wh
   if (unit === 'W') {
-    const match = intervalLength?.match(/^P(\d+)([DHM])$/)
+    const match = intervalLength?.match(/^PT?(\d+)([DHM])$/)
     if (!match) return 1
     const val = parseInt(match[1], 10)
     const u = match[2]
@@ -34,24 +26,23 @@ function getIntervalMultiplier(intervalLength?: string, unit?: string): number {
 }
 
 export function useBalanceCalcs(
-  consumptionData: EnedisData | null,
-  productionData: EnedisData | null,
-  consumptionDetailData?: EnedisData | null,
-  productionDetailData?: EnedisData | null
+  consumptionData: EnedisMeasure | null,
+  productionData: EnedisMeasure | null,
+  consumptionDetailData?: EnedisMeasure | null,
+  productionDetailData?: EnedisMeasure | null
 ): BalanceChartData | null {
   return useMemo(() => {
-    if (!consumptionData?.meter_reading?.interval_reading ||
-        !productionData?.meter_reading?.interval_reading) {
+    if (!hasReadings(consumptionData) || !hasReadings(productionData)) {
       return null
     }
 
-    const consumptionReadings = consumptionData.meter_reading.interval_reading
-    const productionReadings = productionData.meter_reading.interval_reading
+    const consumptionReadings = getReadings(consumptionData)
+    const productionReadings = getReadings(productionData)
 
-    const consumptionInterval = consumptionData.meter_reading.reading_type?.interval_length
-    const consumptionUnit = consumptionData.meter_reading.reading_type?.unit
-    const productionInterval = productionData.meter_reading.reading_type?.interval_length
-    const productionUnit = productionData.meter_reading.reading_type?.unit
+    const consumptionInterval = getIntervalLength(consumptionData)
+    const consumptionUnit = getUnit(consumptionData)
+    const productionInterval = getIntervalLength(productionData)
+    const productionUnit = getUnit(productionData)
 
     const consumptionMultiplier = getIntervalMultiplier(consumptionInterval, consumptionUnit)
     const productionMultiplier = getIntervalMultiplier(productionInterval, productionUnit)
@@ -60,15 +51,15 @@ export function useBalanceCalcs(
     const consumptionByDate = new Map<string, number>()
     const productionByDate = new Map<string, number>()
 
-    consumptionReadings.forEach((reading: IntervalReading) => {
+    consumptionReadings.forEach((reading: MeasureReading) => {
       const date = reading.date?.split('T')[0] || reading.date
-      const value = parseValue(reading.value) * consumptionMultiplier
+      const value = reading.value * consumptionMultiplier
       consumptionByDate.set(date, (consumptionByDate.get(date) || 0) + value)
     })
 
-    productionReadings.forEach((reading: IntervalReading) => {
+    productionReadings.forEach((reading: MeasureReading) => {
       const date = reading.date?.split('T')[0] || reading.date
-      const value = parseValue(reading.value) * productionMultiplier
+      const value = reading.value * productionMultiplier
       productionByDate.set(date, (productionByDate.get(date) || 0) + value)
     })
 
@@ -191,29 +182,28 @@ export function useBalanceCalcs(
     }
 
     // If we have detailed data, recalculate self-consumption more accurately
-    if (consumptionDetailData?.meter_reading?.interval_reading &&
-        productionDetailData?.meter_reading?.interval_reading) {
+    if (hasReadings(consumptionDetailData) && hasReadings(productionDetailData)) {
       // Create maps by timestamp
       const detailConsumption = new Map<string, number>()
       const detailProduction = new Map<string, number>()
 
-      const detailConsoInterval = consumptionDetailData.meter_reading.reading_type?.interval_length
-      const detailConsoUnit = consumptionDetailData.meter_reading.reading_type?.unit
-      const detailProdInterval = productionDetailData.meter_reading.reading_type?.interval_length
-      const detailProdUnit = productionDetailData.meter_reading.reading_type?.unit
+      const detailConsoInterval = getIntervalLength(consumptionDetailData)
+      const detailConsoUnit = getUnit(consumptionDetailData)
+      const detailProdInterval = getIntervalLength(productionDetailData)
+      const detailProdUnit = getUnit(productionDetailData)
 
       const detailConsoMultiplier = getIntervalMultiplier(detailConsoInterval, detailConsoUnit)
       const detailProdMultiplier = getIntervalMultiplier(detailProdInterval, detailProdUnit)
 
-      consumptionDetailData.meter_reading.interval_reading.forEach((reading: IntervalReading) => {
+      getReadings(consumptionDetailData).forEach((reading: MeasureReading) => {
         const timestamp = reading.date
-        const value = parseValue(reading.value) * detailConsoMultiplier
+        const value = reading.value * detailConsoMultiplier
         detailConsumption.set(timestamp, value)
       })
 
-      productionDetailData.meter_reading.interval_reading.forEach((reading: IntervalReading) => {
+      getReadings(productionDetailData).forEach((reading: MeasureReading) => {
         const timestamp = reading.date
-        const value = parseValue(reading.value) * detailProdMultiplier
+        const value = reading.value * detailProdMultiplier
         detailProduction.set(timestamp, value)
       })
 

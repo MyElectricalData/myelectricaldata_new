@@ -7,9 +7,10 @@ import { AnimatedSection } from '@/components/AnimatedSection'
 import { PeriodSelector } from '@/components/PeriodSelector'
 import { energyApi, type EnergyProvider, type EnergyOffer } from '@/api/energy'
 import { tempoApi, type TempoDay } from '@/api/tempo'
-import type { PDL } from '@/types/api'
+import type { EnedisMeasure, MeasureReading, PDL } from '@/types/api'
 import jsPDF from 'jspdf'
 import { logger } from '@/utils/logger'
+import { buildMeasure, getReadings, getUnit, hasReadings } from '@/utils/enedisMeasure'
 import { ModernButton } from './Simulator/components/ModernButton'
 import { useIsDemo } from '@/hooks/useIsDemo'
 import { usePdlStore } from '@/stores/pdlStore'
@@ -462,15 +463,15 @@ export default function Simulator() {
   const hasDataInCache = useMemo(() => {
     if (!selectedPdl) return false
     const cachedData = queryClient.getQueryData(['consumptionDetail', selectedPdl]) as any
-    return cachedData?.data?.meter_reading?.interval_reading?.length > 0
+    return hasReadings(cachedData?.data)
   }, [selectedPdl, queryClient, cachedConsumptionData])
 
   // Extract available dates from cached data (dates with consumption data)
   const availableDates = useMemo(() => {
     const dates = new Set<string>()
-    if (cachedConsumptionData?.data?.meter_reading?.interval_reading) {
-      const readings = cachedConsumptionData.data.meter_reading.interval_reading
-      readings.forEach((point: any) => {
+    if (hasReadings(cachedConsumptionData?.data)) {
+      const readings = getReadings(cachedConsumptionData.data)
+      readings.forEach((point) => {
         if (point.date) {
           // Extract just the date part (YYYY-MM-DD)
           const dateStr = point.date.split(' ')[0].split('T')[0]
@@ -592,13 +593,13 @@ export default function Simulator() {
       logger.log(`Loading consumption data from cache: ${startDate} to ${endDate}`)
 
       // Use cachedConsumptionData from state (already hydrated from IndexedDB via subscription)
-      let allPoints: any[] = []
+      let allPoints: MeasureReading[] = []
 
-      if (cachedConsumptionData?.data?.meter_reading?.interval_reading) {
-        const readings = cachedConsumptionData.data.meter_reading.interval_reading
+      if (hasReadings(cachedConsumptionData?.data)) {
+        const readings = getReadings(cachedConsumptionData.data)
 
         // Filter readings to the desired date range (rolling year)
-        allPoints = readings.filter((point: any) => {
+        allPoints = readings.filter((point) => {
           const pointDate = point.date.split(' ')[0].split('T')[0]
           return pointDate >= startDate && pointDate <= endDate
         })
@@ -615,11 +616,7 @@ export default function Simulator() {
       // Create response structure compatible with the rest of the code
       const response = {
         success: true,
-        data: {
-          meter_reading: {
-            interval_reading: allPoints
-          }
-        }
+        data: buildMeasure(allPoints, { grandeurMetier: 'CONS', unite: getUnit(cachedConsumptionData.data) ?? 'W' })
       }
 
       const allData = [response.data]
@@ -702,7 +699,7 @@ export default function Simulator() {
     }
   }, [selectedPdl, pdlsData, offersData, allOffersIncludingExpired, providersData, cachedConsumptionData, simulationStartDate, simulationEndDate, periodLabel])
 
-  const calculateSimulationsForAllOffers = (consumptionData: any[], offers: EnergyOffer[], providers: EnergyProvider[], tempoColors: TempoDay[], pdl?: PDL) => {
+  const calculateSimulationsForAllOffers = (consumptionData: EnedisMeasure[], offers: EnergyOffer[], providers: EnergyProvider[], tempoColors: TempoDay[], pdl?: PDL) => {
     // Create a map of date -> TEMPO color for fast lookup
     const tempoColorMap = new Map<string, 'BLUE' | 'WHITE' | 'RED'>()
     if (Array.isArray(tempoColors)) {
@@ -718,10 +715,11 @@ export default function Simulator() {
     // Extract all consumption values
     const allConsumption: { date: string; dateOnly: string; value: number; hour?: number }[] = []
 
-    consumptionData.forEach((periodData: any) => {
-      if (periodData?.meter_reading?.interval_reading) {
-        periodData.meter_reading.interval_reading.forEach((reading: any) => {
-          if (reading.value && reading.date) {
+    consumptionData.forEach((periodData: EnedisMeasure) => {
+      if (hasReadings(periodData)) {
+        getReadings(periodData).forEach((reading) => {
+          // Valeur numérique : 0 reste une lecture valide (la chaîne "0" l'était en v5)
+          if (!Number.isNaN(reading.value) && reading.date) {
             // Extract date part (YYYY-MM-DD) - handle both "2024-10-04T01:00:00" and "2024-10-04 01:00:00"
             const dateOnly = reading.date.includes('T')
               ? reading.date.split('T')[0]
@@ -740,7 +738,7 @@ export default function Simulator() {
 
             // Convert W to Wh: value_wh = value_w * (interval_minutes / 60)
             // Equivalent to: value_wh = value_w / (60 / interval_minutes)
-            const valueW = parseFloat(reading.value)
+            const valueW = reading.value
             const valueWh = valueW / (60 / intervalMinutes)
 
             allConsumption.push({
@@ -1276,9 +1274,9 @@ export default function Simulator() {
     if (!pdlsData || offersData.length === 0 || providersData.length === 0) return
 
     // Use cachedConsumptionData from state (populated via subscription, handles IndexedDB hydration)
-    if (!cachedConsumptionData?.data?.meter_reading?.interval_reading?.length) return
+    if (!hasReadings(cachedConsumptionData?.data)) return
 
-    const readings = cachedConsumptionData.data.meter_reading.interval_reading
+    const readings = getReadings(cachedConsumptionData.data)
     const totalPoints = readings.length
 
     // Check if we have enough data (at least 30 days worth = ~1440 points at 30min intervals)

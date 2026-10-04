@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { ProductionAPIResponse, DetailAPIResponse } from '../types/production.types'
+import { getIntervalLength, getReadings, getUnit, hasReadings } from '@/utils/enedisMeasure'
 
 interface UseProductionCalcsProps {
   productionData: ProductionAPIResponse | null
@@ -13,16 +14,16 @@ export function useProductionCalcs({
 
   // Process production data for charts
   const chartData = useMemo(() => {
-    if (!productionData?.meter_reading?.interval_reading) {
+    if (!hasReadings(productionData)) {
       return { byYear: [], byMonth: [], byMonthComparison: [], total: 0, years: [], unit: 'W' }
     }
 
-    const readings = productionData.meter_reading.interval_reading
-    const unit = productionData.meter_reading.reading_type?.unit || 'W'
-    const intervalLength = productionData.meter_reading.reading_type?.interval_length || 'P1D'
+    const readings = getReadings(productionData)
+    const unit = getUnit(productionData) || 'W'
+    const intervalLength = getIntervalLength(productionData) || 'P1D'
 
     const parseIntervalToDurationInHours = (interval: string): number => {
-      const match = interval.match(/^P(\d+)([DHM])$/)
+      const match = interval.match(/^PT?(\d+)([DHM])$/)
       if (!match) return 1
 
       const value = parseInt(match[1], 10)
@@ -52,7 +53,7 @@ export function useProductionCalcs({
 
     // Find the most recent date in the actual data
     let mostRecentDate = new Date(0)
-    readings.forEach((reading: any) => {
+    readings.forEach((reading) => {
       const dateStr = reading.date?.split('T')[0] || reading.date
       if (dateStr) {
         const readingDate = new Date(dateStr)
@@ -97,8 +98,8 @@ export function useProductionCalcs({
     const periodData: Record<string, { value: number, startDate: Date, endDate: Date }> = {}
     const periodMonthlyData: Record<string, Record<string, number>> = {}
 
-    readings.forEach((reading: any) => {
-      const rawValue = parseFloat(reading.value || 0)
+    readings.forEach((reading) => {
+      const rawValue = reading.value
       const dateStr = reading.date?.split('T')[0] || reading.date
 
       if (!dateStr || isNaN(rawValue)) return
@@ -208,16 +209,16 @@ export function useProductionCalcs({
 
   // Process detailed production data by day
   const detailByDayData = useMemo(() => {
-    if (!detailData?.meter_reading?.interval_reading) {
+    if (!hasReadings(detailData)) {
       return []
     }
 
-    const readings = detailData.meter_reading.interval_reading
-    const unit = detailData.meter_reading.reading_type?.unit || 'W'
-    const intervalLength = detailData.meter_reading.reading_type?.interval_length || 'P30M'
+    const readings = getReadings(detailData)
+    const unit = getUnit(detailData) || 'W'
+    const intervalLength = getIntervalLength(detailData) || 'P30M'
 
     const parseIntervalToDurationInHours = (interval: string): number => {
-      const match = interval.match(/^P(\d+)([DHM])$/)
+      const match = interval.match(/^PT?(\d+)([DHM])$/)
       if (!match) return 0.5
 
       const value = parseInt(match[1], 10)
@@ -245,7 +246,7 @@ export function useProductionCalcs({
 
     const dayMap: Record<string, any[]> = {}
 
-    readings.forEach((reading: any) => {
+    readings.forEach((reading) => {
       if (!reading.date) return
 
       let apiDateTime: Date
@@ -273,7 +274,7 @@ export function useProductionCalcs({
         dayMap[dateStr] = []
       }
 
-      const rawValue = parseFloat(reading.value || 0)
+      const rawValue = reading.value
       const energyWh = rawValue * intervalMultiplier
       const energyKwh = energyWh / 1000
       const averagePowerW = intervalDurationHours > 0 ? energyWh / intervalDurationHours : rawValue
