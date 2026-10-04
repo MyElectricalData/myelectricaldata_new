@@ -1,0 +1,29 @@
+{
+  "idPrm": "99999999999991",
+  "etapeMetier": "BRUT",
+  "periode": {
+    "dateDebut": "2026-09-29",
+    "dateFin": "2026-10-01"
+  },
+  "modeCalcul": "MESURE",
+  "pas": "P1D",
+  "grandeur": [
+    {
+      "grandeurMetier": "CONS",
+      "grandeurPhysique": "PMA",
+      "unite": "VA",
+      "points": [
+        {
+          "v": "4680",
+          "d": "2026-09-29 13:03:35"
+        },
+        {
+          "v": "6510",
+          "d": "2026-09-30 12:50:25"
+        }
+      ],
+      "calendrier": []
+    }
+  ],
+  "contexte": []
+}

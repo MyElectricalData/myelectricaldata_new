@@ -1,0 +1,5 @@
+{
+  "code": "900908",
+  "message": "Resource forbidden ",
+  "description": "User is NOT authorized to access the Resource. API Subscription validation failed."
+}

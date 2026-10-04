@@ -1,0 +1,1365 @@
+swagger: '2.0'
+info:
+  description: >-
+    Cette API vous permet de consulter les données quotidiennes de comptage du soutirage (consommation d’électricité) et d'injection (production d’électricité), sur le réseau général de distribution d’électricité, des compteurs communicants pour lesquels le titulaire a autorisé votre entité à consulter ses données. La réponse de ce service est instantanée. Seule l’autorisation donnée par le titulaire à partir de son compte client permet l'accès à cette ressource.
+    Les données mesurées disponibles sont :
+      •	La consommation et/ou la production quotidienne
+      •	La courbe de charge de consommation et/ou de production
+      •	Les données d'index de consommation et/ou de production
+      •	La puissance maximum de consommation
+    Le nombre maximum de requêtes est de 5 appels par secondes et/ou 1000 appels par heure.
+  version: v2
+  title: mesure_autorisee
+host: gw.ext.prod.api.enedis.fr
+basePath: /mesure_synchrone_auto/v2
+schemes:
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+security:
+  - default: []
+paths:
+  /index_consommation:
+    get:
+      tags:
+        - Metering Data
+      summary: Accès aux données d'index.
+      parameters:
+        - name: Content-Type
+          in: header
+          description: >-
+            Format du body de la requête. Ce header est déterminé automatiquement lorsqu'un body est renseigné dans la requête de l'appel API.
+          required: false
+          type: string
+          x-example: application/json;charset=UTF-8
+        - name: Accept
+          in: header
+          description: >-
+            Format de réponse acceptable. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: application/json
+        - name: Authorization
+          in: header
+          description: >-
+            Bearer Token généré par l'api Authentification à renseigner.
+          required: true
+          type: string
+          x-example: Bearer HPt7dXk6OBY4aoeyqbIvOM6
+        - name: User-Agent
+          in: header
+          description: >-
+            Description de l'équipement qui a émis la requêtes
+            (hardware/software). Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)
+        - name: Host
+          in: header
+          description: >-
+            Nom de domaine du serveur. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API. Attention, si le port :443 apparait dans l'url, veuillez le supprimer pour que l'appel API soit fonctionnel.
+          required: true
+          type: string
+          x-example: 'gw.ext.prod.api.enedis.fr'
+        - name: pointId
+          in: query
+          description: Identifiant du point de livraison (PRM)
+          required: true
+          type: string
+          x-example: '99999999999999'
+        - name: dateDebut
+          in: query
+          description: >-
+            Jour de début de la plage demandée au format full-date de la RFC
+            3339, à savoir YYYY-MM-DD. Les données retournées inclueront la date
+            de démarrage.
+          required: true
+          type: string
+          x-example: '2025-05-01'
+        - name: dateFin
+          in: query
+          description: >-
+            Jour de fin de la plage demandée au format full-date de la RFC 3339,
+            à savoir YYYY-MM-DD. Les données retournées n'inclueront pas la date
+            de fin et s'arrêteront la veille.
+          required: true
+          type: string
+          x-example: '2025-05-06'
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/ReponseMesureAccesIndex'
+        '400':
+          description: La syntaxe de la requête est erronée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+                description: Code de l’erreur retourné par le système.
+              message:
+                type: string
+                example: Le paramètre usage_point_id est obligatoire
+        '403':
+          description: Erreur dans le format de la requête
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+                description: Code de l’erreur retourné par le système.
+              message:
+                type: string
+                example: Le client n'est pas titulaire du point demandé
+        '404':
+          description: Ressource non trouvée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+                description: Service non disponible.
+              message:
+                type: string
+                example: Pas de mesure trouvée pour ce point
+        '429':
+          description: L’application a dépassé son quota d’appels
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+                description: SLA dépassé.
+              message:
+                type: string
+                example: SLA dépassé
+        '500':
+          description: Erreur interne de serveur.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+                description: Code de l’erreur retourné par le système.
+              message:
+                type: string
+                example: Problème technique dans l'interrogation du SI coeur
+      security:
+        - default: []
+      x-auth-type: Application & Application User
+      x-throttling-tier: Unlimited
+      x-wso2-application-security:
+        security-types:
+          - oauth2
+        optional: false
+  /index_production:
+    get:
+      tags:
+        - Metering Data
+      summary: Accès aux données d'index.
+      parameters:
+        - name: Content-Type
+          in: header
+          description: >-
+            Format du body de la requête. Ce header est déterminé automatiquement lorsqu'un body est renseigné dans la requête de l'appel API.
+          required: false
+          type: string
+          x-example: application/json;charset=UTF-8
+        - name: Accept
+          in: header
+          description: >-
+            Format de réponse acceptable. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: application/json
+        - name: Authorization
+          in: header
+          description: >-
+            Bearer Token généré par l'api Authentification à renseigner.
+          required: true
+          type: string
+          x-example: Bearer HPt7dXk6OBY4aoeyqbIvOM6
+        - name: User-Agent
+          in: header
+          description: >-
+            Description de l'équipement qui a émis la requêtes
+            (hardware/software). Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)
+        - name: Host
+          in: header
+          description: >-
+            Nom de domaine du serveur. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API. Attention, si le port :443 apparait dans l'url, veuillez le supprimer pour que l'appel API soit fonctionnel.
+          required: true
+          type: string
+          x-example: 'gw.ext.prod.api.enedis.fr'
+        - name: pointId
+          in: query
+          description: Identifiant du point de livraison (PRM)
+          required: true
+          type: string
+          x-example: '99999999999999'
+        - name: dateDebut
+          in: query
+          description: >-
+            Jour de début de la plage demandée au format full-date de la RFC
+            3339, à savoir YYYY-MM-DD. Les données retournées inclueront la date
+            de démarrage.
+          required: true
+          type: string
+          x-example: '2025-05-01'
+        - name: dateFin
+          in: query
+          description: >-
+            Jour de fin de la plage demandée au format full-date de la RFC 3339,
+            à savoir YYYY-MM-DD. Les données retournées n'inclueront pas la date
+            de fin et s'arrêteront la veille.
+          required: true
+          type: string
+          x-example: '2025-05-06'
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/ReponseMesureAccesIndex'
+        '400':
+          description: La syntaxe de la requête est erronée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le paramètre usage_point_id est obligatoire
+        '403':
+          description: Erreur dans le format de la requête
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le client n'est pas titulaire du point demandé
+        '404':
+          description: Ressource non trouvée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+                description: Service non disponible.
+              message:
+                type: string
+                example: Pas de mesure trouvée pour ce point
+        '429':
+          description: L’application a dépassé son quota d’appels
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+                description: SLA dépassé.
+              message:
+                type: string
+                example: SLA dépassé
+        '500':
+          description: Erreur interne de serveur.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Problème technique dans l'interrogation du SI coeur
+      security:
+        - default: []
+      x-auth-type: Application & Application User
+      x-throttling-tier: Unlimited
+      x-wso2-application-security:
+        security-types:
+          - oauth2
+        optional: false
+  /consommation_quotidienne:
+    get:
+      tags:
+        - Metering Data
+      summary: Récupérer la consommation quotidienne
+      description: >-
+        Cette sous ressource renvoie les valeurs correspondant à la consommation
+        quotidienne (en Wh) sur chaque jour de la période demandée. Chaque
+        valeur est daté.  Un appel peut porter sur des données datant au maximum
+        de 36 mois et 15 jours avant la date d'appel.
+      parameters:
+        - name: Content-Type
+          in: header
+          description: >-
+            Format du body de la requête. Ce header est déterminé automatiquement lorsqu'un body est renseigné dans la requête de l'appel API.
+          required: false
+          type: string
+          x-example: application/json;charset=UTF-8
+        - name: Accept
+          in: header
+          description: >-
+            Format de réponse acceptable. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: application/json
+        - name: Authorization
+          in: header
+          description: >-
+            Bearer Token généré par l'api Authentification à renseigner.
+          required: true
+          type: string
+          x-example: Bearer HPt7dXk6OBY4aoeyqbIvOM6
+        - name: User-Agent
+          in: header
+          description: >-
+            Description de l'équipement qui a émis la requêtes
+            (hardware/software). Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)
+        - name: Host
+          in: header
+          description: >-
+            Nom de domaine du serveur. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API. Attention, si le port :443 apparait dans l'url, veuillez le supprimer pour que l'appel API soit fonctionnel.
+          required: true
+          type: string
+          x-example: 'gw.ext.prod.api.enedis.fr'
+        - name: pointId
+          in: query
+          description: Identifiant du point de livraison (PRM)
+          required: true
+          type: string
+          x-example: '99999999999999'
+        - name: dateDebut
+          in: query
+          description: >-
+            Jour de début de la plage demandée au format full-date de la RFC
+            3339, à savoir YYYY-MM-DD. Les données retournées inclueront la date
+            de démarrage.
+          required: true
+          type: string
+          x-example: '2025-05-01'
+        - name: dateFin
+          in: query
+          description: >-
+            Jour de fin de la plage demandée au format full-date de la RFC 3339,
+            à savoir YYYY-MM-DD. Les données retournées n'inclueront pas la date
+            de fin et s'arrêteront la veille.
+          required: true
+          type: string
+          x-example: '2025-05-06'
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/ReponseMesureAccesQuotidien'
+        '400':
+          description: La syntaxe de la requête est erronée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le paramètre usage_point_id est obligatoire
+        '403':
+          description: Erreur dans le format de la requête
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le client n'est pas titulaire du point demandé
+        '404':
+          description: Ressource non trouvée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Pas de mesure trouvée pour ce point
+        '429':
+          description: L’application a dépassé son quota d’appels
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: SLA dépassé
+        '500':
+          description: Erreur interne de serveur.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Problème technique dans l'interrogation du SI coeur
+      security:
+        - default: []
+      x-auth-type: Application & Application User
+      x-throttling-tier: Unlimited
+      x-wso2-application-security:
+        security-types:
+          - oauth2
+        optional: false
+  /production_quotidienne:
+    get:
+      tags:
+        - Metering Data
+      summary: Récupérer la production quotidienne
+      description: >-
+        Cette sous ressource renvoie les valeurs correspondant à la production
+        quotidienne (en Wh) sur chaque jour de la période demandée. Chaque
+        valeur est daté.  Un appel peut porter sur des données datant au maximum
+        de 36 mois et 15 jours avant la date d'appel.
+      parameters:
+        - name: Content-Type
+          in: header
+          description: >-
+            Format du body de la requête. Ce header est déterminé automatiquement lorsqu'un body est renseigné dans la requête de l'appel API.
+          required: false
+          type: string
+          x-example: application/json;charset=UTF-8
+        - name: Accept
+          in: header
+          description: >-
+            Format de réponse acceptable. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: application/json
+        - name: Authorization
+          in: header
+          description: >-
+            Bearer Token généré par l'api Authentification à renseigner.
+          required: true
+          type: string
+          x-example: Bearer HPt7dXk6OBY4aoeyqbIvOM6
+        - name: User-Agent
+          in: header
+          description: >-
+            Description de l'équipement qui a émis la requêtes
+            (hardware/software). Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)
+        - name: Host
+          in: header
+          description: >-
+            Nom de domaine du serveur. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API. Attention, si le port :443 apparait dans l'url, veuillez le supprimer pour que l'appel API soit fonctionnel.
+          required: true
+          type: string
+          x-example: 'gw.ext.prod.api.enedis.fr'
+        - name: pointId
+          in: query
+          description: Identifiant du point de livraison (PRM)
+          required: true
+          type: string
+          x-example: '99999999999999'
+        - name: dateDebut
+          in: query
+          description: >-
+            Jour de début de la plage demandée au format full-date de la RFC
+            3339, à savoir YYYY-MM-DD. Les données retournées inclueront la date
+            de démarrage.
+          required: true
+          type: string
+          x-example: '2025-05-01'
+        - name: dateFin
+          in: query
+          description: >-
+            Jour de fin de la plage demandée au format full-date de la RFC 3339,
+            à savoir YYYY-MM-DD. Les données retournées n'inclueront pas la date
+            de fin et s'arrêteront la veille.
+          required: true
+          type: string
+          x-example: '2025-05-06'
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/ReponseMesureAccesQuotidien'
+        '400':
+          description: La syntaxe de la requête est erronée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le paramètre usage_point_id est obligatoire
+        '403':
+          description: Erreur dans le format de la requête
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le client n'est pas titulaire du point demandé
+        '404':
+          description: Ressource non trouvée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Pas de mesure trouvée pour ce point
+        '429':
+          description: L’application a dépassé son quota d’appels
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: SLA dépassé
+        '500':
+          description: Erreur interne de serveur.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Problème technique dans l'interrogation du SI coeur
+      security:
+        - default: []
+      x-auth-type: Application & Application User
+      x-throttling-tier: Unlimited
+      x-wso2-application-security:
+        security-types:
+          - oauth2
+        optional: false
+  /puissance_conso_max_quotidienne:
+    get:
+      tags:
+        - Metering Data
+      summary: Récupérer la puissance maximale de consommation atteinte quotidiennement
+      description: >-
+        Cette sous ressource renvoie les valeurs correspondant à des puissances
+        maximales de consommation (en W) atteintes quotidiennement pour chaque
+        jour de la période demandée. Chaque valeur est datée. La courbe de
+        charge s'obtient sur des journées complètes de minuit à minuit du jour
+        suivant en heures locales.  Un appel peut porter sur des données datant
+        au maximum de 36 mois et 15 jours avant la date d'appel.
+      parameters:
+        - name: Content-Type
+          in: header
+          description: >-
+            Format du body de la requête. Ce header est déterminé automatiquement lorsqu'un body est renseigné dans la requête de l'appel API.
+          required: false
+          type: string
+          x-example: application/json;charset=UTF-8
+        - name: Accept
+          in: header
+          description: >-
+            Format de réponse acceptable. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: application/json
+        - name: Authorization
+          in: header
+          description: >-
+            Bearer Token généré par l'api Authentification à renseigner.
+          required: true
+          type: string
+          x-example: Bearer HPt7dXk6OBY4aoeyqbIvOM6
+        - name: User-Agent
+          in: header
+          description: >-
+            Description de l'équipement qui a émis la requêtes
+            (hardware/software). Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)
+        - name: Host
+          in: header
+          description: >-
+            Nom de domaine du serveur. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API. Attention, si le port :443 apparait dans l'url, veuillez le supprimer pour que l'appel API soit fonctionnel.
+          required: true
+          type: string
+          x-example: 'gw.ext.prod.api.enedis.fr'
+        - name: pointId
+          in: query
+          description: Identifiant du point de livraison (PRM)
+          required: true
+          type: string
+          x-example: '99999999999999'
+        - name: dateDebut
+          in: query
+          description: >-
+            Jour de début de la plage demandée au format full-date de la RFC
+            3339, à savoir YYYY-MM-DD. Les données retournées inclueront la date
+            de démarrage.
+          required: true
+          type: string
+          x-example: '2025-05-01'
+        - name: dateFin
+          in: query
+          description: >-
+            Jour de fin de la plage demandée au format full-date de la RFC 3339,
+            à savoir YYYY-MM-DD. Les données retournées n'inclueront pas la date
+            de fin et s'arrêteront la veille.
+          required: true
+          type: string
+          x-example: '2025-05-06'
+        - name: mesuresPas
+          in: query
+          description: >-
+            Pas de mesure renseigné pour les données de mesure de type PMAX. Le
+            pas peut être quotidien (P1D) ou mensuel (P1M)
+          required: true
+          type: string
+          enum:
+            - 'P1D'
+            - 'P1M'
+          x-example: P1D
+        - name: grandeurPhysique
+          in: query
+          description: >-
+            Sélectionner pour le champ grandeurPhysique, la valeur :<br>-PMA
+            pour ne récupérer que la Puissance Maximale « équivalent monophasé
+            »<br>-TOUT pour récupérer sur la base d'un PRM triphasé le détail de l'ensemble des phases et la Puissance Maximale "équivalent monophasé"
+          required: true
+          type: string
+          enum:
+            - PMA
+            - TOUT
+          x-example: PMA
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/ReponseMesureAccesMaxQuotidien'
+        '400':
+          description: La syntaxe de la requête est erronée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le paramètre usage_point_id est obligatoire
+        '403':
+          description: Erreur dans le format de la requête
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le client n'est pas titulaire du point demandé
+        '404':
+          description: Ressource non trouvée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Pas de mesure trouvée pour ce point
+        '429':
+          description: L’application a dépassé son quota d’appels
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: SLA dépassé
+        '500':
+          description: Erreur interne de serveur.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Problème technique dans l'interrogation du SI coeur
+      security:
+        - default: []
+      x-auth-type: Application & Application User
+      x-throttling-tier: Unlimited
+      x-wso2-application-security:
+        security-types:
+          - oauth2
+        optional: false
+  /courbe_de_charge_consommation:
+    get:
+      tags:
+        - Metering Data
+      summary: >-
+        Récupérer la puissance moyenne consommée quotidiennement, sur
+        l'intervalle de mesure du compteur (par défaut 30 min)
+      description: >-
+        Cette sous ressource renvoie les valeurs correspondant à des journées de
+        mesure de la courbe de charge de consommation d'un client pour chaque
+        jour de la période demandée. Les valeurs retournées sont des puissances
+        moyennes de consommation sur l'intervalle de mesure du compteur (par
+        défaut 30 minutes). Chaque valeur est horodatée. La courbe de charge
+        s'obtient sur des journées complètes de minuit à minuit du jour suivant
+        en heures locales. Un appel peut porter au maximum sur 7 jours
+        consécutifs.  Un appel peut porter sur des données datant au maximum de
+        24 mois et 15 jours avant la date d'appel.
+      parameters:
+        - name: Content-Type
+          in: header
+          description: >-
+            Format du body de la requête. Ce header est déterminé automatiquement lorsqu'un body est renseigné dans la requête de l'appel API.
+          required: false
+          type: string
+          x-example: application/json;charset=UTF-8
+        - name: Accept
+          in: header
+          description: >-
+            Format de réponse acceptable. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: application/json
+        - name: Authorization
+          in: header
+          description: >-
+            Bearer Token généré par l'api Authentification à renseigner.
+          required: true
+          type: string
+          x-example: Bearer HPt7dXk6OBY4aoeyqbIvOM6
+        - name: User-Agent
+          in: header
+          description: >-
+            Description de l'équipement qui a émis la requêtes
+            (hardware/software). Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)
+        - name: Host
+          in: header
+          description: >-
+            Nom de domaine du serveur. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API. Attention, si le port :443 apparait dans l'url, veuillez le supprimer pour que l'appel API soit fonctionnel.
+          required: true
+          type: string
+          x-example: 'gw.ext.prod.api.enedis.fr'
+        - name: pointId
+          in: query
+          description: Identifiant du point de livraison (PRM)
+          required: true
+          type: string
+          x-example: '99999999999999'
+        - name: dateDebut
+          in: query
+          description: >-
+            Jour de début de la plage demandée, au format full-date de la RFC
+            3339, à savoir YYYY-MM-DD. Les données retournées inclueront la date
+            de démarrage.
+          required: true
+          type: string
+          x-example: '2025-05-01'
+        - name: dateFin
+          in: query
+          description: >-
+            Jour de fin de la plage demandée, au format full-date de la RFC
+            3339, à savoir YYYY-MM-DD. Les données retournées n'inclueront pas
+            la date de fin et s'arrêteront la veille. La date de fin ne peut
+            être égale à la date de début.
+          required: true
+          type: string
+          x-example: '2025-05-06'
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/ReponseMesureAccesCDC'
+        '400':
+          description: La syntaxe de la requête est erronée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+                description: Code de l’erreur retourné par le système.
+              message:
+                type: string
+                example: Le paramètre usage_point_id est obligatoire
+        '403':
+          description: Erreur dans le format de la requête
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le client n'est pas titulaire du point demandé
+        '404':
+          description: Ressource non trouvée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+                description: Service non disponible.
+              message:
+                type: string
+                example: Pas de mesure trouvée pour ce point
+        '429':
+          description: L’application a dépassé son quota d’appels
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+                description: SLA dépassé.
+              message:
+                type: string
+                example: SLA dépassé.
+        '500':
+          description: Erreur interne de serveur.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+                description: Code de l’erreur retourné par le système.
+              message:
+                type: string
+                example: Problème technique dans l'interrogation du SI coeur
+      security:
+        - default: []
+      x-auth-type: Application & Application User
+      x-throttling-tier: Unlimited
+      x-wso2-application-security:
+        security-types:
+          - oauth2
+        optional: false  
+  /courbe_de_charge_production:
+    get:
+      tags:
+        - Metering Data
+      summary: >-
+        Récupérer la puissance moyenne produite quotidiennement, sur
+        l'intervalle de mesure du compteur (par défaut 30 min)
+      description: >-
+        Cette sous ressource renvoie les valeurs correspondant à des journées de
+        mesure de la courbe de charge de production d'un client pour chaque jour
+        de la période demandée. Les valeurs retournées sont des puissances
+        moyennes de production sur l'intervalle de mesure du compteur (par
+        défaut 30 minutes). Chaque valeur est horodatée. La courbe de charge
+        s'obtient sur des journées complètes de minuit à minuit du jour suivant
+        en heures locales. Un appel peut porter au maximum sur 7 jours
+        consécutifs.  Un appel peut porter sur des données datant au maximum de
+        24 mois et 15 jours avant la date d'appel.
+      parameters:
+        - name: Content-Type
+          in: header
+          description: >-
+            Format du body de la requête. Ce header est déterminé automatiquement lorsqu'un body est renseigné dans la requête de l'appel API.
+          required: false
+          type: string
+          x-example: application/json;charset=UTF-8
+        - name: Accept
+          in: header
+          description: >-
+            Format de réponse acceptable. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: application/json
+        - name: Authorization
+          in: header
+          description: >-
+            Bearer Token généré par l'api Authentification à renseigner.
+          required: true
+          type: string
+          x-example: Bearer HPt7dXk6OBY4aoeyqbIvOM6
+        - name: User-Agent
+          in: header
+          description: >-
+            Description de l'équipement qui a émis la requêtes
+            (hardware/software). Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)
+        - name: Host
+          in: header
+          description: >-
+            Nom de domaine du serveur. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API. Attention, si le port :443 apparait dans l'url, veuillez le supprimer pour que l'appel API soit fonctionnel.
+          required: true
+          type: string
+          x-example: 'gw.ext.prod.api.enedis.fr'
+        - name: pointId
+          in: query
+          description: Identifiant du point de livraison (PRM)
+          required: true
+          type: string
+          x-example: '99999999999999'
+        - name: dateDebut
+          in: query
+          description: >-
+            Jour de début de la plage demandée, au format full-date de la RFC
+            3339, à savoir YYYY-MM-DD. Les données retournées inclueront la date
+            de démarrage.
+          required: true
+          type: string
+          x-example: '2025-05-01'
+        - name: dateFin
+          in: query
+          description: >-
+            Jour de fin de la plage demandée, au format full-date de la RFC
+            3339, à savoir YYYY-MM-DD. Les données retournées n'inclueront pas
+            la date de fin et s'arrêteront la veille. La date de fin ne peut
+            être égale à la date de début.
+          required: true
+          type: string
+          x-example: '2025-05-06'
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/ReponseMesureAccesCDC'
+        '400':
+          description: La syntaxe de la requête est erronée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le paramètre usage_point_id est obligatoire
+        '403':
+          description: Erreur dans le format de la requête
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le client n'est pas titulaire du point demandé
+        '404':
+          description: Ressource non trouvée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Pas de mesure trouvée pour ce point
+        '429':
+          description: L’application a dépassé son quota d’appels
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: SLA dépassé
+        '500':
+          description: Erreur interne de serveur.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Problème technique dans l'interrogation du SI coeur
+      security:
+        - default: []
+      x-auth-type: Application & Application User
+      x-throttling-tier: Unlimited
+      x-wso2-application-security:
+        security-types:
+          - oauth2
+        optional: false
+definitions:
+  ReponseMesureAccesCDC:
+    type: object
+    required:
+      - idPrm
+      - etapeMetier
+      - periode
+      - modeCalcul
+      - grandeur
+    properties:
+      idPrm:
+        type: string
+        description: Identifiant du point de livraison (PRM)
+      etapeMetier:
+        type: string
+        description: BRUT si la mesure est brute, BEST si la mesure est corrigée
+      periode:
+        $ref: '#/definitions/Periode'
+      modeCalcul:
+        type: string
+        description: |-
+          Mode de calcul de la valeur. Dépend du type de mesure:
+          Pour les CDC: MESURE
+          Pour les ENERGIE: DIFF.INDEX si les énergies sont calculées à partir des index, INTEG.COURBE si les énergies sont calculées à partir de la courbe de charge
+          Pour les INDEX: non renseigné
+          Pour les PMAX: MESURE
+      grandeur:
+        type: array
+        items:
+          $ref: '#/definitions/GrandeurCDC'
+      contexte:
+        type: array
+        description: un tableau vide est renvoyé pour ce cas
+        items:
+          type: object
+        example: []
+  ReponseMesureAccesQuotidien:
+    type: object
+    required:
+      - idPrm
+      - etapeMetier
+      - periode
+      - modeCalcul
+      - grandeur
+    properties:
+      idPrm:
+        type: string
+        description: Identifiant du point de livraison (PRM)
+      etapeMetier:
+        type: string
+        description: BRUT si la mesure est brute, BEST si la mesure est corrigée
+      periode:
+        $ref: '#/definitions/Periode'
+      typeValeur:
+        type: string
+      modeCalcul:
+        type: string
+        description: |-
+          Mode de calcul de la valeur. Dépend du type de mesure:
+          Pour les CDC: MESURE
+          Pour les ENERGIE: DIFF.INDEX si les énergies sont calculées à partir des index, INTEG.COURBE si les énergies sont calculées à partir de la courbe de charge
+          Pour les INDEX: non renseigné
+          Pour les PMAX: MESURE
+      pas:
+        type: string
+        description: |-
+          Pas de la mesure. Dépend du type de mesure:
+          Pour les CDC: PT5M, PT10M, PT30M, PT60M
+          Pour les ENERGIE: P1D
+          Pour les INDEX: non renvoyé
+          Pour les PMAX: P1D, P1M
+      grandeur:
+        type: array
+        items:
+          $ref: '#/definitions/GrandeurQuotidien'
+      contexte:
+        type: array
+        description: un tableau vide est renvoyé pour ce cas
+        items:
+          type: object
+        example: []
+  ReponseMesureAccesMaxQuotidien:
+    type: object
+    required:
+      - idPrm
+      - etapeMetier
+      - periode
+      - modeCalcul
+      - grandeur
+    properties:
+      idPrm:
+        type: string
+        description: Identifiant du point de livraison (PRM)
+      etapeMetier:
+        type: string
+        description: BRUT si la mesure est brute, BEST si la mesure est corrigée
+      periode:
+        $ref: '#/definitions/Periode'
+      modeCalcul:
+        type: string
+        description: |-
+          Mode de calcul de la valeur. Dépend du type de mesure:
+          Pour les CDC: MESURE
+          Pour les ENERGIE: DIFF.INDEX si les énergies sont calculées à partir des index, INTEG.COURBE si les énergies sont calculées à partir de la courbe de charge
+          Pour les INDEX: non renseigné
+          Pour les PMAX: MESURE
+      pas:
+        type: string
+        description: |-
+          Pas de la mesure. Dépend du type de mesure:
+          Pour les CDC: PT5M, PT10M, PT30M, PT60M
+          Pour les ENERGIE: P1D
+          Pour les INDEX: non renvoyé
+          Pour les PMAX: P1D, P1M
+      grandeur:
+        type: array
+        items:
+          $ref: '#/definitions/GrandeurQuotidien'
+      contexte:
+        type: array
+        description: un tableau vide est renvoyé pour ce cas
+        items:
+          type: object
+        example: []
+  ReponseMesureAccesIndex:
+    type: object
+    required:
+      - idPrm
+      - periode
+      - grandeur
+    properties:
+      idPrm:
+        type: string
+        description: Identifiant du point de livraison (PRM)
+      periode:
+        $ref: '#/definitions/Periode'
+      grandeur:
+        type: array
+        description: un tableau vide est renvoyé pour ce cas
+        items:
+          type: object
+        example: []
+      contexte:
+        type: array
+        items:
+          $ref: '#/definitions/ContexteIndex'
+  Periode:
+    type: object
+    properties:
+      dateDebut:
+        type: string
+      dateFin:
+        type: string
+  GrandeurCDC:
+    type: object
+    required:
+      - grandeurMetier
+      - grandeurPhysique
+      - unite
+      - points
+    properties:
+      grandeurMetier:
+        type: string
+        description: CONS pour les données de consommation, PROD pour les données de production
+      grandeurPhysique:
+        type: string
+        description: grandeur physique de la mesure, reprend les mêmes valeurs possibles que les grandeurs physiques en entrée
+      unite:
+        type: string
+        description: unité de la mesure
+      points:
+        type: array
+        items:
+          $ref: '#/definitions/PointCDC'
+      calendrier:
+        type: array
+        description: un tableau vide est renvoyé pour ce cas
+        items:
+          type: object
+        example: []
+  GrandeurQuotidien:
+    type: object
+    required:
+      - grandeurMetier
+      - grandeurPhysique
+      - unite
+      - points
+    properties:
+      grandeurMetier:
+        type: string
+        description: CONS pour les données de consommation, PROD pour les données de production
+      grandeurPhysique:
+        type: string
+        description: grandeur physique de la mesure, reprend les mêmes valeurs possibles que les grandeurs physiques en entrée
+      unite:
+        type: string
+        description: unité de la mesure
+      points:
+        type: array
+        items:
+          $ref: '#/definitions/PointQuotidien'
+      calendrier:
+        type: array
+        description: un tableau vide est renvoyé pour ce cas
+        items:
+          type: object
+        example: []
+  GrandeurIndex:
+    type: object
+    required:
+      - grandeurMetier
+      - grandeurPhysique
+      - unite
+      - points
+    properties:
+      grandeurMetier:
+        type: string
+        description: CONS pour les données de consommation, PROD pour les données de production
+      grandeurPhysique:
+        type: string
+        description: grandeur physique de la mesure, reprend les mêmes valeurs possibles que les grandeurs physiques en entrée
+      unite:
+        type: string
+        description: unité de la mesure
+      points:
+        type: array
+        description: un tableau vide est renvoyé pour ce cas
+        items:
+          type: object
+        example: []
+      calendrier:
+        type: array
+        items:
+          $ref: '#/definitions/Calendrier'
+      cadranTotalisateur:
+        $ref: '#/definitions/ClasseTemporelleTotalisateur'
+  ContexteIndex:
+    type: object
+    properties:
+      etapeMetier:
+        type: string
+        description: BRUT si la mesure est brute, BEST si la mesure est corrigée
+      contexteReleve:
+        type: string
+        description: Remonté dans le cas des consultation d'INDEX. COL → COLlecte,TOP → TéléOPération,FMR →Flux de Mesures Régulier,CRD →Compte-Rendu de Demande ponctuelle,CRI → Compte-Rendu d'Intervention
+      typeReleve:
+        type: string
+        description: 'Remonté dans le cas des consultations d''INDEX. Valeurs possibles: AP, AQ, AS, AV, LC, RM, RC'
+      grandeur:
+        type: array
+        items:
+          $ref: '#/definitions/GrandeurIndex'
+  PointCDC:
+    type: object
+    description: Détail des attributs des points de mesure
+    required:
+      - v
+      - d
+    properties:
+      v:
+        type: string
+        description: Valeur du point
+      d:
+        type: string
+        description: Horodate du point
+      p:
+        type: string
+        description: Valeur du pas
+      n:
+        type: string
+        description: Nature du point
+      iv:
+        type: string
+        description: Indice de vraisemblance Linky
+      ec:
+        type: string
+        description: Etat complémentaire
+  PointQuotidien:
+    type: object
+    description: Détail des attributs des points de mesure
+    required:
+      - v
+      - d
+    properties:
+      v:
+        type: string
+        description: Valeur du point
+      d:
+        type: string
+        description: Horodate du point
+  ClasseTemporelleTotalisateur:
+    type: object
+    description: Remonté dans le cas des consultations d'INDEX si, durant la période demandée, au moins un index totalisateur est présent.
+    properties:
+      codeCadran:
+        type: string
+        description: Code du cadran
+      valeur:
+        type: array
+        items:
+          $ref: '#/definitions/Valeur'
+  Calendrier:
+    type: object
+    description: Remonté dans le cas des consultations d'INDEX si, durant la période demandée, auun calendrier fournisseur et/ou distributeur, avec des données d'Index, est présent.
+    properties:
+      idCalendrier:
+        type: string
+        description: Identifiant du calendrier fournisseur
+      libelleCalendrier:
+        type: string
+        description: Libellé du calendrier fournisseur
+      classeTemporelle:
+        type: array
+        items:
+          $ref: '#/definitions/ClasseTemporelle'
+  Valeur:
+    type: object
+    description: Contient le détail de la valeur des mesures d'index
+    properties:
+      d:
+        type: string
+        description: Horodate fonctionnelle de l'index
+      v:
+        type: integer
+        description: Valeur de l'Index
+        format: int64
+      iv:
+        type: integer
+        description: Indice de vraisemblance de l'Index
+        format: int64
+  ClasseTemporelle:
+    type: object
+    properties:
+      idClasseTemporelle:
+        type: string
+        description: Identifiant de la classe temporelle
+      libelleClasseTemporelle:
+        type: string
+        description: Libellé de la classe temporelle
+      codeCadran:
+        type: string
+        description: Code du cadran
+      valeur:
+        type: array
+        items:
+          $ref: '#/definitions/Valeur'
+  Erreur:
+    type: array
+    items:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+
+securityDefinitions:
+  default:
+    type: oauth2
+    authorizationUrl: 'https://test.com'
+    flow: implicit
+

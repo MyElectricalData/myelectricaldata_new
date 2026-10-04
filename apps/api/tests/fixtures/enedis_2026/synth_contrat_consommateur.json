@@ -1,0 +1,10 @@
+{
+  "segments": [
+    {
+      "segment": "C5"
+    }
+  ],
+  "consumption_last_activation_date": "2018-08-31T00:00:00+0200",
+  "last_subscribed_power_change_date": "2026-02-11T00:00:00+0100",
+  "services_level": "Communicant (ouvert aux services)"
+}

@@ -1,0 +1,58 @@
+[
+  {
+    "usage_point_id": "<masque>",
+    "contract_start": "2024-10-12T00:00:00+0200",
+    "contract_type": "Contrat GRD-F",
+    "contractor": "<masque>",
+    "distribution_tariff": "Tarif BT<=36kVA Moyenne Utilisation heures pleines heures creuses associées à deux saisons",
+    "subscribed_power": {
+      "unit": "kVA",
+      "value": "12"
+    },
+    "segment": "C5",
+    "customer": {
+      "customer": {
+        "adress": {
+          "line1": "<masque>",
+          "line4": "<masque>",
+          "line6": "<masque>",
+          "line7": "<masque>"
+        }
+      }
+    },
+    "contact_data": {
+      "email": "<masque>",
+      "landline": "<masque>",
+      "phone": "<masque>"
+    },
+    "person": {
+      "title": "<masque>",
+      "lastname": "<masque>",
+      "firstname": "<masque>"
+    }
+  },
+  {
+    "usage_point_id": "<masque>",
+    "contract_start": "2024-07-31T00:00:00+0200",
+    "contract_type": "Contrat GRD-A",
+    "segment": "P4",
+    "customer": {
+      "customer": {
+        "adress": {
+          "line1": "<masque>",
+          "line4": "<masque>",
+          "line6": "<masque>"
+        }
+      }
+    },
+    "contact_data": {
+      "email": "<masque>",
+      "landline": "<masque>"
+    },
+    "person": {
+      "title": "<masque>",
+      "lastname": "<masque>",
+      "firstname": "<masque>"
+    }
+  }
+]

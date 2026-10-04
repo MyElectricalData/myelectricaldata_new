@@ -1,0 +1,352 @@
+swagger: '2.0'
+info:
+  description: >-
+    Cette API vous permet de retrouver l’ensemble des services souscrits d’un
+    compteur pour lequel une autorisation a été accordée à votre entité par le
+    titulaire.
+  version: v1
+  title: services_souscrits_actifs
+host: gw.ext.prod.api.enedis.fr
+basePath: /subscribed_services/v1
+security:
+  - default: []
+paths:
+  /:
+    post:
+      parameters:
+        - name: Content-Type
+          in: header
+          description: >-
+            Format du body de la requête. Ce header est déterminé
+            automatiquement lorsqu'un body est renseigné dans la requête de
+            l'appel API.
+          required: false
+          type: string
+          x-example: application/json;charset=UTF-8
+        - name: Accept
+          in: header
+          description: >-
+            Format de réponse acceptable. Ce header est déterminé
+            automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: application/json
+        - name: Authorization
+          in: header
+          description: Bearer Token généré par l'api Authentification à renseigner.
+          required: true
+          type: string
+          x-example: Bearer HPt7dXk6OBY4aoeyqbIvOM6
+        - name: User-Agent
+          in: header
+          description: >-
+            Description de l'équipement qui a émis la requêtes
+            (hardware/software). Ce header est déterminé automatiquement lorsque
+            vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)
+        - name: Host
+          in: header
+          description: >-
+            Nom de domaine du serveur. Ce header est déterminé automatiquement
+            lorsque vous renseignez l'url de l'API. Attention, si le port :443
+            apparait dans l'url, veuillez le supprimer pour que l'appel API soit
+            fonctionnel.
+          required: true
+          type: string
+          x-example: gw.ext.prod.api.enedis.fr
+        - in: body
+          name: requestBody
+          description: >-
+            Les champs suivants sont obligatoires : <br> - siren de l'entité
+            titulaire (pour les collectivités et entreprises autorisées) ou
+            autorisationId (pour les tiers dataconnect) <br> - comptage<br> -
+            etatCode (à remplir sinon renseigné par défaut avec les valeurs
+            ["ACTIF", "DEMANDE])<br> - serviceType (à remplir sinon renseigné
+            par défaut avec la valeur ["ACCES"])
+          required: true
+          schema:
+            $ref: '#/definitions/ConsulterServicesSouscritsPaginesDemande'
+      responses:
+        '200':
+          description: Services souscrits
+          schema:
+            $ref: '#/definitions/ServiceSouscritReponsePaginee'
+        '400':
+          description: La syntaxe de la requête est erronée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le paramètre usage_point_id est obligatoire
+        '401':
+          description: Utilisateur non identifié
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: L'utilisateur n'est pas identifié
+        '403':
+          description: Utilisateur non autorisé pour ce endpoint/ressources
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le client n'est pas autorisé pour le point demandé
+        '404':
+          description: PRM non existant
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: PRM non existant
+        '500':
+          description: Une erreur technique est survenue
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Problème technique dans l'interrogation du SI coeur
+      security:
+        - default: []
+      x-auth-type: Application & Application User
+      x-throttling-tier: null
+      x-wso2-application-security:
+        security-types:
+          - oauth2
+        optional: false
+securityDefinitions:
+  default:
+    type: oauth2
+    authorizationUrl: 'https://test.com'
+    flow: implicit
+definitions:
+  RechercherServicesSouscritsResponse:
+    type: object
+    properties:
+      id:
+        type: string
+        description: identifiant du service souscrit
+      injection:
+        type: boolean
+        description: true si le service concerne des données de production
+      soutirage:
+        type: boolean
+        description: true si le service concerne des données de consommation
+      serviceCode:
+        type: string
+        description: >-
+          CCDC pour les services de collecte de courbe de charge, TRANSREC pour
+          les transmissions récurrentes de données de mesure, OPPENR pour les
+          services d'opposition, ACCES pour les services d'accès aux données de
+          mesure
+      dateDebut:
+        type: string
+        description: date de début du service au format yyyy-MM-DD
+      dateFin:
+        type: string
+        description: date de fin du service au format yyyy-MM-DD
+      etatCode:
+        type: string
+        description: état du service
+        enum:
+          - DEMANDE
+          - ACTIF
+          - TERMINE
+          - SUPPRIME
+      etatLibelle:
+        type: string
+        description: libellé associé à l'etatCode
+      pointId:
+        type: string
+        description: identifiant du point
+      sirenTitulaire:
+        type: string
+        description: siren du titulaire du point
+      sirenBeneficiaire:
+        type: string
+        description: siren du beneficiaire du service
+      mesuresTypeCode:
+        type: string
+        description: type de mesure
+        enum:
+          - CDC
+          - IDX
+          - PMAX
+          - ENERGIE
+          - ITC
+      mesuresPas:
+        type: string
+        description: 'pas de mesure (PT10M, PT15M, PT30M, P1D, NA)'
+      periodiciteTransmission:
+        type: string
+        description: >-
+          périodicité de la publication des données (P1D pour quotidienne, P7D
+          pour hebdomadaire, P1M pour mensuelle)
+      mesuresCorrigees:
+        type: boolean
+        description: nature de la donnée (brute ou corrigée)
+      espaceDynamique:
+        type: boolean
+        description: true si le service est à destination de l'espace dynamique
+      publicationDonnees:
+        type: boolean
+        description: true si le service est un service d'accès avec option de publication
+      autorisation:
+        $ref: '#/definitions/AutorisationServiceSouscrit'
+  AutorisationServiceSouscrit:
+    type: object
+    properties:
+      autorisationId:
+        type: integer
+        format: int64
+        description: identifiant de l'autorisation
+      autorisationLibelle:
+        type: string
+        description: libellé de l'autorisation
+      autorisationType:
+        type: string
+        enum:
+          - EXPLICITE
+          - INDUITE
+          - IMPLICITE
+  ConsulterServicesSouscritsPaginesDemande:
+    type: object
+    required:
+      - comptage
+    properties:
+      pointId:
+        type: array
+        items:
+          type: string
+          example: '99999999999999'
+          description: >-
+            Liste de PRM (séparés par des virgules) - Max 1000. A minima,
+            pointId ou personneId ou siren doit être renseigné dans la demande
+      siren:
+        type: array
+        items:
+          type: string
+          example: '999999999'
+          description: >-
+            Liste de Siren (séparés par des virgules) - Max 1000. A minima,
+            pointId ou personneId ou siren doit être renseigné dans la demande
+      dateDebut:
+        type: string
+        format: date
+        description: >-
+          Format AAAA-MM-DD. Permet de sélectionner tous les services dont la
+          date de début est supérieure ou égale à dateDebut
+      dateFin:
+        type: string
+        format: date
+        description: >-
+          Format AAAA-MM-DD. Permet de sélectionner tous les services dont la
+          date de fin est supérieure ou égale à dateFin
+      etatCode:
+        type: array
+        items:
+          type: string
+          example: DEMANDE
+          description: 'DEMANDE, ACTIF, TERMINE, SUPPRIME'
+      serviceType:
+        type: string
+        example: ACCES
+        description: 'CCDC, TRANSREC, OPPENR, ACCES'
+      mesureTypeCode:
+        type: array
+        items:
+          type: string
+          example: CDC
+          description: 'CDC, PMAX, ENERGIE, IDX, ITC'
+      soutirage:
+        type: boolean
+        example: true
+        description: true pour ne remonter que les services en soutirage
+      injection:
+        type: boolean
+        example: false
+        description: true pour ne remonter que les services en injection
+      page:
+        type: integer
+        description: numéro de la page à afficher
+      comptage:
+        type: boolean
+        example: true
+        description: >-
+          true si on ne souhaite remonter que le nombre de services
+          correspondant aux critères de recherche
+      autorisationId:
+        type: integer
+        format: int64
+        example: 999999999
+        description: identifiant de l'autorisation dont on souhaite rechercher les services
+      autorisation:
+        type: boolean
+        example: true
+        description: >-
+          true = services souscrits issus d'autorisation; false = services
+          souscrits non issus d'autorisation
+  ServiceSouscritReponsePaginee:
+    type: object
+    properties:
+      nbTotalServices:
+        type: integer
+        format: int64
+      serviceSouscrit:
+        type: array
+        items:
+          $ref: '#/definitions/RechercherServicesSouscritsResponse'
+x-wso2-auth-header: Authorization
+x-wso2-cors:
+  corsConfigurationEnabled: false
+  accessControlAllowOrigins:
+    - '*'
+  accessControlAllowCredentials: false
+  accessControlAllowHeaders:
+    - authorization
+    - Access-Control-Allow-Origin
+    - Content-Type
+    - SOAPAction
+  accessControlAllowMethods:
+    - GET
+    - PUT
+    - POST
+    - DELETE
+    - PATCH
+    - OPTIONS
+x-wso2-production-endpoints:
+  urls:
+    - /ile-webapp/service/APSSA
+  type: http
+x-wso2-sandbox-endpoints:
+  urls:
+    - /replace/ile-webapp/service/APSSA
+  type: http
+x-wso2-basePath: /subscribed_services/v1
+x-wso2-transports:
+  - http
+  - https
+x-wso2-application-security:
+  security-types:
+    - oauth2
+  optional: false
+x-wso2-response-cache:
+  enabled: false
+  cacheTimeoutInSeconds: 300

@@ -1,0 +1,228 @@
+swagger: '2.0'
+info:
+  description: >-
+    Cette API vous permet de consulter les informations techniques de connexion
+    d’un compteur dont le titulaire a autorisé votre entité à accéder aux
+    données. <br>Les données suivantes sont consultables :<br>-La tension
+    d’alimentation<br>-Le nombre de Phase(s)<br>-La puissance de raccordement ou
+    puissance limite de soutirage
+  version: v1
+  title: alimentation_auto
+host: gw.ext.prod.api.enedis.fr
+basePath: /alimentation_auto/v1
+security:
+  - default: []
+paths:
+  '/{usage_point_id}':
+    get:
+      tags:
+        - situation-alimentation
+      summary: Récupération de la situation alimentation d'un PRM
+      operationId: getSituationAlimentation
+      parameters:
+        - name: Content-Type
+          in: header
+          description: >-
+            Format du body de la requête. Ce header est déterminé
+            automatiquement lorsqu'un body est renseigné dans la requête de
+            l'appel API.
+          required: false
+          type: string
+          x-example: application/json;charset=UTF-8
+        - name: Accept
+          in: header
+          description: >-
+            Format de réponse acceptable. Ce header est déterminé
+            automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: application/json
+        - name: Authorization
+          in: header
+          description: Bearer Token généré par l'api Authentification à renseigner.
+          required: true
+          type: string
+          x-example: Bearer HPt7dXk6OBY4aoeyqbIvOM6
+        - name: User-Agent
+          in: header
+          description: >-
+            Description de l'équipement qui a émis la requêtes
+            (hardware/software). Ce header est déterminé automatiquement lorsque
+            vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)
+        - name: Host
+          in: header
+          description: >-
+            Nom de domaine du serveur. Ce header est déterminé automatiquement
+            lorsque vous renseignez l'url de l'API. Attention, si le port :443
+            apparait dans l'url, veuillez le supprimer pour que l'appel API soit
+            fonctionnel.
+          required: true
+          type: string
+          x-example: gw.ext.prod.api.enedis.fr
+        - name: usage_point_id
+          in: path
+          description: >-
+            Identifiant du point (PRM) dont on souhaite récuperer la situation
+            alimentation
+          required: true
+          type: string
+          x-example: '99999999999999'
+      responses:
+        '200':
+          description: Situation alimentation du PRM
+          schema:
+            $ref: '#/definitions/connection'
+        '400':
+          description: La syntaxe de la requête est erronée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le paramètre usage_point_id est obligatoire
+        '401':
+          description: Utilisateur non identifié
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: L'utilisateur n'est pas identifié
+        '403':
+          description: Utilisateur non autorisé pour ce endpoint/ressources
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le client n'est pas autorisé pour le point demandé
+        '404':
+          description: Situation alimentation ou PRM non existant
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Situation alimentation ou PRM non existant
+        '500':
+          description: Une erreur technique est survenue
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Problème technique dans l'interrogation du SI coeur
+      security:
+        - default: []
+      x-auth-type: Application & Application User
+      x-throttling-tier: Unlimited
+      x-wso2-application-security:
+        security-types:
+          - oauth2
+        optional: false
+securityDefinitions:
+  default:
+    type: oauth2
+    authorizationUrl: 'https://test.com'
+    flow: implicit
+definitions:
+  connection:
+    type: object
+    properties:
+      serial_number:
+        type: number
+        example: number
+        description: identifiant technique de la sitaution d'alimentation dans SGE
+      connection_state:
+        type: string
+        example: Alimenté
+        description: >-
+          indique si le point est alimenté, coupé, limité, non alimenté ou non
+          raccordé
+      voltage_level:
+        type: string
+        example: HTA
+        description: domaine de tension en fonction de la tension de raccordement
+      phase_count:
+        type: string
+        description: nombre de fils de branchement
+      consumption_connection_power:
+        type: object
+        description: Puissance raccordement de l'injection
+        properties:
+          value:
+            type: number
+            description: valeur de la grandeur physique
+          unit:
+            type: string
+            description: unité de la grandeur physique
+      generation_connection_power:
+        type: object
+        description: Puissance raccordement du soutirage
+        properties:
+          value:
+            type: number
+            description: valeur de la grandeur physique
+          unit:
+            type: string
+            description: unité de la grandeur physique
+      nominal_service_voltage:
+        type: object
+        description: Tension contractuelle
+        properties:
+          value:
+            type: number
+            description: valeur de la grandeur physique
+          unit:
+            type: string
+            description: unité de la grandeur physique
+x-wso2-auth-header: Authorization
+x-wso2-cors:
+  corsConfigurationEnabled: false
+  accessControlAllowOrigins:
+    - '*'
+  accessControlAllowCredentials: false
+  accessControlAllowHeaders:
+    - authorization
+    - Access-Control-Allow-Origin
+    - Content-Type
+    - SOAPAction
+  accessControlAllowMethods:
+    - GET
+    - PUT
+    - POST
+    - DELETE
+    - PATCH
+    - OPTIONS
+x-wso2-production-endpoints:
+  urls:
+    - /ile-webapp/service/APSTALA
+  type: http
+x-wso2-sandbox-endpoints:
+  urls:
+    - /replace/ile-webapp/service/APSTALA
+  type: http
+x-wso2-basePath: /alimentation_auto/v1
+x-wso2-transports:
+  - http
+  - https
+x-wso2-application-security:
+  security-types:
+    - oauth2
+  optional: false
+x-wso2-response-cache:
+  enabled: false
+  cacheTimeoutInSeconds: 300

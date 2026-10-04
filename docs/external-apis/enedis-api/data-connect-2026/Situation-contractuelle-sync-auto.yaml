@@ -1,0 +1,275 @@
+swagger: '2.0'
+info:
+  description: >-
+    Cette API vous permet de consulter toutes les informations contractuelles
+    d’un compteur dont le titulaire a autorisé votre entité à accéder aux
+    données.<br>Les données suivantes sont consultables (liste non exhaustive)
+    :<br>-La ou les puissance(s) souscrite(s)<br>-La structure
+    tarifaire<br>-L’identification et les coordonnées du client titulaire
+  version: v1
+  title: situation_contrat_auto
+host: gw.ext.prod.api.enedis.fr
+basePath: /situation_contrat_auto/v1
+security:
+  - default: []
+paths:
+  '/{usage_point_id}':
+    get:
+      tags:
+        - situation-contractuelle
+      summary: Récupération des situations contractuelles courantes d'un PRM
+      operationId: getSituationsContractuelles
+      parameters:
+        - name: Content-Type
+          in: header
+          description: >-
+            Format du body de la requête. Ce header est déterminé
+            automatiquement lorsqu'un body est renseigné dans la requête de
+            l'appel API.
+          required: false
+          type: string
+          x-example: application/json;charset=UTF-8
+        - name: Accept
+          in: header
+          description: >-
+            Format de réponse acceptable. Ce header est déterminé
+            automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: application/json
+        - name: Authorization
+          in: header
+          description: Bearer Token généré par l'api Authentification à renseigner.
+          required: true
+          type: string
+          x-example: Bearer HPt7dXk6OBY4aoeyqbIvOM6
+        - name: User-Agent
+          in: header
+          description: >-
+            Description de l'équipement qui a émis la requêtes
+            (hardware/software). Ce header est déterminé automatiquement lorsque
+            vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)
+        - name: Host
+          in: header
+          description: >-
+            Nom de domaine du serveur. Ce header est déterminé automatiquement
+            lorsque vous renseignez l'url de l'API. Attention, si le port :443
+            apparait dans l'url, veuillez le supprimer pour que l'appel API soit
+            fonctionnel.
+          required: true
+          type: string
+          x-example: gw.ext.prod.api.enedis.fr
+        - name: usage_point_id
+          in: path
+          description: >-
+            Identifiant du point (PRM) )dont on souhaite récuperer les
+            situations contractuelles
+          required: true
+          type: string
+          x-example: '99999999999999'
+      responses:
+        '200':
+          description: Situations contractuelles courantes du PRM
+          schema:
+            $ref: '#/definitions/contracts'
+        '400':
+          description: La syntaxe de la requête est erronée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le paramètre usage_point_id est obligatoire
+        '401':
+          description: Utilisateur non identifié
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: L'utilisateur n'est pas identifié
+        '403':
+          description: Utilisateur non autorisé pour ce endpoint/ressources
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le client n'est pas autorisé pour le point demandé
+        '404':
+          description: Situation contractuelle ou PRM non existant
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Situation contractuelle ou PRM non existant
+        '500':
+          description: Une erreur technique est survenue
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Problème technique dans l'interrogation du SI coeur
+      security:
+        - default: []
+      x-auth-type: Application & Application User
+      x-throttling-tier: Unlimited
+      x-wso2-application-security:
+        security-types:
+          - oauth2
+        optional: false
+securityDefinitions:
+  default:
+    type: oauth2
+    authorizationUrl: 'https://test.com'
+    flow: implicit
+definitions:
+  contracts: {}
+  address:
+    type: object
+    properties:
+      line1:
+        type: string
+        description: Nom et prénom
+      line2:
+        type: string
+        description: Appartement/Etage
+      line3:
+        type: string
+        description: 'Batiment, Residence'
+      line4:
+        type: string
+        example: string
+        description: Numéro et libellé de la voie
+      line5:
+        type: string
+        example: string
+        description: Lieu-dit ou service particulier de distribution
+      line6:
+        type: string
+        example: string
+        description: Code Postal et Commune
+      line7:
+        type: string
+        example: string
+        description: Pays
+    description: adresse du client et non du PRM
+  contact_data:
+    type: object
+    properties:
+      email:
+        type: string
+        example: string
+        description: adresse mail
+      landline:
+        type: string
+        example: string
+        description: telephone fixe
+      phone:
+        type: string
+        example: string
+        description: telephone portable
+    description: Coordonnees de contact
+  organization:
+    type: object
+    properties:
+      name:
+        type: string
+        example: string
+      commercial_name:
+        type: string
+        description: Nom de l'entreprise client
+      business_code:
+        type: string
+        description: Code NAF
+      siret_number:
+        type: string
+        example: string
+        description: numero de SIRET
+      siren_number:
+        type: string
+        example: string
+        description: numero de SIREN
+  person:
+    type: object
+    properties:
+      title:
+        type: string
+        example: string
+        description: civilite de la personne
+      lastname:
+        type: string
+        example: string
+        description: nom de famille
+      firstname:
+        type: string
+        example: string
+        description: prénom
+  date:
+    type: string
+    pattern: '^\d{4}\-\d{2}\-\d{2}T\d{2}\:\d{2}\:\d{2}\+\d{4}$'
+    description: Date au format ISO-8601 avec fuseau horaire
+    example: '2021-01-01T00:00:00+0100'
+  power:
+    type: object
+    properties:
+      unit:
+        type: string
+        example: kW
+        description: unite de la grandeur physique
+      value:
+        type: string
+        example: '30'
+        description: valeur de la grandeur physique
+x-wso2-auth-header: Authorization
+x-wso2-cors:
+  corsConfigurationEnabled: false
+  accessControlAllowOrigins:
+    - '*'
+  accessControlAllowCredentials: false
+  accessControlAllowHeaders:
+    - authorization
+    - Access-Control-Allow-Origin
+    - Content-Type
+    - SOAPAction
+  accessControlAllowMethods:
+    - GET
+    - PUT
+    - POST
+    - DELETE
+    - PATCH
+    - OPTIONS
+x-wso2-production-endpoints:
+  urls:
+    - /ile-webapp/service/APSTCA
+  type: http
+x-wso2-sandbox-endpoints:
+  urls:
+    - /replace/ile-webapp/service/APSTCA
+  type: http
+x-wso2-basePath: /situation_contrat_auto/v1
+x-wso2-transports:
+  - http
+  - https
+x-wso2-application-security:
+  security-types:
+    - oauth2
+  optional: false
+x-wso2-response-cache:
+  enabled: false
+  cacheTimeoutInSeconds: 300

@@ -1,0 +1,215 @@
+swagger: '2.0'
+info:
+  description: >-
+    Cette API vous permet de consulter les informations contractuelles
+    synthétiques d’un compteur dont le titulaire a autorisé votre entité à
+    accéder aux données.<br>Les données suivantes sont consultables :<br>-Le
+    segment du compteur<br>-La date de dernière mise en service<br>-La date de
+    dernière modification de puissance de raccordement ou puissance limite de
+    soutirage.
+  version: v1
+  title: synth_contrat_auto
+host: gw.ext.prod.api.enedis.fr
+basePath: /synth_contrat_auto/v1
+security:
+  - default: []
+paths:
+  '/{usage_point_id}':
+    get:
+      tags:
+        - synthese-contractuelle
+      summary: Récupération de la synthèse contractuelle d'un PRM
+      operationId: getSyntheseContractuelle
+      parameters:
+        - name: Content-Type
+          in: header
+          description: >-
+            Format du body de la requête. Ce header est déterminé
+            automatiquement lorsqu'un body est renseigné dans la requête de
+            l'appel API.
+          required: false
+          type: string
+          x-example: application/json;charset=UTF-8
+        - name: Accept
+          in: header
+          description: >-
+            Format de réponse acceptable. Ce header est déterminé
+            automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: application/json
+        - name: Authorization
+          in: header
+          description: Bearer Token généré par l'api Authentification à renseigner.
+          required: true
+          type: string
+          x-example: Bearer HPt7dXk6OBY4aoeyqbIvOM6
+        - name: User-Agent
+          in: header
+          description: >-
+            Description de l'équipement qui a émis la requêtes
+            (hardware/software). Ce header est déterminé automatiquement lorsque
+            vous renseignez l'url de l'API.
+          required: false
+          type: string
+          x-example: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)
+        - name: Host
+          in: header
+          description: >-
+            Nom de domaine du serveur. Ce header est déterminé automatiquement
+            lorsque vous renseignez l'url de l'API. Attention, si le port :443
+            apparait dans l'url, veuillez le supprimer pour que l'appel API soit
+            fonctionnel.
+          required: true
+          type: string
+          x-example: gw.ext.prod.api.enedis.fr
+        - name: usage_point_id
+          in: path
+          description: >-
+            Identifiant du point (PRM) dont on souhaite récuperer la synthèse
+            contractuelle
+          required: true
+          type: string
+          x-example: '99999999999999'
+      responses:
+        '200':
+          description: Synthèse contractuelle du PRM
+          schema:
+            $ref: '#/definitions/syntheseContractuelle'
+        '400':
+          description: La syntaxe de la requête est erronée.
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le paramètre usage_point_id est obligatoire
+        '401':
+          description: Utilisateur non identifié
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: L'utilisateur n'est pas identifié
+        '403':
+          description: Utilisateur non autorisé pour ce endpoint/ressources
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Le client n'est pas autorisé pour le point demandé
+        '404':
+          description: Synthèse contractuelle ou PRM non existant
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Synthèse contractuelle ou PRM non existant
+        '500':
+          description: Une erreur technique est survenue
+          schema:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+                example: Problème technique dans l'interrogation du SI coeur
+      security:
+        - default: []
+      x-auth-type: Application & Application User
+      x-throttling-tier: Unlimited
+      x-wso2-application-security:
+        security-types:
+          - oauth2
+        optional: false
+securityDefinitions:
+  default:
+    type: oauth2
+    authorizationUrl: 'https://test.com'
+    flow: implicit
+definitions:
+  syntheseContractuelle:
+    type: object
+    properties:
+      segments:
+        $ref: '#/definitions/segments'
+      generation_last_activation_date:
+        description: date de la derniere mise en service (injection)
+        $ref: '#/definitions/date'
+      consumption_last_activation_date:
+        description: date de la derniere mise en service (soutirage)
+        $ref: '#/definitions/date'
+      last_subscribed_power_change_date:
+        description: date de la derniere modification de la puissance souscrite
+        $ref: '#/definitions/date'
+      services_level:
+        type: string
+        description: >-
+          Niveaux d’ouverture aux services du compteur:<br> - 0 :compteur non
+          communicant<br> - 1 :compteur Linky communicant<br> - 2 :compteur
+          communicant ouvert aux services de mesures(transmission de la courbe
+          de charge possible…)<br>
+  date:
+    type: string
+    pattern: '^\d{4}\-\d{2}\-\d{2}T\d{2}\:\d{2}\:\d{2}\+\d{4}$'
+    description: Date au format ISO-8601 avec fuseau horaire
+    example: '2022-01-02T00:00:00+0100'
+  segments:
+    type: array
+    description: 'Indique le segment du PRM (C1,C2,C3,C4,C5,P1,P2,P3,P4)'
+    items:
+      type: object
+      properties:
+        segment:
+          type: string
+          example: C3
+          description: 'segment du PRM (C1,C2,C3,C4,C5,P1,P2,P3,P4)'
+x-wso2-auth-header: Authorization
+x-wso2-cors:
+  corsConfigurationEnabled: false
+  accessControlAllowOrigins:
+    - '*'
+  accessControlAllowCredentials: false
+  accessControlAllowHeaders:
+    - authorization
+    - Access-Control-Allow-Origin
+    - Content-Type
+    - SOAPAction
+  accessControlAllowMethods:
+    - GET
+    - PUT
+    - POST
+    - DELETE
+    - PATCH
+    - OPTIONS
+x-wso2-production-endpoints:
+  urls:
+    - /ile-webapp/service/APSCA
+  type: http
+x-wso2-sandbox-endpoints:
+  urls:
+    - /replace/ile-webapp/service/APSCA
+  type: http
+x-wso2-basePath: /synth_contrat_auto/v1
+x-wso2-transports:
+  - http
+  - https
+x-wso2-application-security:
+  security-types:
+    - oauth2
+  optional: false
+x-wso2-response-cache:
+  enabled: false
+  cacheTimeoutInSeconds: 300

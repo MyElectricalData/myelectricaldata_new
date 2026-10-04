@@ -1,0 +1,306 @@
+openapi: 3.0.2
+info:
+  title: situation_comptage_auto
+  version: v1
+  description: >-
+    Cette API vous permet de consulter les informations de saisonnalité d’un compteur dont le titulaire a autorisé votre entité à accéder aux données.<br>
+    Les données suivantes sont consultables :<br>
+    •  Les plages d’heures pleines, heures creuses et pointe<br>
+    •  Les programmations horaires (pour les clients ayant une puissance souscrite supérieure à 36 kVA)<br>
+    Le nombre maximum est de 5 appels par secondes par API et/ou 1000 appels par heure.
+
+servers:
+  - url: ' https://gw.ext.prod.api.enedis.fr/comptage_auto/v1'
+# Definition des endpoints
+paths:
+  # Endpoints de la ressource situation-comptage
+  /{usage_point_id}:
+    # GET situation-comptage
+    get:
+      # Paramètres de service REST
+      parameters:
+        - name: Content-Type
+          in: header
+          description: >-
+            Format du body de la requête. Ce header est déterminé automatiquement lorsqu'un body est renseigné dans la requête de l'appel API.
+          required: false
+          schema:
+            type: string
+          x-example: application/json;charset=UTF-8
+        - name: Accept
+          in: header
+          description: >-
+            Format de réponse acceptable. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          schema:
+            type: string
+          x-example: application/json
+        - name: Authorization
+          in: header
+          description: >-
+            Bearer Token généré par l'api Authentification à renseigner.
+          required: true
+          schema:
+            type: string
+          x-example: Bearer HPt7dXk6OBY4aoeyqbIvOM6
+        - name: User-Agent
+          in: header
+          description: >-
+            Description de l'équipement qui a émis la requêtes
+            (hardware/software). Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API.
+          required: false
+          schema:
+            type: string
+          x-example: Mozilla/5.0 (Linux; U; Android 4.0.3; fr-fr; LG-L160L Build/IML74K)
+        - name: Host
+          in: header
+          description: >-
+            Nom de domaine du serveur. Ce header est déterminé automatiquement lorsque vous renseignez l'url de l'API. Attention, si le port :443 apparait dans l'url, veuillez le supprimer pour que l'appel API soit fonctionnel.
+          required: true
+          schema:
+            type: string
+          x-example: 'gw.ext.prod.api.enedis.fr'
+        - name: usage_point_id
+          in: path
+          schema:
+            type: string
+          required: true
+          description: Identifiant du point (PRM) dont on souhaite récuperer la situation comptage
+          x-example: '99999999999999'
+      summary: Récupération de la situation comptage d'un PRM
+      operationId: getSituationComptage
+      tags:
+        - situation-comptage
+      responses:
+        200:
+          description: Situation comptage du PRM
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/situationComptage"
+        400:
+          description: La syntaxe de la requête est erronée.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+                    example: Le paramètre usage_point_id est obligatoire
+        401:
+          description: Utilisateur non identifié
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+                    example: L'utilisateur n'est pas identifié
+        403:
+          description: Utilisateur non autorisé pour ce endpoint/ressources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+                    example: Le client n'est pas autorisé pour le point demandé
+        404:
+          description: Situation comptage ou PRM non existant
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+                    example: Situation comptage ou PRM non existant
+        500:
+          description: Une erreur technique est survenue
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+                    example: Problème technique dans l'interrogation du SI coeur
+
+# Definition des ressources
+components:
+  schemas:
+    # Situation comptage
+    situationComptage:
+      type: object
+      description: données de la situation de comptage courante
+      properties:
+        dispositifComptage:
+          $ref: '#/components/schemas/dispositifComptage'
+        compteurs:
+          type: array
+          items:
+            $ref: '#/components/schemas/compteur'
+        relais:
+          $ref: '#/components/schemas/relais'
+    # Dispositif Comptage
+    dispositifComptage:
+      type: object
+      description: décrit les informations des équipements (compteur, disjoncteur ...)
+      properties:
+        typeComptage:
+          $ref: '#/components/schemas/typeComptage'
+    # Compteur
+    compteur:
+      type: object
+      description: type du compteur voir dans type de comptage
+      properties:
+        numeroSerie:
+          type: string
+          description: numéro de série du compteur
+        regimePropriete:
+          $ref: '#/components/schemas/regimePropriete'
+        puissanceProgrammee1:
+          $ref: '#/components/schemas/puissanceProgrammee'
+        puissanceProgrammee2:
+          $ref: '#/components/schemas/puissanceProgrammee'
+        puissanceProgrammee3:
+          $ref: '#/components/schemas/puissanceProgrammee'
+        puissanceProgrammee4:
+          $ref: '#/components/schemas/puissanceProgrammee'
+        puissanceProgrammee5:
+          $ref: '#/components/schemas/puissanceProgrammee'
+        puissanceProgrammee6:
+          $ref: '#/components/schemas/puissanceProgrammee'
+        puissanceProgrammee7:
+          $ref: '#/components/schemas/puissanceProgrammee'
+        puissanceProgrammee8:
+          $ref: '#/components/schemas/puissanceProgrammee'
+        programmationHoraire:
+          $ref: '#/components/schemas/programmationHoraire'
+        parametresTeleAcces:
+          $ref: '#/components/schemas/parametresTeleAcces'
+
+
+    #Relais
+    relais:
+      type: object
+      description: Informations du relais
+      properties:
+        plageHeuresCreuses:
+          type: string
+          description: indique les plages heures creuses programmées sur le compteur pour les points BTINF
+
+    #Regime propriete
+    regimePropriete:
+      type: object
+      description: Propriété du matériel (loué, propriété client, propriété avec refus client)
+      properties:
+        code:
+          type: string
+          enum: [ LOUE, PROP, PROPNC ]
+        libelle:
+          type: string
+
+    #TypeComptage
+    typeComptage:
+      type: object
+      description: type de compteur
+      properties:
+        code:
+          type: string
+          enum: [ AMM, CBE, CJCE, CJDI, CJE, CVE, CVSS, CVST, CVT1, CVT2, CVT3, EMC, ICE, ICE4Q, PMEI, SAPHIR, SSCPT, LINKYPRO ]
+        libelle:
+          type: string
+
+
+
+
+    # PuissanceProgrammee
+    puissanceProgrammee:
+      type: object
+      description: puissance programmée par classe temportelle sur le compteur pour les points >36KVA
+      properties:
+        valeur:
+          type: number
+        classeTemporellePuissanceProgrammee:
+          $ref: '#/components/schemas/classeTemporellePuissanceProgrammee'
+
+    # ClasseTemporellePuissanceProgrammee
+    classeTemporellePuissanceProgrammee:
+      type: object
+      description: Les classes temporelles programmées sur le compteur (voir annexe)
+      properties:
+        code:
+          type: string
+        libelle:
+          type: string
+
+    # ProgrammationHoraire
+    programmationHoraire:
+      type: object
+      description: programmation horaire sur le compteur définit par les 5 postes horaires distributeur
+      properties:
+        posteHoraire1:
+          $ref: '#/components/schemas/posteHoraire'
+        posteHoraire2:
+          $ref: '#/components/schemas/posteHoraire'
+        posteHoraire3:
+          $ref: '#/components/schemas/posteHoraire'
+        posteHoraire4:
+          $ref: '#/components/schemas/posteHoraire'
+        posteHoraire5:
+          $ref: '#/components/schemas/posteHoraire'
+
+    # PosteHoraire
+    posteHoraire:
+      type: object
+      description: poste horaire distributeur (1 pointe, 2 creuses ...)
+      properties:
+        periodesHoraires:
+          type: string
+        classeTemporellePosteHoraire:
+          $ref: '#/components/schemas/classeTemporellePosteHoraire'
+
+    # ClasseTemporellePosteHoraire
+    classeTemporellePosteHoraire:
+      type: object
+      description: classe temporelle du poste horaire distributeur
+      properties:
+        code:
+          type: string
+        libelle:
+          type: string
+
+    # ParametresTeleAcces
+    parametresTeleAcces:
+      type: object
+      description: paramètres du teleacces client
+      properties:
+        cleClient:
+          type: string
+        etatLigneTel:
+          type: string
+    # Description du format des erreurs REST de PRM
+    error:
+      type: object
+      required:
+        - code
+        - libelle
+      properties:
+        code:
+          type: string
+        libelle:
+          type: string

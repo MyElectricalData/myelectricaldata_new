@@ -1,0 +1,4 @@
+{
+  "error": "ADAM-ERR0123",
+  "error_description": "La demande ne peut pas aboutir, la période demandée est antérieure à la date de dernière mise en service du point."
+}
