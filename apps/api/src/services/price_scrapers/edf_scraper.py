@@ -446,7 +446,7 @@ class EDFPriceScraper(BasePriceScraper):
             for power, prices in weekend_prices.items():
                 offers.append(
                     OfferData(
-                        name=f"Zen Week-End - Option Week-End {power} kVA",
+                        name="Zen Week-End - Option Week-End",
                         offer_type="BASE_WEEKEND",
                         description=f"EDF Zen Week-End - Tarif réduit le week-end - {power} kVA",
                         subscription_price=prices["subscription"],
@@ -461,7 +461,7 @@ class EDFPriceScraper(BasePriceScraper):
             for power, prices in hc_weekend_prices.items():
                 offers.append(
                     OfferData(
-                        name=f"Zen Week-End - HC/HP + WE {power} kVA",
+                        name="Zen Week-End - HC/HP + WE",
                         offer_type="HC_WEEKEND",
                         description=f"EDF Zen Week-End - Heures Creuses avec tarif week-end - {power} kVA",
                         subscription_price=prices["subscription"],
@@ -480,7 +480,7 @@ class EDFPriceScraper(BasePriceScraper):
             for power, prices in flex_prices.items():
                 offers.append(
                     OfferData(
-                        name=f"Zen Week-End - Option Flex {power} kVA",
+                        name="Zen Week-End - Option Flex",
                         offer_type="ZEN_FLEX",
                         description=f"EDF Zen Week-End - 345 jours Éco + 20 jours Sobriété (les plus froids) - {power} kVA",
                         subscription_price=prices["subscription"],

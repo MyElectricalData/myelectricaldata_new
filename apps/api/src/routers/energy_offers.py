@@ -127,7 +127,7 @@ async def apply_contribution_changes(
             for variant in contribution.power_variants:
                 power_kva = variant.get("power_kva")
                 subscription_price = variant.get("subscription_price")
-                offer_name = f"{contribution.offer_name} - {power_kva} kVA"
+                offer_name = contribution.offer_name
                 offer = EnergyOffer(
                     provider_id=provider_id,
                     name=offer_name,
