@@ -159,6 +159,54 @@ class TestModeAuto:
         ]
 
 
+V5_CONTRAT = {
+    "customer": {
+        "usage_points": [
+            {
+                "contracts": {
+                    "segment": "C5",
+                    "subscribed_power": "6 kVA",
+                    "last_activation_date": "2018-08-31+02:00",
+                    "distribution_tariff": "BTINFCU4",
+                    "offpeak_hours": "HC (22H00-6H00)",
+                    "contract_status": "SERVC",
+                    "contract_type": "Contrat GRD-F",
+                }
+            }
+        ]
+    }
+}
+
+
+class TestContratModeAuto:
+    async def test_heures_creuses_relayees_par_la_v5_si_comptage_indisponible(self, enedis_fixture):
+        situation = enedis_fixture("situation_contrat_consommateur")
+        adapter, fake = make_adapter(
+            "auto",
+            {
+                f"/situation_contrat_auto/v1/{PRM}": situation,
+                f"/synth_contrat_auto/v1/{PRM}": enedis_fixture("synth_contrat_consommateur"),
+                f"/comptage_auto/v1/{PRM}": 403,
+                "/customers_upc/v5/usage_points/contracts": V5_CONTRAT,
+            },
+        )
+
+        result = await adapter.get_contract(PRM, TOKEN)
+
+        assert result["situation_contrat"] == situation
+        assert result["comptage"] == {"relais": {"plageHeuresCreuses": "HC (22H00-6H00)"}}
+        assert fake.paths()[-1] == "/customers_upc/v5/usage_points/contracts"
+
+    async def test_contrat_v5_converti_en_mode_legacy(self):
+        adapter, _ = make_adapter("legacy", {"/customers_upc/v5/usage_points/contracts": V5_CONTRAT})
+
+        result = await adapter.get_contract(PRM, TOKEN)
+
+        assert result["situation_contrat"][0]["subscribed_power"] == {"value": "6", "unit": "kVA"}
+        assert result["synthese_contrat"] == {"consumption_last_activation_date": "2018-08-31+02:00"}
+        assert result["comptage"] == {"relais": {"plageHeuresCreuses": "HC (22H00-6H00)"}}
+
+
 class TestModeLegacy:
     async def test_v5_seule_mais_format_2026(self, enedis_fixture):
         adapter, fake = make_adapter(

@@ -1,12 +1,20 @@
 import asyncio
-import json
 import logging
-from datetime import UTC, datetime, timedelta
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from json import JSONDecodeError
 from typing import Any, Optional, cast
 
 import httpx
 
 from ..config import settings
+from .enedis_format import (
+    address_v5_to_2026,
+    contract_v5_to_2026,
+    customer_v5_to_2026,
+    shift_points_to_interval_start,
+    v5_to_2026,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,101 +56,8 @@ class EnedisAdapter:
         self.client_id = settings.ENEDIS_CLIENT_ID
         self.client_secret = settings.ENEDIS_CLIENT_SECRET
         self.rate_limiter = RateLimiter(max_calls=settings.ENEDIS_RATE_LIMIT)
+        self.api_mode = settings.ENEDIS_API_MODE
         self._client: Optional[httpx.AsyncClient] = None
-
-    def _parse_iso8601_duration_to_minutes(self, duration: str) -> int:
-        """
-        Parse ISO 8601 duration format to minutes.
-
-        Examples:
-            PT5M -> 5
-            PT10M -> 10
-            PT15M -> 15
-            PT30M -> 30
-            PT60M -> 60
-            PT1H -> 60
-        """
-        import re
-
-        # Match PTxxM or PTxxH format
-        match = re.match(r'PT(\d+)([HM])', duration)
-        if not match:
-            logger.warning(f"[ENEDIS] Could not parse duration '{duration}', defaulting to 30 minutes")
-            return 30
-
-        value = int(match.group(1))
-        unit = match.group(2)
-
-        if unit == 'H':
-            return value * 60
-        else:  # unit == 'M'
-            return value
-
-    def _shift_timestamps_to_interval_start(self, response: dict[str, Any]) -> dict[str, Any]:
-        """
-        Shift timestamps from interval END to interval START.
-
-        Enedis API returns timestamps representing the END of each measurement interval.
-        For better UX and to avoid confusion with midnight timestamps, we shift all timestamps
-        backwards by the interval_length to represent the START of each interval.
-
-        Example with 30min intervals:
-            API returns:  2025-11-22 00:30:00 (end of 00:00-00:30 interval)
-            We transform: 2025-11-22 00:00:00 (start of 00:00-00:30 interval)
-
-        This also fixes the midnight edge case where:
-            API returns:  2025-11-23 00:00:00 (end of 23:30-00:00 interval of day 22)
-            We transform: 2025-11-22 23:30:00 (start of that interval, correctly on day 22)
-        """
-        if "meter_reading" not in response:
-            return response
-
-        meter_reading = response["meter_reading"]
-
-        # Get interval readings
-        interval_reading = meter_reading.get("interval_reading", [])
-        if not interval_reading:
-            return response
-
-        shifted_count = 0
-
-        # Shift each timestamp backwards by its individual interval_length
-        for reading in interval_reading:
-            if "date" not in reading or "interval_length" not in reading:
-                continue
-
-            original_date = reading["date"]
-            interval_length_iso = reading["interval_length"]
-
-            # Parse ISO 8601 duration to minutes
-            interval_minutes = self._parse_iso8601_duration_to_minutes(interval_length_iso)
-
-            # Parse datetime (handle both formats: "YYYY-MM-DD HH:MM:SS" and "YYYY-MM-DDTHH:MM:SS")
-            try:
-                if "T" in original_date:
-                    dt = datetime.fromisoformat(original_date.replace("Z", "+00:00"))
-                else:
-                    dt = datetime.strptime(original_date, "%Y-%m-%d %H:%M:%S")
-
-                # Shift backwards by interval_length
-                shifted_dt = dt - timedelta(minutes=interval_minutes)
-
-                # Format back to original format
-                if "T" in original_date:
-                    reading["date"] = shifted_dt.strftime("%Y-%m-%dT%H:%M:%S")
-                else:
-                    reading["date"] = shifted_dt.strftime("%Y-%m-%d %H:%M:%S")
-
-                shifted_count += 1
-
-            except Exception as e:
-                logger.warning(f"[ENEDIS] Failed to shift timestamp '{original_date}': {e}")
-                continue
-
-        if shifted_count > 0:
-            logger.info(f"[ENEDIS] Shifted {shifted_count} timestamps from interval END → START")
-
-        return response
 
     async def get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client"""
@@ -177,7 +92,8 @@ class EnedisAdapter:
         headers: Optional[dict[str, str]] = None,
         data: Optional[dict[str, Any]] = None,
         params: Optional[dict[str, Any]] = None,
-    ) -> dict[str, Any]:
+        json: Optional[dict[str, Any]] = None,
+    ) -> Any:
         """Make rate-limited request to Enedis API"""
         from ..config import settings
 
@@ -207,11 +123,15 @@ class EnedisAdapter:
 
             if data:
                 logger.debug(f"[ENEDIS API REQUEST] Body data: {data}")
+            if json:
+                logger.debug(f"[ENEDIS API REQUEST] Body JSON: {json}")
             logger.debug("=" * 80)
 
         client = await self.get_client()
         try:
-            response = await client.request(method=method, url=url, headers=headers, data=data, params=params)
+            response = await client.request(
+                method=method, url=url, headers=headers, data=data, params=params, json=json
+            )
 
             if settings.DEBUG:
                 logger.debug(f"[ENEDIS API RESPONSE] Status: {response.status_code}")
@@ -225,7 +145,7 @@ class EnedisAdapter:
                 )
                 logger.debug("=" * 80)
 
-            return cast(dict[str, Any], response_json)
+            return response_json
         except httpx.HTTPStatusError as e:
             if settings.DEBUG:
                 logger.error(f"[ENEDIS API ERROR] HTTP {e.response.status_code}")
@@ -245,7 +165,7 @@ class EnedisAdapter:
                     # For other errors, raise exception
                     error_msg = f"{error_json.get('error')}: {error_json.get('error_description', 'Unknown error')}"
                     raise ValueError(error_msg) from e
-            except (json.JSONDecodeError, KeyError, TypeError):
+            except (JSONDecodeError, KeyError, TypeError):
                 # Failed to parse JSON (empty response, invalid JSON, etc.)
                 # Continue with original exception
                 pass
@@ -321,103 +241,238 @@ class EnedisAdapter:
 
         return await self._make_request("POST", url, headers=headers, data=data)
 
-    async def get_usage_points(self, access_token: str) -> dict[str, Any]:
-        """Get list of usage points (PDL) for authenticated user"""
-        url = f"{self.base_url}/customers_upc/v5/usage_points"
+    # ------------------------------------------------------------------
+    # Data Connect 2026 : routage selon ENEDIS_API_MODE
+    # ------------------------------------------------------------------
 
-        headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    async def _by_mode(
+        self,
+        label: str,
+        new: Callable[[], Awaitable[Any]],
+        legacy: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        """Appelle l'API 2026 (`new`) ou la v5 (`legacy`) selon le mode.
 
-        return await self._make_request("GET", url, headers=headers)
+        En mode auto, un échec HTTP de l'API 2026 retombe sur la v5. Les erreurs
+        métier rendues en dict (ADAM-ERR0123) ne déclenchent pas de repli : la v5
+        répondrait la même chose.
+        """
+        if self.api_mode == "legacy":
+            return await legacy()
+        if self.api_mode == "new":
+            return await new()
+        try:
+            return await new()
+        except (httpx.HTTPStatusError, httpx.TransportError) as e:
+            logger.warning(f"[ENEDIS] {label} : API 2026 en échec ({e}), repli sur la v5")
+            return await legacy()
+
+    async def _get_measure(
+        self,
+        usage_point_id: str,
+        start: str,
+        end: str,
+        access_token: str,
+        *,
+        resource: str,
+        v5_path: str,
+        grandeur_metier: str,
+        grandeur_physique: str,
+        pas: Optional[str] = None,
+        extra_params: Optional[dict[str, str]] = None,
+        load_curve: bool = False,
+    ) -> dict[str, Any]:
+        headers = self._get_headers(access_token)
+
+        async def new() -> dict[str, Any]:
+            params = {"pointId": usage_point_id, "dateDebut": start, "dateFin": end, **(extra_params or {})}
+            url = f"{self.base_url}/mesure_synchrone_auto/v2/{resource}"
+            return cast(dict[str, Any], await self._make_request("GET", url, headers=headers, params=params))
+
+        async def legacy() -> dict[str, Any]:
+            params = {"usage_point_id": usage_point_id, "start": start, "end": end}
+            response = await self._make_request("GET", f"{self.base_url}{v5_path}", headers=headers, params=params)
+            return v5_to_2026(response, grandeur_metier=grandeur_metier, grandeur_physique=grandeur_physique, pas=pas)
+
+        response = await self._by_mode(resource, new, legacy)
+        # Enedis horodate la fin de l'intervalle : on le ramène au début (cf. enedis_format)
+        return shift_points_to_interval_start(response) if load_curve else response
 
     async def get_consumption_daily(
         self, usage_point_id: str, start: str, end: str, access_token: str
     ) -> dict[str, Any]:
-        """Get daily consumption data"""
-        url = f"{self.base_url}/metering_data_dc/v5/daily_consumption"
-        headers = self._get_headers(access_token)
-        params = {"usage_point_id": usage_point_id, "start": start, "end": end}
-
-        return await self._make_request("GET", url, headers=headers, params=params)
+        """Consommation quotidienne (Wh)"""
+        return await self._get_measure(
+            usage_point_id,
+            start,
+            end,
+            access_token,
+            resource="consommation_quotidienne",
+            v5_path="/metering_data_dc/v5/daily_consumption",
+            grandeur_metier="CONS",
+            grandeur_physique="EA",
+            pas="P1D",
+        )
 
     async def get_consumption_detail(
         self, usage_point_id: str, start: str, end: str, access_token: str
     ) -> dict[str, Any]:
-        """Get detailed consumption data (load curve)"""
-        url = f"{self.base_url}/metering_data_clc/v5/consumption_load_curve"
-        headers = self._get_headers(access_token)
-        params = {"usage_point_id": usage_point_id, "start": start, "end": end}
-
-        response = await self._make_request("GET", url, headers=headers, params=params)
-
-        # Shift timestamps from interval END to interval START
-        response = self._shift_timestamps_to_interval_start(response)
-
-        return response
+        """Courbe de charge de consommation (W), horodatée en début d'intervalle"""
+        return await self._get_measure(
+            usage_point_id,
+            start,
+            end,
+            access_token,
+            resource="courbe_de_charge_consommation",
+            v5_path="/metering_data_clc/v5/consumption_load_curve",
+            grandeur_metier="CONS",
+            grandeur_physique="PA",
+            load_curve=True,
+        )
 
     async def get_max_power(self, usage_point_id: str, start: str, end: str, access_token: str) -> dict[str, Any]:
-        """Get maximum power data"""
-        url = f"{self.base_url}/metering_data_dcmp/v5/daily_consumption_max_power"
-        headers = self._get_headers(access_token)
-        params = {"usage_point_id": usage_point_id, "start": start, "end": end}
-
-        return await self._make_request("GET", url, headers=headers, params=params)
+        """Puissance maximale quotidienne (VA)"""
+        return await self._get_measure(
+            usage_point_id,
+            start,
+            end,
+            access_token,
+            resource="puissance_conso_max_quotidienne",
+            v5_path="/metering_data_dcmp/v5/daily_consumption_max_power",
+            grandeur_metier="CONS",
+            grandeur_physique="PMA",
+            pas="P1D",
+            extra_params={"mesuresPas": "P1D", "grandeurPhysique": "PMA"},
+        )
 
     async def get_production_daily(
         self, usage_point_id: str, start: str, end: str, access_token: str
     ) -> dict[str, Any]:
-        """Get daily production data"""
-        url = f"{self.base_url}/metering_data_dp/v5/daily_production"
-        headers = self._get_headers(access_token)
-        params = {"usage_point_id": usage_point_id, "start": start, "end": end}
-
-        return await self._make_request("GET", url, headers=headers, params=params)
+        """Production quotidienne (Wh)"""
+        return await self._get_measure(
+            usage_point_id,
+            start,
+            end,
+            access_token,
+            resource="production_quotidienne",
+            v5_path="/metering_data_dp/v5/daily_production",
+            grandeur_metier="PROD",
+            grandeur_physique="EA",
+            pas="P1D",
+        )
 
     async def get_production_detail(
         self, usage_point_id: str, start: str, end: str, access_token: str
     ) -> dict[str, Any]:
-        """Get detailed production data"""
-        url = f"{self.base_url}/metering_data_plc/v5/production_load_curve"
+        """Courbe de charge de production (W), horodatée en début d'intervalle"""
+        return await self._get_measure(
+            usage_point_id,
+            start,
+            end,
+            access_token,
+            resource="courbe_de_charge_production",
+            v5_path="/metering_data_plc/v5/production_load_curve",
+            grandeur_metier="PROD",
+            grandeur_physique="PA",
+            load_curve=True,
+        )
+
+    async def _get_v5_customer(self, path: str, usage_point_id: str, access_token: str) -> dict[str, Any]:
         headers = self._get_headers(access_token)
-        params = {"usage_point_id": usage_point_id, "start": start, "end": end}
+        params = {"usage_point_id": usage_point_id}
+        return cast(
+            dict[str, Any], await self._make_request("GET", f"{self.base_url}{path}", headers=headers, params=params)
+        )
 
-        response = await self._make_request("GET", url, headers=headers, params=params)
-
-        # Shift timestamps from interval END to interval START
-        response = self._shift_timestamps_to_interval_start(response)
-
-        return response
+    async def _get_itc(self, api: str, usage_point_id: str, access_token: str) -> Any:
+        """API ITC Data Connect 2026 : le PRM est dans le CHEMIN (en query, Enedis répond 500)"""
+        url = f"{self.base_url}/{api}/v1/{usage_point_id}"
+        return await self._make_request("GET", url, headers=self._get_headers(access_token))
 
     async def get_contract(self, usage_point_id: str, access_token: str) -> dict[str, Any]:
-        """Get contract data"""
-        url = f"{self.base_url}/customers_upc/v5/usage_points/contracts"
-        headers = self._get_headers(access_token)
-        params = {"usage_point_id": usage_point_id}
+        """Contrat agrégé : {"situation_contrat": [...], "synthese_contrat": {...}, "comptage": {...} | None}
 
-        return await self._make_request("GET", url, headers=headers, params=params)
+        `comptage` (plages heures creuses) vaut None si l'API répond en erreur, par exemple
+        tant que comptage_auto n'est pas souscrite pour l'application (403 au 04/10/2026).
+        """
+
+        async def new() -> dict[str, Any]:
+            situation = await self._get_itc("situation_contrat_auto", usage_point_id, access_token)
+            synthese = await self._get_itc("synth_contrat_auto", usage_point_id, access_token)
+            try:
+                comptage = await self._get_itc("comptage_auto", usage_point_id, access_token)
+            except (httpx.HTTPStatusError, httpx.TransportError, ValueError) as e:
+                logger.warning(f"[ENEDIS] comptage_auto indisponible, contrat sans heures creuses : {e}")
+                comptage = None
+            if comptage is None and self.api_mode == "auto":
+                comptage = await self._offpeak_from_v5(usage_point_id, access_token)
+            return {"situation_contrat": situation, "synthese_contrat": synthese, "comptage": comptage}
+
+        async def legacy() -> dict[str, Any]:
+            response = await self._get_v5_customer(
+                "/customers_upc/v5/usage_points/contracts", usage_point_id, access_token
+            )
+            return contract_v5_to_2026(response)
+
+        return cast(dict[str, Any], await self._by_mode("contrat", new, legacy))
+
+    async def _offpeak_from_v5(self, usage_point_id: str, access_token: str) -> Optional[dict[str, Any]]:
+        """Mode auto : plages heures creuses lues en v5 tant que comptage_auto est indisponible"""
+        try:
+            response = await self._get_v5_customer(
+                "/customers_upc/v5/usage_points/contracts", usage_point_id, access_token
+            )
+        except (httpx.HTTPStatusError, httpx.TransportError, ValueError) as e:
+            logger.warning(f"[ENEDIS] Heures creuses v5 indisponibles : {e}")
+            return None
+        return cast(Optional[dict[str, Any]], contract_v5_to_2026(response).get("comptage"))
 
     async def get_address(self, usage_point_id: str, access_token: str) -> dict[str, Any]:
-        """Get address data"""
-        url = f"{self.base_url}/customers_upa/v5/usage_points/addresses"
-        headers = self._get_headers(access_token)
-        params = {"usage_point_id": usage_point_id}
+        """Adresse du point : {"address": {...}} (donnees_generales_auto)"""
 
-        return await self._make_request("GET", url, headers=headers, params=params)
+        async def new() -> dict[str, Any]:
+            return cast(dict[str, Any], await self._get_itc("donnees_generales_auto", usage_point_id, access_token))
 
-    async def get_customer(self, usage_point_id: str, access_token: str) -> dict[str, Any]:
-        """Get customer identity data"""
-        url = f"{self.base_url}/customers_i/v5/identity"
-        headers = self._get_headers(access_token)
-        params = {"usage_point_id": usage_point_id}
+        async def legacy() -> dict[str, Any]:
+            response = await self._get_v5_customer(
+                "/customers_upa/v5/usage_points/addresses", usage_point_id, access_token
+            )
+            return address_v5_to_2026(response)
 
-        return await self._make_request("GET", url, headers=headers, params=params)
+        return cast(dict[str, Any], await self._by_mode("adresse", new, legacy))
 
-    async def get_contact(self, usage_point_id: str, access_token: str) -> dict[str, Any]:
-        """Get customer contact data"""
-        url = f"{self.base_url}/customers_cd/v5/contact_data"
-        headers = self._get_headers(access_token)
-        params = {"usage_point_id": usage_point_id}
+    async def _get_situation_contrat(self, v5_path: str, usage_point_id: str, access_token: str) -> Any:
+        async def new() -> Any:
+            return await self._get_itc("situation_contrat_auto", usage_point_id, access_token)
 
-        return await self._make_request("GET", url, headers=headers, params=params)
+        async def legacy() -> Any:
+            return customer_v5_to_2026(await self._get_v5_customer(v5_path, usage_point_id, access_token))
+
+        return await self._by_mode("client", new, legacy)
+
+    async def get_customer(self, usage_point_id: str, access_token: str) -> Any:
+        """Identité du titulaire : situation_contrat_auto (`person`, `customer`)"""
+        return await self._get_situation_contrat("/customers_i/v5/identity", usage_point_id, access_token)
+
+    async def get_contact(self, usage_point_id: str, access_token: str) -> Any:
+        """Coordonnées du titulaire : situation_contrat_auto (`contact_data`)"""
+        return await self._get_situation_contrat("/customers_cd/v5/contact_data", usage_point_id, access_token)
+
+    async def get_usage_points_from_authorization(self, autorisation_id: int, access_token: str) -> list[str]:
+        """PRM d'un consentement Data Connect v2 (callback `autorisation_id`), via POST /subscribed_services/v1
+
+        Seuls les services ACTIF sont retenus ; un PRM en autoconsommation porte deux
+        services (soutirage et injection) mais n'est rendu qu'une fois.
+        """
+        url = f"{self.base_url}/subscribed_services/v1"
+        body = {"autorisationId": autorisation_id, "comptage": False}
+        response = await self._make_request("POST", url, headers=self._get_headers(access_token), json=body)
+        prms: list[str] = []
+        for service in response.get("serviceSouscrit", []):
+            prm = service.get("pointId")
+            if prm and service.get("etatCode") == "ACTIF" and prm not in prms:
+                prms.append(prm)
+        return prms
 
 
 enedis_adapter = EnedisAdapter()
