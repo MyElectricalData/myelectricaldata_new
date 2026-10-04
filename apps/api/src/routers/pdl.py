@@ -10,6 +10,7 @@ from ..schemas.requests import AdminPDLCreate
 from ..middleware import get_current_user, require_permission, require_not_demo
 from ..routers.enedis import get_valid_token
 from ..adapters import enedis_adapter
+from ..services.enedis_contract import apply_contract_to_pdl
 import logging
 
 
@@ -156,98 +157,7 @@ async def create_pdl(
         token_result = await get_valid_token(pdl.usage_point_id, current_user, db)
         if isinstance(token_result, str):
             contract_data = await enedis_adapter.get_contract(pdl.usage_point_id, token_result)
-
-            if contract_data and "customer" in contract_data and "usage_points" in contract_data["customer"]:
-                usage_points = contract_data["customer"]["usage_points"]
-                if usage_points and len(usage_points) > 0:
-                    usage_point = usage_points[0]
-
-                    if "contracts" in usage_point:
-                        contract = usage_point["contracts"]
-
-                        if "subscribed_power" in contract:
-                            power_str = str(contract["subscribed_power"])
-                            pdl.subscribed_power = int(power_str.replace("kVA", "").replace(" ", "").strip())
-
-                        if "offpeak_hours" in contract:
-                            offpeak = contract["offpeak_hours"]
-
-                            # Parse offpeak hours - format: "HC (22H00-6H00)" or "HC (22H00-6H00;12h00-14h00)"
-                            # Convert Enedis format to array of "HH:MM-HH:MM" strings
-                            parsed_ranges = []
-
-                            if isinstance(offpeak, str):
-                                import re
-                                # Extract content inside parentheses after "HC"
-                                match = re.search(r'HC\s*\(([^)]+)\)', offpeak, flags=re.IGNORECASE)
-                                if match:
-                                    content = match.group(1)
-                                    # Split by semicolon to get multiple ranges
-                                    ranges = content.split(';')
-
-                                    for range_str in ranges:
-                                        range_str = range_str.strip()
-                                        # Match format like "22H00-6H00" or "12h00-14h00"
-                                        range_match = re.search(r'(\d{1,2})[hH](\d{2})\s*-\s*(\d{1,2})[hH](\d{2})', range_str)
-                                        if range_match:
-                                            start_h = range_match.group(1).zfill(2)
-                                            start_m = range_match.group(2)
-                                            end_h = range_match.group(3).zfill(2)
-                                            end_m = range_match.group(4)
-                                            parsed_ranges.append(f"{start_h}:{start_m}-{end_h}:{end_m}")
-
-                            elif isinstance(offpeak, dict):
-                                # Legacy dict format - convert values to array
-                                import re
-                                for value in offpeak.values():
-                                    if isinstance(value, str):
-                                        # Try new format with parentheses
-                                        match = re.search(r'HC\s*\(([^)]+)\)', value, flags=re.IGNORECASE)
-                                        if match:
-                                            content = match.group(1)
-                                            ranges = content.split(';')
-                                            for range_str in ranges:
-                                                range_str = range_str.strip()
-                                                range_match = re.search(r'(\d{1,2})[hH](\d{2})\s*-\s*(\d{1,2})[hH](\d{2})', range_str)
-                                                if range_match:
-                                                    start_h = range_match.group(1).zfill(2)
-                                                    start_m = range_match.group(2)
-                                                    end_h = range_match.group(3).zfill(2)
-                                                    end_m = range_match.group(4)
-                                                    parsed_ranges.append(f"{start_h}:{start_m}-{end_h}:{end_m}")
-                                        else:
-                                            # Try old format without parentheses
-                                            range_match = re.search(r'(\d{1,2})[h:](\d{2})\s*-\s*(\d{1,2})[h:](\d{2})', value)
-                                            if range_match:
-                                                start_h = range_match.group(1).zfill(2)
-                                                start_m = range_match.group(2)
-                                                end_h = range_match.group(3).zfill(2)
-                                                end_m = range_match.group(4)
-                                                parsed_ranges.append(f"{start_h}:{start_m}-{end_h}:{end_m}")
-
-                            if parsed_ranges:
-                                pdl.offpeak_hours = {"ranges": parsed_ranges}  # type: ignore
-                            else:
-                                # Fallback to storing raw data if parsing failed
-                                if isinstance(offpeak, str):
-                                    pdl.offpeak_hours = {"default": offpeak}
-                                elif isinstance(offpeak, dict):
-                                    pdl.offpeak_hours = offpeak
-
-                        # Get contract activation date if available
-                        if "last_activation_date" in contract:
-                            from datetime import datetime as dt
-                            activation_str = contract["last_activation_date"]
-                            try:
-                                # Parse ISO date format (e.g., "2020-01-15T00:00:00+01:00", "2018-08-31+02:00", or "2020-01-15")
-                                if isinstance(activation_str, str):
-                                    # Remove timezone info and time if present
-                                    # Handle both "T" separator and "+" timezone separator
-                                    date_part = activation_str.split('T')[0] if 'T' in activation_str else activation_str.split('+')[0]
-                                    pdl.activation_date = dt.strptime(date_part, "%Y-%m-%d").date()
-                                    logger.info(f"[CREATE PDL] Set activation_date: {pdl.activation_date}")
-                            except Exception as e:
-                                logger.warning(f"[CREATE PDL] Could not parse activation date '{activation_str}': {e}")
+            apply_contract_to_pdl(pdl, contract_data, log_prefix="[CREATE PDL]")
 
             # Detect PDL type (production and/or consumption) by testing Enedis endpoints
             from datetime import datetime, timedelta
@@ -262,7 +172,7 @@ async def create_pdl(
                 consumption_test = await enedis_adapter.get_consumption_daily(
                     pdl.usage_point_id, yesterday, today, token_result
                 )
-                if consumption_test and "meter_reading" in consumption_test:
+                if consumption_test and "grandeur" in consumption_test:
                     has_consumption = True
                     log_with_pdl("info", pdl.usage_point_id, "[CREATE PDL] HAS CONSUMPTION (endpoint responded)")
             except Exception as e:
@@ -273,7 +183,7 @@ async def create_pdl(
                 production_test = await enedis_adapter.get_production_daily(
                     pdl.usage_point_id, yesterday, today, token_result
                 )
-                if production_test and "meter_reading" in production_test:
+                if production_test and "grandeur" in production_test:
                     has_production = True
                     log_with_pdl("info", pdl.usage_point_id, "[CREATE PDL] HAS PRODUCTION (endpoint responded)")
             except Exception as e:
@@ -876,112 +786,9 @@ async def fetch_contract_from_enedis(
         )
 
     try:
-        # Fetch contract data from Enedis
+        # Fetch contract data from Enedis (Data Connect 2026, contrat agrégé)
         contract_data = await enedis_adapter.get_contract(pdl.usage_point_id, token_result)
-
-        # Log the structure for debugging
-        logger.info(f"[FETCH CONTRACT] Raw contract data: {contract_data}")
-
-        # Extract subscribed power (puissance souscrite)
-        if contract_data and "customer" in contract_data and "usage_points" in contract_data["customer"]:
-            usage_points = contract_data["customer"]["usage_points"]
-            if usage_points and len(usage_points) > 0:
-                usage_point = usage_points[0]
-
-                # Get subscribed power and offpeak hours
-                if "contracts" in usage_point:
-                    contract = usage_point["contracts"]
-                    logger.info(f"[FETCH CONTRACT] Contract object: {contract}")
-
-                    if "subscribed_power" in contract:
-                        power_str = str(contract["subscribed_power"])
-                        # Extract just the number (handle "6 kVA", "6", etc.)
-                        pdl.subscribed_power = int(power_str.replace("kVA", "").replace(" ", "").strip())
-                        logger.info(f"[FETCH CONTRACT] Set subscribed_power: {pdl.subscribed_power}")
-
-                    # Get offpeak hours if available
-                    if "offpeak_hours" in contract:
-                        offpeak = contract["offpeak_hours"]
-                        logger.info(f"[FETCH CONTRACT] Offpeak hours: {offpeak}")
-
-                        # Parse offpeak hours - format: "HC (22H00-6H00)" or "HC (22H00-6H00;12h00-14h00)"
-                        # Convert Enedis format to array of "HH:MM-HH:MM" strings
-                        parsed_ranges = []
-
-                        if isinstance(offpeak, str):
-                            import re
-                            # Extract content inside parentheses after "HC"
-                            match = re.search(r'HC\s*\(([^)]+)\)', offpeak, flags=re.IGNORECASE)
-                            if match:
-                                content = match.group(1)
-                                # Split by semicolon to get multiple ranges
-                                ranges = content.split(';')
-
-                                for range_str in ranges:
-                                    range_str = range_str.strip()
-                                    # Match format like "22H00-6H00" or "12h00-14h00"
-                                    range_match = re.search(r'(\d{1,2})[hH](\d{2})\s*-\s*(\d{1,2})[hH](\d{2})', range_str)
-                                    if range_match:
-                                        start_h = range_match.group(1).zfill(2)
-                                        start_m = range_match.group(2)
-                                        end_h = range_match.group(3).zfill(2)
-                                        end_m = range_match.group(4)
-                                        parsed_ranges.append(f"{start_h}:{start_m}-{end_h}:{end_m}")
-
-                        elif isinstance(offpeak, dict):
-                            # Legacy dict format - convert values to array
-                            import re
-                            for value in offpeak.values():
-                                if isinstance(value, str):
-                                    # Try new format with parentheses
-                                    match = re.search(r'HC\s*\(([^)]+)\)', value, flags=re.IGNORECASE)
-                                    if match:
-                                        content = match.group(1)
-                                        ranges = content.split(';')
-                                        for range_str in ranges:
-                                            range_str = range_str.strip()
-                                            range_match = re.search(r'(\d{1,2})[hH](\d{2})\s*-\s*(\d{1,2})[hH](\d{2})', range_str)
-                                            if range_match:
-                                                start_h = range_match.group(1).zfill(2)
-                                                start_m = range_match.group(2)
-                                                end_h = range_match.group(3).zfill(2)
-                                                end_m = range_match.group(4)
-                                                parsed_ranges.append(f"{start_h}:{start_m}-{end_h}:{end_m}")
-                                    else:
-                                        # Try old format without parentheses
-                                        range_match = re.search(r'(\d{1,2})[h:](\d{2})\s*-\s*(\d{1,2})[h:](\d{2})', value)
-                                        if range_match:
-                                            start_h = range_match.group(1).zfill(2)
-                                            start_m = range_match.group(2)
-                                            end_h = range_match.group(3).zfill(2)
-                                            end_m = range_match.group(4)
-                                            parsed_ranges.append(f"{start_h}:{start_m}-{end_h}:{end_m}")
-
-                        if parsed_ranges:
-                            pdl.offpeak_hours = {"ranges": parsed_ranges}  # type: ignore
-                        else:
-                            # Fallback to storing raw data if parsing failed
-                            if isinstance(offpeak, str):
-                                pdl.offpeak_hours = {"default": offpeak}
-                            elif isinstance(offpeak, dict):
-                                pdl.offpeak_hours = offpeak
-
-                    # Get contract activation date if available
-                    if "last_activation_date" in contract:
-                        from datetime import datetime
-                        activation_str = contract["last_activation_date"]
-                        try:
-                            # Parse ISO date format (e.g., "2020-01-15T00:00:00+01:00", "2018-08-31+02:00", or "2020-01-15")
-                            if isinstance(activation_str, str):
-                                # Remove timezone info and time if present
-                                # Handle both "T" separator and "+" timezone separator
-                                date_part = activation_str.split('T')[0] if 'T' in activation_str else activation_str.split('+')[0]
-                                pdl.activation_date = datetime.strptime(date_part, "%Y-%m-%d").date()
-                                logger.info(f"[FETCH CONTRACT] Set activation_date: {pdl.activation_date}")
-                        except Exception as e:
-                            logger.warning(f"[FETCH CONTRACT] Could not parse activation date '{activation_str}': {e}")
-
-                        logger.info(f"[FETCH CONTRACT] Set offpeak_hours: {pdl.offpeak_hours}")
+        apply_contract_to_pdl(pdl, contract_data, log_prefix="[FETCH CONTRACT]")
 
         # Detect PDL type (production and/or consumption) by testing Enedis endpoints
         from datetime import datetime, timedelta
@@ -996,7 +803,7 @@ async def fetch_contract_from_enedis(
             consumption_test = await enedis_adapter.get_consumption_daily(
                 pdl.usage_point_id, yesterday, today, token_result
             )
-            if consumption_test and "meter_reading" in consumption_test:
+            if consumption_test and "grandeur" in consumption_test:
                 has_consumption = True
                 log_with_pdl("info", pdl.usage_point_id, "[FETCH CONTRACT] HAS CONSUMPTION (endpoint responded)")
         except Exception as e:
@@ -1007,7 +814,7 @@ async def fetch_contract_from_enedis(
             production_test = await enedis_adapter.get_production_daily(
                 pdl.usage_point_id, yesterday, today, token_result
             )
-            if production_test and "meter_reading" in production_test:
+            if production_test and "grandeur" in production_test:
                 has_production = True
                 log_with_pdl("info", pdl.usage_point_id, "[FETCH CONTRACT] HAS PRODUCTION (endpoint responded)")
         except Exception as e:

@@ -16,6 +16,7 @@ from ..models import PDL, Token, User
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
 from ..services.cache import cache_service
+from ..services.enedis_contract import apply_contract_to_pdl
 
 logger = logging.getLogger(__name__)
 
@@ -79,12 +80,27 @@ async def verify_oauth_state(
     return APIResponse(success=False, error=ErrorDetail(code="STATE_NOT_FOUND", message="State not found or expired"))
 
 
+async def resolve_autorisation_id(autorisation_id: str) -> list[str]:
+    """PRM actifs d'un consentement Data Connect v2 (POST /subscribed_services/v1).
+
+    Rend une liste vide si l'identifiant est invalide ou si Enedis ne renvoie aucun PRM actif.
+    """
+    if not autorisation_id.isdigit():
+        logger.error(f"[OAUTH CALLBACK] autorisation_id invalide: {autorisation_id}")
+        return []
+    token_data = await enedis_adapter.get_client_credentials_token()
+    prms = await enedis_adapter.get_usage_points_from_authorization(int(autorisation_id), token_data["access_token"])
+    logger.info(f"[OAUTH CALLBACK] Autorisation {autorisation_id} -> {len(prms)} PRM")
+    return prms
+
+
 @router.get("/callback")
 async def oauth_callback(
     request: Request,
     code: str = Query(..., description="Authorization code from Enedis"),
     state: str = Query(None, description="State parameter (ignored - user identified via JWT)"),
     usage_point_id: str = Query(None, description="Usage point ID from Enedis (14 digits, or multiple separated by semicolons)"),
+    autorisation_id: str = Query(None, description="Identifiant d'autorisation Data Connect v2, échangé contre le(s) PRM"),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
     """Handle OAuth callback from Enedis and redirect to frontend dashboard.
@@ -100,6 +116,7 @@ async def oauth_callback(
     logger.debug(f"[OAUTH CALLBACK] Code recu: {code[:20]}..." if code else "[OAUTH CALLBACK] Pas de code")
     logger.debug(f"[OAUTH CALLBACK] State recu: {state}")
     logger.debug(f"[OAUTH CALLBACK] Usage Point ID recu: {usage_point_id}")
+    logger.debug(f"[OAUTH CALLBACK] Autorisation ID recue: {autorisation_id}")
     logger.debug(f"[OAUTH CALLBACK] Frontend URL: {frontend_url}")
     logger.info("=" * 60)
 
@@ -110,7 +127,11 @@ async def oauth_callback(
         if not user:
             logger.error("[OAUTH CALLBACK] Utilisateur non authentifie - redirection vers login")
             # Redirect to login with return URL
-            return_url = f"/oauth/callback?code={code}&usage_point_id={usage_point_id}" if usage_point_id else f"/oauth/callback?code={code}"
+            return_url = f"/oauth/callback?code={code}"
+            if usage_point_id:
+                return_url += f"&usage_point_id={usage_point_id}"
+            if autorisation_id:
+                return_url += f"&autorisation_id={autorisation_id}"
             return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?redirect={return_url}")
 
         user_id = user.id
@@ -119,6 +140,14 @@ async def oauth_callback(
         # Just create PDL - token will be managed globally via Client Credentials
         logger.debug("[OAUTH CALLBACK] ===== TRAITEMENT DU PDL =====")
         logger.debug("[OAUTH CALLBACK] Code ignore (token gere globalement via Client Credentials)")
+
+        if not usage_point_id and autorisation_id:
+            # Data Connect v2 : le callback porte un autorisation_id, pas le PRM
+            pdl_from_authorization = await resolve_autorisation_id(autorisation_id)
+            if not pdl_from_authorization:
+                logger.error(f"[OAUTH CALLBACK] Aucun PRM actif pour l'autorisation {autorisation_id}")
+                return RedirectResponse(url=f"{frontend_url}?consent_error=no_usage_point_for_authorization")
+            usage_point_id = ";".join(pdl_from_authorization)
 
         if not usage_point_id:
             logger.error("[OAUTH CALLBACK] Aucun usage_point_id fourni")
@@ -185,35 +214,7 @@ async def oauth_callback(
                 token_result = await get_valid_token(pdl_usage_point_id, user, db)
                 if isinstance(token_result, str):
                     contract_data = await enedis_adapter.get_contract(pdl_usage_point_id, token_result)
-
-                    if (
-                        contract_data
-                        and "customer" in contract_data
-                        and "usage_points" in contract_data["customer"]
-                    ):
-                        usage_points_data = contract_data["customer"]["usage_points"]
-                        if usage_points_data and len(usage_points_data) > 0:
-                            usage_point_data = usage_points_data[0]
-
-                            if "contracts" in usage_point_data:
-                                contract = usage_point_data["contracts"]
-
-                                if "subscribed_power" in contract:
-                                    power_str = str(contract["subscribed_power"])
-                                    new_pdl.subscribed_power = int(
-                                        power_str.replace("kVA", "").replace(" ", "").strip()
-                                    )
-                                    logger.info(
-                                        f"[OAUTH CALLBACK] Puissance souscrite recuperee: {new_pdl.subscribed_power} kVA"
-                                    )
-
-                                if "offpeak_hours" in contract:
-                                    offpeak = contract["offpeak_hours"]
-                                    if isinstance(offpeak, str):
-                                        new_pdl.offpeak_hours = {"default": offpeak}
-                                    elif isinstance(offpeak, dict):
-                                        new_pdl.offpeak_hours = offpeak
-                                    logger.info(f"[OAUTH CALLBACK] Heures creuses recuperees: {new_pdl.offpeak_hours}")
+                    apply_contract_to_pdl(new_pdl, contract_data, log_prefix="[OAUTH CALLBACK]")
             except Exception as e:
                 logger.warning(f"[OAUTH CALLBACK] Impossible de recuperer les infos du contrat: {e}")
 

@@ -7,7 +7,7 @@ l'objet agrégé rendu par EnedisAdapter.get_contract, soit
 
 from datetime import date
 
-from src.services.enedis_contract import parse_contract, parse_offpeak_hours
+from src.services.enedis_contract import apply_contract_to_pdl, parse_contract, parse_offpeak_hours
 
 
 def _contrat(enedis_fixture, profil: str, comptage=None) -> dict:
@@ -63,3 +63,26 @@ def test_heures_creuses_format_inconnu_conserve():
     comptage = {"relais": {"plageHeuresCreuses": "format inattendu"}}
 
     assert parse_offpeak_hours(comptage) == {"default": "format inattendu"}
+
+
+def test_heures_creuses_format_dict_herite():
+    comptage = {"relais": {"plageHeuresCreuses": {"hiver": "HC (22H00-6H00)", "ete": "23h00-07h00"}}}
+
+    assert parse_offpeak_hours(comptage) == {"ranges": ["22:00-06:00", "23:00-07:00"]}
+
+
+class FakePDL:
+    subscribed_power = 9
+    offpeak_hours = {"ranges": ["01:00-07:00"]}
+    activation_date = None
+
+
+def test_apply_contract_ne_perd_pas_les_heures_creuses_en_base(enedis_fixture):
+    """comptage indisponible : la puissance est mise à jour, les plages HC en base sont gardées."""
+    pdl = FakePDL()
+
+    apply_contract_to_pdl(pdl, _contrat(enedis_fixture, "consommateur", comptage=None))
+
+    assert pdl.subscribed_power == 12
+    assert pdl.offpeak_hours == {"ranges": ["01:00-07:00"]}
+    assert pdl.activation_date == date(2018, 8, 31)
