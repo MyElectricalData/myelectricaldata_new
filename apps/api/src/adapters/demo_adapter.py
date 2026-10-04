@@ -8,6 +8,7 @@ import logging
 from typing import Any
 from datetime import datetime
 from ..services.cache import cache_service
+from .enedis_format import v5_to_2026
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class DemoAdapter:
         """Check if user is a demo account"""
         return user_email == self.DEMO_EMAIL
 
-    async def get_consumption_daily(
+    async def _v5_get_consumption_daily(
         self,
         usage_point_id: str,
         start: str,
@@ -121,7 +122,7 @@ class DemoAdapter:
             }
         }
 
-    async def get_consumption_detail(
+    async def _v5_get_consumption_detail(
         self,
         usage_point_id: str,
         start: str,
@@ -136,7 +137,7 @@ class DemoAdapter:
         logger.debug(f"[DEMO] Fetching mock detailed consumption data for {usage_point_id}")
 
         # Get daily data first
-        daily_data = await self.get_consumption_daily(usage_point_id, start, end, client_secret)
+        daily_data = await self._v5_get_consumption_daily(usage_point_id, start, end, client_secret)
 
         # Convert daily to 30-minute intervals (simplified version)
         interval_reading = []
@@ -197,7 +198,7 @@ class DemoAdapter:
             }
         }
 
-    async def get_production_daily(
+    async def _v5_get_production_daily(
         self,
         usage_point_id: str,
         start: str,
@@ -273,7 +274,7 @@ class DemoAdapter:
             }
         }
 
-    async def get_production_detail(
+    async def _v5_get_production_detail(
         self,
         usage_point_id: str,
         start: str,
@@ -284,7 +285,7 @@ class DemoAdapter:
         logger.debug(f"[DEMO] Fetching mock detailed production data for {usage_point_id}")
 
         # Get daily data first
-        daily_data = await self.get_production_daily(usage_point_id, start, end, client_secret)
+        daily_data = await self._v5_get_production_daily(usage_point_id, start, end, client_secret)
 
         # Convert daily to 30-minute intervals
         interval_reading = []
@@ -343,7 +344,7 @@ class DemoAdapter:
             }
         }
 
-    async def get_max_power(
+    async def _v5_get_max_power(
         self,
         usage_point_id: str,
         start: str,
@@ -414,112 +415,72 @@ class DemoAdapter:
             }
         }
 
-    async def get_contract(
-        self,
-        usage_point_id: str,
-        client_secret: str,
-    ) -> dict[str, Any]:
-        """Get mock contract information"""
+    # ------------------------------------------------------------------
+    # Format Data Connect 2026 : les générateurs ci-dessus produisent du v5,
+    # converti avec les mêmes fonctions que le mode legacy de EnedisAdapter
+    # ------------------------------------------------------------------
+
+    async def get_consumption_daily(self, usage_point_id: str, start: str, end: str, client_secret: str) -> dict[str, Any]:
+        data = await self._v5_get_consumption_daily(usage_point_id, start, end, client_secret)
+        return v5_to_2026(data, grandeur_metier="CONS", grandeur_physique="EA", pas="P1D")
+
+    async def get_consumption_detail(self, usage_point_id: str, start: str, end: str, client_secret: str) -> dict[str, Any]:
+        data = await self._v5_get_consumption_detail(usage_point_id, start, end, client_secret)
+        return v5_to_2026(data, grandeur_metier="CONS", grandeur_physique="PA")
+
+    async def get_production_daily(self, usage_point_id: str, start: str, end: str, client_secret: str) -> dict[str, Any]:
+        data = await self._v5_get_production_daily(usage_point_id, start, end, client_secret)
+        return v5_to_2026(data, grandeur_metier="PROD", grandeur_physique="EA", pas="P1D")
+
+    async def get_production_detail(self, usage_point_id: str, start: str, end: str, client_secret: str) -> dict[str, Any]:
+        data = await self._v5_get_production_detail(usage_point_id, start, end, client_secret)
+        return v5_to_2026(data, grandeur_metier="PROD", grandeur_physique="PA")
+
+    async def get_max_power(self, usage_point_id: str, start: str, end: str, client_secret: str) -> dict[str, Any]:
+        data = await self._v5_get_max_power(usage_point_id, start, end, client_secret)
+        return v5_to_2026(data, grandeur_metier="CONS", grandeur_physique="PMA", pas="P1D")
+
+    async def get_contract(self, usage_point_id: str, client_secret: str) -> dict[str, Any]:
+        """Contrat agrégé 2026 (même forme que EnedisAdapter.get_contract)"""
         logger.debug(f"[DEMO] Fetching mock contract for {usage_point_id}")
-
-        cache_key = f"demo:contract:{usage_point_id}"
-        cached_data = await self.cache_service.get(cache_key, client_secret)
-
-        if not cached_data:
-            # Return default contract if not cached
-            return {
-                "customer": {
-                    "usage_point_id": usage_point_id,
-                    "usage_point_status": "com",
-                    "meter_type": "AMM"
-                }
-            }
-
+        cached_data = await self.cache_service.get(f"demo:contract:{usage_point_id}", client_secret) or {}
+        offpeak = cached_data.get("offpeak_hours")
         return {
-            "customer": {
-                "usage_point_id": usage_point_id,
-                "usage_point_status": "com",
-                "meter_type": "AMM",
-                "subscribed_power": str(cached_data.get("subscribed_power", "6")),
-                "offpeak_hours": cached_data.get("offpeak_hours"),
-                "last_activation_date": cached_data.get("activation_date"),
-            }
+            "situation_contrat": [
+                {
+                    "contract_type": "Contrat GRD-F",
+                    "segment": "C5",
+                    "distribution_tariff": "Tarif BT<=36kVA Utilisation demo",
+                    "subscribed_power": {"value": str(cached_data.get("subscribed_power", "6")), "unit": "kVA"},
+                }
+            ],
+            "synthese_contrat": {"consumption_last_activation_date": cached_data.get("activation_date")},
+            "comptage": {"relais": {"plageHeuresCreuses": offpeak}} if offpeak else None,
         }
 
-    async def get_address(
-        self,
-        usage_point_id: str,
-        client_secret: str,
-    ) -> dict[str, Any]:
-        """Get mock address information"""
+    async def get_address(self, usage_point_id: str, client_secret: str) -> dict[str, Any]:
+        """Adresse au format donnees_generales_auto"""
         logger.debug(f"[DEMO] Fetching mock address for {usage_point_id}")
-
-        cache_key = f"demo:address:{usage_point_id}"
-        cached_data = await self.cache_service.get(cache_key, client_secret)
-
-        if not cached_data:
-            # Return default address
-            return {
-                "customer": {
-                    "usage_point_id": usage_point_id,
-                    "usage_point_addresses": {
-                        "street": "123 Rue de la Démo",
-                        "locality": "Paris",
-                        "postal_code": "75001",
-                        "insee_code": "75101",
-                        "city": "Paris",
-                        "country": "France"
-                    }
-                }
-            }
-
+        cached_data = await self.cache_service.get(f"demo:address:{usage_point_id}", client_secret) or {}
+        postal_code = cached_data.get("postal_code", "75001")
+        city = cached_data.get("city", "Paris")
         return {
-            "customer": {
-                "usage_point_id": usage_point_id,
-                "usage_point_addresses": {
-                    "street": cached_data.get("street", "123 Rue de la Démo"),
-                    "locality": cached_data.get("city", "Paris"),
-                    "postal_code": cached_data.get("postal_code", "75001"),
-                    "insee_code": "75101",
-                    "city": cached_data.get("city", "Paris"),
-                    "country": "France"
-                }
+            "address": {
+                "number_street_name": cached_data.get("street", "123 Rue de la Démo"),
+                "postal_code_city": f"{postal_code} {city}",
+                "insee_code": "75101",
             }
         }
 
-    async def get_customer(
-        self,
-        usage_point_id: str,
-        client_secret: str,
-    ) -> dict[str, Any]:
-        """Get mock customer information"""
+    async def get_customer(self, usage_point_id: str, client_secret: str) -> list[dict[str, Any]]:
+        """Identité au format situation_contrat_auto"""
         logger.debug(f"[DEMO] Fetching mock customer for {usage_point_id}")
+        return [{"person": {"title": "M", "firstname": "Demo", "lastname": "User"}}]
 
-        return {
-            "customer": {
-                "customer_id": "demo_customer_123",
-                "usage_point_id": usage_point_id,
-                "civil_title": "MR",
-                "first_name": "Demo",
-                "last_name": "User"
-            }
-        }
-
-    async def get_contact(
-        self,
-        usage_point_id: str,
-        client_secret: str,
-    ) -> dict[str, Any]:
-        """Get mock contact information"""
+    async def get_contact(self, usage_point_id: str, client_secret: str) -> list[dict[str, Any]]:
+        """Coordonnées au format situation_contrat_auto"""
         logger.debug(f"[DEMO] Fetching mock contact for {usage_point_id}")
-
-        return {
-            "customer": {
-                "usage_point_id": usage_point_id,
-                "email": "demo@myelectricaldata.fr",
-                "phone_number": "+33123456789"
-            }
-        }
+        return [{"contact_data": {"email": "demo@myelectricaldata.fr", "phone": "+33123456789"}}]
 
 
 # Global instance

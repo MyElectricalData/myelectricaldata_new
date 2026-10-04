@@ -83,7 +83,9 @@ def parse_offpeak_hours(comptage: Optional[dict[str, Any]]) -> Optional[dict[str
             match = HC_RANGE.search(part)
             if match:
                 start_h, start_m, end_h, end_m = match.groups()
-                ranges.append(f"{start_h.zfill(2)}:{start_m}-{end_h.zfill(2)}:{end_m}")
+                parsed = f"{start_h.zfill(2)}:{start_m}-{end_h.zfill(2)}:{end_m}"
+                if parsed not in ranges:  # format hérité : la même plage répétée par jour
+                    ranges.append(parsed)
 
     if ranges:
         return {"ranges": ranges}
