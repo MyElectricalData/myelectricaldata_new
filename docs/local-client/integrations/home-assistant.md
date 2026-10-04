@@ -76,6 +76,30 @@ HOMEASSISTANT_INTERVAL=60
 | `sensor.med_{pdl}_consumption_monthly` | Conso mensuelle | kWh | Consommation du mois en cours |
 | `sensor.med_{pdl}_consumption_yearly` | Conso annuelle | kWh | Consommation de l'année |
 
+### Heures pleines / heures creuses
+
+Pour un contrat à heures creuses, l'export publie en plus 8 capteurs (`kWh`, classe `energy`, `total`),
+calculés à partir des données détaillées (30 min) :
+
+| Entity ID (nom HA) | Description |
+|--------------------|-------------|
+| `sensor.linky_{pdl}_consumption_{periode}_hp` | Consommation en heures pleines |
+| `sensor.linky_{pdl}_consumption_{periode}_hc` | Consommation en heures creuses |
+
+`{periode}` vaut `yesterday`, `this_week`, `this_month` ou `this_year`. Le nom exact de l'entité est
+construit par Home Assistant à partir de l'appareil (`Linky {pdl}`) et du nom du capteur.
+
+Les offres suivantes sont ventilées en heures pleines / heures creuses : `HC_HP`, `HC_WEEKEND`,
+`HC_NUIT_WEEKEND`, `WEEKEND`, `EJP`, `SEASONAL`, `ZEN_FLEX`. `HC_NUIT_WEEKEND` compte le samedi et le
+dimanche entièrement en heures creuses. `TEMPO` garde ses 6 séries (couleur x période) et `BASE` une
+seule série. Les plages d'heures creuses sont celles du contrat Enedis. À défaut, le panneau Énergie
+utilise 22h-6h. Aucun capteur HP/HC n'est publié pour une offre BASE.
+
+> **Mise à jour depuis une version antérieure.** Un contrat à heures creuses était auparavant exporté
+> en une seule série (`<prefix>:consumption_<pdl>_base`). Il l'est désormais en deux séries
+> (`<prefix>:consumption_<pdl>_hc` et `_hp`). Lancez un import complet des statistiques, puis
+> reconfigurez le panneau Énergie avec ces deux séries : l'ancienne série `_base` n'est plus alimentée.
+
 ### Production
 
 | Entity ID | Nom | Unité | Description |
