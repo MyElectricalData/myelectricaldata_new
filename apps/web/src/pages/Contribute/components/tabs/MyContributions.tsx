@@ -7,11 +7,7 @@ import ChatWhatsApp, { type ChatMessage } from '@/components/ChatWhatsApp'
 import { toast } from '@/stores/notificationStore'
 import { formatPrice, getOfferTypeLabel } from '../../utils'
 
-interface MyContributionsProps {
-  onEditContribution: (contribution: Contribution) => void
-}
-
-export default function MyContributions({ onEditContribution }: MyContributionsProps) {
+export default function MyContributions() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
@@ -260,9 +256,8 @@ export default function MyContributions({ onEditContribution }: MyContributionsP
               <button
                 type="button"
                 onClick={() => {
-                  onEditContribution(contribution)
                   navigate('/contribute/offers')
-                  toast.success('Mode édition activé - allez sur l\'onglet "Toutes les offres" pour modifier.')
+                  toast.info('Utilisez l\'onglet "Toutes les offres" pour modifier les tarifs.')
                 }}
                 className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors focus:outline-none focus:ring-2 ${
                   contribution.status === 'rejected'

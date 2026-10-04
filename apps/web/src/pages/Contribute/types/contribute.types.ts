@@ -1,6 +1,6 @@
 // Types partagés pour la page Contribuer
 
-export type TabType = 'new' | 'mine' | 'offers'
+export type TabType = 'mine' | 'offers'
 
 export interface ContributeProps {
   initialTab?: TabType

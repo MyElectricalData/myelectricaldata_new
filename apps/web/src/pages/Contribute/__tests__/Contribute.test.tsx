@@ -65,23 +65,6 @@ vi.mock('@/components/SingleDatePicker', () => ({
 }))
 
 describe('Contribute', () => {
-  describe('onglet "Nouvelle contribution" (new)', () => {
-    it('affiche le formulaire NewContribution par défaut', () => {
-      renderWithProviders(<Contribute initialTab="new" />)
-
-      expect(screen.getByText('Type de contribution')).toBeInTheDocument()
-      expect(screen.getByText('Variantes de puissance')).toBeInTheDocument()
-      expect(screen.getByText('Documentation')).toBeInTheDocument()
-    })
-
-    it('ne montre pas les autres onglets', () => {
-      renderWithProviders(<Contribute initialTab="new" />)
-
-      // Les composants des autres onglets ne sont pas rendus
-      expect(screen.queryByText(/Toutes les offres/i)).not.toBeInTheDocument()
-    })
-  })
-
   describe('onglet "Mes contributions" (mine)', () => {
     it('affiche le composant MyContributions', async () => {
       const { energyApi } = await import('@/api/energy')
@@ -94,7 +77,6 @@ describe('Contribute', () => {
       renderWithProviders(<Contribute initialTab="mine" />)
 
       // MyContributions affiche une vue groupée par statut
-      // Attend que les données soient chargées
       expect(screen.queryByText('Type de contribution')).not.toBeInTheDocument()
     })
   })
@@ -120,16 +102,17 @@ describe('Contribute', () => {
 
       renderWithProviders(<Contribute initialTab="offers" />)
 
-      // AllOffers ne montre pas le formulaire NewContribution
+      // AllOffers est rendu
       expect(screen.queryByText('Type de contribution')).not.toBeInTheDocument()
     })
   })
 
   describe('initialTab par défaut', () => {
-    it('affiche l\'onglet "new" si pas de prop initialTab', () => {
+    it('affiche l\'onglet "offers" par défaut', () => {
       renderWithProviders(<Contribute />)
 
-      expect(screen.getByText('Type de contribution')).toBeInTheDocument()
+      // Le défaut est maintenant "offers" (AllOffers)
+      expect(screen.queryByText('Type de contribution')).not.toBeInTheDocument()
     })
   })
 })
