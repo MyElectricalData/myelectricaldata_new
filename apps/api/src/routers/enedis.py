@@ -1,5 +1,5 @@
 from datetime import datetime, UTC, timedelta
-from typing import cast, Optional
+from typing import Any, cast, Optional
 from fastapi import APIRouter, Depends, Query, Request, Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +9,16 @@ from ..schemas import APIResponse, ErrorDetail, CacheDeleteResponse
 from ..middleware import get_current_user, get_impersonation_context, get_encryption_key
 from ..adapters import enedis_adapter
 from ..adapters.demo_adapter import demo_adapter
+from ..adapters.enedis_format import (
+    address_v5_to_2026,
+    as_point,
+    build_measure,
+    contract_v5_to_2026,
+    customer_v5_to_2026,
+    extract_points,
+    measure_unit,
+    v5_to_2026,
+)
 from ..services import cache_service, rate_limiter
 import logging
 
@@ -389,6 +399,36 @@ async def get_valid_token(usage_point_id: str, user: User, db: AsyncSession) -> 
 
 
 # Metering endpoints
+
+def _load_curve(usage_point_id: str, start: str, end: str, points: list[dict], grandeur_metier: str) -> dict:
+    """Courbe de charge 2026 (W) reconstruite depuis le cache et les appels Enedis, triée par horodatage"""
+    points = sorted((as_point(p) for p in points), key=lambda p: p.get("d", ""))
+    return build_measure(
+        usage_point_id, start, end, points, grandeur_metier=grandeur_metier, grandeur_physique="PA", unite="W"
+    )
+
+
+def _normalize_cached(endpoint: str, data: Any) -> Any:
+    """Réponse mise en cache par l'ancien code (JSON v5, TTL 24 h) convertie au format 2026.
+
+    Convertir à la lecture évite d'invalider tout le cache au déploiement (rafale d'appels
+    Enedis, quota de 1000/h). Une réponse déjà au format 2026 est rendue telle quelle.
+    """
+    if endpoint == "power":
+        return v5_to_2026(data, grandeur_metier="CONS", grandeur_physique="PMA", pas="P1D")
+    if endpoint == "production_daily":
+        return v5_to_2026(data, grandeur_metier="PROD", grandeur_physique="EA", pas="P1D")
+    if endpoint == "production_detail":
+        return v5_to_2026(data, grandeur_metier="PROD", grandeur_physique="PA")
+    if endpoint == "contract":
+        return contract_v5_to_2026(data)
+    if endpoint == "address":
+        return address_v5_to_2026(data)
+    if endpoint in ("customer", "contact"):
+        return customer_v5_to_2026(data)
+    return data
+
+
 @router.get("/consumption/daily/{usage_point_id}", response_model=APIResponse)
 async def get_consumption_daily(
     request: Request,
@@ -478,7 +518,10 @@ async def get_consumption_daily(
 
         if cached_data:
             log_with_pdl("info", usage_point_id, f"[CACHE] Serving old data from cache for ({start} to {end})")
-            return APIResponse(success=True, data=cached_data)
+            return APIResponse(
+                success=True,
+                data=v5_to_2026(cached_data, grandeur_metier="CONS", grandeur_physique="EA", pas="P1D"),
+            )
         else:
             # No cache available for old data
             return error_response
@@ -520,7 +563,8 @@ async def get_consumption_daily(
             cached_reading = await cache_service.get(cache_key, encryption_key)
 
             if cached_reading:
-                all_readings.append(cached_reading)
+                # Le cache peut encore contenir des lectures v5 (TTL 24 h) : converties à la lecture
+                all_readings.append(as_point(cached_reading))
                 log_if_debug(effective_user, "debug", f"[CACHE HIT] Daily data for on {date_str}", pdl=usage_point_id)
             else:
                 missing_dates.append(date_str)
@@ -531,12 +575,22 @@ async def get_consumption_daily(
         # If we have all data from cache, return it
         if not missing_dates:
             log_if_debug(effective_user, "info", f"[CACHE] All daily data served from cache for ({start} to {end})", pdl=usage_point_id)
-            # Get reading_type from cache or default
+            # Unité depuis le cache (clé historique reading_type : {"unit": ...}), Wh par défaut
             reading_type_cache_key = f"consumption:reading_type:{usage_point_id}"
             reading_type = await cache_service.get(reading_type_cache_key, encryption_key)
-            if not reading_type:
-                reading_type = {"unit": "W", "measurement_kind": "power"}
-            return APIResponse(success=True, data={"meter_reading": {"interval_reading": all_readings, "reading_type": reading_type}})
+            return APIResponse(
+                success=True,
+                data=build_measure(
+                    usage_point_id,
+                    start,
+                    end,
+                    all_readings,
+                    grandeur_metier="CONS",
+                    grandeur_physique="EA",
+                    unite=(reading_type or {}).get("unit") or "Wh",
+                    pas="P1D",
+                ),
+            )
     else:
         # Not using cache, need to fetch all dates
         start_date = datetime.strptime(start, "%Y-%m-%d")
@@ -603,22 +657,16 @@ async def get_consumption_daily(
                 else:
                     data = await adapter.get_consumption_daily(usage_point_id, api_start, api_end, access_token)
 
-                # Extract readings and reading_type from response
-                fetched_readings = []
-                if isinstance(data, dict):
-                    if "meter_reading" in data:
-                        if "interval_reading" in data["meter_reading"]:
-                            fetched_readings = data["meter_reading"]["interval_reading"]
-                        if "reading_type" in data["meter_reading"]:
-                            reading_type = data["meter_reading"]["reading_type"]
-                    elif "interval_reading" in data:
-                        fetched_readings = data["interval_reading"]
+                # Points (format 2026) et unité de la réponse
+                fetched_readings = extract_points(data)
+                if measure_unit(data):
+                    reading_type = {"unit": measure_unit(data)}
 
                 # Cache each reading individually by date and add to all_readings
                 # Only include readings that were originally requested (in missing_dates)
                 if use_cache and fetched_readings:
                     for reading in fetched_readings:
-                        date_str = reading.get("date", "")[:10]  # Extract YYYY-MM-DD
+                        date_str = reading.get("d", "")[:10]  # Extract YYYY-MM-DD
                         if date_str:
                             cache_key = f"consumption:daily:{usage_point_id}:{date_str}"
                             await cache_service.set(cache_key, reading, encryption_key)
@@ -632,7 +680,7 @@ async def get_consumption_daily(
                 else:
                     # Not using cache, just add to all_readings (filter by missing_dates)
                     for reading in fetched_readings:
-                        date_str = reading.get("date", "")[:10]
+                        date_str = reading.get("d", "")[:10]
                         if date_str in missing_dates:
                             all_readings.append(reading)
 
@@ -646,7 +694,7 @@ async def get_consumption_daily(
         if reading_type and use_cache:
             reading_type_cache_key = f"consumption:reading_type:{usage_point_id}"
             await cache_service.set(reading_type_cache_key, reading_type, encryption_key)
-            log_if_debug(effective_user, "debug", f"[CACHE SET] Reading type for: unit={reading_type.get('unit')}, interval={reading_type.get('interval_length')}", pdl=usage_point_id)
+            log_if_debug(effective_user, "debug", f"[CACHE SET] Unit: {reading_type.get('unit')}", pdl=usage_point_id)
 
         # If all API calls failed and we have no cached data, return error
         if api_errors and not all_readings:
@@ -657,14 +705,22 @@ async def get_consumption_daily(
         reading_type_cache_key = f"consumption:reading_type:{usage_point_id}"
         reading_type = await cache_service.get(reading_type_cache_key, encryption_key)
 
-    # Use default reading_type if not found
-    if not reading_type:
-        reading_type = {"unit": "W", "measurement_kind": "power"}
-
     # Sort readings by date to ensure chronological order
-    all_readings.sort(key=lambda x: x.get("date", ""))
+    all_readings.sort(key=lambda x: x.get("d", ""))
 
-    return APIResponse(success=True, data={"meter_reading": {"interval_reading": all_readings, "reading_type": reading_type}})
+    return APIResponse(
+        success=True,
+        data=build_measure(
+            usage_point_id,
+            start,
+            end,
+            all_readings,
+            grandeur_metier="CONS",
+            grandeur_physique="EA",
+            unite=(reading_type or {}).get("unit") or "Wh",
+            pas="P1D",
+        ),
+    )
 
 
 @router.get("/consumption/detail/{usage_point_id}", response_model=APIResponse)
@@ -759,7 +815,7 @@ async def get_consumption_detail(
                     cached_reading = await cache_service.get(cache_key, encryption_key)
 
                     if cached_reading:
-                        day_readings.append(cached_reading)
+                        day_readings.append(as_point(cached_reading))
                     else:
                         day_complete = False
 
@@ -786,7 +842,7 @@ async def get_consumption_detail(
             # If rate limited and we have some cached data, return what we have
             if cached_readings and dates_too_old:
                 log_with_pdl("warning", usage_point_id, "[RATE LIMITED] Returning partial cached data")
-                return APIResponse(success=True, data={"meter_reading": {"interval_reading": cached_readings}})
+                return APIResponse(success=True, data=_load_curve(usage_point_id, start, end, cached_readings, "CONS"))
             assert error_response is not None
             return error_response
 
@@ -859,19 +915,14 @@ async def get_consumption_detail(
                         )
                     )
 
-                # Extract readings
-                readings = []
-                if isinstance(data, dict):
-                    if "meter_reading" in data and "interval_reading" in data["meter_reading"]:
-                        readings = data["meter_reading"]["interval_reading"]
-                    elif "interval_reading" in data:
-                        readings = data["interval_reading"]
+                # Extract readings (points 2026)
+                readings = extract_points(data)
 
                 # NEW: Cache each reading individually by timestamp (ultra-granular cache)
                 if use_cache and readings:
                     for reading in readings:
                         # Get full timestamp: "2025-10-08T20:00:00" or "2025-10-08 20:00:00"
-                        timestamp = reading.get("date", "")
+                        timestamp = reading.get("d", "")
                         if timestamp:
                             # Normalize timestamp format (replace space with T)
                             timestamp = timestamp.replace(" ", "T")
@@ -897,7 +948,7 @@ async def get_consumption_detail(
         return APIResponse(success=False, error=ErrorDetail(code="NO_DATA", message="No consumption data available for this period"))
 
     # Return aggregated result
-    return APIResponse(success=True, data={"meter_reading": {"interval_reading": all_readings}})
+    return APIResponse(success=True, data=_load_curve(usage_point_id, start, end, all_readings, "CONS"))
 
 
 @router.get("/consumption/detail/batch/{usage_point_id}", response_model=APIResponse)
@@ -1040,7 +1091,7 @@ async def get_consumption_detail_batch(
             daily_cached = await cache_service.get(daily_cache_key, encryption_key)
 
             if daily_cached and isinstance(daily_cached, dict) and "readings" in daily_cached:
-                day_readings = daily_cached["readings"]
+                day_readings = [as_point(r) for r in daily_cached["readings"]]
                 expected_count = daily_cached.get("expected_count", 48)
                 min_required = int(expected_count * 0.9)
 
@@ -1110,7 +1161,7 @@ async def get_consumption_detail_batch(
     # If we have all data from cache, return it immediately
     if not missing_dates:
         log_if_debug(effective_user, "info", "[BATCH] All data served from cache", pdl=usage_point_id)
-        return APIResponse(success=True, data={"meter_reading": {"interval_reading": cached_readings}})
+        return APIResponse(success=True, data=_load_curve(usage_point_id, start, end, cached_readings, "CONS"))
 
     # Check rate limit only if we need to fetch from Enedis
     route = request.scope.get("route")
@@ -1122,7 +1173,7 @@ async def get_consumption_detail_batch(
             log_with_pdl("warning", usage_point_id, "[BATCH RATE LIMITED] Returning partial cached data")
             return APIResponse(
                 success=True,
-                data={"meter_reading": {"interval_reading": cached_readings}},
+                data=_load_curve(usage_point_id, start, end, cached_readings, "CONS"),
                 error=ErrorDetail(code="PARTIAL_DATA", message="Rate limit exceeded. Returning cached data only.")
             )
         assert error_response is not None
@@ -1289,12 +1340,7 @@ async def get_consumption_detail_batch(
                 continue
 
             # Extract readings from chunk_data
-            readings = []
-            if isinstance(chunk_data, dict):
-                if "meter_reading" in chunk_data and "interval_reading" in chunk_data["meter_reading"]:
-                    readings = chunk_data["meter_reading"]["interval_reading"]
-                elif "interval_reading" in chunk_data:
-                    readings = chunk_data["interval_reading"]
+            readings = extract_points(chunk_data)
 
             # Cache readings grouped by day (OPTIMIZED: 1 cache entry per day instead of per timestamp)
             if use_cache and readings:
@@ -1303,7 +1349,7 @@ async def get_consumption_detail_batch(
                 interval_length = "PT30M"  # Default
 
                 for reading in readings:
-                    timestamp = reading.get("date", "")
+                    timestamp = reading.get("d", "")
                     if timestamp:
                         # Extract date part (YYYY-MM-DD)
                         date_part = timestamp.replace("T", " ").split(" ")[0]
@@ -1312,8 +1358,8 @@ async def get_consumption_detail_batch(
                         readings_by_date[date_part].append(reading)
 
                         # Detect interval length from first reading
-                        if "interval_length" in reading:
-                            interval_length = reading["interval_length"]
+                        if reading.get("p"):
+                            interval_length = reading["p"]
 
                 # Determine expected count based on interval
                 expected_count = 48  # Default PT30M
@@ -1351,7 +1397,7 @@ async def get_consumption_detail_batch(
     all_readings.extend(cached_readings)
 
     # Sort by timestamp
-    all_readings.sort(key=lambda x: x.get("date", ""))
+    all_readings.sort(key=lambda x: x.get("d", ""))
 
     log_if_debug(effective_user, "info", f"[BATCH COMPLETE] Total readings: {len(all_readings)}, Fetched chunks: {fetched_count}/{len(week_chunks)}", pdl=usage_point_id)
 
@@ -1365,7 +1411,7 @@ async def get_consumption_detail_batch(
         )
 
     # Return success with optional warning if some chunks failed
-    response_data = {"meter_reading": {"interval_reading": all_readings}}
+    response_data = _load_curve(usage_point_id, start, end, all_readings, "CONS")
 
     if error_encountered:
         return APIResponse(
@@ -1415,7 +1461,7 @@ async def get_max_power(
         cache_key = cache_service.make_cache_key(usage_point_id, "power", start=start, end=end)
         cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
-            return APIResponse(success=True, data=cached_data)
+            return APIResponse(success=True, data=_normalize_cached("power", cached_data))
 
     try:
         # Use appropriate adapter based on user type
@@ -1469,7 +1515,7 @@ async def get_production_daily(
         cache_key = cache_service.make_cache_key(usage_point_id, "production_daily", start=start, end=end)
         cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
-            return APIResponse(success=True, data=cached_data)
+            return APIResponse(success=True, data=_normalize_cached("production_daily", cached_data))
 
     try:
         # Use appropriate adapter based on user type
@@ -1523,7 +1569,7 @@ async def get_production_detail(
         cache_key = cache_service.make_cache_key(usage_point_id, "production_detail", start=start, end=end)
         cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
-            return APIResponse(success=True, data=cached_data)
+            return APIResponse(success=True, data=_normalize_cached("production_detail", cached_data))
 
     try:
         # Use appropriate adapter based on user type
@@ -1682,7 +1728,7 @@ async def get_production_detail_batch(
             daily_cached = await cache_service.get(daily_cache_key, encryption_key)
 
             if daily_cached and isinstance(daily_cached, dict) and "readings" in daily_cached:
-                day_readings = daily_cached["readings"]
+                day_readings = [as_point(r) for r in daily_cached["readings"]]
                 expected_count = daily_cached.get("expected_count", 48)
                 min_required = int(expected_count * 0.9)
 
@@ -1748,7 +1794,7 @@ async def get_production_detail_batch(
     # If we have all data from cache, return it immediately
     if not missing_dates:
         log_if_debug(effective_user, "info", "[BATCH PRODUCTION] All data served from cache", pdl=usage_point_id)
-        return APIResponse(success=True, data={"meter_reading": {"interval_reading": cached_readings}})
+        return APIResponse(success=True, data=_load_curve(usage_point_id, start, end, cached_readings, "PROD"))
 
     # Check rate limit only if we need to fetch from Enedis
     route = request.scope.get("route")
@@ -1760,7 +1806,7 @@ async def get_production_detail_batch(
             log_with_pdl("warning", usage_point_id, "[BATCH PRODUCTION RATE LIMITED] Returning partial cached data")
             return APIResponse(
                 success=True,
-                data={"meter_reading": {"interval_reading": cached_readings}},
+                data=_load_curve(usage_point_id, start, end, cached_readings, "PROD"),
                 error=ErrorDetail(code="PARTIAL_DATA", message="Rate limit exceeded. Returning cached data only.")
             )
         assert error_response is not None
@@ -1927,12 +1973,7 @@ async def get_production_detail_batch(
                 continue
 
             # Extract readings from chunk_data
-            readings = []
-            if isinstance(chunk_data, dict):
-                if "meter_reading" in chunk_data and "interval_reading" in chunk_data["meter_reading"]:
-                    readings = chunk_data["meter_reading"]["interval_reading"]
-                elif "interval_reading" in chunk_data:
-                    readings = chunk_data["interval_reading"]
+            readings = extract_points(chunk_data)
 
             # Cache readings grouped by day (OPTIMIZED: 1 cache entry per day instead of per timestamp)
             if use_cache and readings:
@@ -1941,7 +1982,7 @@ async def get_production_detail_batch(
                 interval_length = "PT30M"  # Default
 
                 for reading in readings:
-                    timestamp = reading.get("date", "")
+                    timestamp = reading.get("d", "")
                     if timestamp:
                         # Extract date part (YYYY-MM-DD)
                         date_part = timestamp.replace("T", " ").split(" ")[0]
@@ -1950,8 +1991,8 @@ async def get_production_detail_batch(
                         readings_by_date[date_part].append(reading)
 
                         # Detect interval length from first reading
-                        if "interval_length" in reading:
-                            interval_length = reading["interval_length"]
+                        if reading.get("p"):
+                            interval_length = reading["p"]
 
                 # Determine expected count based on interval
                 expected_count = 48  # Default PT30M
@@ -1989,7 +2030,7 @@ async def get_production_detail_batch(
     all_readings.extend(cached_readings)
 
     # Sort by timestamp
-    all_readings.sort(key=lambda x: x.get("date", ""))
+    all_readings.sort(key=lambda x: x.get("d", ""))
 
     log_if_debug(effective_user, "info", f"[BATCH PRODUCTION COMPLETE] Total readings: {len(all_readings)}, Fetched chunks: {fetched_count}/{len(week_chunks)}", pdl=usage_point_id)
 
@@ -2003,7 +2044,7 @@ async def get_production_detail_batch(
         )
 
     # Return success with optional warning if some chunks failed
-    response_data = {"meter_reading": {"interval_reading": all_readings}}
+    response_data = _load_curve(usage_point_id, start, end, all_readings, "PROD")
 
     if error_encountered:
         return APIResponse(
@@ -2052,7 +2093,7 @@ async def get_contract(
         cache_key = cache_service.make_cache_key(usage_point_id, "contract")
         cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
-            return APIResponse(success=True, data=cached_data)
+            return APIResponse(success=True, data=_normalize_cached("contract", cached_data))
 
     try:
         log_with_pdl("info", usage_point_id, f"[ENEDIS CONTRACT] Fetching contract (use_cache={use_cache})")
@@ -2111,7 +2152,7 @@ async def get_address(
         cache_key = cache_service.make_cache_key(usage_point_id, "address")
         cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
-            return APIResponse(success=True, data=cached_data)
+            return APIResponse(success=True, data=_normalize_cached("address", cached_data))
 
     try:
         # Use appropriate adapter based on user type
@@ -2163,7 +2204,7 @@ async def get_customer(
         cache_key = cache_service.make_cache_key(usage_point_id, "customer")
         cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
-            return APIResponse(success=True, data=cached_data)
+            return APIResponse(success=True, data=_normalize_cached("customer", cached_data))
 
     try:
         # Use appropriate adapter based on user type
@@ -2215,7 +2256,7 @@ async def get_contact(
         cache_key = cache_service.make_cache_key(usage_point_id, "contact")
         cached_data = await cache_service.get(cache_key, encryption_key)
         if cached_data:
-            return APIResponse(success=True, data=cached_data)
+            return APIResponse(success=True, data=_normalize_cached("contact", cached_data))
 
     try:
         # Use appropriate adapter based on user type
@@ -2254,8 +2295,11 @@ async def delete_cache(
 
     # Delete all consumption cache keys for this PDL
     # Cache keys format: consumption:detail:{usage_point_id}:{date}
-    pattern = f"consumption:*:{usage_point_id}:*"
-    deleted_keys = await cache_service.delete_pattern(pattern)
+    # Mesures (par jour, par point, unité) et réponses entières (make_cache_key : "{pdl}:<endpoint>...")
+    patterns = [f"consumption:*:{usage_point_id}*", f"production:*:{usage_point_id}*", f"{usage_point_id}:*"]
+    deleted_keys = 0
+    for pattern in patterns:
+        deleted_keys += await cache_service.delete_pattern(pattern)
 
     response = CacheDeleteResponse(
         success=True, deleted_keys=deleted_keys, message=f"Deleted {deleted_keys} cached entries"

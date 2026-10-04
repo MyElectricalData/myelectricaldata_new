@@ -14,6 +14,7 @@ from ..schemas import APIResponse, ErrorDetail
 from ..services import rate_limiter, cache_service
 from ..services.price_update_service import PriceUpdateService
 from ..config import settings
+from ..adapters.enedis_format import as_point, contract_v5_to_2026, extract_points
 import redis.asyncio as redis
 
 logger = logging.getLogger(__name__)
@@ -1671,7 +1672,7 @@ async def get_user_shared_cache_data(
                     cache_key = f"{data_type}:daily:{pdl.usage_point_id}:{date_str}"
                     data = await cache_service.get(cache_key, user.client_secret)
                     if data:
-                        cached_data.append({"date": date_str, "data": data})
+                        cached_data.append({"date": date_str, "data": as_point(data)})
                         cache_entries_count += 1
                     current += timedelta(days=1)
             except ValueError:
@@ -1691,12 +1692,15 @@ async def get_user_shared_cache_data(
                 cache_key = f"{data_type}:daily:{pdl.usage_point_id}:{date_str}"
                 data = await cache_service.get(cache_key, user.client_secret)
                 if data:
-                    cached_data.append({"date": date_str, "data": data})
+                    cached_data.append({"date": date_str, "data": as_point(data)})
                     cache_entries_count += 1
 
     elif data_type == "contract":
-        cache_key = f"contract:{pdl.usage_point_id}"
+        # Même clé que routers/enedis.py (make_cache_key), l'ancienne "contract:{pdl}" n'était jamais écrite
+        cache_key = cache_service.make_cache_key(pdl.usage_point_id, "contract")
         data = await cache_service.get(cache_key, user.client_secret)
+        if data:
+            data = contract_v5_to_2026(data)
         if data:
             cached_data.append({"type": "contract", "data": data})
             cache_entries_count = 1
@@ -1952,13 +1956,13 @@ async def admin_fetch_enedis_data(
             )
 
         # Cache the data with user's client_secret
-        if enedis_data and "meter_reading" in enedis_data:
-            readings = enedis_data["meter_reading"].get("interval_reading", [])
+        readings = extract_points(enedis_data)
+        if readings:
             cached_count = 0
 
             for reading in readings:
-                if "date" in reading:
-                    date_str = reading["date"]
+                if reading.get("d"):
+                    date_str = reading["d"][:10]
                     cache_key = f"{data_type}:daily:{pdl.usage_point_id}:{date_str}"
                     await cache_service.set(cache_key, reading, user.client_secret)
                     cached_count += 1

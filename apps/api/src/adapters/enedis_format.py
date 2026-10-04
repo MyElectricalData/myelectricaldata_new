@@ -172,3 +172,69 @@ def customer_v5_to_2026(response: dict[str, Any]) -> Any:
             "contact_data": {"phone": contact.get("phone"), "email": contact.get("email")} if contact else {},
         }
     ]
+
+
+# ----------------------------------------------------------------------
+# Helpers des routers et du cache : lisent indifféremment v5 et 2026
+# ----------------------------------------------------------------------
+
+
+def as_point(item: dict[str, Any]) -> dict[str, Any]:
+    """Point 2026 {v, d, p?, n?} à partir d'un point 2026 ou d'une lecture v5 (`interval_reading`)"""
+    if "v" in item:
+        return item
+    point = {"v": item.get("value"), "d": item.get("date")}
+    if item.get("interval_length"):
+        point["p"] = item["interval_length"]
+    if item.get("measure_type"):
+        point["n"] = item["measure_type"]
+    return point
+
+
+def extract_points(response: Any) -> list[dict[str, Any]]:
+    """Points de la première grandeur (2026), ou lectures v5 converties ; [] sans mesure"""
+    if not isinstance(response, dict):
+        return []
+    if response.get("grandeur"):
+        return list(response["grandeur"][0].get("points", []))
+    readings = response.get("meter_reading", {}).get("interval_reading") or response.get("interval_reading") or []
+    return [as_point(reading) for reading in readings]
+
+
+def measure_unit(response: Any) -> str | None:
+    """Unité de la mesure : `grandeur[0].unite` (2026) ou `reading_type.unit` (v5)"""
+    if not isinstance(response, dict):
+        return None
+    if response.get("grandeur"):
+        return cast(str | None, response["grandeur"][0].get("unite"))
+    return cast(str | None, response.get("meter_reading", {}).get("reading_type", {}).get("unit"))
+
+
+def build_measure(
+    usage_point_id: str,
+    start: str,
+    end: str,
+    points: list[dict[str, Any]],
+    *,
+    grandeur_metier: str,
+    grandeur_physique: str,
+    unite: str | None,
+    pas: str | None = None,
+) -> dict[str, Any]:
+    """Réponse de mesure 2026 reconstruite à partir de points (servis depuis le cache)"""
+    response: dict[str, Any] = {
+        "idPrm": usage_point_id,
+        "periode": {"dateDebut": start, "dateFin": end},
+        "grandeur": [
+            {
+                "grandeurMetier": grandeur_metier,
+                "grandeurPhysique": grandeur_physique,
+                "unite": unite,
+                "points": [as_point(point) for point in points],
+                "calendrier": [],
+            }
+        ],
+    }
+    if pas:
+        response["pas"] = pas
+    return response

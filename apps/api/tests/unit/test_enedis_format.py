@@ -6,7 +6,14 @@ interrogée en v5 et en 2026 sur le même PRM et la même période (96 points id
 
 import copy
 
-from src.adapters.enedis_format import shift_points_to_interval_start, v5_to_2026
+from src.adapters.enedis_format import (
+    as_point,
+    build_measure,
+    extract_points,
+    measure_unit,
+    shift_points_to_interval_start,
+    v5_to_2026,
+)
 
 
 class TestShiftPointsToIntervalStart:
@@ -76,3 +83,45 @@ class TestV5To2026:
         erreur = enedis_fixture("erreur_adam_err0123")
 
         assert v5_to_2026(erreur, grandeur_metier="PROD", grandeur_physique="EA") == erreur
+
+
+class TestHelpersDeCache:
+    """Le cache Redis (24 h) contient encore des lectures v5 au déploiement : elles sont
+    converties à la lecture plutôt qu'invalidées (pas de rafale d'appels Enedis)."""
+
+    def test_as_point_accepte_v5_et_2026(self):
+        v5 = {"value": "4078", "date": "2026-09-29 00:00:00", "interval_length": "PT30M", "measure_type": "B"}
+        point = {"v": "4078", "d": "2026-09-29 00:00:00", "p": "PT30M", "n": "B"}
+
+        assert as_point(v5) == point
+        assert as_point(point) == point
+
+    def test_extract_points_2026_v5_et_vide(self, enedis_fixture):
+        cdc = enedis_fixture("mesure_courbe_de_charge_consommation")
+        v5 = enedis_fixture("v5_consumption_load_curve")
+
+        assert extract_points(cdc) == cdc["grandeur"][0]["points"]
+        assert extract_points(v5)[0] == {"v": "4078", "d": "2026-09-29 00:30:00", "p": "PT30M", "n": "B"}
+        assert extract_points({"error": "ADAM-ERR0123"}) == []
+
+    def test_build_measure_reconstruit_une_reponse_2026(self):
+        points = [{"v": "33495", "d": "2026-09-29"}]
+
+        response = build_measure(
+            "99999999999991", "2026-09-29", "2026-09-30", points, grandeur_metier="CONS", grandeur_physique="EA", unite="Wh"
+        )
+
+        assert response["idPrm"] == "99999999999991"
+        assert response["periode"] == {"dateDebut": "2026-09-29", "dateFin": "2026-09-30"}
+        assert response["grandeur"][0] == {
+            "grandeurMetier": "CONS",
+            "grandeurPhysique": "EA",
+            "unite": "Wh",
+            "points": points,
+            "calendrier": [],
+        }
+
+    def test_unite_lue_dans_2026_ou_v5(self, enedis_fixture):
+        assert measure_unit(enedis_fixture("mesure_consommation_quotidienne")) == "Wh"
+        assert measure_unit(enedis_fixture("v5_consumption_load_curve")) == "W"
+        assert measure_unit({}) is None
