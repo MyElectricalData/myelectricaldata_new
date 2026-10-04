@@ -236,6 +236,24 @@ spec:
                   name: {{ include "myelectricaldata.fullname" . }}
                   key: ENEDIS_REDIRECT_URI
             {{- end }}
+            # Enedis Data Connect 2026 (from ConfigMap) : mode des API et version de la page de consentement
+            - name: ENEDIS_API_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}
+                  key: ENEDIS_API_MODE
+            - name: ENEDIS_AUTHORIZE_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}
+                  key: ENEDIS_AUTHORIZE_VERSION
+            {{- if .Values.config.enedisAuthorizeUrl }}
+            - name: ENEDIS_AUTHORIZE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myelectricaldata.fullname" . }}
+                  key: ENEDIS_AUTHORIZE_URL
+            {{- end }}
             # FRONTEND_URL (from ConfigMap)
             {{- if .Values.config.frontendUrl }}
             - name: FRONTEND_URL
