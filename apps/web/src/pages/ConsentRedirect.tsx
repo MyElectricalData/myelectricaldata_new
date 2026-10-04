@@ -20,6 +20,8 @@ export default function ConsentRedirect() {
     const code = searchParams.get('code')
     const state = searchParams.get('state')
     const usagePointId = searchParams.get('usage_point_id')
+    // Consentement Data Connect v2 : Enedis renvoie un autorisation_id au lieu du PDL
+    const autorisationId = searchParams.get('autorisation_id')
 
     // Build backend URL with all parameters
     // Use window.location.origin if API_BASE_URL is relative
@@ -30,6 +32,7 @@ export default function ConsentRedirect() {
     if (code) backendUrl.searchParams.set('code', code)
     if (state) backendUrl.searchParams.set('state', state)
     if (usagePointId) backendUrl.searchParams.set('usage_point_id', usagePointId)
+    if (autorisationId) backendUrl.searchParams.set('autorisation_id', autorisationId)
 
     // Note: The httpOnly cookie will be sent automatically with the redirect
     // No need to pass access_token in URL (more secure)

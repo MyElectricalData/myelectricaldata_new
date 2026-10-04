@@ -493,9 +493,8 @@ export function DetailedCurve({
 
         for (const query of allDetailQueries) {
           const responseData = query.state.data as any
-          if (!hasReadings(responseData?.data)) continue
-
-          const readings = getReadings(responseData.data)
+          const readings = getReadings(responseData?.data)
+          if (readings.length === 0) continue
           hasData = readings.some((reading: any) => {
             if (!reading.date) return false
             const readingDate = reading.date.split(' ')[0].split('T')[0]

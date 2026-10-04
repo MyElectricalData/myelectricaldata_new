@@ -27,11 +27,14 @@ const firstGrandeur = (data: unknown): EnedisGrandeur | undefined => {
 
 const v5MeterReading = (data: unknown): AnyRecord | undefined => asRecord(data)?.meter_reading
 
+// Point sans valeur : ignoré (trou de la courbe, ni 0 ni NaN dans les calculs)
+const hasValue = (value: unknown): boolean => value !== null && value !== undefined && value !== ''
+
 /** Lectures numériques {date, value, interval_length?} d'une réponse de mesure (2026 ou v5) */
 export function getReadings(data: unknown): MeasureReading[] {
   const grandeur = firstGrandeur(data)
   if (grandeur) {
-    return (grandeur.points ?? []).map((point: EnedisPoint) => ({
+    return (grandeur.points ?? []).filter((point: EnedisPoint) => hasValue(point.v)).map((point: EnedisPoint) => ({
       date: point.d,
       value: Number(point.v),
       ...(point.p ? { interval_length: point.p } : {}),
@@ -39,7 +42,7 @@ export function getReadings(data: unknown): MeasureReading[] {
   }
   const readings = v5MeterReading(data)?.interval_reading
   if (!Array.isArray(readings)) return []
-  return readings.map((reading: AnyRecord) => ({
+  return readings.filter((reading: AnyRecord) => hasValue(reading.value)).map((reading: AnyRecord) => ({
     date: reading.date,
     value: Number(reading.value),
     ...(reading.interval_length ? { interval_length: reading.interval_length } : {}),
@@ -122,7 +125,10 @@ export function getContractSummary(data: unknown): ContractSummary | null {
       subscribedPower: power ? `${power.value} ${power.unit}` : undefined,
       distributionTariff: consumption.distribution_tariff,
       offpeakHours: offpeakText(contract.comptage?.relais?.plageHeuresCreuses),
-      lastActivationDate: contract.synthese_contrat?.consumption_last_activation_date?.slice(0, 10),
+      lastActivationDate: (
+        contract.synthese_contrat?.consumption_last_activation_date ??
+        contract.synthese_contrat?.generation_last_activation_date
+      )?.slice(0, 10),
     }
   }
 

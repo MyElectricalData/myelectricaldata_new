@@ -106,3 +106,30 @@ describe('enedisMeasure — contrat et adresse', () => {
     expect(getAddressSummary(v5)).toEqual({ street: '2 RUE Y', postalCodeCity: '59000 LILLE', inseeCode: '59350' })
   })
 })
+
+describe('enedisMeasure — revue MED-14', () => {
+  it('ignore les points sans valeur (trou de courbe, pas de NaN)', () => {
+    const data = {
+      grandeur: [
+        {
+          grandeurMetier: 'PROD',
+          grandeurPhysique: 'PA',
+          unite: 'W',
+          points: [{ v: '500', d: '2026-09-29 00:00:00' }, { v: null, d: '2026-09-29 00:30:00' }, { d: '2026-09-29 01:00:00' }],
+        },
+      ],
+    }
+    expect(getReadings(data)).toEqual([{ date: '2026-09-29 00:00:00', value: 500 }])
+    expect(getReadings({ meter_reading: { interval_reading: [{ value: '', date: 'x' }, { value: '0', date: 'y' }] } })).toEqual([
+      { date: 'y', value: 0 },
+    ])
+  })
+
+  it('PRM producteur seul : date de mise en service de la production', () => {
+    const summary = getContractSummary({
+      situation_contrat: [{ contract_type: 'Contrat GRD-A', segment: 'P4' }],
+      synthese_contrat: { generation_last_activation_date: '2024-07-31T00:00:00+0200' },
+    })
+    expect(summary?.lastActivationDate).toBe('2024-07-31')
+  })
+})

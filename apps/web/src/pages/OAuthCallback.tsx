@@ -29,6 +29,8 @@ export default function OAuthCallback() {
     const error = searchParams.get('error')
     const consentError = searchParams.get('consent_error')
     const usagePointId = searchParams.get('usage_point_id')
+    // Consentement Data Connect v2 : Enedis renvoie un autorisation_id au lieu du PDL
+    const autorisationId = searchParams.get('autorisation_id')
     const code = searchParams.get('code')
 
     logger.log('[OAuthCallback] useEffect triggered, params:', { success, error, consentError, code }, 'redirecting:', window.__OAUTH_REDIRECTING__)
@@ -60,6 +62,8 @@ export default function OAuthCallback() {
           : 'Le numéro PDL reçu d\'Enedis n\'est pas valide. Veuillez réessayer ou contacter le support.'
       } else if (errorMsg === 'no_usage_point_id') {
         friendlyMessage = 'Aucun point de livraison fourni par Enedis. Veuillez réessayer le consentement.'
+      } else if (errorMsg === 'no_usage_point_for_authorization') {
+        friendlyMessage = 'Enedis n\'a pas encore ouvert l\'accès à votre point de livraison pour ce consentement. Réessayez dans quelques minutes.'
       } else if (errorMsg) {
         friendlyMessage = errorMsg
       }
@@ -85,6 +89,7 @@ export default function OAuthCallback() {
       backendUrl.searchParams.set('code', code)
       if (state) backendUrl.searchParams.set('state', state)
       if (usagePointId) backendUrl.searchParams.set('usage_point_id', usagePointId)
+      if (autorisationId) backendUrl.searchParams.set('autorisation_id', autorisationId)
 
       // Note: The httpOnly cookie will be sent automatically with the redirect
       // No need to pass access_token in URL (more secure)
