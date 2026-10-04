@@ -159,10 +159,13 @@ def is_offpeak(
 
 
 def interval_wh(value_w: int | float, raw_data: dict[str, Any] | None) -> float:
-    """Convertit une puissance moyenne (W) en énergie (Wh) selon interval_length (PT30M par défaut)"""
+    """Convertit une puissance moyenne (W) en énergie (Wh) selon le pas du relevé (PT30M par défaut)
+
+    Pas lu dans raw_data["p"] (format Data Connect 2026), sinon raw_data["interval_length"] (v5).
+    """
     minutes = _DEFAULT_INTERVAL_MINUTES
     if raw_data:
-        match = _INTERVAL_RE.fullmatch(str(raw_data.get("interval_length", "")))
+        match = _INTERVAL_RE.fullmatch(str(raw_data.get("p") or raw_data.get("interval_length") or ""))
         if match and int(match.group(1)) > 0:
             minutes = int(match.group(1)) * (60 if match.group(2) == "H" else 1)
     return value_w * minutes / 60

@@ -166,6 +166,9 @@ def test_is_offpeak_slot(interval_start: str | None, expected: bool | None) -> N
         (1000, {"interval_length": "PT60M"}, 1000.0),
         (600, {"interval_length": "PT10M"}, 100.0),
         (600, {"interval_length": "PT1H"}, 600.0),
+        # Format Data Connect 2026 : pas dans "p", prioritaire sur interval_length
+        (1000, {"p": "PT15M"}, 250.0),
+        (600, {"p": "PT10M", "interval_length": "PT30M"}, 100.0),
     ],
 )
 def test_interval_wh(value_w: int, raw_data: dict | None, expected: float) -> None:
