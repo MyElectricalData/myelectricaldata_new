@@ -82,12 +82,14 @@ Les conteneurs locaux jusqu'à la 1.22.0 ne lisent que le format v5 : face à un
 
 | Appelant | En-tête | Réponse |
 | --- | --- | --- |
-| Front et conteneur local 2.x | `X-MED-Format: 2026` | format 2026 |
-| Conteneur local <= 1.22.0, intégration tierce | aucun | format v5, avec l'en-tête `Deprecation: true` |
+| Front et conteneur local >= 2.0.1 | `X-MED-Format: 2026` | format 2026 |
+| Conteneur local <= 2.0.0, intégration tierce | aucun | format v5, avec l'en-tête `Deprecation: @1791153780` (RFC 9745, date de la 2.0.0) |
 
 Routes concernées : `/enedis/consumption/daily`, `/enedis/consumption/detail`, `/enedis/power`, `/enedis/production/daily`, `/enedis/production/detail`, `/enedis/contract`, `/enedis/address`. Les champs v5 absents de Data Connect 2026 (statut du contrat, type de compteur) ne sont pas reconstruits.
 
-Chaque réponse v5 est journalisée (`[COMPAT v5]`, avec le User-Agent) : quand ces lignes disparaissent des logs, la compatibilité peut être retirée. Le conteneur local 2.x s'annonce en `MyElectricalData-Client/<version>`.
+Chaque réponse v5 est journalisée (`[COMPAT v5]`, avec le User-Agent) : quand ces lignes disparaissent des logs, la compatibilité peut être retirée. Le conteneur local s'annonce en `MyElectricalData-Client/<version>` depuis la 2.0.1 ; la 2.0.0 (publiée sans l'en-tête) et les versions antérieures envoient toutes `MyElectricalData-Client/1.0` et ne se distinguent pas. La 2.0.0 lit le v5 sans perte.
+
+Une intégration tierce qui lit déjà le format 2026 doit envoyer `X-MED-Format: 2026` : sans lui, elle reçoit le v5.
 
 ## Code
 

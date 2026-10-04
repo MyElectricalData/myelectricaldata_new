@@ -62,10 +62,12 @@ def contract_2026_to_v5(response: Any, usage_point_id: str) -> Any:
         "distribution_tariff": parsed["distribution_tariff"],
         "contract_type": consumption.get("contract_type"),
     }
-    if parsed["subscribed_power"] is not None:
-        contracts["subscribed_power"] = f"{parsed['subscribed_power']} kVA"
-    if parsed["activation_date"]:
-        contracts["last_activation_date"] = parsed["activation_date"].isoformat()
+    # Clé toujours présente : le client 1.22.0 fait .get("subscribed_power", "0"), une absence vaudrait 0 kVA
+    power = parsed["subscribed_power"]
+    contracts["subscribed_power"] = f"{power} kVA" if power is not None else None
+    activation = parsed["activation_date"] or parsed["production_activation_date"]
+    if activation:
+        contracts["last_activation_date"] = activation.isoformat()
     # Chaîne v5 d'origine ("HC (22H00-6H00)") ou dict hérité : rendue telle que comptage_auto la donne
     offpeak = ((response.get("comptage") or {}).get("relais") or {}).get("plageHeuresCreuses")
     if offpeak:

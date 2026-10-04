@@ -2,8 +2,9 @@
 
 Les conteneurs locaux <= 1.22.0 ne lisent que le format v5 et n'envoient aucun
 en-tête : sans `X-MED-Format: 2026`, la passerelle sert donc le v5, avec l'en-tête
-`Deprecation`, et journalise l'appel pour mesurer combien d'anciens clients restent.
-Le front et le client 2.x envoient l'en-tête ; ils savent aussi lire le v5.
+`Deprecation` (RFC 9745), et journalise l'appel pour mesurer combien d'anciens clients restent.
+Le front et le conteneur local >= 2.0.1 envoient l'en-tête ; la 2.0.0, publiée sans,
+lit aussi le v5 mais reste comptée parmi les anciens clients (même User-Agent /1.0).
 """
 
 import functools
@@ -22,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 FORMAT_HEADER = "X-MED-Format"
 FORMAT_2026 = "2026"
+# RFC 9745 : date de dépréciation du format v5 = publication de la 2.0.0 (2026-10-04T22:43:00Z)
+DEPRECATION = "@1791153780"
 
 _CONVERTERS: dict[str, Callable[[Any, str], Any]] = {
     "measure": lambda data, _usage_point_id: measure_2026_to_v5(data),
@@ -55,7 +58,7 @@ def legacy_v5(kind: str) -> Callable[[Callable[..., Awaitable[Any]]], Callable[.
                 f"[COMPAT v5] {kind} servi en v5 à un client sans {FORMAT_HEADER} "
                 f"(User-Agent: {request.headers.get('user-agent', '?')})"
             )
-            return JSONResponse(content=jsonable_encoder(result), headers={"Deprecation": "true"})
+            return JSONResponse(content=jsonable_encoder(result), headers={"Deprecation": DEPRECATION})
 
         return wrapper
 

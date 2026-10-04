@@ -98,6 +98,26 @@ class TestContrat2026VersV5:
 
         assert contracts["offpeak_hours"] == {"default": "HC (22H00-6H00)"}
 
+    def test_sans_puissance_souscrite_la_cle_vaut_none(self):
+        # Le client 1.22.0 fait contracts.get("subscribed_power", "0") : une clé absente donnerait 0 kVA
+        contrat = {"situation_contrat": [{"contract_type": "Contrat GRD-A", "segment": "P4"}], "synthese_contrat": {}, "comptage": None}
+
+        contracts = contract_2026_to_v5(contrat, PRM)["customer"]["usage_points"][0]["contracts"]
+
+        assert "subscribed_power" in contracts
+        assert contracts["subscribed_power"] is None
+
+    def test_production_seule_date_de_mise_en_service_injection(self):
+        contrat = {
+            "situation_contrat": [{"contract_type": "Contrat GRD-A", "segment": "P4"}],
+            "synthese_contrat": {"generation_last_activation_date": "2021-05-04T00:00:00+0200"},
+            "comptage": None,
+        }
+
+        contracts = contract_2026_to_v5(contrat, PRM)["customer"]["usage_points"][0]["contracts"]
+
+        assert contracts["last_activation_date"] == "2021-05-04"
+
     def test_reponse_inconnue_rendue_telle_quelle(self):
         assert contract_2026_to_v5({"foo": 1}, PRM) == {"foo": 1}
 
@@ -143,7 +163,8 @@ class TestNegociationDeFormat:
         body = response.json()
         assert body["success"] is True
         assert body["data"]["meter_reading"]["interval_reading"] == [{"value": "1", "date": "2026-10-01"}]
-        assert response.headers["Deprecation"] == "true"
+        # RFC 9745 : date de dépréciation = publication de la 2.0.0 (2026-10-04T22:43:00Z)
+        assert response.headers["Deprecation"] == "@1791153780"
 
     def test_avec_en_tete_2026_sans_deprecation(self):
         response = TestClient(_app()).get(f"/mesure/{PRM}", headers={FORMAT_HEADER: "2026"})
@@ -166,3 +187,14 @@ def test_le_client_2x_demande_le_2026_et_annonce_sa_version():
 
     assert headers[FORMAT_HEADER] == "2026"
     assert headers["User-Agent"] == f"MyElectricalData-Client/{APP_VERSION}"
+
+
+def test_les_7_routes_du_client_1_22_sont_negociees_et_elles_seules():
+    from src.routers.enedis import router
+
+    negociees = {route.path for route in router.routes if hasattr(route.endpoint, "__wrapped__")}
+
+    assert negociees == {
+        f"{router.prefix}/{path}/{{usage_point_id}}"
+        for path in ("consumption/daily", "consumption/detail", "power", "production/daily", "production/detail", "contract", "address")
+    }
