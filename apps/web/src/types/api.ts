@@ -132,3 +132,62 @@ export interface OAuthCallbackParams extends Record<string, unknown> {
   code: string
   state: string
 }
+
+// ---------------------------------------------------------------------------
+// Enedis Data Connect 2026 (MED-14) : format des mesures et du contrat rendu par
+// la passerelle. Lecture via les accesseurs de utils/enedisMeasure.ts uniquement.
+// ---------------------------------------------------------------------------
+
+/** Point de mesure : valeur (chaîne), horodatage, pas ISO 8601 (courbes de charge) */
+export interface EnedisPoint {
+  v: string
+  d: string
+  p?: string
+  n?: string
+}
+
+export interface EnedisGrandeur {
+  grandeurMetier: 'CONS' | 'PROD'
+  grandeurPhysique: string
+  unite: string | null
+  points: EnedisPoint[]
+}
+
+/** Réponse de mesure (mesure_synchrone_auto/v2) */
+export interface EnedisMeasure {
+  idPrm?: string
+  periode?: { dateDebut: string; dateFin: string }
+  pas?: string
+  grandeur?: EnedisGrandeur[]
+}
+
+export interface EnedisSituationContrat {
+  contract_type?: string
+  contract_start?: string
+  segment?: string
+  distribution_tariff?: string
+  subscribed_power?: { value: string; unit: string } | null
+}
+
+/** Contrat agrégé : situation_contrat_auto + synth_contrat_auto + comptage_auto */
+export interface EnedisContract {
+  situation_contrat?: EnedisSituationContrat[]
+  synthese_contrat?: {
+    consumption_last_activation_date?: string
+    generation_last_activation_date?: string
+    services_level?: string
+  }
+  comptage?: { relais?: { plageHeuresCreuses?: string | Record<string, string> } } | null
+}
+
+/** Adresse (donnees_generales_auto) */
+export interface EnedisAddress {
+  address?: { number_street_name?: string; postal_code_city?: string; insee_code?: string }
+}
+
+/** Lecture normalisée pour les écrans et les calculs */
+export interface MeasureReading {
+  date: string
+  value: number
+  interval_length?: string
+}
