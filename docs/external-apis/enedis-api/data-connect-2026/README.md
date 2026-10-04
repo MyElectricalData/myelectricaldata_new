@@ -76,10 +76,24 @@ Chart Helm serveur : `config.enedisApiMode`, `config.enedisAuthorizeVersion`, `c
 
 Bascule prévue : `auto` dès le déploiement, puis `new` après l'arrêt des API v5. Passer `ENEDIS_AUTHORIZE_VERSION=v2` le jour où Enedis coupe la page de consentement v1, et mettre à jour l'URL de redirection sur DataHub.
 
+## Format servi par la passerelle
+
+Les conteneurs locaux jusqu'à la 1.22.0 ne lisent que le format v5 : face à une réponse 2026, ils enregistrent 0 donnée sans erreur. La passerelle choisit donc le format selon l'en-tête `X-MED-Format` :
+
+| Appelant | En-tête | Réponse |
+| --- | --- | --- |
+| Front et conteneur local 2.x | `X-MED-Format: 2026` | format 2026 |
+| Conteneur local <= 1.22.0, intégration tierce | aucun | format v5, avec l'en-tête `Deprecation: true` |
+
+Routes concernées : `/enedis/consumption/daily`, `/enedis/consumption/detail`, `/enedis/power`, `/enedis/production/daily`, `/enedis/production/detail`, `/enedis/contract`, `/enedis/address`. Les champs v5 absents de Data Connect 2026 (statut du contrat, type de compteur) ne sont pas reconstruits.
+
+Chaque réponse v5 est journalisée (`[COMPAT v5]`, avec le User-Agent) : quand ces lignes disparaissent des logs, la compatibilité peut être retirée. Le conteneur local 2.x s'annonce en `MyElectricalData-Client/<version>`.
+
 ## Code
 
 - `apps/api/src/adapters/enedis.py` : appels, modes, contrat agrégé, `subscribed_services`.
 - `apps/api/src/adapters/enedis_format.py` : format 2026, décalage des horodatages, conversion v5 vers 2026 (mode legacy, repli auto, cache Redis et clients encore en v5).
 - `apps/api/src/services/enedis_contract.py` : lecture du contrat et de l'adresse.
+- `apps/api/src/routers/format_negotiation.py` et `apps/api/src/services/enedis_legacy.py` : format v5 servi aux clients sans `X-MED-Format: 2026`.
 - `apps/web/src/utils/enedisMeasure.ts` : seul point du front qui lit ces formats.
 - Fixtures anonymisées issues de captures réelles : `apps/api/tests/fixtures/enedis_2026/`.

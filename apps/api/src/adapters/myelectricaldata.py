@@ -19,7 +19,7 @@ from typing import Any, Optional, cast
 
 import httpx
 
-from ..config import settings
+from ..config import APP_VERSION, settings
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,9 @@ class MyElectricalDataAdapter:
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "MyElectricalData-Client/1.0",
+            "User-Agent": f"MyElectricalData-Client/{APP_VERSION}",
+            # Sans cet en-tête, la passerelle sert le format v5 des clients <= 1.22.0
+            "X-MED-Format": "2026",
         }
 
     async def _make_request(

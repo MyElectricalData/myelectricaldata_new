@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import User, Token, PDL
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail, CacheDeleteResponse
+from .format_negotiation import legacy_v5
 from ..middleware import get_current_user, get_impersonation_context, get_encryption_key
 from ..adapters import enedis_adapter
 from ..adapters.demo_adapter import demo_adapter
@@ -430,6 +431,7 @@ def _normalize_cached(endpoint: str, data: Any) -> Any:
 
 
 @router.get("/consumption/daily/{usage_point_id}", response_model=APIResponse)
+@legacy_v5("measure")
 async def get_consumption_daily(
     request: Request,
     usage_point_id: str = Path(
@@ -724,6 +726,7 @@ async def get_consumption_daily(
 
 
 @router.get("/consumption/detail/{usage_point_id}", response_model=APIResponse)
+@legacy_v5("measure")
 async def get_consumption_detail(
     request: Request,
     usage_point_id: str = Path(
@@ -1427,6 +1430,7 @@ async def get_consumption_detail_batch(
 
 
 @router.get("/power/{usage_point_id}", response_model=APIResponse)
+@legacy_v5("measure")
 async def get_max_power(
     request: Request,
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
@@ -1481,6 +1485,7 @@ async def get_max_power(
 
 
 @router.get("/production/daily/{usage_point_id}", response_model=APIResponse)
+@legacy_v5("measure")
 async def get_production_daily(
     request: Request,
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
@@ -1535,6 +1540,7 @@ async def get_production_daily(
 
 
 @router.get("/production/detail/{usage_point_id}", response_model=APIResponse)
+@legacy_v5("measure")
 async def get_production_detail(
     request: Request,
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
@@ -2061,6 +2067,7 @@ async def get_production_detail_batch(
 
 # Customer data endpoints
 @router.get("/contract/{usage_point_id}", response_model=APIResponse)
+@legacy_v5("contract")
 async def get_contract(
     request: Request,
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
@@ -2120,6 +2127,7 @@ async def get_contract(
 
 
 @router.get("/address/{usage_point_id}", response_model=APIResponse)
+@legacy_v5("address")
 async def get_address(
     request: Request,
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),

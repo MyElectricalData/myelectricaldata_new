@@ -23,6 +23,8 @@ class APIClient {
       baseURL: finalBaseURL,
       headers: {
         'Content-Type': 'application/json',
+        // Sans cet en-tête, la passerelle sert le format v5 des conteneurs locaux <= 1.22.0
+        'X-MED-Format': '2026',
       },
       // Enable credentials for httpOnly cookie authentication
       withCredentials: true,
