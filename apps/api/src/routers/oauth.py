@@ -1,7 +1,7 @@
 import logging
 import re
 import uuid
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, Path, Query, Request
@@ -98,7 +98,8 @@ async def resolve_autorisation_id(autorisation_id: str) -> list[str]:
 @router.get("/callback")
 async def oauth_callback(
     request: Request,
-    code: str = Query(..., description="Authorization code from Enedis"),
+    # Absent en Data Connect v2 : Enedis ne renvoie que autorisation_id (mesuré le 05/10/2026)
+    code: str = Query(None, description="Authorization code from Enedis (v1 uniquement)"),
     state: str = Query(None, description="State parameter (ignored - user identified via JWT)"),
     usage_point_id: str = Query(None, description="Usage point ID from Enedis (14 digits, or multiple separated by semicolons)"),
     autorisation_id: str = Query(None, description="Identifiant d'autorisation Data Connect v2, échangé contre le(s) PRM"),
@@ -128,11 +129,8 @@ async def oauth_callback(
         if not user:
             logger.error("[OAUTH CALLBACK] Utilisateur non authentifie - redirection vers login")
             # Redirect to login with return URL
-            return_url = f"/oauth/callback?code={code}"
-            if usage_point_id:
-                return_url += f"&usage_point_id={usage_point_id}"
-            if autorisation_id:
-                return_url += f"&autorisation_id={autorisation_id}"
+            callback_params = {"code": code, "usage_point_id": usage_point_id, "autorisation_id": autorisation_id}
+            return_url = "/oauth/callback?" + urlencode({k: v for k, v in callback_params.items() if v})
             # Encodée : sinon usage_point_id / autorisation_id deviennent des paramètres de /login
             return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?redirect={quote(return_url, safe='')}")
 

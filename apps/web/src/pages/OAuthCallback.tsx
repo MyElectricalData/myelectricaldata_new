@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle, XCircle } from 'lucide-react'
 import { logger } from '@/utils/logger'
+import { buildBackendCallbackUrl, isEnedisCallback } from '@/utils/oauthCallback'
 
 // Window.__ENV__ is declared globally in vite-env.d.ts
 // Use runtime config first, then build-time env, then default
@@ -29,8 +30,6 @@ export default function OAuthCallback() {
     const error = searchParams.get('error')
     const consentError = searchParams.get('consent_error')
     const usagePointId = searchParams.get('usage_point_id')
-    // Consentement Data Connect v2 : Enedis renvoie un autorisation_id au lieu du PDL
-    const autorisationId = searchParams.get('autorisation_id')
     const code = searchParams.get('code')
 
     logger.log('[OAuthCallback] useEffect triggered, params:', { success, error, consentError, code }, 'redirecting:', window.__OAUTH_REDIRECTING__)
@@ -69,7 +68,7 @@ export default function OAuthCallback() {
       }
 
       setMessage(friendlyMessage)
-    } else if (code) {
+    } else if (isEnedisCallback(searchParams)) {
       // Raw OAuth callback from Enedis - need to forward to backend
       // Check global flag to prevent double execution (survives component remount)
       if (window.__OAUTH_REDIRECTING__) {
@@ -78,24 +77,16 @@ export default function OAuthCallback() {
       }
       window.__OAUTH_REDIRECTING__ = true
 
-      const state = searchParams.get('state')
       logger.log('[OAuthCallback] Redirecting to backend, setting global flag...')
 
-      // Build backend URL and redirect to process the consent
-      const baseUrl = API_BASE_URL.startsWith('/')
-        ? `${window.location.origin}${API_BASE_URL}`
-        : API_BASE_URL
-      const backendUrl = new URL(`${baseUrl}/oauth/callback`)
-      backendUrl.searchParams.set('code', code)
-      if (state) backendUrl.searchParams.set('state', state)
-      if (usagePointId) backendUrl.searchParams.set('usage_point_id', usagePointId)
-      if (autorisationId) backendUrl.searchParams.set('autorisation_id', autorisationId)
+      // Build backend URL (v1 : code + usage_point_id, v2 : autorisation_id sans code)
+      const backendUrl = buildBackendCallbackUrl(searchParams, API_BASE_URL, window.location.origin)
 
       // Note: The httpOnly cookie will be sent automatically with the redirect
       // No need to pass access_token in URL (more secure)
 
       // Use replace to prevent browser back button from returning here
-      window.location.replace(backendUrl.toString())
+      window.location.replace(backendUrl)
     } else {
       setStatus('error')
       setMessage('Paramètres de callback invalides')

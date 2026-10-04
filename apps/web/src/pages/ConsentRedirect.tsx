@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { buildBackendCallbackUrl } from '@/utils/oauthCallback'
 
 // Window.__ENV__ is declared globally in vite-env.d.ts
 // Use runtime config first, then build-time env, then default
@@ -16,29 +17,14 @@ export default function ConsentRedirect() {
     if (hasRedirected.current) return
     hasRedirected.current = true
 
-    // Get all query parameters
-    const code = searchParams.get('code')
-    const state = searchParams.get('state')
-    const usagePointId = searchParams.get('usage_point_id')
-    // Consentement Data Connect v2 : Enedis renvoie un autorisation_id au lieu du PDL
-    const autorisationId = searchParams.get('autorisation_id')
-
-    // Build backend URL with all parameters
-    // Use window.location.origin if API_BASE_URL is relative
-    const baseUrl = API_BASE_URL.startsWith('/')
-      ? `${window.location.origin}${API_BASE_URL}`
-      : API_BASE_URL
-    const backendUrl = new URL(`${baseUrl}/oauth/callback`)
-    if (code) backendUrl.searchParams.set('code', code)
-    if (state) backendUrl.searchParams.set('state', state)
-    if (usagePointId) backendUrl.searchParams.set('usage_point_id', usagePointId)
-    if (autorisationId) backendUrl.searchParams.set('autorisation_id', autorisationId)
+    // Relaie tous les paramètres Enedis (v1 : code + usage_point_id, v2 : autorisation_id sans code)
+    const backendUrl = buildBackendCallbackUrl(searchParams, API_BASE_URL, window.location.origin)
 
     // Note: The httpOnly cookie will be sent automatically with the redirect
     // No need to pass access_token in URL (more secure)
 
     // Redirect to backend
-    window.location.href = backendUrl.toString()
+    window.location.href = backendUrl
   }, [searchParams])
 
   return (
