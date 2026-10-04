@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.0.0...2.0.1) (2026-10-04)
+
+### Bug Fixes
+
+* **api:** MED-12 / format v5 servi aux conteneurs locaux <= 1.22.0 ([5867fe6](https://github.com/MyElectricalData/myelectricaldata_new/commit/5867fe6e6a78af55bb3b3af49ab34771cd92484d))
+* MED-14 / consentement Data Connect v2 sans code ([441880f](https://github.com/MyElectricalData/myelectricaldata_new/commit/441880f2d3fc82eb1376bc74d071276af6c2ca42))
+
 ## [2.0.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/1.22.0...2.0.0) (2026-10-04)
 
 ### ⚠ BREAKING CHANGES
