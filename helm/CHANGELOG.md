@@ -1,5 +1,14 @@
 # Helm Charts Changelog
 
+## [2.0.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/2.0.0...helm/2.0.1) (2026-10-04)
+
+### Bug Fixes
+
+* **api:** MED-12 / corrections de la revue de la compatibilité v5 ([842fd0d](https://github.com/MyElectricalData/myelectricaldata_new/commit/842fd0d43387da74ca1855c37d22612cfa396ce0))
+* **api:** MED-12 / format v5 servi aux conteneurs locaux <= 1.22.0 ([5867fe6](https://github.com/MyElectricalData/myelectricaldata_new/commit/5867fe6e6a78af55bb3b3af49ab34771cd92484d))
+* **helm:** MED-14 / ENEDIS_API_MODE et ENEDIS_AUTHORIZE_VERSION transmis au backend ([f91cab6](https://github.com/MyElectricalData/myelectricaldata_new/commit/f91cab696cca787f39b7ab5d1253e53bc6426647))
+* MED-14 / consentement Data Connect v2 sans code ([441880f](https://github.com/MyElectricalData/myelectricaldata_new/commit/441880f2d3fc82eb1376bc74d071276af6c2ca42))
+
 ## [2.0.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/1.2.0...helm/2.0.0) (2026-10-04)
 
 ### ⚠ BREAKING CHANGES

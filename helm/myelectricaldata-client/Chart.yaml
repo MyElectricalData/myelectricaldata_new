@@ -2,7 +2,7 @@ apiVersion: v2
 name: myelectricaldata-client
 description: "MyElectricalData Client Mode - Local installation with MyElectricalData API gateway"
 type: application
-version: 2.0.0
+version: 2.0.1
 appVersion: "1.0.0"
 
 keywords:
