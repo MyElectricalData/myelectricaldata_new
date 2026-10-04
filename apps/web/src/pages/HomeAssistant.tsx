@@ -15,6 +15,9 @@ import {
   ExportConfigCreate,
   HomeAssistantConfig,
   HAImportProgressEvent,
+  ExportRunProgressEvent,
+  ExportRunCompleteEvent,
+  ExportRunEDProgressEvent,
 } from '@/api/export'
 import { pdlApi } from '@/api/pdl'
 import {
@@ -265,16 +268,25 @@ export default function HomeAssistant() {
   const [importingStats, setImportingStats] = useState(false)
   const [clearingStats, setClearingStats] = useState(false)
   const [importProgress, setImportProgress] = useState<HAImportProgressEvent | null>(null)
-  const [syncDelayMs, setSyncDelayMs] = useState(10000) // Délai en ms entre chaque import pour laisser HA ingérer (10s par défaut)
-  const [chunkSize, setChunkSize] = useState(500) // Nombre de statistiques par message WebSocket
-  const [incrementalImport, setIncrementalImport] = useState(true) // Mode incrémental par défaut (plus rapide)
+  const [syncDelayMs, setSyncDelayMs] = useState(500)
+  const [chunkSize, setChunkSize] = useState(2000)
+  const [incrementalImport, setIncrementalImport] = useState(true)
+  const [energyIntervalMinutes, setEnergyIntervalMinutes] = useState<number | null>(null)
+
+  // Run export modal state
+  const [runModalOpen, setRunModalOpen] = useState(false)
+  const [runProgress, setRunProgress] = useState<ExportRunProgressEvent | null>(null)
+  const [runComplete, setRunComplete] = useState<ExportRunCompleteEvent | null>(null)
+  const [runError, setRunError] = useState<string | null>(null)
+  const [runEDProgress, setRunEDProgress] = useState<ExportRunEDProgressEvent | null>(null)
 
   // Form state
-  const [formEnabled, setFormEnabled] = useState(true)
+  const [mqttExportEnabled, setMqttExportEnabled] = useState(true)
+  const [energyExportEnabled, setEnergyExportEnabled] = useState(true)
   const [formConsumption, setFormConsumption] = useState(true)
   const [formProduction, setFormProduction] = useState(true)
   const [formDetailed, setFormDetailed] = useState(false)
-  const [formIntervalMinutes, setFormIntervalMinutes] = useState<number | null>(null)
+  const [formIntervalMinutes, setFormIntervalMinutes] = useState<number | null>(30)
 
   // MQTT Discovery config
   const [mqttBroker, setMqttBroker] = useState('')
@@ -385,7 +397,6 @@ export default function HomeAssistant() {
       const fullConfig = response.data
       if (!fullConfig) return
 
-      setFormEnabled(fullConfig.is_enabled)
       setFormConsumption(fullConfig.export_consumption)
       setFormProduction(fullConfig.export_production)
       setFormDetailed(fullConfig.export_detailed)
@@ -401,11 +412,19 @@ export default function HomeAssistant() {
         setMqttTls(cfg.mqtt_use_tls || false)
         setEntityPrefix(cfg.entity_prefix || 'myelectricaldata')
         setDiscoveryPrefix(cfg.discovery_prefix || 'homeassistant')
+        setMqttExportEnabled(cfg.mqtt_enabled ?? true)
 
         // WebSocket config
         setHaUrl(cfg.ha_url || '')
         setHaToken(cfg.ha_token || '')
         setStatisticIdPrefix(cfg.statistic_id_prefix || 'myelectricaldata')
+        setEnergyExportEnabled(cfg.energy_enabled ?? true)
+
+        // Energy Dashboard import settings
+        setSyncDelayMs(cfg.sync_delay_ms ?? 500)
+        setChunkSize(cfg.chunk_size ?? 2000)
+        setIncrementalImport(cfg.incremental_import ?? true)
+        setEnergyIntervalMinutes(cfg.energy_interval_minutes ?? null)
       }
     } catch {
       toast.error('Erreur lors du chargement de la configuration')
@@ -425,27 +444,37 @@ export default function HomeAssistant() {
         mqtt_use_tls: mqttTls,
         entity_prefix: entityPrefix,
         discovery_prefix: discoveryPrefix,
+        mqtt_enabled: mqttExportEnabled,
         // WebSocket API config
         ha_url: haUrl,
         ha_token: haToken,
         statistic_id_prefix: statisticIdPrefix,
+        energy_enabled: energyExportEnabled,
+        // Energy Dashboard import settings
+        sync_delay_ms: syncDelayMs,
+        chunk_size: chunkSize,
+        incremental_import: incrementalImport,
+        energy_interval_minutes: energyIntervalMinutes,
       }
 
       if (existingConfig) {
+        // is_enabled = true si au moins un des deux modes est activé
+        const isEnabled = mqttExportEnabled || energyExportEnabled
         return exportApi.updateConfig(existingConfig.id, {
           config,
-          is_enabled: formEnabled,
+          is_enabled: isEnabled,
           export_consumption: formConsumption,
           export_production: formProduction,
           export_detailed: formDetailed,
           export_interval_minutes: formIntervalMinutes,
         })
       } else {
+        const isEnabled = mqttExportEnabled || energyExportEnabled
         const createData: ExportConfigCreate = {
           name: 'Home Assistant',
           export_type: 'home_assistant',
           config,
-          is_enabled: formEnabled,
+          is_enabled: isEnabled,
           export_consumption: formConsumption,
           export_production: formProduction,
           export_detailed: formDetailed,
@@ -492,15 +521,24 @@ export default function HomeAssistant() {
     },
   })
 
-  const runMutation = useMutation({
-    mutationFn: (id: string) => exportApi.runExport(id),
-    onSuccess: () => {
-      toast.success('Export lancé')
-    },
-    onError: (error: Error) => {
-      toast.error(`Erreur: ${error.message}`)
-    },
-  })
+  const handleRunExport = (id: string) => {
+    setRunModalOpen(true)
+    setRunProgress(null)
+    setRunComplete(null)
+    setRunError(null)
+    setRunEDProgress(null)
+
+    exportApi.runExportWithProgress(
+      id,
+      (progress) => setRunProgress(progress),
+      (result) => {
+        setRunComplete(result)
+        queryClient.invalidateQueries({ queryKey: ['export-configs'] })
+      },
+      (error) => setRunError(error),
+      (edProgress) => setRunEDProgress(edProgress),
+    )
+  }
 
   // Load all metrics
   const loadMetrics = async () => {
@@ -666,8 +704,8 @@ export default function HomeAssistant() {
                 Tester
               </button>
               <button
-                onClick={() => runMutation.mutate(existingConfig.id)}
-                disabled={!existingConfig.is_enabled}
+                onClick={() => handleRunExport(existingConfig.id)}
+                disabled={!existingConfig.is_enabled || runModalOpen}
                 className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Play size={16} /> Exécuter
@@ -863,6 +901,71 @@ export default function HomeAssistant() {
                       ID: <strong>{statisticIdPrefix || 'myelectricaldata'}</strong>:consumption_12345678901234
                     </p>
                   </div>
+
+                  {/* Paramètres d'import Energy Dashboard */}
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                    <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-1.5">
+                      <Settings size={14} className="text-gray-500 dark:text-gray-400" />
+                      Paramètres d'import
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Mode d'import
+                        </label>
+                        <select
+                          value={incrementalImport ? 'incremental' : 'full'}
+                          onChange={(e) => setIncrementalImport(e.target.value === 'incremental')}
+                          className="w-full px-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                        >
+                          <option value="incremental">Différentiel (rapide)</option>
+                          <option value="full">Complet (réinitialise)</option>
+                        </select>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Différentiel : seules les nouvelles données
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Délai entre chunks
+                        </label>
+                        <select
+                          value={syncDelayMs}
+                          onChange={(e) => setSyncDelayMs(parseInt(e.target.value))}
+                          className="w-full px-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                        >
+                          <option value={0}>Aucun (0ms)</option>
+                          <option value={100}>100ms</option>
+                          <option value={500}>500ms (recommandé)</option>
+                          <option value={1000}>1s</option>
+                          <option value={2000}>2s</option>
+                          <option value={5000}>5s (lent)</option>
+                        </select>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Temps d'attente entre chaque envoi
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Taille des chunks
+                        </label>
+                        <select
+                          value={chunkSize}
+                          onChange={(e) => setChunkSize(parseInt(e.target.value))}
+                          className="w-full px-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                        >
+                          <option value={100}>100</option>
+                          <option value={250}>250</option>
+                          <option value={500}>500</option>
+                          <option value={1000}>1000</option>
+                          <option value={2000}>2000 (recommandé)</option>
+                        </select>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Nombre de points par envoi WebSocket
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -913,45 +1016,90 @@ export default function HomeAssistant() {
 
             {/* Scheduling */}
             <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <Clock size={20} className="text-primary-600 dark:text-primary-400" />
                 Planification automatique
               </h3>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  value={formIntervalMinutes ?? ''}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    setFormIntervalMinutes(val === '' ? null : parseInt(val) || null)
-                  }}
-                  min={1}
-                  placeholder="Manuel"
-                  className="w-32 px-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
-                <span className="text-sm text-gray-600 dark:text-gray-400">
-                  minutes (vide = manuel uniquement)
-                </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1.5">
+                    <Radio size={14} /> MQTT Discovery
+                  </label>
+                  <select
+                    value={formIntervalMinutes ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setFormIntervalMinutes(val === '' ? null : parseInt(val))
+                    }}
+                    className="w-full px-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  >
+                    <option value="">Manuel</option>
+                    <option value={15}>Toutes les 15 min</option>
+                    <option value={30}>Toutes les 30 min</option>
+                    <option value={60}>Toutes les 60 min</option>
+                    <option value={120}>Toutes les 120 min</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1.5">
+                    <Zap size={14} /> Energy Dashboard
+                  </label>
+                  <select
+                    value={energyIntervalMinutes ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setEnergyIntervalMinutes(val === '' ? null : parseInt(val))
+                    }}
+                    className="w-full px-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  >
+                    <option value="">Manuel</option>
+                    <option value={15}>Toutes les 15 min</option>
+                    <option value={30}>Toutes les 30 min</option>
+                    <option value={60}>Toutes les 60 min</option>
+                    <option value={120}>Toutes les 120 min</option>
+                  </select>
+                </div>
               </div>
             </div>
 
-            {/* Enable Toggle */}
-            <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-6">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Activer l'export
-              </span>
-              <button
-                type="button"
-                onClick={() => setFormEnabled(!formEnabled)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  formEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-gray-700'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    formEnabled ? 'translate-x-6' : 'translate-x-1'
+            {/* Enable Toggles */}
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                  <Radio size={14} /> Activer MQTT Discovery
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMqttExportEnabled(!mqttExportEnabled)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    mqttExportEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-gray-700'
                   }`}
-                />
-              </button>
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      mqttExportEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                  <Zap size={14} /> Activer Energy Dashboard
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEnergyExportEnabled(!energyExportEnabled)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    energyExportEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-gray-700'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      energyExportEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
 
             {/* Actions */}
@@ -980,17 +1128,25 @@ export default function HomeAssistant() {
         {/* View Mode - Show current config */}
         {existingConfig && !isEditing && (
           <div className="space-y-4">
-            {/* Mode badges - toujours les deux modes */}
+            {/* Mode badges avec état */}
             <div className="flex flex-wrap gap-2 mb-4">
-              <span className="text-sm px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg flex items-center gap-1">
+              <span className={`text-sm px-3 py-1 rounded-lg flex items-center gap-1 ${
+                mqttExportEnabled
+                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 line-through'
+              }`}>
                 <Radio size={14} /> MQTT Discovery
               </span>
-              <span className="text-sm px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg flex items-center gap-1">
-                <BarChart3 size={14} /> API Statistiques
+              <span className={`text-sm px-3 py-1 rounded-lg flex items-center gap-1 ${
+                energyExportEnabled
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 line-through'
+              }`}>
+                <Zap size={14} /> Energy Dashboard
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {mqttBroker && (
                 <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg">
                   <p className="text-sm text-gray-500 dark:text-gray-400">Broker MQTT</p>
@@ -1006,9 +1162,15 @@ export default function HomeAssistant() {
                 </div>
               )}
               <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Intervalle</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">MQTT toutes les</p>
                 <p className="font-medium text-gray-900 dark:text-white">
                   {formIntervalMinutes ? `${formIntervalMinutes} min` : 'Manuel'}
+                </p>
+              </div>
+              <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Energy toutes les</p>
+                <p className="font-medium text-gray-900 dark:text-white">
+                  {energyIntervalMinutes ? `${energyIntervalMinutes} min` : 'Manuel'}
                 </p>
               </div>
             </div>
@@ -1243,61 +1405,6 @@ export default function HomeAssistant() {
             </div>
           )}
 
-          {/* Options d'import */}
-          <div className="mb-4 flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Mode:
-              </label>
-              <select
-                value={incrementalImport ? 'incremental' : 'full'}
-                onChange={(e) => setIncrementalImport(e.target.value === 'incremental')}
-                disabled={importingStats}
-                className="px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm"
-              >
-                <option value="incremental">Différentiel (rapide)</option>
-                <option value="full">Complet (réinitialise)</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Délai:
-              </label>
-              <select
-                value={syncDelayMs}
-                onChange={(e) => setSyncDelayMs(parseInt(e.target.value))}
-                disabled={importingStats}
-                className="px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm"
-              >
-                <option value={100}>100ms (rapide)</option>
-                <option value={1000}>1s</option>
-                <option value={5000}>5s</option>
-                <option value={10000}>10s (recommandé)</option>
-                <option value={30000}>30s (lent)</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Taille chunk:
-              </label>
-              <select
-                value={chunkSize}
-                onChange={(e) => setChunkSize(parseInt(e.target.value))}
-                disabled={importingStats}
-                className="px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm"
-              >
-                <option value={100}>100</option>
-                <option value={250}>250</option>
-                <option value={500}>500 (recommandé)</option>
-                <option value={1000}>1000</option>
-                <option value={2000}>2000</option>
-              </select>
-            </div>
-          </div>
-          <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
-            <strong>Différentiel</strong> : importe uniquement les nouvelles données (plus rapide). <strong>Complet</strong> : réimporte tout depuis zéro.
-          </p>
-
           <div className="flex flex-wrap gap-3">
             <button
               onClick={() => {
@@ -1380,6 +1487,163 @@ export default function HomeAssistant() {
             L'import supprime automatiquement les anciennes statistiques avant de réinjecter les nouvelles.
             Les statistiques apparaîtront dans : Paramètres → Tableaux de bord → Énergie
           </p>
+        </div>
+      )}
+
+      {/* Run Export Progress Modal */}
+      {runModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-300 dark:border-gray-700 w-full max-w-lg mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              <Play size={20} className="text-primary-600 dark:text-primary-400" />
+              Export Home Assistant
+            </h3>
+
+            {/* Progression */}
+            {runProgress && !runComplete && !runError && (
+              <div className="space-y-4">
+                {/* MQTT Discovery */}
+                <div className="p-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                      <Radio size={14} className="text-primary-500" /> MQTT Discovery
+                    </p>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                      {runProgress.step}/{runProgress.total_steps}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">{runProgress.message}</p>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                    <div
+                      className="bg-primary-600 dark:bg-primary-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${runProgress.percent}%` }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-xs text-gray-500 dark:text-gray-400">
+                    <span>Tempo: {runProgress.tempo}</span>
+                    <span>EcoWatt: {runProgress.ecowatt}</span>
+                    <span>Conso: {runProgress.consumption}</span>
+                    <span>Prod: {runProgress.production}</span>
+                  </div>
+                </div>
+
+                {/* Energy Dashboard */}
+                <div className="p-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                      <Zap size={14} className="text-primary-500" /> Energy Dashboard
+                    </p>
+                    {runEDProgress && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                        {runEDProgress.step}/{runEDProgress.total_steps}
+                      </span>
+                    )}
+                  </div>
+                  {runEDProgress ? (
+                    <>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">{runEDProgress.message}</p>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div
+                          className="bg-primary-600 dark:bg-primary-500 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${runEDProgress.percent}%` }}
+                        />
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 text-xs text-gray-500 dark:text-gray-400">
+                        <span>Conso: {runEDProgress.ed_consumption}</span>
+                        <span>Coût: {runEDProgress.ed_cost}</span>
+                        <span>Prod: {runEDProgress.ed_production}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-gray-400 dark:text-gray-500">En attente...</p>
+                  )}
+                </div>
+
+                {runProgress.status === 'warning' && (
+                  <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                    <AlertCircle size={12} />
+                    Erreur partielle (l'export continue)
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* État initial (pas encore de progression) */}
+            {!runProgress && !runComplete && !runError && (
+              <div className="flex items-center gap-3 py-4">
+                <RefreshCw size={20} className="animate-spin text-primary-600 dark:text-primary-400" />
+                <span className="text-gray-600 dark:text-gray-400">Connexion en cours...</span>
+              </div>
+            )}
+
+            {/* Résultat final */}
+            {runComplete && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                  <CheckCircle size={20} />
+                  <span className="font-medium">{runComplete.message}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 dark:bg-gray-900/30 rounded-lg text-sm">
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">Tempo</span>
+                    <p className="font-medium text-gray-900 dark:text-white">{runComplete.tempo} entités</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">EcoWatt</span>
+                    <p className="font-medium text-gray-900 dark:text-white">{runComplete.ecowatt} entités</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">Consommation</span>
+                    <p className="font-medium text-gray-900 dark:text-white">{runComplete.consumption} sensors</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">Production</span>
+                    <p className="font-medium text-gray-900 dark:text-white">{runComplete.production} sensors</p>
+                  </div>
+                </div>
+                {runComplete.energy_dashboard && (
+                  <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm">
+                    <p className="font-medium text-green-700 dark:text-green-300 mb-1 flex items-center gap-1">
+                      <Zap size={14} /> Energy Dashboard
+                    </p>
+                    <div className="grid grid-cols-3 gap-2 text-green-600 dark:text-green-400">
+                      <span>Conso: {runComplete.energy_dashboard.consumption}</span>
+                      <span>Coût: {runComplete.energy_dashboard.cost}</span>
+                      <span>Prod: {runComplete.energy_dashboard.production}</span>
+                    </div>
+                  </div>
+                )}
+                {runComplete.errors && runComplete.errors.length > 0 && (
+                  <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm">
+                    <p className="font-medium text-amber-700 dark:text-amber-300 mb-1">Erreurs partielles :</p>
+                    {runComplete.errors.map((err, i) => (
+                      <p key={i} className="text-amber-600 dark:text-amber-400 text-xs">{err}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Erreur */}
+            {runError && (
+              <div className="flex items-center gap-2 text-red-600 dark:text-red-400 py-2">
+                <AlertCircle size={20} />
+                <span>{runError}</span>
+              </div>
+            )}
+
+            {/* Bouton fermer */}
+            {(runComplete || runError) && (
+              <div className="flex justify-end mt-4">
+                <button
+                  onClick={() => setRunModalOpen(false)}
+                  className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Fermer
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -21,6 +21,15 @@ export interface HomeAssistantConfig {
   ha_url?: string
   ha_token?: string
   statistic_id_prefix?: string
+  // Energy Dashboard import settings
+  sync_delay_ms?: number
+  chunk_size?: number
+  incremental_import?: boolean
+  // Activation indépendante MQTT / Energy Dashboard
+  mqtt_enabled?: boolean
+  energy_enabled?: boolean
+  // Energy Dashboard scheduling (indépendant du MQTT)
+  energy_interval_minutes?: number | null
 }
 
 export interface MQTTConfig {
@@ -190,6 +199,46 @@ export interface HAImportProgressEvent {
   production: number
 }
 
+export interface ExportRunProgressEvent {
+  step: number
+  total_steps: number
+  percent: number
+  message: string
+  status: string
+  consumption: number
+  production: number
+  tempo: number
+  ecowatt: number
+  linky_card: number
+}
+
+export interface ExportRunEDProgressEvent {
+  step: number
+  total_steps: number
+  percent: number
+  message: string
+  ed_consumption: number
+  ed_cost: number
+  ed_production: number
+}
+
+export interface ExportRunCompleteEvent {
+  success: boolean
+  message: string
+  consumption: number
+  production: number
+  tempo: number
+  ecowatt: number
+  linky_card: number
+  energy_dashboard?: {
+    success: boolean
+    consumption: number
+    cost: number
+    production: number
+  }
+  errors?: string[] | null
+}
+
 export const exportApi = {
   /**
    * List all export configurations
@@ -238,6 +287,74 @@ export const exportApi = {
    */
   runExport: (configId: string) => {
     return apiClient.post<ExportRunResponse>(`/export/configs/${configId}/run`)
+  },
+
+  /**
+   * Run export with SSE progress streaming
+   */
+  runExportWithProgress: (
+    configId: string,
+    onProgress: (event: ExportRunProgressEvent) => void,
+    onComplete: (result: ExportRunCompleteEvent) => void,
+    onError: (error: string) => void,
+    onEDProgress?: (event: ExportRunEDProgressEvent) => void,
+  ): EventSource => {
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
+    const url = `${baseUrl}/export/configs/${configId}/run/stream`
+
+    const eventSource = new EventSource(url)
+
+    eventSource.addEventListener('progress', (event) => {
+      try {
+        const data = JSON.parse(event.data) as ExportRunProgressEvent
+        onProgress(data)
+      } catch (err) {
+        console.error('Failed to parse progress event:', err)
+      }
+    })
+
+    eventSource.addEventListener('energy_dashboard_progress', (event) => {
+      try {
+        const data = JSON.parse(event.data) as ExportRunEDProgressEvent
+        if (onEDProgress) onEDProgress(data)
+      } catch (err) {
+        console.error('Failed to parse energy dashboard progress event:', err)
+      }
+    })
+
+    eventSource.addEventListener('complete', (event) => {
+      try {
+        const data = JSON.parse(event.data) as ExportRunCompleteEvent
+        onComplete(data)
+        eventSource.close()
+      } catch (err) {
+        console.error('Failed to parse complete event:', err)
+        onError('Erreur lors de la lecture du résultat')
+        eventSource.close()
+      }
+    })
+
+    eventSource.addEventListener('error', (event) => {
+      if (event instanceof MessageEvent && event.data) {
+        try {
+          const data = JSON.parse(event.data) as { message: string }
+          onError(data.message)
+        } catch {
+          onError('Erreur de connexion')
+        }
+      } else {
+        onError('Connexion perdue')
+      }
+      eventSource.close()
+    })
+
+    eventSource.onerror = () => {
+      if (eventSource.readyState === EventSource.CLOSED) return
+      onError('Erreur de connexion au serveur')
+      eventSource.close()
+    }
+
+    return eventSource
   },
 
   /**
@@ -290,8 +407,8 @@ export const exportApi = {
   importHAStatisticsWithProgress: (
     configId: string,
     clearFirst: boolean = true,
-    syncDelayMs: number = 10000,
-    chunkSize: number = 500,
+    syncDelayMs: number = 500,
+    chunkSize: number = 2000,
     incremental: boolean = false,
     onProgress: (event: HAImportProgressEvent) => void,
     onComplete: (result: HAStatisticsImportResponse) => void,

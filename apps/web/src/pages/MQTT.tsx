@@ -48,7 +48,7 @@ export default function MQTT() {
   const [formConsumption, setFormConsumption] = useState(true)
   const [formProduction, setFormProduction] = useState(true)
   const [formDetailed, setFormDetailed] = useState(false)
-  const [formIntervalMinutes, setFormIntervalMinutes] = useState<number | null>(null)
+  const [formIntervalMinutes, setFormIntervalMinutes] = useState<number | null>(30)
 
   // MQTT config
   const [mqttBroker, setMqttBroker] = useState('')
@@ -524,14 +524,19 @@ export default function MQTT() {
                   value={formIntervalMinutes ?? ''}
                   onChange={(e) => {
                     const val = e.target.value
-                    setFormIntervalMinutes(val === '' ? null : parseInt(val) || null)
+                    if (val === '') {
+                      setFormIntervalMinutes(null)
+                    } else {
+                      const num = parseInt(val)
+                      setFormIntervalMinutes(num && num >= 15 ? num : 15)
+                    }
                   }}
-                  min={1}
+                  min={15}
                   placeholder="Manuel"
                   className="w-32 px-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
                 <span className="text-sm text-gray-600 dark:text-gray-400">
-                  minutes (vide = manuel uniquement)
+                  minutes (min. 15, vide = manuel)
                 </span>
               </div>
             </div>

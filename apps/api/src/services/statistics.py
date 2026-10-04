@@ -669,3 +669,147 @@ class StatisticsService:
             stats[year_label] = year_stats
 
         return stats
+
+    # =========================================================================
+    # BATCH METHODS (optimisées pour l'export content-card-linky)
+    # =========================================================================
+
+    async def get_date_range_total(
+        self,
+        usage_point_id: str,
+        start_date: date,
+        end_date: date,
+        direction: str = "consumption",
+    ) -> int:
+        """Total Wh pour une plage de dates arbitraire (inclusive)
+
+        Utile pour : current_week (lundi→hier), current_month (1er→hier),
+        current_year (1er janvier→hier), etc.
+        """
+        model = self._get_model(direction)
+
+        result = await self.db.execute(
+            select(func.coalesce(func.sum(model.value), 0))
+            .where(model.usage_point_id == usage_point_id)
+            .where(model.granularity == DataGranularity.DAILY)
+            .where(model.date >= start_date)
+            .where(model.date <= end_date)
+        )
+        return int(result.scalar() or 0)
+
+    async def get_daily_totals_range(
+        self,
+        usage_point_id: str,
+        start_date: date,
+        end_date: date,
+        direction: str = "consumption",
+    ) -> dict[date, int]:
+        """Totaux journaliers pour une plage de dates en une seule requête
+
+        Remplace N appels individuels à get_day_total.
+
+        Returns:
+            Dict {date: Wh}. Les jours sans données ne sont pas inclus.
+        """
+        model = self._get_model(direction)
+
+        result = await self.db.execute(
+            select(model.date, func.sum(model.value))
+            .where(model.usage_point_id == usage_point_id)
+            .where(model.granularity == DataGranularity.DAILY)
+            .where(model.date >= start_date)
+            .where(model.date <= end_date)
+            .group_by(model.date)
+        )
+        return {row[0]: int(row[1]) for row in result.all()}
+
+    async def get_detailed_range(
+        self,
+        usage_point_id: str,
+        start_date: date,
+        end_date: date,
+        direction: str = "consumption",
+    ) -> list[tuple[date, str | None, int]]:
+        """Toutes les données DETAILED (30min) pour une plage de dates
+
+        Permet de calculer HP/HC et puissance max par jour en mémoire.
+
+        Returns:
+            Liste de (date, interval_start, value_Wh).
+        """
+        model = self._get_model(direction)
+
+        result = await self.db.execute(
+            select(model.date, model.interval_start, model.value)
+            .where(model.usage_point_id == usage_point_id)
+            .where(model.granularity == DataGranularity.DETAILED)
+            .where(model.date >= start_date)
+            .where(model.date <= end_date)
+        )
+        return [(row[0], row[1], int(row[2])) for row in result.all()]
+
+    async def get_hp_hc_day_total(
+        self,
+        usage_point_id: str,
+        target_date: date,
+        offpeak_hours: list[dict[str, str]],
+        direction: str = "consumption",
+    ) -> tuple[int, int]:
+        """HP/HC pour un jour spécifique (données DETAILED requises)
+
+        Returns:
+            Tuple (HP_Wh, HC_Wh). Retourne (0, 0) si pas de données DETAILED.
+        """
+        model = self._get_model(direction)
+
+        result = await self.db.execute(
+            select(model.interval_start, model.value)
+            .where(model.usage_point_id == usage_point_id)
+            .where(model.granularity == DataGranularity.DETAILED)
+            .where(model.date == target_date)
+        )
+
+        hp_total = 0
+        hc_total = 0
+
+        for row in result.all():
+            if self._is_offpeak_hour(row.interval_start, offpeak_hours):
+                hc_total += row.value
+            else:
+                hp_total += row.value
+
+        return hp_total, hc_total
+
+    async def get_max_power_day(
+        self,
+        usage_point_id: str,
+        target_date: date,
+        direction: str = "consumption",
+    ) -> tuple[float, str | None]:
+        """Puissance max pour un jour (données DETAILED requises)
+
+        Chaque intervalle de 30min contient des Wh.
+        Puissance = value_Wh * 2 / 1000 (conversion en kW).
+
+        Returns:
+            Tuple (max_power_kW, heure_du_max). Retourne (0.0, None) si pas de données.
+        """
+        model = self._get_model(direction)
+
+        result = await self.db.execute(
+            select(model.interval_start, model.value)
+            .where(model.usage_point_id == usage_point_id)
+            .where(model.granularity == DataGranularity.DETAILED)
+            .where(model.date == target_date)
+        )
+
+        max_power = 0.0
+        max_time: str | None = None
+
+        for row in result.all():
+            power_kw = row.value * 2 / 1000
+            if power_kw > max_power:
+                max_power = power_kw
+                max_time = row.interval_start
+
+        return round(max_power, 2), max_time
