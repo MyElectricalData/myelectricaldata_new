@@ -19,6 +19,8 @@ from typing import Any
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..adapters.enedis_format import address_v5_to_2026, build_measure, contract_v5_to_2026
+from ..services.enedis_contract import parse_address, parse_contract
 from ..models.client_mode import (
     ConsumptionData,
     ProductionData,
@@ -113,24 +115,27 @@ class LocalDataService:
         if contract is None:
             return None
 
-        # Return in gateway-compatible format
-        return {
-            "customer": {
-                "usage_points": [
+        # Contrat agrégé Data Connect 2026, tel que reçu de la passerelle si possible
+        raw = contract.raw_data if isinstance(contract.raw_data, dict) else {}
+        if "situation_contrat" in raw:
+            data = dict(raw)
+        else:
+            offpeak = contract.offpeak_hours
+            data = {
+                "situation_contrat": [
                     {
-                        "usage_point": {"usage_point_id": usage_point_id},
-                        "contracts": {
-                            "subscribed_power": str(contract.subscribed_power) if contract.subscribed_power else None,
-                            "offpeak_hours": contract.offpeak_hours,
-                            "last_activation_date": None,
-                            "distribution_tariff": contract.pricing_option,
-                        }
+                        "segment": contract.segment,
+                        "subscribed_power": (
+                            {"value": str(contract.subscribed_power), "unit": "kVA"} if contract.subscribed_power else None
+                        ),
                     }
-                ]
-            },
-            "_cached": True,
-            "_cached_at": contract.updated_at.isoformat() if contract.updated_at else None,
-        }
+                ],
+                "synthese_contrat": {},
+                "comptage": {"relais": {"plageHeuresCreuses": offpeak}} if offpeak else None,
+            }
+        data["_cached"] = True
+        data["_cached_at"] = contract.updated_at.isoformat() if contract.updated_at else None
+        return data
 
     async def get_address(self, usage_point_id: str) -> dict[str, Any] | None:
         """Get address data from local database."""
@@ -142,29 +147,22 @@ class LocalDataService:
         if address is None:
             return None
 
-        # Return in gateway-compatible format
-        return {
-            "customer": {
-                "usage_points": [
-                    {
-                        "usage_point": {"usage_point_id": usage_point_id},
-                        "usage_point_addresses": {
-                            "street": address.street,
-                            "postal_code": address.postal_code,
-                            "city": address.city,
-                            "country": address.country,
-                            "insee_code": address.insee_code,
-                            "geo_points": {
-                                "latitude": str(address.latitude) if address.latitude else None,
-                                "longitude": str(address.longitude) if address.longitude else None,
-                            } if address.latitude and address.longitude else None,
-                        }
-                    }
-                ]
-            },
-            "_cached": True,
-            "_cached_at": address.updated_at.isoformat() if address.updated_at else None,
-        }
+        # Adresse au format donnees_generales_auto, telle que reçue de la passerelle si possible
+        raw = address.raw_data if isinstance(address.raw_data, dict) else {}
+        if "address" in raw:
+            data = dict(raw)
+        else:
+            postal_code_city = " ".join(part for part in (address.postal_code, address.city) if part)
+            data = {
+                "address": {
+                    "number_street_name": address.street,
+                    "postal_code_city": postal_code_city or None,
+                    "insee_code": address.insee_code,
+                }
+            }
+        data["_cached"] = True
+        data["_cached_at"] = address.updated_at.isoformat() if address.updated_at else None
+        return data
 
     async def save_contract(self, usage_point_id: str, data: dict[str, Any]) -> None:
         """Save contract data to local database."""
@@ -181,17 +179,17 @@ class LocalDataService:
 
         if existing:
             existing.subscribed_power = contract_info.get("subscribed_power")
-            existing.pricing_option = contract_info.get("pricing_option")
             existing.offpeak_hours = contract_info.get("offpeak_hours")
-            existing.raw_data = data
+            existing.segment = contract_info.get("segment")
+            existing.raw_data = _unwrap(data)
             existing.last_sync_at = datetime.now()
         else:
             contract = ContractData(
                 usage_point_id=usage_point_id,
                 subscribed_power=contract_info.get("subscribed_power"),
-                pricing_option=contract_info.get("pricing_option"),
                 offpeak_hours=contract_info.get("offpeak_hours"),
-                raw_data=data,
+                segment=contract_info.get("segment"),
+                raw_data=_unwrap(data),
                 last_sync_at=datetime.now(),
             )
             self.db.add(contract)
@@ -219,7 +217,7 @@ class LocalDataService:
             existing.insee_code = address_info.get("insee_code")
             existing.latitude = address_info.get("latitude")
             existing.longitude = address_info.get("longitude")
-            existing.raw_data = data
+            existing.raw_data = _unwrap(data)
             existing.last_sync_at = datetime.now()
         else:
             address = AddressData(
@@ -231,7 +229,7 @@ class LocalDataService:
                 insee_code=address_info.get("insee_code"),
                 latitude=address_info.get("latitude"),
                 longitude=address_info.get("longitude"),
-                raw_data=data,
+                raw_data=_unwrap(data),
                 last_sync_at=datetime.now(),
             )
             self.db.add(address)
@@ -268,15 +266,13 @@ class LocalDataService:
 
         # Format records for API response
         if granularity == DataGranularity.DAILY:
-            formatted = [
-                {"date": rec.date.isoformat(), "value": rec.value}
-                for rec in records
-            ]
+            formatted = [{"v": str(rec.value), "d": rec.date.isoformat()} for rec in records]
         else:  # DETAILED
             formatted = [
                 {
-                    "date": f"{rec.date.isoformat()} {rec.interval_start}:00" if rec.interval_start else rec.date.isoformat(),
-                    "value": rec.value,
+                    "v": str(rec.value),
+                    "d": f"{rec.date.isoformat()} {rec.interval_start}:00" if rec.interval_start else rec.date.isoformat(),
+                    "p": _interval_of(rec.raw_data),
                 }
                 for rec in records
             ]
@@ -387,22 +383,18 @@ class LocalDataService:
     def _extract_contract_from_response(
         self, data: dict[str, Any], usage_point_id: str
     ) -> dict[str, Any] | None:
-        """Extract contract info from gateway response."""
+        """Extract contract info from gateway response (Data Connect 2026, ou v5 converti)."""
         try:
-            # Navigate the nested structure
-            customer = data.get("customer", data.get("data", {}).get("customer", {}))
-            usage_points = customer.get("usage_points", [])
-
-            for up in usage_points:
-                if up.get("usage_point", {}).get("usage_point_id") == usage_point_id:
-                    contracts = up.get("contracts", {})
-                    power_str = contracts.get("subscribed_power", "0")
-                    return {
-                        "subscribed_power": int(power_str) if power_str else None,
-                        "pricing_option": contracts.get("distribution_tariff"),
-                        "offpeak_hours": contracts.get("offpeak_hours"),
-                    }
-        except (KeyError, ValueError, TypeError) as e:
+            contract = contract_v5_to_2026(_unwrap(data))
+            if "situation_contrat" not in contract:
+                return None
+            parsed = parse_contract(contract)
+            return {
+                "subscribed_power": parsed["subscribed_power"],
+                "offpeak_hours": parsed["offpeak_hours"],
+                "segment": parsed["segment"],
+            }
+        except (KeyError, ValueError, TypeError, AttributeError) as e:
             logger.warning(f"Failed to extract contract: {e}")
 
         return None
@@ -410,31 +402,30 @@ class LocalDataService:
     def _extract_address_from_response(
         self, data: dict[str, Any], usage_point_id: str
     ) -> dict[str, Any] | None:
-        """Extract address info from gateway response."""
+        """Extract address info from gateway response (Data Connect 2026, ou v5 converti)."""
         try:
-            # Navigate the nested structure
-            customer = data.get("customer", data.get("data", {}).get("customer", {}))
-            usage_points = customer.get("usage_points", [])
-
-            for up in usage_points:
-                if up.get("usage_point", {}).get("usage_point_id") == usage_point_id:
-                    addr = up.get("usage_point_addresses", {})
-                    geo = addr.get("geo_points", {})
-                    lat = geo.get("latitude") if geo else None
-                    lon = geo.get("longitude") if geo else None
-                    return {
-                        "street": addr.get("street"),
-                        "postal_code": addr.get("postal_code"),
-                        "city": addr.get("city"),
-                        "country": addr.get("country"),
-                        "insee_code": addr.get("insee_code"),
-                        "latitude": float(lat) if lat else None,
-                        "longitude": float(lon) if lon else None,
-                    }
-        except (KeyError, ValueError, TypeError) as e:
+            address = address_v5_to_2026(_unwrap(data))
+            if "address" not in address:
+                return None
+            return {**parse_address(address), "latitude": None, "longitude": None}
+        except (KeyError, ValueError, TypeError, AttributeError) as e:
             logger.warning(f"Failed to extract address: {e}")
 
         return None
+
+
+def _unwrap(data: Any) -> Any:
+    """Réponse de la passerelle : {success, data} → data"""
+    if isinstance(data, dict) and "data" in data and "success" in data:
+        return data["data"]
+    return data
+
+
+def _interval_of(raw_data: Any) -> str:
+    """Pas d'un point détaillé stocké : `p` (2026) ou `interval_length` (v5), PT30M par défaut"""
+    if isinstance(raw_data, dict):
+        return str(raw_data.get("p") or raw_data.get("interval_length") or "PT30M")
+    return "PT30M"
 
 
 def format_daily_response(
@@ -443,21 +434,14 @@ def format_daily_response(
     end: str,
     readings: list[dict[str, Any]],
     from_cache: bool = False,
+    grandeur_metier: str = "CONS",
 ) -> dict[str, Any]:
-    """Format daily data in Enedis-like response format."""
-    return {
-        "meter_reading": {
-            "usage_point_id": usage_point_id,
-            "start": start,
-            "end": end,
-            "reading_type": {
-                "unit": "Wh",
-                "measurement_kind": "energy",
-            },
-            "interval_reading": readings,
-        },
-        "_from_local_cache": from_cache,
-    }
+    """Mesures quotidiennes (Wh) au format Data Connect 2026."""
+    response = build_measure(
+        usage_point_id, start, end, readings, grandeur_metier=grandeur_metier, grandeur_physique="EA", unite="Wh", pas="P1D"
+    )
+    response["_from_local_cache"] = from_cache
+    return response
 
 
 def format_detail_response(
@@ -466,18 +450,11 @@ def format_detail_response(
     end: str,
     readings: list[dict[str, Any]],
     from_cache: bool = False,
+    grandeur_metier: str = "CONS",
 ) -> dict[str, Any]:
-    """Format detailed data in Enedis-like response format."""
-    return {
-        "meter_reading": {
-            "usage_point_id": usage_point_id,
-            "start": start,
-            "end": end,
-            "reading_type": {
-                "unit": "W",
-                "measurement_kind": "power",
-            },
-            "interval_reading": readings,
-        },
-        "_from_local_cache": from_cache,
-    }
+    """Courbe de charge (W) au format Data Connect 2026."""
+    response = build_measure(
+        usage_point_id, start, end, readings, grandeur_metier=grandeur_metier, grandeur_physique="PA", unite="W"
+    )
+    response["_from_local_cache"] = from_cache
+    return response

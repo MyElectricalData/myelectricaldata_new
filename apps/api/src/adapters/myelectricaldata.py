@@ -154,7 +154,7 @@ class MyElectricalDataAdapter:
             end: End date (YYYY-MM-DD)
 
         Returns:
-            Dict with meter_reading containing interval_reading list
+            Réponse Data Connect 2026 (grandeur[].points[]) dans l enveloppe {success, data}
         """
         return await self._make_request(
             "GET",
@@ -173,7 +173,7 @@ class MyElectricalDataAdapter:
             end: End date (YYYY-MM-DD)
 
         Returns:
-            Dict with meter_reading containing interval_reading list
+            Réponse Data Connect 2026 (grandeur[].points[]) dans l enveloppe {success, data}
         """
         return await self._make_request(
             "GET",

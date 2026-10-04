@@ -30,6 +30,9 @@ from ..models.client_mode import (
     SyncStatus,
     SyncStatusType,
 )
+from ..adapters.enedis_format import address_v5_to_2026, contract_v5_to_2026, extract_points
+from ..services.enedis_contract import parse_address, parse_contract
+from ..services.local_data import _unwrap
 
 logger = logging.getLogger(__name__)
 
@@ -269,6 +272,9 @@ class SyncService:
     async def _sync_contract(self, usage_point_id: str) -> None:
         """Sync contract data for a PDL"""
         response = await self.adapter.get_contract(usage_point_id)
+        # Enveloppe {success, data} de la passerelle ; contrat Data Connect 2026 (ou v5 converti)
+        contract = contract_v5_to_2026(_unwrap(response))
+        parsed = parse_contract(contract) if "situation_contrat" in contract else {}
 
         # Check if contract already exists
         result = await self.db.execute(
@@ -278,26 +284,22 @@ class SyncService:
 
         if existing:
             # Update existing contract
-            existing.subscribed_power = response.get("subscribed_power")
-            existing.pricing_option = response.get("pricing_option")
-            existing.offpeak_hours = response.get("offpeak_hours")
-            existing.segment = response.get("segment")
-            existing.reading_type = response.get("reading_type")
-            existing.raw_data = response
+            existing.subscribed_power = parsed.get("subscribed_power")
+            existing.offpeak_hours = parsed.get("offpeak_hours")
+            existing.segment = parsed.get("segment")
+            existing.raw_data = contract
             existing.last_sync_at = datetime.now(UTC)
         else:
             # Create new contract
-            contract = ContractData(
+            new_contract = ContractData(
                 usage_point_id=usage_point_id,
-                subscribed_power=response.get("subscribed_power"),
-                pricing_option=response.get("pricing_option"),
-                offpeak_hours=response.get("offpeak_hours"),
-                segment=response.get("segment"),
-                reading_type=response.get("reading_type"),
-                raw_data=response,
+                subscribed_power=parsed.get("subscribed_power"),
+                offpeak_hours=parsed.get("offpeak_hours"),
+                segment=parsed.get("segment"),
+                raw_data=contract,
                 last_sync_at=datetime.now(UTC),
             )
-            self.db.add(contract)
+            self.db.add(new_contract)
 
         await self.db.commit()
         logger.debug(f"[SYNC] Contract synced for {usage_point_id}")
@@ -305,6 +307,9 @@ class SyncService:
     async def _sync_address(self, usage_point_id: str) -> None:
         """Sync address data for a PDL"""
         response = await self.adapter.get_address(usage_point_id)
+        # Enveloppe {success, data} de la passerelle ; adresse donnees_generales_auto (ou v5 convertie)
+        address_data = address_v5_to_2026(_unwrap(response))
+        fields = parse_address(address_data) if "address" in address_data else {}
 
         # Check if address already exists
         result = await self.db.execute(
@@ -314,27 +319,23 @@ class SyncService:
 
         if existing:
             # Update existing address
-            existing.street = response.get("street")
-            existing.postal_code = response.get("postal_code")
-            existing.city = response.get("city")
-            existing.country = response.get("country")
-            existing.insee_code = response.get("insee_code")
-            existing.latitude = response.get("latitude")
-            existing.longitude = response.get("longitude")
-            existing.raw_data = response
+            existing.street = fields.get("street")
+            existing.postal_code = fields.get("postal_code")
+            existing.city = fields.get("city")
+            existing.country = fields.get("country")
+            existing.insee_code = fields.get("insee_code")
+            existing.raw_data = address_data
             existing.last_sync_at = datetime.now(UTC)
         else:
             # Create new address
             address = AddressData(
                 usage_point_id=usage_point_id,
-                street=response.get("street"),
-                postal_code=response.get("postal_code"),
-                city=response.get("city"),
-                country=response.get("country"),
-                insee_code=response.get("insee_code"),
-                latitude=response.get("latitude"),
-                longitude=response.get("longitude"),
-                raw_data=response,
+                street=fields.get("street"),
+                postal_code=fields.get("postal_code"),
+                city=fields.get("city"),
+                country=fields.get("country"),
+                insee_code=fields.get("insee_code"),
+                raw_data=address_data,
                 last_sync_at=datetime.now(UTC),
             )
             self.db.add(address)
@@ -589,7 +590,7 @@ class SyncService:
         """Parse meter reading response into records
 
         Args:
-            response: API response with meter_reading (may be wrapped in APIResponse format)
+            response: API response, Data Connect 2026 or v5 (may be wrapped in APIResponse format)
             usage_point_id: PDL number
             granularity: DAILY or DETAILED
 
@@ -598,19 +599,10 @@ class SyncService:
         """
         records = []
 
-        # Handle APIResponse wrapper format: { success: true, data: { meter_reading: ... } }
-        if "data" in response and isinstance(response.get("data"), dict):
-            data = response["data"]
-            meter_reading = data.get("meter_reading", {})
-        else:
-            # Direct meter_reading format
-            meter_reading = response.get("meter_reading", {})
-
-        interval_reading = meter_reading.get("interval_reading", [])
-
-        for reading in interval_reading:
-            date_str = reading.get("date", "")
-            value = reading.get("value")
+        # Points Data Connect 2026 (une passerelle encore en v5 est convertie), enveloppe {success, data} ou non
+        for reading in extract_points(_unwrap(response)):
+            date_str = reading.get("d", "")
+            value = reading.get("v")
 
             if not date_str or value is None:
                 continue

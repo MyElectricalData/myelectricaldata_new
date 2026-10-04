@@ -23,6 +23,7 @@ from ..middleware import get_current_user
 from ..models import PDL, User
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
+from ..adapters.enedis_format import address_v5_to_2026, contract_v5_to_2026, extract_points, v5_to_2026
 from ..services.local_data import (
     LocalDataService,
     format_daily_response,
@@ -71,16 +72,13 @@ def parse_date(date_str: str) -> date:
 
 
 def extract_readings_from_response(response: dict) -> list[dict]:
-    """Extract interval_reading from gateway response."""
+    """Points de mesure (format Data Connect 2026) d'une réponse de la passerelle.
+
+    Accepte aussi une passerelle encore en v5 (meter_reading) : les lectures sont converties.
+    """
     if not response:
         return []
-
-    # Try different response structures
-    meter_reading = response.get("meter_reading", {})
-    if not meter_reading and "data" in response:
-        meter_reading = response.get("data", {}).get("meter_reading", {})
-
-    return meter_reading.get("interval_reading", [])
+    return extract_points(extract_gateway_data(response))
 
 
 # =========================================================================
@@ -124,7 +122,7 @@ async def get_contract(
     try:
         adapter = get_med_adapter()
         response = await adapter.get_contract(usage_point_id)
-        data = extract_gateway_data(response)
+        data = contract_v5_to_2026(extract_gateway_data(response))
 
         # Save to local cache
         await local_service.save_contract(usage_point_id, data)
@@ -175,7 +173,7 @@ async def get_address(
     try:
         adapter = get_med_adapter()
         response = await adapter.get_address(usage_point_id)
-        data = extract_gateway_data(response)
+        data = address_v5_to_2026(extract_gateway_data(response))
 
         # Save to local cache
         await local_service.save_address(usage_point_id, data)
@@ -272,7 +270,7 @@ async def get_consumption_daily(
                 )
 
         # Sort by date
-        all_readings.sort(key=lambda x: x.get("date", ""))
+        all_readings.sort(key=lambda x: x.get("d", ""))
 
         return APIResponse(
             success=True,
@@ -284,7 +282,7 @@ async def get_consumption_daily(
         try:
             adapter = get_med_adapter()
             response = await adapter.get_consumption_daily(usage_point_id, start, end)
-            data = extract_gateway_data(response)
+            data = v5_to_2026(extract_gateway_data(response), grandeur_metier="CONS", grandeur_physique="EA", pas="P1D")
             logger.info(f"[{usage_point_id}] Daily consumption fetched from gateway (cache disabled)")
             return APIResponse(success=True, data=data)
         except Exception as e:
@@ -372,7 +370,7 @@ async def get_consumption_detail(
                 )
 
         # Sort by date
-        all_readings.sort(key=lambda x: x.get("date", ""))
+        all_readings.sort(key=lambda x: x.get("d", ""))
 
         return APIResponse(
             success=True,
@@ -384,7 +382,7 @@ async def get_consumption_detail(
         try:
             adapter = get_med_adapter()
             response = await adapter.get_consumption_detail(usage_point_id, start, end)
-            data = extract_gateway_data(response)
+            data = v5_to_2026(extract_gateway_data(response), grandeur_metier="CONS", grandeur_physique="PA")
             logger.info(f"[{usage_point_id}] Detailed consumption fetched from gateway (cache disabled)")
             return APIResponse(success=True, data=data)
         except Exception as e:
@@ -418,7 +416,7 @@ async def get_max_power(
     try:
         adapter = get_med_adapter()
         response = await adapter.get_consumption_max_power(usage_point_id, start, end)
-        data = extract_gateway_data(response)
+        data = v5_to_2026(extract_gateway_data(response), grandeur_metier="CONS", grandeur_physique="PMA", pas="P1D")
         return APIResponse(success=True, data=data)
     except Exception as e:
         logger.error(f"[{usage_point_id}] Error fetching max power: {e}")
@@ -486,7 +484,7 @@ async def get_production_daily(
             )
             return APIResponse(
                 success=True,
-                data=format_daily_response(usage_point_id, start, end, all_readings, from_cache=True),
+                data=format_daily_response(usage_point_id, start, end, all_readings, from_cache=True, grandeur_metier="PROD"),
             )
 
         # Fetch only missing ranges from gateway
@@ -510,11 +508,11 @@ async def get_production_daily(
                 )
 
         # Sort by date
-        all_readings.sort(key=lambda x: x.get("date", ""))
+        all_readings.sort(key=lambda x: x.get("d", ""))
 
         return APIResponse(
             success=True,
-            data=format_daily_response(usage_point_id, start, end, all_readings, from_cache=False),
+            data=format_daily_response(usage_point_id, start, end, all_readings, from_cache=False, grandeur_metier="PROD"),
         )
 
     else:
@@ -522,7 +520,7 @@ async def get_production_daily(
         try:
             adapter = get_med_adapter()
             response = await adapter.get_production_daily(usage_point_id, start, end)
-            data = extract_gateway_data(response)
+            data = v5_to_2026(extract_gateway_data(response), grandeur_metier="PROD", grandeur_physique="EA", pas="P1D")
             logger.info(f"[{usage_point_id}] Daily production fetched from gateway (cache disabled)")
             return APIResponse(success=True, data=data)
         except Exception as e:
@@ -586,7 +584,7 @@ async def get_production_detail(
             )
             return APIResponse(
                 success=True,
-                data=format_detail_response(usage_point_id, start, end, all_readings, from_cache=True),
+                data=format_detail_response(usage_point_id, start, end, all_readings, from_cache=True, grandeur_metier="PROD"),
             )
 
         # Fetch only missing ranges from gateway
@@ -610,11 +608,11 @@ async def get_production_detail(
                 )
 
         # Sort by date
-        all_readings.sort(key=lambda x: x.get("date", ""))
+        all_readings.sort(key=lambda x: x.get("d", ""))
 
         return APIResponse(
             success=True,
-            data=format_detail_response(usage_point_id, start, end, all_readings, from_cache=False),
+            data=format_detail_response(usage_point_id, start, end, all_readings, from_cache=False, grandeur_metier="PROD"),
         )
 
     else:
@@ -622,7 +620,7 @@ async def get_production_detail(
         try:
             adapter = get_med_adapter()
             response = await adapter.get_production_detail(usage_point_id, start, end)
-            data = extract_gateway_data(response)
+            data = v5_to_2026(extract_gateway_data(response), grandeur_metier="PROD", grandeur_physique="PA")
             logger.info(f"[{usage_point_id}] Detailed production fetched from gateway (cache disabled)")
             return APIResponse(success=True, data=data)
         except Exception as e:
@@ -661,7 +659,7 @@ async def get_power(
     try:
         adapter = get_med_adapter()
         response = await adapter.get_consumption_max_power(usage_point_id, start, end)
-        data = extract_gateway_data(response)
+        data = v5_to_2026(extract_gateway_data(response), grandeur_metier="CONS", grandeur_physique="PMA", pas="P1D")
         return APIResponse(success=True, data=data)
     except Exception as e:
         logger.error(f"[{usage_point_id}] Error fetching max power: {e}")
@@ -776,7 +774,7 @@ async def get_consumption_detail_batch(
                 current_start = chunk_end
 
         # Trier par date
-        all_readings.sort(key=lambda x: x.get("date", ""))
+        all_readings.sort(key=lambda x: x.get("d", ""))
 
         return APIResponse(
             success=True,
@@ -842,7 +840,7 @@ async def get_production_detail_batch(
                 )
                 return APIResponse(
                     success=True,
-                    data=format_detail_response(usage_point_id, start, end, all_readings, from_cache=True),
+                    data=format_detail_response(usage_point_id, start, end, all_readings, from_cache=True, grandeur_metier="PROD"),
                 )
 
             # Fetcher uniquement les plages manquantes en chunks de 7 jours
@@ -891,11 +889,11 @@ async def get_production_detail_batch(
                 current_start = chunk_end
 
         # Trier par date
-        all_readings.sort(key=lambda x: x.get("date", ""))
+        all_readings.sort(key=lambda x: x.get("d", ""))
 
         return APIResponse(
             success=True,
-            data=format_detail_response(usage_point_id, start, end, all_readings, from_cache=False),
+            data=format_detail_response(usage_point_id, start, end, all_readings, from_cache=False, grandeur_metier="PROD"),
         )
 
     except Exception as e:

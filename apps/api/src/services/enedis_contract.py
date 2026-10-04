@@ -130,3 +130,20 @@ def apply_contract_to_pdl(pdl: Any, contract: dict[str, Any], log_prefix: str = 
         f"mise en service {parsed['activation_date']}"
     )
     return parsed
+
+
+def parse_address(response: dict[str, Any]) -> dict[str, Any]:
+    """Adresse donnees_generales_auto → champs à plat (rue, code postal, ville, INSEE).
+
+    `postal_code_city` regroupe code postal et commune ("59199 BRUILLE ST AMAND").
+    """
+    address = response.get("address") or {}
+    postal_code_city = (address.get("postal_code_city") or "").strip()
+    match = re.match(r"(\d{5})\s+(.*)", postal_code_city)
+    return {
+        "street": address.get("number_street_name"),
+        "postal_code": match.group(1) if match else None,
+        "city": match.group(2) if match else (postal_code_city or None),
+        "insee_code": address.get("insee_code"),
+        "country": "France",
+    }

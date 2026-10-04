@@ -2573,7 +2573,7 @@ class HomeAssistantExporter(BaseExporter):
                 # Default to PT30M for detailed data without raw_data
                 return value_w / 2 if use_detailed else float(value_w)
 
-            interval_length = raw_data.get("interval_length", "PT30M")
+            interval_length = raw_data.get("p") or raw_data.get("interval_length", "PT30M")
 
             # Parse interval_length (e.g., "PT30M" → 30)
             match = re.match(r"PT(\d+)M", interval_length)
@@ -2890,7 +2890,7 @@ class HomeAssistantExporter(BaseExporter):
                 # Default to PT30M for detailed data without raw_data
                 return value_w / 2 if use_detailed else float(value_w)
 
-            interval_length = raw_data.get("interval_length", "PT30M")
+            interval_length = raw_data.get("p") or raw_data.get("interval_length", "PT30M")
 
             # Parse interval_length (e.g., "PT30M" → 30)
             match = re.match(r"PT(\d+)M", interval_length)
