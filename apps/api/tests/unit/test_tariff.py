@@ -12,6 +12,7 @@ from src.services.exporters.tariff import (
     is_offpeak,
     is_offpeak_slot,
     parse_offpeak_ranges,
+    hp_hc_window_start,
     split_hp_hc_wh,
     summarize_hp_hc_kwh,
     tariff_profile,
@@ -51,7 +52,9 @@ def rec(day: date, start: str | None, value_w: int, raw_data: dict | None = None
         ("EJP", TariffProfile("HC_HP")),
         ("SEASONAL", TariffProfile("HC_HP")),
         ("ZEN_FLEX", TariffProfile("HC_HP")),
-        ("HC_WEEKEND", TariffProfile("HC_HP", weekend_offpeak=True)),
+        # Heures pleines aussi le week-end (prix différent) : HC/HP simple
+        ("HC_WEEKEND", TariffProfile("HC_HP")),
+        ("WEEKEND", TariffProfile("HC_HP")),
         ("HC_NUIT_WEEKEND", TariffProfile("HC_HP", weekend_offpeak=True)),
         ("TEMPO", TariffProfile("TEMPO")),
         ("tempo", TariffProfile("TEMPO")),
@@ -83,6 +86,10 @@ def test_tariff_profile(raw: str | None, expected: TariffProfile) -> None:
         # Ancien format : toutes les plages, pas seulement la première
         ([{"start": "22:00", "end": "06:00"}, {"start": "12:00", "end": "14:00"}], [(1320, 360), (720, 840)]),
         (["22:30-06:30"], [(1350, 390)]),
+        # "ranges" vide : on retombe sur les autres clés
+        ({"ranges": [], "default": "HC (22H00-6H00)"}, [(1320, 360)]),
+        # Heures sans minutes
+        ("HC (22H-6H)", [(1320, 360)]),
     ],
 )
 def test_parse_offpeak_ranges(raw: object, expected: list[tuple[int, int]]) -> None:
@@ -158,6 +165,7 @@ def test_is_offpeak_slot(interval_start: str | None, expected: bool | None) -> N
         (1000, {"interval_length": "PT15M"}, 250.0),
         (1000, {"interval_length": "PT60M"}, 1000.0),
         (600, {"interval_length": "PT10M"}, 100.0),
+        (600, {"interval_length": "PT1H"}, 600.0),
     ],
 )
 def test_interval_wh(value_w: int, raw_data: dict | None, expected: float) -> None:
@@ -216,3 +224,43 @@ def test_summarize_hp_hc_kwh() -> None:
         "this_year_hp_kwh": 7.0,
         "this_year_hc_kwh": 0.8,
     }
+
+
+@pytest.mark.parametrize(
+    ("today", "expected"),
+    [
+        (date(2026, 10, 7), date(2026, 1, 1)),  # en cours d'année : le 1er janvier
+        (date(2027, 1, 1), date(2026, 12, 28)),  # vendredi 1er janvier : semaine depuis lundi 28/12
+        (date(2027, 1, 4), date(2027, 1, 1)),  # lundi 4 : hier = dimanche 3, année depuis le 1er
+        (date(2029, 1, 1), date(2028, 12, 31)),  # lundi 1er janvier : hier = 31/12
+    ],
+)
+def test_hp_hc_window_start(today: date, expected: date) -> None:
+    assert hp_hc_window_start(today) == expected
+
+
+def test_summarize_hp_hc_kwh_early_january() -> None:
+    today = date(2027, 1, 2)  # samedi : semaine depuis lundi 28/12/2026, hier = 01/01/2027
+    records = [
+        rec(date(2026, 12, 28), "12:00", 2000),  # HP 1,0 kWh : semaine seulement
+        rec(date(2027, 1, 1), "23:00", 1000),  # HC 0,5 kWh : hier, semaine, mois, année
+    ]
+    result = summarize_hp_hc_kwh(records, today, NIGHT)
+    assert result["this_week_hp_kwh"] == 1.0
+    assert result["this_week_hc_kwh"] == 0.5
+    assert result["yesterday_hc_kwh"] == 0.5
+    assert result["this_year_hp_kwh"] == 0.0
+    assert result["this_year_hc_kwh"] == 0.5
+
+
+def test_tariff_profile_unknown_option_warns(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level("WARNING"):
+        assert tariff_profile("BTINFMUDT") == TariffProfile("BASE")
+    assert "BTINFMUDT" in caplog.text
+
+
+def test_tariff_profile_base_does_not_warn(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level("WARNING"):
+        tariff_profile("BASE")
+        tariff_profile(None)
+    assert caplog.text == ""

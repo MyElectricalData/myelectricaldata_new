@@ -42,7 +42,7 @@ from sqlalchemy import String, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import BaseExporter
-from .tariff import DEFAULT_OFFPEAK_RANGES, is_offpeak, is_offpeak_slot, parse_offpeak_ranges, tariff_profile
+from .tariff import DEFAULT_OFFPEAK_RANGES, is_offpeak, is_offpeak_slot, tariff_profile
 
 logger = logging.getLogger(__name__)
 
@@ -426,6 +426,9 @@ class HomeAssistantExporter(BaseExporter):
                         results["consumption"] += count
                         results["linky_card"] += count
 
+                        # Capteurs HP/HC (contrats à heures creuses)
+                        results["consumption"] += await self._export_hp_hc_sensors(client, db, pdl)
+
                         # Sensor production (si applicable)
                         count = await self._export_linky_card_stats(
                             client, stats, db, pdl, "production"
@@ -568,6 +571,9 @@ class HomeAssistantExporter(BaseExporter):
                         count_c = await self._export_linky_card_stats(client, stats, db, pdl, "consumption")
                         results["consumption"] += count_c
                         results["linky_card"] += count_c
+                        count_hp_hc = await self._export_hp_hc_sensors(client, db, pdl)
+                        results["consumption"] += count_hp_hc
+                        count_c += count_hp_hc
 
                         count_p = await self._export_linky_card_stats(client, stats, db, pdl, "production")
                         results["production"] += count_p
@@ -848,8 +854,6 @@ class HomeAssistantExporter(BaseExporter):
         - sensor.myelectricaldata_linky_{pdl}_consumption_last7day (last 7 days total)
         - sensor.myelectricaldata_linky_{pdl}_consumption_last14day (last 14 days total)
         - sensor.myelectricaldata_linky_{pdl}_consumption_last30day (last 30 days total)
-        - sensor.myelectricaldata_linky_{pdl}_consumption_{yesterday,this_week,this_month,this_year}_{hp,hc}
-          (off-peak contracts with detailed data only)
         """
         today = date.today()
         yesterday = today - timedelta(days=1)
@@ -917,10 +921,26 @@ class HomeAssistantExporter(BaseExporter):
             )
             count += 1
 
-        # HP/HC (contrats à heures creuses avec données détaillées) : 8 capteurs
-        # sensor.myelectricaldata_linky_{pdl}_consumption_{yesterday,this_week,this_month,this_year}_{hp,hc}
-        hp_hc = await self._get_hp_hc_summary(stats.db, pdl, today)
-        for key, value_kwh in (hp_hc or {}).items():
+        logger.debug(f"[HA-MQTT] Exported consumption stats for {pdl}: {count} sensors")
+        return count
+
+    async def _export_hp_hc_sensors(
+        self,
+        client: aiomqtt.Client,
+        db: AsyncSession,
+        pdl: str,
+    ) -> int:
+        """Publie les 8 capteurs HP/HC d'un PDL via MQTT Discovery
+
+        sensor.myelectricaldata_linky_{pdl}_consumption_{yesterday,this_week,this_month,this_year}_{hp,hc}
+        Rien pour un contrat BASE ou sans donnée détaillée (cf. BaseExporter._get_hp_hc_summary).
+        """
+        hp_hc = await self._get_hp_hc_summary(db, pdl, date.today())
+        if not hp_hc:
+            return 0
+
+        device = self._get_device_linky(pdl)
+        for key, value_kwh in hp_hc.items():
             sensor_key = key.removesuffix("_kwh")
             await self._publish_sensor_old_format(
                 client,
@@ -935,10 +955,7 @@ class HomeAssistantExporter(BaseExporter):
                 state_class="total",
                 icon="mdi:weather-night" if sensor_key.endswith("_hc") else "mdi:white-balance-sunny",
             )
-            count += 1
-
-        logger.debug(f"[HA-MQTT] Exported consumption stats for {pdl}: {count} sensors")
-        return count
+        return len(hp_hc)
 
     async def _export_production_stats(
         self,
@@ -1140,7 +1157,8 @@ class HomeAssistantExporter(BaseExporter):
         oldest_date = today - timedelta(days=nb_days)
 
         # Récupérer les infos contrat (plages HC, puissance souscrite, week-end creux)
-        offpeak_ranges, subscribed_power_kva, weekend_offpeak = await self._get_pdl_contract_info(db, pdl)
+        tariff_info, offpeak_ranges, subscribed_power_kva = await self._get_pdl_contract_info(db, pdl)
+        weekend_offpeak = tariff_info.weekend_offpeak
 
         # =====================================================================
         # BATCH QUERIES (minimiser les allers-retours DB)
@@ -1183,7 +1201,9 @@ class HomeAssistantExporter(BaseExporter):
             detailed_by_day[d].append((interval_start, value))
 
         has_detailed = len(detailed_records) > 0
-        has_offpeak = len(offpeak_ranges) > 0
+        # HP/HC seulement pour un contrat à heures creuses : des plages Enedis peuvent rester
+        # en base après un passage en BASE (cf. routers/pdl.py)
+        has_offpeak = tariff_info.family != "BASE" and (len(offpeak_ranges) > 0 or weekend_offpeak)
 
         # Calculer HP/HC et max power pour chaque jour
         daily_hp: dict[date, int] = {}   # Wh
@@ -3237,41 +3257,18 @@ class HomeAssistantExporter(BaseExporter):
         from datetime import timedelta
         from zoneinfo import ZoneInfo
 
-        from ...models.client_mode import ConsumptionData, ContractData, DataGranularity
-        from ...models.pdl import PDL
+        from ...models.client_mode import ConsumptionData, DataGranularity
         from ...models.tempo_day import TempoColor, TempoDay
 
         tz_paris = ZoneInfo("Europe/Paris")
 
-        # 1. Get contract info to determine pricing option
-        # First try ContractData (client mode cache), then fallback to PDL.pricing_option
-        contract_result = await db.execute(
-            select(ContractData).where(ContractData.usage_point_id == pdl)
+        # 1. Profil tarifaire et plages HC (PDL.pricing_option prioritaire, cf. _get_pdl_contract_info)
+        profile, contract_ranges, _ = await self._get_pdl_contract_info(db, pdl)
+        # Aucune plage connue : 22h-6h
+        parsed_offpeak = contract_ranges or DEFAULT_OFFPEAK_RANGES
+        logger.info(
+            f"[HA-WS] PDL {pdl}: tariff={profile}, offpeak_ranges={contract_ranges}, since_date={since_date}"
         )
-        contract = contract_result.scalar_one_or_none()
-
-        pricing_option = "BASE"  # Default
-        offpeak_hours: dict | list | None = None
-
-        if contract and contract.pricing_option:
-            pricing_option = contract.pricing_option.upper()
-            # offpeak_hours format: {"ranges": ["22:30-06:30"]} ou {"default": "HC (22H30-06H30)"}
-            offpeak_hours = contract.offpeak_hours
-        else:
-            # Fallback: get pricing_option from PDL record
-            pdl_result = await db.execute(
-                select(PDL).where(PDL.usage_point_id == pdl)
-            )
-            pdl_record = pdl_result.scalar_one_or_none()
-            if pdl_record and pdl_record.pricing_option:
-                pricing_option = pdl_record.pricing_option.upper()
-                offpeak_hours = pdl_record.offpeak_hours
-
-        logger.info(f"[HA-WS] PDL {pdl}: pricing_option={pricing_option}, offpeak_hours={offpeak_hours}, since_date={since_date}")
-
-        profile = tariff_profile(pricing_option)
-        # Plages HC du contrat, sinon 22h-6h (aucune plage connue)
-        parsed_offpeak = parse_offpeak_ranges(offpeak_hours) or DEFAULT_OFFPEAK_RANGES
 
         # 2. Try to get detailed data (30-min) first, fallback to daily
         # Apply since_date filter if provided (for incremental import)

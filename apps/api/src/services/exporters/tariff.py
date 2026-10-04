@@ -16,11 +16,14 @@ Formats de offpeak_hours rencontrés en base :
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Literal, Protocol
+
+logger = logging.getLogger(__name__)
 
 TariffFamily = Literal["BASE", "HC_HP", "TEMPO"]
 
@@ -50,18 +53,22 @@ class DetailedRecord(Protocol):
 
 
 # Listes fermées : une option inconnue retombe en BASE plutôt que d'être devinée
-# (BASE_WEEKEND contient WEEKEND mais reste une offre à prix unique)
-_HC_HP_OPTIONS = frozenset({"HC_HP", "HC/HP", "HCHP", "EJP", "SEASONAL", "ZEN_FLEX"})
-_WEEKEND_OFFPEAK_OPTIONS = frozenset({"HC_WEEKEND", "HC_NUIT_WEEKEND"})
+# (BASE_WEEKEND contient WEEKEND mais reste une offre à prix unique ; HC_WEEKEND et WEEKEND
+# ont des heures pleines le week-end, à un prix différent : HC/HP simple)
+_HC_HP_OPTIONS = frozenset(
+    {"HC_HP", "HC/HP", "HCHP", "EJP", "SEASONAL", "ZEN_FLEX", "HC_WEEKEND", "WEEKEND"}
+)
+_WEEKEND_OFFPEAK_OPTIONS = frozenset({"HC_NUIT_WEEKEND"})
+_BASE_OPTIONS = frozenset({"", "BASE", "BASE_WEEKEND"})
 
 
 def tariff_profile(pricing_option: str | None) -> TariffProfile:
     """Ramène une option tarifaire à sa famille d'export
 
     - TEMPO : 6 séries couleur x période
-    - HC_HP, HC/HP, HCHP, EJP, SEASONAL, ZEN_FLEX : 2 séries hp/hc
-    - HC_WEEKEND, HC_NUIT_WEEKEND : 2 séries hp/hc, samedi et dimanche entièrement creux
-    - tout le reste (BASE, BASE_WEEKEND, None, inconnu) : 1 série base
+    - HC_HP, HC/HP, HCHP, EJP, SEASONAL, ZEN_FLEX, HC_WEEKEND, WEEKEND : 2 séries hp/hc
+    - HC_NUIT_WEEKEND : 2 séries hp/hc, samedi et dimanche entièrement creux
+    - tout le reste (BASE, BASE_WEEKEND, None, inconnu) : 1 série base (inconnu : warning)
     """
     option = (pricing_option or "").strip().upper()
     if "TEMPO" in option:  # même règle que l'ancien export Energy ("TEMPO" in pricing_option)
@@ -70,17 +77,19 @@ def tariff_profile(pricing_option: str | None) -> TariffProfile:
         return TariffProfile("HC_HP", weekend_offpeak=True)
     if option in _HC_HP_OPTIONS:
         return TariffProfile("HC_HP")
+    if option not in _BASE_OPTIONS:
+        logger.warning(f"[TARIFF] Option tarifaire non reconnue {pricing_option!r} : export en BASE (une seule série)")
     return TariffProfile("BASE")
 
 
-# "22:00-06:00", "22H00-6H00", "2h30 - 6h30" : une plage par correspondance
-_RANGE_RE = re.compile(r"(\d{1,2})\s*[hH:]\s*(\d{2})\s*-\s*(\d{1,2})\s*[hH:]\s*(\d{2})")
-_INTERVAL_RE = re.compile(r"PT(\d+)M")
+# "22:00-06:00", "22H00-6H00", "2h30 - 6h30", "22H-6H" : une plage par correspondance
+_RANGE_RE = re.compile(r"(\d{1,2})\s*[hH:]\s*(\d{2})?\s*-\s*(\d{1,2})\s*[hH:]\s*(\d{2})?")
+_INTERVAL_RE = re.compile(r"PT(\d+)([MH])")
 _DEFAULT_INTERVAL_MINUTES = 30
 
 
-def _minutes(hours: str, minutes: str) -> int | None:
-    h, m = int(hours), int(minutes)
+def _minutes(hours: str, minutes: str | None) -> int | None:
+    h, m = int(hours), int(minutes or 0)
     if h > 24 or m > 59 or (h == 24 and m != 0):
         return None
     return h * 60 + m
@@ -107,12 +116,14 @@ def parse_offpeak_ranges(raw: Any) -> list[tuple[int, int]]:
     if isinstance(raw, str):
         return _ranges_from_text(raw)
     if isinstance(raw, dict):
-        if "ranges" in raw:
-            return parse_offpeak_ranges(raw["ranges"])
         if "start" in raw and "end" in raw:
             return _ranges_from_text(f"{raw['start']}-{raw['end']}")
-        # Brut Enedis ({"default": "HC (...)"}) ou plages par jour : on lit toutes les valeurs
-        return parse_offpeak_ranges(list(raw.values()))
+        # {"ranges": [...]} d'abord ; vide ou absent : brut Enedis ({"default": "HC (...)"})
+        # ou plages par jour, on lit alors toutes les autres valeurs
+        ranges = parse_offpeak_ranges(raw.get("ranges"))
+        if ranges:
+            return ranges
+        return parse_offpeak_ranges([v for k, v in raw.items() if k != "ranges"])
     if isinstance(raw, list):
         result: list[tuple[int, int]] = []
         for item in raw:
@@ -153,7 +164,7 @@ def interval_wh(value_w: int | float, raw_data: dict[str, Any] | None) -> float:
     if raw_data:
         match = _INTERVAL_RE.fullmatch(str(raw_data.get("interval_length", "")))
         if match and int(match.group(1)) > 0:
-            minutes = int(match.group(1))
+            minutes = int(match.group(1)) * (60 if match.group(2) == "H" else 1)
     return value_w * minutes / 60
 
 
@@ -194,6 +205,14 @@ def split_hp_hc_wh(
         if period and record.value:
             totals[period] += interval_wh(record.value, record.raw_data)
     return totals
+
+
+def hp_hc_window_start(today: date) -> date:
+    """Premier jour de données nécessaire à summarize_hp_hc_kwh
+
+    Le 1er janvier ne suffit pas : début janvier, la semaine (depuis lundi) et hier sont en décembre.
+    """
+    return min(today.replace(month=1, day=1), today - timedelta(days=today.weekday()), today - timedelta(days=1))
 
 
 def summarize_hp_hc_kwh(
