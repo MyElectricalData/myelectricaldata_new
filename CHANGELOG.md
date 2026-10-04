@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.0.1...2.0.2) (2026-10-04)
+
+### Bug Fixes
+
+* **api:** MED-12 / corrections de la revue de la compatibilité v5 ([842fd0d](https://github.com/MyElectricalData/myelectricaldata_new/commit/842fd0d43387da74ca1855c37d22612cfa396ce0))
+
 ## [2.0.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.0.0...2.0.1) (2026-10-04)
 
 ### Bug Fixes
