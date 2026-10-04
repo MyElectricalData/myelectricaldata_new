@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     ENEDIS_CLIENT_SECRET: str = ""
     ENEDIS_ENVIRONMENT: Literal["sandbox", "production"] = "sandbox"
     ENEDIS_REDIRECT_URI: str = "http://localhost:3000/oauth/callback"
+    # Data Connect 2026 : "new" = API 2026 seules, "legacy" = API v5 seules,
+    # "auto" = API 2026 avec repli sur la v5 tant qu'elle répond (réponses toujours au format 2026)
+    ENEDIS_API_MODE: Literal["legacy", "new", "auto"] = "auto"
+    # Version de la page de consentement : v1 (retour usage_point_id) ou v2 (retour autorisation_id)
+    ENEDIS_AUTHORIZE_VERSION: Literal["v1", "v2"] = "v1"
+    ENEDIS_AUTHORIZE_URL: str = ""  # Surcharge complète de l'URL authorize (vide = déduite)
 
     # RTE API (for Tempo Calendar)
     RTE_CLIENT_ID: str = ""
@@ -123,9 +129,12 @@ class Settings(BaseSettings):
 
     @property
     def enedis_authorize_url(self) -> str:
+        if self.ENEDIS_AUTHORIZE_URL:
+            return self.ENEDIS_AUTHORIZE_URL
+        version = self.ENEDIS_AUTHORIZE_VERSION
         if self.ENEDIS_ENVIRONMENT == "production":
-            return "https://mon-compte-particulier.enedis.fr/dataconnect/v1/oauth2/authorize"
-        return f"{self.enedis_base_url}/dataconnect/v1/oauth2/authorize"
+            return f"https://mon-compte-particulier.enedis.fr/dataconnect/{version}/oauth2/authorize"
+        return f"{self.enedis_base_url}/dataconnect/{version}/oauth2/authorize"
 
     @model_validator(mode="after")
     def validate_secret_key(self) -> Self:

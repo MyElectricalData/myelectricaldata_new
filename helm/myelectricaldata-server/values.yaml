@@ -176,6 +176,10 @@ config:
   mailgunDomain: ""         # Mailgun domain
   mailgunFromEmail: ""      # Mailgun from email address
   enedisRedirectUri: ""     # Enedis OAuth callback URL (e.g., https://example.com/consent)
+  # Enedis Data Connect 2026
+  enedisApiMode: "auto"     # legacy (API v5) | new (API 2026) | auto (2026, repli v5 tant qu'elle répond)
+  enedisAuthorizeVersion: "v1"  # Page de consentement : v1 (retour usage_point_id) | v2 (retour autorisation_id)
+  enedisAuthorizeUrl: ""    # Surcharge complète de l'URL authorize (vide = déduite de la version)
   frontendUrl: ""           # Frontend URL for redirects (e.g., https://example.com)
 
   # Cookie settings for httpOnly JWT authentication

@@ -47,6 +47,11 @@ data:
   {{- if .Values.config.enedisRedirectUri }}
   ENEDIS_REDIRECT_URI: {{ .Values.config.enedisRedirectUri | quote }}
   {{- end }}
+  ENEDIS_API_MODE: {{ .Values.config.enedisApiMode | default "auto" | quote }}
+  ENEDIS_AUTHORIZE_VERSION: {{ .Values.config.enedisAuthorizeVersion | default "v1" | quote }}
+  {{- if .Values.config.enedisAuthorizeUrl }}
+  ENEDIS_AUTHORIZE_URL: {{ .Values.config.enedisAuthorizeUrl | quote }}
+  {{- end }}
   {{- if .Values.config.frontendUrl }}
   FRONTEND_URL: {{ .Values.config.frontendUrl | quote }}
   {{- end }}
