@@ -180,7 +180,7 @@ class EnedisAdapter:
 
     # Data endpoints
     async def get_consumption_daily(usage_point_id, start, end, access_token) -> dict
-        # Returns: {"meter_reading": {"interval_reading": [...], "reading_type": {...}}}
+        # Returns (Data Connect 2026): {"idPrm", "periode", "grandeur": [{"grandeurMetier", "unite", "points": [{"v", "d"}]}]}
 
     async def get_consumption_detail(usage_point_id, start, end, access_token) -> dict
         # Load curve data (30-min intervals)

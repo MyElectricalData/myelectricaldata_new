@@ -136,6 +136,16 @@ docker compose up -d                                  # Mode client
 
 ---
 
+## Compatibilité avec la passerelle (Enedis Data Connect 2026)
+
+Depuis la migration vers les API Enedis Data Connect 2026, la passerelle `v2.myelectricaldata.fr` rend les mesures, le contrat et l'adresse au nouveau format (`grandeur[].points[]` au lieu de `meter_reading.interval_reading[]`). Conséquences :
+
+- un client local **antérieur** à cette version ne sait plus lire les réponses de la passerelle : il faut le mettre à jour ;
+- un client local **à jour** lit aussi une passerelle encore en v5, l'ordre de mise à jour est donc libre ;
+- les données déjà synchronisées en base (`raw_data` au format v5) sont gardées et restent lues, sans migration.
+
+Détail du format : [Data Connect 2026](../external-apis/enedis-api/data-connect-2026/README.md).
+
 ## Documentation
 
 - [Installation](./installation/) (Docker, Helm)

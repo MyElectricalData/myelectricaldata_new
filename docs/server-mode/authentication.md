@@ -155,6 +155,8 @@ GET /api/consumption?token=eyJhbGciOiJIUzI1NiIs...
 
 ### URL d'autorisation
 
+Version `v1` par défaut ; `ENEDIS_AUTHORIZE_VERSION=v2` pour la page Data Connect 2026 (retour `autorisation_id` au lieu de `usage_point_id`), `ENEDIS_AUTHORIZE_URL` pour une surcharge complète.
+
 ```
 https://mon-compte-particulier.enedis.fr/dataconnect/v1/oauth2/authorize
   ?response_type=code

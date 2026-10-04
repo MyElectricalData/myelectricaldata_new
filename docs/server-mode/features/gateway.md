@@ -23,11 +23,11 @@ Mettre à disposition une API passerelle entre les utilisateurs finaux et Enedis
    - la présence d'un cache chiffré par sa clé API personnelle.
 2. L'utilisateur crée un compte sur la passerelle (email, mot de passe).
 3. Depuis son tableau de bord, l'utilisateur clique sur **"Consentement Enedis"** (pas besoin de saisir de PDL).
-4. La passerelle génère l'URL d'autorisation Enedis avec `state=user_id` :<br>`https://mon-compte-particulier.enedis.fr/dataconnect/v1/oauth2/authorize?client_id=XXXXXXXX&duration=P36M&response_type=code&state={user_id}`
-5. Après validation du consentement sur le portail Enedis, celui-ci redirige vers `http://localhost:8000/oauth/callback?code=XXX&state={user_id}&usage_point_id={pdl}`.
+4. La passerelle génère l'URL d'autorisation Enedis avec `state=user_id` (version `v1` ou `v2` selon `ENEDIS_AUTHORIZE_VERSION`) :<br>`https://mon-compte-particulier.enedis.fr/dataconnect/v1/oauth2/authorize?client_id=XXXXXXXX&duration=P36M&response_type=code&state={user_id}`
+5. Après validation du consentement sur le portail Enedis, celui-ci redirige vers `http://localhost:8000/oauth/callback?code=XXX&state={user_id}` suivi de `&usage_point_id={pdl}` (consentement v1) ou de `&autorisation_id={id}` (consentement v2, Data Connect 2026).
 6. La passerelle :
-   - Échange le code contre un token OAuth
-   - Appelle l'API Enedis `/customers_upc/v5/usage_points` pour récupérer **tous les PDL** du compte
+   - En v2, échange l'`autorisation_id` contre le ou les PDL via `POST /subscribed_services/v1` (jeton client_credentials global)
+   - Récupère le contrat (puissance souscrite, heures creuses) via les API Data Connect 2026, cf. [Data Connect 2026](../../external-apis/enedis-api/data-connect-2026/README.md)
    - Crée automatiquement les PDL en base de données
    - Crée les tokens OAuth pour chaque PDL
    - Redirige vers le dashboard avec un message de succès
@@ -44,7 +44,7 @@ Mettre à disposition une API passerelle entre les utilisateurs finaux et Enedis
 - Après consentement, la passerelle :
   1. Reçoit la redirection Enedis avec le code d'autorisation
   2. Échange le code contre un token OAuth
-  3. Appelle automatiquement l'endpoint Enedis `/customers_upc/v5/usage_points`
+  3. Identifie les PDL (`usage_point_id` en v1, `autorisation_id` échangé via `subscribed_services` en v2)
   4. Crée tous les PDL détectés en base de données
   5. Crée les tokens OAuth pour chaque PDL
   6. Redirige vers le dashboard avec un message : "Bravo ! X points de livraison détectés (Y nouveaux)."

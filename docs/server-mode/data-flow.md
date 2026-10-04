@@ -144,11 +144,13 @@ GLOBAL CLIENT CREDENTIALS FLOW
    ├─ grant_type: "client_credentials"
    └─ Returns: access_token, expires_in
 
-2. Use token for all API calls
-   GET {ENEDIS_BASE_URL}/metering_data_dc/v5/daily_consumption
-   ├─ Query: usage_point_id, start, end
+2. Use token for all API calls (Data Connect 2026, ENEDIS_API_MODE=auto|new|legacy)
+   GET {ENEDIS_BASE_URL}/mesure_synchrone_auto/v2/consommation_quotidienne
+   ├─ Query: pointId, dateDebut, dateFin (fin exclue)
    ├─ Header: Authorization: Bearer {access_token}
-   └─ Returns: meter_reading with interval_reading array
+   └─ Returns: {idPrm, periode, grandeur: [{grandeurMetier, unite, points: [{v, d, p}]}]}
+   Mode auto : repli sur la v5 (metering_data_*) en cas d'erreur HTTP,
+   réponse convertie au format 2026 (adapters/enedis_format.py)
 
 RATE LIMITING
 ├─ 5 requests/second (adapter level)
@@ -316,6 +318,9 @@ ENEDIS_ENVIRONMENT=sandbox|production
 ENEDIS_CLIENT_ID=<your-client-id>
 ENEDIS_CLIENT_SECRET=<your-secret>
 ENEDIS_REDIRECT_URI=http://localhost:3000/oauth/callback
+ENEDIS_API_MODE=auto|new|legacy          (Data Connect 2026, défaut auto)
+ENEDIS_AUTHORIZE_VERSION=v1|v2           (page de consentement, défaut v1)
+ENEDIS_AUTHORIZE_URL=<url>               (surcharge, optionnelle)
 
 SECRET_KEY=<jwt-signing-key>
 ACCESS_TOKEN_EXPIRE_MINUTES=43200 (30 days)

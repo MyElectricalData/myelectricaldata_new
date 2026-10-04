@@ -15,7 +15,13 @@ Toutes les integrations avec Enedis sont disponibles via deux environnements :
 
 Le parcours OAuth (autorisation + recuperation du token) est documente dans `docs/features-spec/01-gateway.md` et detaille dans les fichiers OpenAPI du dossier `docs/enedis-api/openapi`.
 
-## Catalogue des endpoints
+## Data Connect 2026
+
+Depuis le 28/09/2026, les données passent par les API Data Connect 2026 (`mesure_synchrone_auto/v2`, `situation_contrat_auto`, `synth_contrat_auto`, `comptage_auto`, `donnees_generales_auto`, `subscribed_services`). Correspondance avec la v5, format des réponses, pièges et configuration (`ENEDIS_API_MODE`) : [Data Connect 2026](./data-connect-2026/README.md). Les Swagger officiels sont dans `data-connect-2026/`.
+
+Le catalogue ci-dessous décrit les API **v5**, encore appelées en mode `legacy` et en repli du mode `auto` jusqu'à leur arrêt (vers le 12/10/2026).
+
+## Catalogue des endpoints (v5, legacy)
 
 | Reference                    | Description                                                     | Sandbox                                                           | Production                                                | Specification                                                  |
 | ---------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------- |
