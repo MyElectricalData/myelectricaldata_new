@@ -307,19 +307,19 @@ class SyncScheduler:
         if config.export_type == ExportType.HOME_ASSISTANT:
             exporter = HomeAssistantExporter(config.config)
             try:
-                result = await exporter.run_full_export(
+                ha_results = await exporter.run_full_export(
                     db, usage_point_ids,
                     run_mqtt=run_mqtt,
                     run_energy=run_energy,
                 )
                 total_exported += (
-                    result.get("consumption", 0)
-                    + result.get("production", 0)
-                    + result.get("tempo", 0)
-                    + result.get("ecowatt", 0)
+                    ha_results.get("consumption", 0)
+                    + ha_results.get("production", 0)
+                    + ha_results.get("tempo", 0)
+                    + ha_results.get("ecowatt", 0)
                 )
-                if result.get("errors"):
-                    errors.extend(result["errors"])
+                if ha_results.get("errors"):
+                    errors.extend(ha_results["errors"])
             except Exception as e:
                 logger.error(f"[SCHEDULER] Home Assistant export failed: {e}")
                 errors.append(str(e))
