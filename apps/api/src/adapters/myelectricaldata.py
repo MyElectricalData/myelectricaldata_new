@@ -161,7 +161,7 @@ class MyElectricalDataAdapter:
         return await self._make_request(
             "GET",
             f"/enedis/consumption/daily/{usage_point_id}",
-            params={"start": start, "end": end},
+            params={"start": start, "end": end, "use_cache": "true"},
         )
 
     async def get_consumption_detail(
@@ -180,7 +180,7 @@ class MyElectricalDataAdapter:
         return await self._make_request(
             "GET",
             f"/enedis/consumption/detail/{usage_point_id}",
-            params={"start": start, "end": end},
+            params={"start": start, "end": end, "use_cache": "true"},
         )
 
     async def get_consumption_max_power(
@@ -196,7 +196,7 @@ class MyElectricalDataAdapter:
         return await self._make_request(
             "GET",
             f"/enedis/power/{usage_point_id}",
-            params={"start": start, "end": end},
+            params={"start": start, "end": end, "use_cache": "true"},
         )
 
     # =========================================================================
@@ -216,7 +216,7 @@ class MyElectricalDataAdapter:
         return await self._make_request(
             "GET",
             f"/enedis/production/daily/{usage_point_id}",
-            params={"start": start, "end": end},
+            params={"start": start, "end": end, "use_cache": "true"},
         )
 
     async def get_production_detail(
@@ -232,7 +232,7 @@ class MyElectricalDataAdapter:
         return await self._make_request(
             "GET",
             f"/enedis/production/detail/{usage_point_id}",
-            params={"start": start, "end": end},
+            params={"start": start, "end": end, "use_cache": "true"},
         )
 
     # =========================================================================

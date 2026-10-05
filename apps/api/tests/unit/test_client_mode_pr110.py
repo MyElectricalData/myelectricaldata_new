@@ -291,3 +291,19 @@ def test_bloc_detaille_ancien_vide_mis_en_attente(monkeypatch):
 
     assert enedis_client._chunk_in_backoff("ancien")
     assert not enedis_client._chunk_in_backoff("recent")
+
+
+# --- Adapter passerelle : cache serveur jour par jour (quota Enedis épargné) -----------------
+
+
+async def test_adapter_demande_le_cache_serveur_pour_les_mesures():
+    from src.adapters.myelectricaldata import MyElectricalDataAdapter
+
+    adapter = MyElectricalDataAdapter.__new__(MyElectricalDataAdapter)
+    adapter._make_request = AsyncMock(return_value={})
+    for method in ("get_consumption_daily", "get_consumption_detail", "get_consumption_max_power",
+                   "get_production_daily", "get_production_detail"):
+        await getattr(adapter, method)(PRM, "2026-09-01", "2026-10-01")
+
+    assert all(call.kwargs["params"]["use_cache"] == "true" for call in adapter._make_request.await_args_list)
+    assert adapter._make_request.await_count == 5
