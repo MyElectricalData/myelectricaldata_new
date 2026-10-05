@@ -143,16 +143,6 @@ export function getLabelColor(label: string): string {
 }
 
 /**
- * Formate une valeur numerique pour l'affichage
- */
-export function formatValue(value: string | number | undefined): string {
-  if (value === undefined || value === null || value === '') return '-'
-  const num = Number(value)
-  if (isNaN(num)) return String(value)
-  return num.toFixed(4)
-}
-
-/**
  * Formate la puissance d'une offre (ex: "6 kVA")
  */
 export function formatPower(offer: { power_kva?: number }): string | null {

@@ -75,9 +75,6 @@ export function useAllOffersState() {
   const [providersToRemove, setProvidersToRemove] = useState<string[]>([])
 
   // Formulaire nouvelle offre
-  const [isAddingOffer, setIsAddingOffer] = useState(false)
-  const [newOfferType, setNewOfferType] = useState('')
-  const [newOfferValidFrom, setNewOfferValidFrom] = useState(() => new Date().toISOString().split('T')[0])
 
   // Edition des noms d'offres
   const [editedOfferNames, setEditedOfferNames] = useState<Record<string, string>>({})
@@ -613,8 +610,6 @@ export function useAllOffersState() {
       setNewGroups([])
       setDeprecatedOffers([])
       setUnchangedOfferIds(new Set())
-      setIsAddingOffer(false)
-      setNewOfferType('')
       return
     }
     if (!providerChanged && filterOfferType !== 'all') return
@@ -640,8 +635,6 @@ export function useAllOffersState() {
     setPowersToRemove([])
     setNewPowersData([])
     setNewGroups([])
-    setIsAddingOffer(false)
-    setNewOfferType('')
     setAiJsonInput('')
     setAiImportResult(null)
     setDeprecatedOffers([])
@@ -737,9 +730,6 @@ export function useAllOffersState() {
     providersToRemove, setProvidersToRemove,
 
     // Nouvelle offre
-    isAddingOffer, setIsAddingOffer,
-    newOfferType, setNewOfferType,
-    newOfferValidFrom, setNewOfferValidFrom,
 
     // Groupes
     newGroups, setNewGroups,
