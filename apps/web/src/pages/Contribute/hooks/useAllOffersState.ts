@@ -127,7 +127,6 @@ export function useAllOffersState() {
       return []
     },
     staleTime: 0,
-    gcTime: 0,
   })
 
   const { data: offersData } = useQuery({
@@ -140,14 +139,12 @@ export function useAllOffersState() {
       return []
     },
     staleTime: 0,
-    gcTime: 0,
   })
 
   const { data: pdlsData, isFetched: pdlsFetched } = useQuery({
     queryKey: ['pdls'],
     queryFn: () => pdlApi.list(),
-    staleTime: 0,
-    gcTime: 0,
+    staleTime: 5 * 60 * 1000,
   })
 
   // --- Computed values ---
@@ -376,7 +373,8 @@ export function useAllOffersState() {
     const existsInOffers = existingPowers.some(ep => {
       if (ep.power !== power || ep.offer_type !== effectiveType) return false
       if (powersToRemove.some(p => p.power === power && (!offerName || p.groupName === offerName))) return false
-      if (offerName && ep.offer_name && offerName !== ep.offer_name) return false
+      // offerName peut etre la cle du groupe ("nom##periode") : comparer le seul nom
+      if (offerName && ep.offer_name && getCleanOfferName(offerName) !== ep.offer_name) return false
       return periodsOverlap(validFrom, validTo, ep.valid_from, ep.valid_to)
     })
     if (existsInOffers) return true

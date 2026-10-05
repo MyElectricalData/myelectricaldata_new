@@ -33,7 +33,7 @@ export default function OfferTypeSelector({ state }: OfferTypeSelectorProps) {
     setNewGroups,
     setNewPowersData,
     setPowersToRemove,
-    newGroups, setNewGroups: _setNewGroups,
+    newGroups,
     dynamicPriceFields,
     confirmOrExecute,
     copyJsonToClipboard,
@@ -107,7 +107,7 @@ export default function OfferTypeSelector({ state }: OfferTypeSelectorProps) {
                     setFilterOfferType(type)
                     if (isEditMode && isEmpty) {
                       if (newGroups.length === 0) {
-                        _setNewGroups([{ name: '', validFrom: new Date().toISOString().split('T')[0], validTo: '', powers: [{ power: 0, fields: {} }] }])
+                        setNewGroups([{ name: '', validFrom: new Date().toISOString().split('T')[0], validTo: '', powers: [{ power: 0, fields: {} }] }])
                       }
                     }
                   })

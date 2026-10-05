@@ -175,7 +175,8 @@ export default function AllOffers() {
           ))}
 
           {/* Bouton créer un nouveau groupe (mode édition) */}
-          {isEditMode && filterProvider && <AddNewGroupButton state={state} />}
+          {/* (sans groupe, EmptyTypeMessage propose deja ce bouton) */}
+          {isEditMode && filterProvider && (visibleGroupNames.length > 0 || newGroups.length > 0) && <AddNewGroupButton state={state} />}
 
           {/* Nouvelles puissances orphelines (non rattachées à un groupe) */}
           <OrphanNewPowers state={state} />

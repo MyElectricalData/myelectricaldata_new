@@ -29,6 +29,7 @@ export function useOfferSubmission(state: AllOffersState) {
     newGroups,
     providersToRemove,
     deprecatedOffers,
+    groupedOffers,
     recapExcludedPowers,
     showRecapModal, setShowRecapModal,
     submittingOffers, setSubmittingOffers,
@@ -128,9 +129,13 @@ export function useOfferSubmission(state: AllOffersState) {
         const groupName = getCleanOfferName(groupKey)
         const groupOffer = providerOffers.find(o => getCleanOfferName(o.name) === groupName)
         const offerType = groupOffer?.offer_type || filterOfferType
+        // l'offre exacte du groupe : sans elle, le serveur cherche par fournisseur + type + puissance
+        // et echoue des que plusieurs offres partagent ces trois valeurs
+        const offerToRemove = groupedOffers[groupKey]?.find(o => o.power_kva === power)
         allContributions.push({
           contribution_type: 'UPDATE_OFFER',
           existing_provider_id: currentProvider.id,
+          ...(offerToRemove && { existing_offer_id: offerToRemove.id }),
           provider_name: currentProvider.name,
           offer_name: `[SUPPRESSION] ${currentProvider.name} - ${groupName} - ${power} kVA`,
           offer_type: offerType,
@@ -148,7 +153,7 @@ export function useOfferSubmission(state: AllOffersState) {
             contribution_type: 'UPDATE_OFFER',
             existing_provider_id: currentProvider.id,
             provider_name: currentProvider.name,
-            offer_name: `[SUPPRESSION] ${dep.offer_name} (${dep.offer_type})`,
+            offer_name: `[SUPPRESSION] ${getCleanOfferName(dep.offer_name)} (${dep.offer_type})`,
             offer_type: dep.offer_type,
             description: `Offre signalée comme obsolète par l'IA : ${dep.warning}`,
             power_kva: 0,

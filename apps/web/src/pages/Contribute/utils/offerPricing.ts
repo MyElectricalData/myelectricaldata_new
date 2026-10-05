@@ -83,13 +83,6 @@ export function getFieldKeysForOfferType(offerType: string): string[] {
 }
 
 /**
- * Retourne les champs de prix requis pour un type d'offre
- */
-export function getRequiredPriceFields(offerType: string): string[] {
-  return getFieldKeysForOfferType(offerType)
-}
-
-/**
  * Retourne la configuration des champs de prix pour un type d'offre
  * Inclut la detection de champs dynamiques pour les types non standard
  */
@@ -257,58 +250,6 @@ export function isNewPowerComplete(
   if (!power.fields.subscription_price?.trim()) return false
   const requiredFields = getFieldKeysForOfferType(offerType)
   return requiredFields.every(f => !!power.fields[f]?.trim())
-}
-
-/**
- * Verifie si une puissance existe deja dans les offres
- */
-export function isPowerAlreadyUsed(
-  powerKva: number,
-  offerType: string,
-  validFrom: string | undefined,
-  validTo: string | undefined,
-  existingOffers: EnergyOffer[]
-): boolean {
-  return existingOffers.some(o =>
-    (o.power_kva || 0) === powerKva &&
-    o.offer_type === offerType &&
-    periodsOverlap(validFrom, validTo, o.valid_from, o.valid_to)
-  )
-}
-
-/**
- * Construit le JSON d'export pour un ensemble d'offres
- */
-export function buildOfferExportJson(
-  offers: EnergyOffer[],
-  providerName: string
-): Record<string, unknown> {
-  if (offers.length === 0) return {}
-
-  const offerType = offers[0].offer_type
-  const offerName = getCleanOfferName(offers[0].name)
-  const fieldKeys = getFieldKeysForOfferType(offerType)
-
-  return {
-    provider: providerName,
-    offer_name: offerName,
-    offer_type: offerType,
-    valid_from: offers[0].valid_from || null,
-    valid_to: offers[0].valid_to || null,
-    powers: offers
-      .sort((a, b) => (a.power_kva || 0) - (b.power_kva || 0))
-      .map(o => {
-        const power: Record<string, unknown> = {
-          power_kva: o.power_kva,
-          subscription_price: o.subscription_price,
-        }
-        for (const key of fieldKeys) {
-          const val = (o as unknown as Record<string, unknown>)[key]
-          if (val != null) power[key] = val
-        }
-        return power
-      }),
-  }
 }
 
 /**

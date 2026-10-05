@@ -115,8 +115,9 @@ export default function OfferGroupCard({ state, groupName }: OfferGroupCardProps
     return new Date(offer.valid_to) > new Date(latest) ? offer.valid_to : latest
   }, null as string | null)
 
+  // la bascule manuelle enregistre la cle du groupe ("nom##periode"), l'import IA le seul nom
   const isGroupDeprecated = deprecatedOffers.some(d =>
-    d.offer_name === cleanGroupName && d.offer_type === groupOfferType
+    (d.offer_name === groupName || d.offer_name === cleanGroupName) && d.offer_type === groupOfferType
   )
 
   // Nouvelles puissances pour ce groupe
@@ -329,6 +330,7 @@ export function GroupDateEditor({ offersInGroup, groupValidFrom, groupValidTo, e
           onClick={() => propagateDate('valid_to', '')}
           className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300"
           title="Effacer la date de fin (offre active)"
+          aria-label="Effacer la date de fin (offre active)"
         >
           <X size={14} />
         </button>
