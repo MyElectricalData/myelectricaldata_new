@@ -4,6 +4,7 @@ SEASONAL n'a que des prix été/hiver, HC_WEEKEND et BASE_WEEKEND un prix week-e
 lisait que base_price / hc_price / hp_price, d'où un coût vide ou faux pour ces offres.
 """
 
+from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -11,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.models.zen_flex_day import ZenFlexDayType
 from src.services.exporters.home_assistant import HomeAssistantExporter
 
 PRICE_FIELDS = (
@@ -43,9 +45,14 @@ def stat(start: str, kwh: float = 1.0) -> dict[str, Any]:
     return {"start": start, "state": kwh, "sum": kwh}
 
 
-async def costs(offer_row: SimpleNamespace, consumption: dict[str, list[dict[str, Any]]]) -> dict[str, list[float]]:
+async def costs(
+    offer_row: SimpleNamespace,
+    consumption: dict[str, list[dict[str, Any]]],
+    zen_flex_days: dict[date, ZenFlexDayType] | None = None,
+) -> dict[str, list[float]]:
     exporter = HomeAssistantExporter.__new__(HomeAssistantExporter)
     exporter.config = {}
+    exporter._get_zen_flex_days = AsyncMock(return_value=zen_flex_days or {})  # type: ignore[method-assign]
     result = await exporter._get_cost_statistics_by_tariff(fake_db(offer_row), "123", consumption)
     return {tag: [s["state"] for s in stats] for tag, stats in result.items()}
 
@@ -152,24 +159,62 @@ async def test_empty_series_without_price_dropped() -> None:
     assert await costs(hc_hp, {"hc": [], "hp": []}) == {"hp": []}
 
 
-async def test_zen_flex_has_no_cost_even_with_fixed_prices() -> None:
-    """Prix Éco / Sobriété dans *_winter / *_summer, jours Sobriété inconnus (MED-27) : pas de coût faux"""
-    zen_flex = offer("ZEN_FLEX", hc_price="0.15", hp_price="0.20", hc_price_winter="0.15", hc_price_summer="0.40")
-    assert await costs(zen_flex, {"hc": [stat("2026-01-15T02:00:00+01:00")]}) == {}
-
-
-async def test_zen_flex_stored_as_seasonal_has_no_cost() -> None:
-    """Données réelles de la passerelle : Zen Flex typée SEASONAL, prix Sobriété dans *_winter (MED-27)"""
-    zen_flex = offer(
-        "SEASONAL", name="Zen Week-End - Option Flex - 6 kVA",
-        hc_price_winter="0.2091", hp_price_winter="0.7253", hc_price_summer="0.1519", hp_price_summer="0.2091",
-    )
-    assert await costs(zen_flex, {"hp": [stat("2026-01-15T10:00:00+01:00")]}) == {}
-
-
 async def test_enercoop_flexiwatt_keeps_seasonal_cost() -> None:
     flexiwatt = offer(
         "SEASONAL", name="FlexiWatt 2 saisons - 6 kVA",
         hc_price_winter="0.2310", hp_price_winter="0.3113", hc_price_summer="0.1358", hp_price_summer="0.1940",
     )
     assert await costs(flexiwatt, {"hp": [stat("2026-01-15T10:00:00+01:00")]}) == {"hp": [0.3113]}
+
+
+# =============================================================================
+# EDF Zen Flex : prix du jour selon le calendrier Éco / Sobriété / Bonus (MED-27)
+# =============================================================================
+
+# Données réelles de la passerelle : typée SEASONAL, prix Sobriété dans *_winter
+ZEN_FLEX_PROD = offer(
+    "SEASONAL", name="Zen Week-End - Option Flex - 6 kVA",
+    hc_price_winter="0.2091", hp_price_winter="0.7253", hc_price_summer="0.1519", hp_price_summer="0.2091",
+)
+# Convention du scraper EDF (edf_scraper.py) : typée ZEN_FLEX, prix Éco dans *_winter
+ZEN_FLEX_SCRAPER = offer(
+    "ZEN_FLEX", name="Zen Week-End - Option Flex 6 kVA",
+    hc_price_winter="0.1519", hp_price_winter="0.2091", hc_price_summer="0.2091", hp_price_summer="0.7253",
+)
+SOBRIETE_DAY, ECO_DAY, BONUS_DAY = date(2026, 1, 15), date(2026, 1, 16), date(2026, 1, 19)
+CALENDAR = {SOBRIETE_DAY: ZenFlexDayType.SOBRIETE, ECO_DAY: ZenFlexDayType.ECO, BONUS_DAY: ZenFlexDayType.BONUS}
+ZEN_FLEX_CONSUMPTION = {
+    "hp": [stat(f"{day.isoformat()}T10:00:00+01:00") for day in (SOBRIETE_DAY, ECO_DAY, BONUS_DAY)],
+    "hc": [stat(f"{day.isoformat()}T02:00:00+01:00") for day in (SOBRIETE_DAY, ECO_DAY, BONUS_DAY)],
+}
+
+
+@pytest.mark.parametrize("zen_flex", [ZEN_FLEX_PROD, ZEN_FLEX_SCRAPER], ids=["prod-seasonal", "scraper-zen-flex"])
+async def test_zen_flex_price_follows_the_calendar(zen_flex: SimpleNamespace) -> None:
+    """Sobriété = la saison au HP le plus cher, quelle que soit la convention de rangement ; Bonus = Éco"""
+    result = await costs(zen_flex, ZEN_FLEX_CONSUMPTION, CALENDAR)
+    assert result == {"hp": [0.7253, 0.2091, 0.2091], "hc": [0.2091, 0.1519, 0.1519]}
+
+
+async def test_zen_flex_summer_sobriete_day_is_not_seasonal() -> None:
+    """Le prix ne dépend pas du mois : un jour Éco de janvier n'est pas facturé au prix d'hiver"""
+    result = await costs(ZEN_FLEX_PROD, {"hp": [stat("2026-01-16T10:00:00+01:00")]}, {ECO_DAY: ZenFlexDayType.ECO})
+    assert result == {"hp": [0.2091]}
+
+
+async def test_zen_flex_day_missing_from_calendar_drops_the_series() -> None:
+    """Jour non synchronisé : pas de coût faux, la série est écartée"""
+    result = await costs(ZEN_FLEX_PROD, ZEN_FLEX_CONSUMPTION, {SOBRIETE_DAY: ZenFlexDayType.SOBRIETE})
+    assert result == {}
+
+
+async def test_zen_flex_without_calendar_has_no_cost() -> None:
+    assert await costs(ZEN_FLEX_PROD, {"hp": [stat("2026-01-15T10:00:00+01:00")]}) == {}
+
+
+async def test_zen_flex_with_ambiguous_prices_has_no_cost() -> None:
+    """HP identiques (ou manquants) dans les deux saisons : impossible de savoir laquelle est Sobriété"""
+    ambiguous = offer("ZEN_FLEX", hc_price_winter="0.15", hp_price_winter="0.21", hc_price_summer="0.15", hp_price_summer="0.21")
+    missing = offer("ZEN_FLEX", hc_price_winter="0.15", hp_price_winter="0.21")
+    for zen_flex in (ambiguous, missing):
+        assert await costs(zen_flex, ZEN_FLEX_CONSUMPTION, CALENDAR) == {}
