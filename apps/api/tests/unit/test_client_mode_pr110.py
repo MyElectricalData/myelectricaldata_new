@@ -203,7 +203,7 @@ async def test_get_day_total_replie_sur_le_detail_au_pas_30_minutes():
         SimpleNamespace(value=1000, interval_start="00:00", raw_data={"p": "PT30M"}),
         SimpleNamespace(value=3000, interval_start="00:30", raw_data={"p": "PT30M"}),
     ]
-    stats = StatisticsService(db_with(FakeResult(scalar=0), FakeResult(rows=detail)))
+    stats = StatisticsService(db_with(FakeResult(scalar=None), FakeResult(rows=detail)))
 
     assert await stats.get_day_total(PRM, YESTERDAY, "consumption") == 2000
 
@@ -214,7 +214,7 @@ async def test_get_day_total_replie_sur_le_detail_au_pas_10_minutes():
         SimpleNamespace(value=600, interval_start=f"00:{m:02d}", raw_data={"p": "PT10M"})
         for m in range(0, 60, 10)
     ]
-    stats = StatisticsService(db_with(FakeResult(scalar=0), FakeResult(rows=detail)))
+    stats = StatisticsService(db_with(FakeResult(scalar=None), FakeResult(rows=detail)))
 
     assert await stats.get_day_total(PRM, YESTERDAY, "consumption") == 600
 
