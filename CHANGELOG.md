@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.1.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.1.1...2.1.2) (2026-10-05)
+
+### Bug Fixes
+
+* **export:** MED-21 / corrections de la revue du coût et des tests ([84a9e7c](https://github.com/MyElectricalData/myelectricaldata_new/commit/84a9e7c66da91605db68114a870b17cdd3d66d8c))
+* **export:** MED-21 / coût du panneau énergie au prix du jour ([134bcca](https://github.com/MyElectricalData/myelectricaldata_new/commit/134bccacc775f298070f0dd01e02a388ad132a4a))
+* **export:** MED-21 / entity_id suggéré et préfixe de discovery personnalisé ([0ee8be8](https://github.com/MyElectricalData/myelectricaldata_new/commit/0ee8be833d7a21ddc883aded39572f162395574e))
+* **export:** MED-21 / pas de coût pour zen flex servie en seasonal ([07b03fd](https://github.com/MyElectricalData/myelectricaldata_new/commit/07b03fd88f5669785715602f4c9f607177c92e88))
+* **export:** MED-21 / tempo et ecowatt de l'exporteur mqtt générique ([1203ccc](https://github.com/MyElectricalData/myelectricaldata_new/commit/1203ccc522f36d735c9405d05fee7a6896ad9871))
+
 ## [2.1.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.1.0...2.1.1) (2026-10-05)
 
 ### Bug Fixes
