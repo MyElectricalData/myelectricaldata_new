@@ -1584,6 +1584,10 @@ class SyncService:
 
         await self.db.commit()
 
+    async def _synced_recently(self, cache_type: str, min_interval: timedelta) -> bool:
+        last_sync = _normalize_utc(await self.get_sync_tracker(cache_type))
+        return last_sync is not None and datetime.now(UTC) - last_sync < min_interval
+
     async def get_sync_tracker(self, cache_type: str) -> datetime | None:
         """Get the last sync time for a cache type
 
@@ -1604,11 +1608,14 @@ class SyncService:
     # Consumption France Sync (national data)
     # =========================================================================
 
-    async def sync_consumption_france(self) -> dict[str, Any]:
+    async def sync_consumption_france(self, min_interval: timedelta | None = None) -> dict[str, Any]:
         """Sync French national consumption data from remote gateway
 
         Fetches consumption data (REALISED, ID, D-1, D-2) and stores them
         in the local PostgreSQL database.
+
+        Args:
+            min_interval: skip the call if the last sync attempt is more recent (scheduler startup)
 
         Returns:
             Dict with sync results (created, updated counts)
@@ -1619,6 +1626,11 @@ class SyncService:
             "updated": 0,
             "errors": [],
         }
+
+        if min_interval is not None and await self._synced_recently("consumption_france_client", min_interval):
+            logger.info(f"[SYNC] consumption_france_client synchronisé il y a moins de {min_interval}, appel ignoré")
+            result["skipped"] = True
+            return result
 
         try:
             # Update sync tracker
@@ -1723,11 +1735,14 @@ class SyncService:
     # Generation Forecast Sync (renewable production)
     # =========================================================================
 
-    async def sync_generation_forecast(self) -> dict[str, Any]:
+    async def sync_generation_forecast(self, min_interval: timedelta | None = None) -> dict[str, Any]:
         """Sync French renewable generation forecast from remote gateway
 
         Fetches solar and wind forecast data and stores them
         in the local PostgreSQL database.
+
+        Args:
+            min_interval: skip the call if the last sync attempt is more recent (scheduler startup)
 
         Returns:
             Dict with sync results (created, updated counts)
@@ -1738,6 +1753,11 @@ class SyncService:
             "updated": 0,
             "errors": [],
         }
+
+        if min_interval is not None and await self._synced_recently("generation_forecast_client", min_interval):
+            logger.info(f"[SYNC] generation_forecast_client synchronisé il y a moins de {min_interval}, appel ignoré")
+            result["skipped"] = True
+            return result
 
         try:
             # Update sync tracker

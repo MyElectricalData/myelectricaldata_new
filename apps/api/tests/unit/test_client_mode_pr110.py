@@ -307,3 +307,66 @@ async def test_adapter_demande_le_cache_serveur_pour_les_mesures():
 
     assert all(call.kwargs["params"]["use_cache"] == "true" for call in adapter._make_request.await_args_list)
     assert adapter._make_request.await_count == 5
+
+
+# --- Lot 3 : hôtes acceptés, planning du scheduler, saut au démarrage --------------------------
+
+
+def test_allowed_hosts_par_mode():
+    from src.config.settings import Settings
+
+    assert Settings(SERVER_MODE=False, SECRET_KEY="x").allowed_hosts == ["*"]
+    serveur = Settings(SERVER_MODE=True, SECRET_KEY="x").allowed_hosts
+    assert "*.myelectricaldata.fr" in serveur and "*" not in serveur
+    assert Settings(SERVER_MODE=False, SECRET_KEY="x", ALLOWED_HOSTS="med.maison.lan, 192.168.1.10").allowed_hosts == [
+        "med.maison.lan",
+        "192.168.1.10",
+    ]
+
+
+def test_scheduler_planning_garde_les_syncs_au_demarrage(monkeypatch):
+    from src import scheduler as scheduler_module
+
+    jobs: dict[str, dict] = {}
+
+    class FakeScheduler:
+        def add_job(self, func, trigger=None, **kwargs):
+            jobs[kwargs["id"]] = {"trigger": str(trigger), **kwargs}
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(scheduler_module, "AsyncIOScheduler", FakeScheduler)
+    monkeypatch.setattr(scheduler_module.settings, "SERVER_MODE", False)
+
+    scheduler_module.SyncScheduler().start()
+
+    demarrage = {job_id for job_id, job in jobs.items() if job.get("next_run_time")}
+    assert {"sync_all_startup", "sync_tempo_startup", "sync_ecowatt_fallback",
+            "sync_consumption_france_startup", "sync_generation_forecast_startup"} <= demarrage
+    assert "hour='6-9', minute='*/30'" in jobs["sync_all_morning"]["trigger"]
+    assert jobs["sync_consumption_france_startup"]["kwargs"] == {"min_interval": timedelta(hours=6)}
+    assert "interval" not in jobs["sync_tempo"]["trigger"]
+
+
+async def test_sync_lance_les_exports_planifies_sans_attendre_l_echeance(monkeypatch):
+    from src import scheduler as scheduler_module
+
+    sched = scheduler_module.SyncScheduler()
+    monkeypatch.setattr("src.services.sync.SyncService.sync_all", AsyncMock(return_value={"success": True}))
+    sched._run_scheduled_exports = AsyncMock()
+
+    await sched._run_sync()
+
+    sched._run_scheduled_exports.assert_awaited_once_with(force=True)
+
+
+async def test_sync_france_ignoree_au_demarrage_si_recente():
+    service = sync_service(MagicMock())
+    service.get_sync_tracker = AsyncMock(return_value=datetime.now(UTC) - timedelta(hours=1))
+    service._update_sync_tracker = AsyncMock()
+
+    result = await service.sync_consumption_france(min_interval=timedelta(hours=6))
+
+    assert result["skipped"] is True
+    service._update_sync_tracker.assert_not_awaited()

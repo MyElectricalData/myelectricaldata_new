@@ -310,15 +310,14 @@ async def update_export_config(
     if data.export_detailed is not None:
         config.export_detailed = data.export_detailed
     # Gestion de export_interval_minutes :
-    # - Si non fourni (None) : on ne modifie pas
-    # - Si fourni avec valeur > 0 : on applique
-    # - Si fourni avec valeur <= 0 : on met à null (désactive la planification)
-    if data.export_interval_minutes is not None:
-        if data.export_interval_minutes > 0:
+    # - Si champ absent : on ne modifie pas
+    # - Si champ présent avec valeur > 0 : on applique
+    # - Si champ présent avec null/0/négatif : on désactive la planification
+    if "export_interval_minutes" in data.model_fields_set:
+        if data.export_interval_minutes is not None and data.export_interval_minutes > 0:
             logger.info(f"[EXPORT] Setting export_interval_minutes: {config.export_interval_minutes} -> {data.export_interval_minutes}")
             config.export_interval_minutes = data.export_interval_minutes
         else:
-            # 0 ou négatif = désactiver la planification
             logger.warning(
                 f"[EXPORT] Disabling scheduled export (received {data.export_interval_minutes}): "
                 f"{config.export_interval_minutes} -> None"
