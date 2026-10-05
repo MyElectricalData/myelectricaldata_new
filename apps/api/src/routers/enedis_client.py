@@ -465,6 +465,12 @@ async def get_max_power(
         )
 
     try:
+        if parse_date(start) >= parse_date(end):
+            raise ValueError("start must be before end (end date is exclusive)")
+    except ValueError as e:
+        return APIResponse(success=False, error=ErrorDetail(code="INVALID_DATE", message=str(e)))
+
+    try:
         data = await _max_power_data(db, usage_point_id, start, end, use_cache)
         return APIResponse(success=True, data=data)
     except Exception as e:
@@ -704,6 +710,12 @@ async def get_power(
                 message="Access denied: PDL not found or does not belong to you.",
             ),
         )
+
+    try:
+        if parse_date(start) >= parse_date(end):
+            raise ValueError("start must be before end (end date is exclusive)")
+    except ValueError as e:
+        return APIResponse(success=False, error=ErrorDetail(code="INVALID_DATE", message=str(e)))
 
     try:
         data = await _max_power_data(db, usage_point_id, start, end, use_cache)

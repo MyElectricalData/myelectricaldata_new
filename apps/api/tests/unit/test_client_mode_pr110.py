@@ -610,3 +610,17 @@ async def test_tempo_quota_bleu_saison_bissextile(monkeypatch):
     bleu = published["myelectricaldata_edf/tempo_days_blue"]["attributes"]
     assert bleu["quota"] == 301
     assert bleu["remaining"] == 301 - 10 - 2
+
+
+async def test_puissance_max_refuse_une_plage_inversee(monkeypatch):
+    """Revue Copilot de #128 : une plage inversée renvoyait un succès vide."""
+    monkeypatch.setattr(enedis_client, "verify_pdl_ownership", AsyncMock(return_value=True))
+    monkeypatch.setattr(enedis_client, "_max_power_data", AsyncMock())
+
+    for route in (enedis_client.get_max_power, enedis_client.get_power):
+        for start, end in (("2026-10-05", "2026-10-01"), ("2026-10-05", "2026-10-05"), ("05/10/2026", "2026-10-06")):
+            response = await route(
+                usage_point_id=PRM, start=start, end=end, use_cache=True, current_user=MagicMock(), db=MagicMock()
+            )
+            assert response.success is False and response.error.code == "INVALID_DATE", (route.__name__, start, end)
+    enedis_client._max_power_data.assert_not_awaited()
