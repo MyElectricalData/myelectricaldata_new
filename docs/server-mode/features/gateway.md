@@ -24,7 +24,7 @@ Mettre à disposition une API passerelle entre les utilisateurs finaux et Enedis
 2. L'utilisateur crée un compte sur la passerelle (email, mot de passe).
 3. Depuis son tableau de bord, l'utilisateur clique sur **"Consentement Enedis"** (pas besoin de saisir de PDL).
 4. La passerelle génère l'URL d'autorisation Enedis avec `state=user_id` (version `v1` ou `v2` selon `ENEDIS_AUTHORIZE_VERSION`) :<br>`https://mon-compte-particulier.enedis.fr/dataconnect/v1/oauth2/authorize?client_id=XXXXXXXX&duration=P36M&response_type=code&state={user_id}`
-5. Après validation du consentement sur le portail Enedis, celui-ci redirige vers `http://localhost:8000/oauth/callback?code=XXX&state={user_id}` suivi de `&usage_point_id={pdl}` (consentement v1) ou de `&autorisation_id={id}` (consentement v2, Data Connect 2026).
+5. Après validation du consentement sur le portail Enedis, celui-ci redirige vers `http://localhost:8000/oauth/callback` avec, selon la version du consentement, `?code=XXX&state={user_id}&usage_point_id={pdl}` (v1) ou `?autorisation_id={id}&state={user_id}` (v2, Data Connect 2026, **sans `code`**).
 6. La passerelle :
    - En v2, échange l'`autorisation_id` contre le ou les PDL via `POST /subscribed_services/v1` (jeton client_credentials global)
    - Récupère le contrat (puissance souscrite, heures creuses) via les API Data Connect 2026, cf. [Data Connect 2026](../../external-apis/enedis-api/data-connect-2026/README.md)

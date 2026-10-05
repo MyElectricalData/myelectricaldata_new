@@ -17,7 +17,7 @@ Les Swagger officiels de ce dossier viennent de DataHub (`https://datahub-enedis
 | Contrat | `customers_upc/v5/usage_points/contracts` | `situation_contrat_auto/v1/{prm}` + `synth_contrat_auto/v1/{prm}` + `comptage_auto/v1/{prm}` |
 | Adresse | `customers_upa/v5/usage_points/addresses` | `donnees_generales_auto/v1/{prm}` |
 | Identité, contact | `customers_i/v5/identity`, `customers_cd/v5/contact_data` | `situation_contrat_auto/v1/{prm}` (`person`, `contact_data`) |
-| Consentement | `dataconnect/v1/oauth2/authorize`, retour `usage_point_id` | `dataconnect/v2/oauth2/authorize`, retour `autorisation_id` à échanger via `POST /subscribed_services/v1` |
+| Consentement | `dataconnect/v1/oauth2/authorize`, retour `code` + `usage_point_id` | `dataconnect/v2/oauth2/authorize`, retour `autorisation_id` **sans `code`**, à échanger via `POST /subscribed_services/v1` |
 
 Paramètres des mesures : `pointId`, `dateDebut`, `dateFin` (fin exclue). La puissance max exige en plus `mesuresPas` (`P1D` ou `P1M`) et `grandeurPhysique` (`PMA` ou `TOUT`).
 
@@ -69,12 +69,22 @@ La passerelle rend un contrat agrégé : `{"situation_contrat": [...], "synthese
 | Variable | Valeurs | Défaut | Rôle |
 | --- | --- | --- | --- |
 | `ENEDIS_API_MODE` | `legacy`, `new`, `auto` | `auto` | `new` : API 2026 seules. `legacy` : API v5 seules. `auto` : API 2026, repli sur la v5 en cas d'erreur HTTP (pas sur `ADAM-ERR0123`). Dans tous les cas la réponse est au format 2026. En `auto`, les heures creuses sont lues dans le contrat v5 tant que `comptage_auto` est indisponible. |
-| `ENEDIS_AUTHORIZE_VERSION` | `v1`, `v2` | `v1` | Page de consentement. Le callback accepte `usage_point_id` (v1) et `autorisation_id` (v2) quelle que soit la valeur. |
+| `ENEDIS_AUTHORIZE_VERSION` | `v1`, `v2` | `v1` | Page de consentement. Le callback accepte `code` + `usage_point_id` (v1) et `autorisation_id` seul (v2) quelle que soit la valeur. Passée à `v2` en prod le 05/10/2026. |
 | `ENEDIS_AUTHORIZE_URL` | URL | vide | Surcharge complète de l'URL de consentement. |
 
 Chart Helm serveur : `config.enedisApiMode`, `config.enedisAuthorizeVersion`, `config.enedisAuthorizeUrl`.
 
 Bascule prévue : `auto` dès le déploiement, puis `new` après l'arrêt des API v5. Passer `ENEDIS_AUTHORIZE_VERSION=v2` le jour où Enedis coupe la page de consentement v1, et mettre à jour l'URL de redirection sur DataHub.
+
+## Consentement v2
+
+Mesuré en prod le 05/10/2026 :
+
+- Enedis renvoie `/oauth/callback?autorisation_id=<id>&state=<state>`, **sans `code`**. Le front (`utils/oauthCallback.ts`) relaie dès que `code` **ou** `autorisation_id` est présent, et `code` est facultatif sur `GET /oauth/callback`.
+- La passerelle appelle `POST /subscribed_services/v1` (jeton client_credentials global, corps `{"autorisationId": <id>, "comptage": false}`) et retient les services `ACTIF` ou `DEMANDE`.
+- Un partage v2 porte **un seul PRM**. L'`autorisation_id` est stable pour une application et un titulaire : supprimer le partage puis le refaire redonne le même identifiant.
+- Repartager un PRM **déjà partagé** avec l'application échoue chez Enedis (« Une erreur est survenue lors du partage de vos données »), sans retour vers la passerelle : supprimer d'abord l'ancien partage dans l'espace client Enedis.
+- Le chart Helm transmet `ENEDIS_AUTHORIZE_VERSION` au backend à partir de la version **2.0.1** (le ConfigMap seul ne suffit pas : le déploiement mappe ses variables une à une).
 
 ## Format servi par la passerelle
 
