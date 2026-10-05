@@ -58,9 +58,13 @@ def _day_price(offer: Any, tariff_tag: str, day: date) -> float | None:
     - SEASONAL : prix d'hiver (novembre-mars) ou d'été (avril-octobre)
     - HC_WEEKEND, WEEKEND, BASE_WEEKEND : prix week-end le samedi et le dimanche, sinon (ou
       s'il n'est pas renseigné) prix de semaine
+    - ZEN_FLEX : aucun prix tant que le calendrier Sobriété n'est pas synchronisé
     - autres offres : prix unique de la série
     """
     option = (offer.offer_type or "").strip().upper()
+    if option == "ZEN_FLEX":
+        # Prix Éco / Sobriété rangés dans *_winter / *_summer, jours Sobriété non synchronisés (MED-27)
+        return None
     if option == "SEASONAL":
         season = "winter" if day.month in SEASONAL_WINTER_MONTHS else "summer"
         price = getattr(offer, f"{tariff_tag}_price_{season}", None)
@@ -3577,16 +3581,19 @@ class HomeAssistantExporter(BaseExporter):
         cost_by_tariff: dict[str, list[dict[str, Any]]] = {}
 
         for tariff_tag, consumption_stats in consumption_by_tariff.items():
-            # stat["start"] est l'heure locale (Europe/Paris) : ses 10 premiers caractères donnent le jour
-            day_prices = [price_of(tariff_tag, date.fromisoformat(stat["start"][:10])) for stat in consumption_stats]
-            if not day_prices or None in day_prices:
+            # stat["start"] est l'heure locale (Europe/Paris) : ses 10 premiers caractères donnent le jour.
+            # Série vide (aucun jour rouge, pas de nouvelle donnée) : gardée si l'offre a un prix, l'import
+            # crée alors la statistique dans HA
+            days = [date.fromisoformat(stat["start"][:10]) for stat in consumption_stats] or [date.today()]
+            day_prices = [price_of(tariff_tag, day) for day in days]
+            if None in day_prices:
                 logger.debug(f"[HA-WS] No price for tariff {tariff_tag}, skipping cost calculation")
                 continue
 
             cost_stats = []
             cumulative_cost = 0.0
 
-            for stat, price_per_kwh in zip(consumption_stats, day_prices, strict=True):
+            for stat, price_per_kwh in zip(consumption_stats, day_prices):
                 # stat has: start, state (kWh for this period), sum (cumulative kWh)
                 consumption_kwh = stat["state"]
                 cost_eur = consumption_kwh * price_per_kwh

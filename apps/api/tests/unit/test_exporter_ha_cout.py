@@ -133,3 +133,26 @@ async def test_hc_hp_and_base_unchanged() -> None:
 async def test_tempo_unchanged() -> None:
     tempo = offer("TEMPO", tempo_red_hp="0.70")
     assert await costs(tempo, {"red_hp": [stat("2026-01-15T10:00:00+01:00")]}) == {"red_hp": [0.70]}
+
+
+# =============================================================================
+# Séries vides et offres sans coût
+# =============================================================================
+
+
+async def test_empty_series_kept_when_offer_has_price() -> None:
+    """L'import crée la statistique même sans donnée (ex. aucun jour rouge encore)"""
+    tempo = offer("TEMPO", tempo_blue_hp="0.16", tempo_red_hp="0.70")
+    result = await costs(tempo, {"blue_hp": [stat("2026-10-05T10:00:00+02:00")], "red_hp": []})
+    assert result == {"blue_hp": [0.16], "red_hp": []}
+
+
+async def test_empty_series_without_price_dropped() -> None:
+    hc_hp = offer("HC_HP", hp_price="0.25")
+    assert await costs(hc_hp, {"hc": [], "hp": []}) == {"hp": []}
+
+
+async def test_zen_flex_has_no_cost_even_with_fixed_prices() -> None:
+    """Prix Éco / Sobriété dans *_winter / *_summer, jours Sobriété inconnus (MED-27) : pas de coût faux"""
+    zen_flex = offer("ZEN_FLEX", hc_price="0.15", hp_price="0.20", hc_price_winter="0.15", hc_price_summer="0.40")
+    assert await costs(zen_flex, {"hc": [stat("2026-01-15T02:00:00+01:00")]}) == {}

@@ -14,7 +14,30 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from src.models.base import Base
 from src.models.ecowatt import EcoWatt
 from src.models.tempo_day import TempoColor, TempoDay
+from src.services.exporters import mqtt
 from src.services.exporters.mqtt import MQTTExporter
+
+# Instant figé : l'exporteur lit date.today() / datetime.now(), le test ne dépend pas de l'heure
+NOW = datetime(2026, 10, 5, 14, 30)
+TODAY = NOW.date()
+
+
+class FrozenDate(date):
+    @classmethod
+    def today(cls) -> date:
+        return TODAY
+
+
+class FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None) -> datetime:  # type: ignore[override]
+        return NOW
+
+
+@pytest.fixture(autouse=True)
+def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mqtt, "date", FrozenDate)
+    monkeypatch.setattr(mqtt, "datetime", FrozenDatetime)
 
 
 @pytest.fixture
@@ -38,22 +61,22 @@ def tempo_day(day: date, color: TempoColor) -> TempoDay:
 
 
 async def test_tempo_today_tomorrow_and_remaining(db: AsyncSession) -> None:
-    today = date.today()
-    season_start = date(today.year if today.month >= 9 else today.year - 1, 9, 1)
-    db.add_all([tempo_day(today, TempoColor.RED), tempo_day(today + timedelta(days=1), TempoColor.WHITE)])
-    used_blue = 0
-    if season_start < today:  # un jour bleu plus tôt dans la saison (sauf le 1er septembre)
-        db.add(tempo_day(season_start, TempoColor.BLUE))
-        used_blue = 1
+    db.add_all([
+        tempo_day(date(2026, 9, 1), TempoColor.BLUE),  # 1er jour de la saison
+        tempo_day(date(2026, 8, 31), TempoColor.RED),  # saison précédente : non décompté
+        tempo_day(TODAY, TempoColor.RED),
+        tempo_day(TODAY + timedelta(days=1), TempoColor.WHITE),
+    ])
     await db.commit()
 
     data = await make_exporter()._get_tempo_data(db)
 
     assert data is not None
-    assert data["today"] == {"color": "RED", "date": today.isoformat()}
-    assert data["tomorrow"] == {"color": "WHITE", "date": (today + timedelta(days=1)).isoformat()}
+    assert data["today"] == {"color": "RED", "date": "2026-10-05"}
+    assert data["tomorrow"] == {"color": "WHITE", "date": "2026-10-06"}
     # Jours consommés jusqu'à aujourd'hui inclus : demain (blanc) n'est pas encore décompté
-    assert data["remaining"] == {"blue": 300 - used_blue, "white": 43, "red": 21}
+    assert data["remaining"] == {"blue": 299, "white": 43, "red": 21}
+    assert data["season"] == "2026/2027"
     json.dumps(data)  # publié tel quel sur le broker
 
 
@@ -62,15 +85,13 @@ async def test_tempo_nothing_without_days(db: AsyncSession) -> None:
 
 
 async def test_ecowatt_current_and_next_hour(db: AsyncSession) -> None:
-    today = date.today()
     values = [1] * 24
-    hour = datetime.now().hour
-    values[hour] = 3
-    if hour < 23:
-        values[hour + 1] = 2
+    values[14] = 3  # heure courante (14 h 30)
+    values[15] = 2
     db.add(EcoWatt(
-        generation_datetime=datetime.now(),
-        periode=datetime.combine(today, datetime.min.time()),
+        generation_datetime=NOW,
+        # Minuit local : à confirmer sur une base réelle (rte.py stocke periode en UTC naïf, cf. MED-21)
+        periode=datetime.combine(TODAY, datetime.min.time()),
         hdebut=0,
         hfin=23,
         pas=60,
@@ -80,8 +101,8 @@ async def test_ecowatt_current_and_next_hour(db: AsyncSession) -> None:
     ))
     # Le lendemain ne doit pas être pris pour aujourd'hui
     db.add(EcoWatt(
-        generation_datetime=datetime.now(),
-        periode=datetime.combine(today + timedelta(days=1), datetime.min.time()),
+        generation_datetime=NOW,
+        periode=datetime.combine(TODAY + timedelta(days=1), datetime.min.time()),
         hdebut=0,
         hfin=23,
         pas=60,
@@ -94,10 +115,10 @@ async def test_ecowatt_current_and_next_hour(db: AsyncSession) -> None:
     data = await make_exporter()._get_ecowatt_data(db)
 
     assert data is not None
-    assert data["date"] == today.isoformat()
+    assert data["date"] == "2026-10-05"
     assert data["level"] == 3
     assert data["level_label"] == "Rouge"
-    assert data["next_hour_level"] == (2 if hour < 23 else None)
+    assert data["next_hour_level"] == 2
     assert data["message"] == "Consommation tendue"
     json.dumps(data)
 
