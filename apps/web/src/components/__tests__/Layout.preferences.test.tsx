@@ -72,8 +72,9 @@ describe('Layout : lien Préférences', () => {
   it('mode client : lien vers /preferences dans la barre latérale et le menu mobile', () => {
     renderLayout('client')
 
+    // Barre latérale + menu mobile (toujours monté, seulement translaté hors écran)
     const links = screen.getAllByRole('link', { name: /Préférences/ })
-    expect(links.length).toBeGreaterThanOrEqual(1)
+    expect(links).toHaveLength(2)
     for (const link of links) {
       expect(link).toHaveAttribute('href', '/preferences')
     }
@@ -82,6 +83,8 @@ describe('Layout : lien Préférences', () => {
   it('mode serveur : aucun lien vers /preferences', () => {
     renderLayout('server')
 
+    // Contrôle positif : le menu est bien rendu, avec « Mon compte » à la place
+    expect(screen.getAllByRole('link', { name: /Mon compte/ })).toHaveLength(2)
     expect(screen.queryByRole('link', { name: /Préférences/ })).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/preferences"]')).toBeNull()
   })

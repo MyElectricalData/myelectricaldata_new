@@ -73,6 +73,7 @@ const routes = isServerMode ? serverRoutes : clientRoutes;
 | Simulateur          |   ✅    |       ❌        |
 | FAQ                 |   ✅    |       ❌        |
 | Paramètres          |   ✅    |       ❌        |
+| Préférences         |   ❌    |       ✅        |
 | Admin/\*            |   ✅    |       ❌        |
 | **Exporter**        |   ❌    |       ✅        |
 

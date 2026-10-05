@@ -570,7 +570,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             )}
 
             {/* Preferences link - Client mode only */}
-            {!isServerMode && (
+            {isClientMode && (
               <Link
                 to="/preferences"
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
@@ -884,7 +884,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           )}
 
           {/* Preferences link - Client mode only */}
-          {!isServerMode && (
+          {isClientMode && (
             <Link
               to="/preferences"
               onClick={() => setMobileMenuOpen(false)}
