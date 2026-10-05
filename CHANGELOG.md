@@ -1,5 +1,44 @@
 # Changelog
 
+## [2.3.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.2.0...2.3.0) (2026-10-05)
+
+### Features
+
+* **api:** MED-27 / calendrier EDF Zen Flex (source, cache, route, synchro client) ([4c8c287](https://github.com/MyElectricalData/myelectricaldata_new/commit/4c8c2870b0b7fe33d5a524a32d77d6edce88241a))
+* **export:** MED-27 / capteurs zen flex et coût énergie au calendrier ([420114b](https://github.com/MyElectricalData/myelectricaldata_new/commit/420114b6d7ac3f2b663936dbca7c0ebcb4c77184))
+* **export:** MED-27 / heures creuses zen flex de la grille fournisseur edf ([db5424d](https://github.com/MyElectricalData/myelectricaldata_new/commit/db5424d47a46073ff08338b90eec7096a76af2ce))
+* **web:** MED-27 / entités zen flex dans la page home assistant ([2ad5fe7](https://github.com/MyElectricalData/myelectricaldata_new/commit/2ad5fe73ceeca393f6aaadf905e21af65cb5a1a5))
+
+### Bug Fixes
+
+* **api:** MED-22 / migration clean_offer_names_v2 portable PostgreSQL et SQLite ([3e0bc05](https://github.com/MyElectricalData/myelectricaldata_new/commit/3e0bc05a41e750f49f8f9aeb96194d6957d2f2bb)), closes [#127](https://github.com/MyElectricalData/myelectricaldata_new/issues/127)
+* **api:** MED-22 / nettoyage complet des noms dans une nouvelle migration ([35005d9](https://github.com/MyElectricalData/myelectricaldata_new/commit/35005d957480f5e8c14ed97583fec06fecb71f73))
+* **api:** MED-22 / normaliser le nom des offres a l'application d'une contribution ([3a5db09](https://github.com/MyElectricalData/myelectricaldata_new/commit/3a5db09d8811ecfb42cef0b23155866d230e3659))
+* **api:** MED-22 / recopier la puissance dans power_kva avant de la retirer du nom ([4330793](https://github.com/MyElectricalData/myelectricaldata_new/commit/433079379da027d6691cff3709d3383c192344b5))
+* **api:** MED-22 / scraper EDF, offres Zen Week-End sous leur nom commercial ([f0c5983](https://github.com/MyElectricalData/myelectricaldata_new/commit/f0c5983300502de9e2e890ae3e2c2fae27c42a65))
+* **api:** MED-27 / scraper zen flex aligné sur la convention des offres de la passerelle ([0f0c7ac](https://github.com/MyElectricalData/myelectricaldata_new/commit/0f0c7ac26ad5028939e00c678619328565d29129))
+* **export:** MED-27 / cast sqlalchemy masqué par typing.cast ([7dfe475](https://github.com/MyElectricalData/myelectricaldata_new/commit/7dfe47590e086d8b445ad8365e7f6099c3ec689f))
+* **export:** MED-27 / corrections de la revue zen flex ([fcc7da2](https://github.com/MyElectricalData/myelectricaldata_new/commit/fcc7da2bfe8bb233e33fd968b9a2ef8ac82c1a75))
+* **export:** MED-27 / zen flex sur le préfixe d'entités de MED-17 et migration chaînée ([517770c](https://github.com/MyElectricalData/myelectricaldata_new/commit/517770c15cdb5816705aa5ce058d2325b0934bb5))
+* MED-22 / garder "Option Flex" dans le nom des offres Zen Flex ([7d30b5c](https://github.com/MyElectricalData/myelectricaldata_new/commit/7d30b5c24bcdfec55307f14d28e2020764d52716))
+* MED-22 / migration plus sure (offres courantes, references, noms jamais vides) ([ce65bda](https://github.com/MyElectricalData/myelectricaldata_new/commit/ce65bda322af04af8c5d466d90a3725fe4e0f3fd))
+* MED-22 / ne plus envoyer la cle de groupe du front comme nom d'offre ([1f12b86](https://github.com/MyElectricalData/myelectricaldata_new/commit/1f12b8684dc46acf257ad80973b815ae8ccd06ff))
+* **offers:** MED-10 / wip fevrier 2026, nettoyage des noms d'offres et scraper edf ([ebb9027](https://github.com/MyElectricalData/myelectricaldata_new/commit/ebb9027037ee795f4e9610e553716b8d54403a3c))
+* **web:** MED-22 / corrections de la revue du decoupage de la page Contribute ([b4ae364](https://github.com/MyElectricalData/myelectricaldata_new/commit/b4ae3648ffd5e1d7923a7225099800ee927712fb))
+* **web:** MED-22 / dates de groupe en champs controles, avec bordure, effacement et badges ([bb55403](https://github.com/MyElectricalData/myelectricaldata_new/commit/bb55403456178d327645bf5361c0324c7b714699))
+* **web:** MED-22 / getCleanOfferName sur les memes regles que le backend ([ad709d2](https://github.com/MyElectricalData/myelectricaldata_new/commit/ad709d27243106bee9d243ae44810a7c7f957dba))
+* **web:** MED-22 / import IA, recharger les offres du serveur avant comparaison ([48c893b](https://github.com/MyElectricalData/myelectricaldata_new/commit/48c893b9dfea84efb6dd6ca95479446e66537f39))
+* **web:** MED-22 / import IA, repli sur l'offre expiree la plus recente ([0213312](https://github.com/MyElectricalData/myelectricaldata_new/commit/0213312ea54421c0ceffe67dbe0dd23b17e7f673))
+* **web:** MED-22 / libelles, couleurs et periodes comme avant le decoupage ([36742a8](https://github.com/MyElectricalData/myelectricaldata_new/commit/36742a801bc5dc1a187ad4215bfc998ca3860e09))
+* **web:** MED-22 / offres expirees sans suppression ni duplication en mode edition ([0968919](https://github.com/MyElectricalData/myelectricaldata_new/commit/09689191fb4c904cc3c6d4ca50492dd25091c79e))
+* **web:** MED-22 / periodsOverlap, une offre sans date face a une grille datee ne chevauche pas ([2275623](https://github.com/MyElectricalData/myelectricaldata_new/commit/22756237f7b22f741c275a920fae39d5a462840a))
+* **web:** MED-22 / sans fournisseur ou type "all", inviter a selectionner au lieu d'afficher les groupes ([b4243a3](https://github.com/MyElectricalData/myelectricaldata_new/commit/b4243a344bf4a75c530e859c3e42174bb6023f00))
+
+### Refactoring
+
+* **contribute:** MED-10 / wip fevrier 2026, decoupage de la page contribute ([f0c1a89](https://github.com/MyElectricalData/myelectricaldata_new/commit/f0c1a892c883fa9ca3f9076c1f8e5a6f53ca167c))
+* **web:** MED-22 / retirer l'etat du formulaire d'ajout mort et formatValue ([b20c036](https://github.com/MyElectricalData/myelectricaldata_new/commit/b20c036bbbd9c0405e76bc8babb3e3c94e78637b))
+
 ## [2.2.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.1.2...2.2.0) (2026-10-05)
 
 ### Features
