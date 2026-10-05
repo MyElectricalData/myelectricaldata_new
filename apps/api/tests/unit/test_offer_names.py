@@ -51,7 +51,13 @@ def test_zen_weekend_trois_options(zen_offers):
 
 
 def test_zen_weekend_nom_commercial_seul(zen_offers):
-    assert {o.name for o in zen_offers} == {"Zen Week-End"}
+    noms = {o.offer_type: o.name for o in zen_offers}
+    assert noms == {
+        "BASE_WEEKEND": "Zen Week-End",
+        "HC_WEEKEND": "Zen Week-End",
+        # "Option Flex" fait partie du nom : l'export Home Assistant (MED-21) s'en sert
+        "ZEN_FLEX": "Zen Week-End - Option Flex",
+    }
 
 
 def test_zen_weekend_puissance_dans_power_kva(zen_offers):
@@ -141,3 +147,18 @@ async def test_contribution_une_seule_offre_nom_normalise(monkeypatch):
 
     created = [c.args[0] for c in db.add.call_args_list if c.args[0].__class__.__name__ == "EnergyOffer"]
     assert [(o.name, o.power_kva) for o in created] == [("Zen Fixe", 9)]
+
+
+def test_zen_flex_nettoyee_reste_reconnue_par_l_export_home_assistant():
+    """MED-21 : Zen Flex servie en SEASONAL n'a pas de coût, reconnue à "Option Flex" dans le nom.
+    Le nom nettoyé (migration, contributions) doit garder ce repère, clients déjà déployés compris."""
+    from datetime import date
+
+    from src.services.exporters.home_assistant import _day_price
+    from src.services.offer_names import clean_offer_name
+
+    zen_flex = SimpleNamespace(
+        name=clean_offer_name("Zen Week-End - Option Flex - 6 kVA"), offer_type="SEASONAL",
+        hc_price_winter="0.2091", hp_price_winter="0.7253", hc_price_summer="0.1519", hp_price_summer="0.2091",
+    )
+    assert _day_price(zen_flex, "hp", date(2026, 1, 15)) is None

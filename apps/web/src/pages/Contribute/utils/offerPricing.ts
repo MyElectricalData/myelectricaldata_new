@@ -153,14 +153,14 @@ export function formatPower(offer: { power_kva?: number }): string | null {
 // Puissance en fin de nom, avec ou sans tiret : "Classique - 6 kVA", "Tarif Bleu - BASE 6 kVA"
 const POWER_SUFFIX = /\s*-?\s*\d+\s*kVA\s*$/i
 
-// Types et options qui doublonnent offer_type, du plus long au plus court
+// Types et options qui doublonnent offer_type, du plus long au plus court.
+// "Option Flex" n'en fait pas partie : l'export Home Assistant (MED-21) reconnait Zen Flex a ce nom.
 const TYPE_SUFFIXES = [
   'Option Heures Creuses \\+ WE \\+ jour choisi',
   'Option Heures Creuses \\+ WE',
   'Option Heures Creuses',
   'Option WE \\+ jour choisi',
   'Option Week-End',
-  'Option Flex',
   'Option Base',
   'HC/HP \\+ WE',
   'BASE_WEEKEND',

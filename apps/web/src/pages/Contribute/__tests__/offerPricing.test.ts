@@ -37,6 +37,8 @@ describe('offerPricing', () => {
       ['Zen Week-End Plus - Option WE + jour choisi - 6 kVA', 'Zen Week-End Plus'],
       ['Zen Week-End - HC/HP + WE 6 kVA', 'Zen Week-End'],
       ['Zen Week-End 6 kVA', 'Zen Week-End'],
+      // "Option Flex" reste : l'export Home Assistant (MED-21) reconnaît Zen Flex à ce nom
+      ['Zen Week-End - Option Flex - 6 kVA', 'Zen Week-End - Option Flex'],
       ['Tarif Bleu', 'Tarif Bleu'],
       ['Tempo', 'Tempo'],
       ['Octopus Go', 'Octopus Go'],

@@ -480,7 +480,7 @@ class EDFPriceScraper(BasePriceScraper):
             for power, prices in flex_prices.items():
                 offers.append(
                     OfferData(
-                        name="Zen Week-End",
+                        name="Zen Week-End - Option Flex",
                         offer_type="ZEN_FLEX",
                         description=f"EDF Zen Week-End - 345 jours Éco + 20 jours Sobriété (les plus froids) - {power} kVA",
                         subscription_price=prices["subscription"],

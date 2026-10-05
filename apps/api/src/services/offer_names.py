@@ -11,14 +11,15 @@ import re
 # Puissance en fin de nom, avec ou sans tiret : "Classique - 6 kVA", "Tarif Bleu - BASE 6 kVA"
 POWER_SUFFIX = re.compile(r'\s*-?\s*\d+\s*kVA\s*$', re.IGNORECASE)
 
-# Types et options qui doublonnent offer_type, du plus long au plus court
+# Types et options qui doublonnent offer_type, du plus long au plus court.
+# "Option Flex" n'en fait pas partie : l'export Home Assistant (MED-21) reconnaît Zen Flex servie
+# en SEASONAL à ce nom, y compris chez les clients déjà déployés.
 TYPE_SUFFIXES = [
     r'Option Heures Creuses \+ WE \+ jour choisi',
     r'Option Heures Creuses \+ WE',
     r'Option Heures Creuses',
     r'Option WE \+ jour choisi',
     r'Option Week-End',
-    r'Option Flex',
     r'Option Base',
     r'HC/HP \+ WE',
     r'BASE_WEEKEND',

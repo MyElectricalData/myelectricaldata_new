@@ -79,6 +79,8 @@ Interface d'édition inline des offres existantes pour soumettre des mises à jo
 Le nom d'une offre est son nom commercial seul (`getCleanOfferName`) : la puissance est
 dans `power_kva` et l'option dans `offer_type`. Le backend applique les mêmes règles
 (`apps/api/src/services/offer_names.py`).
+Seule exception : « Option Flex » reste dans le nom (« Zen Week-End - Option Flex »), car l'export
+Home Assistant s'en sert pour reconnaître une offre Zen Flex servie en `SEASONAL`.
 
 ## Hooks personnalisés
 

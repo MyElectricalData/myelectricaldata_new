@@ -91,14 +91,15 @@ CAS = [
     ("Zen Fixe - Option Base - 6 kVA", "BASE", "Zen Fixe"),
     ("Zen Online - Option Heures Creuses - 6 kVA", "HC_HP", "Zen Online"),
     ("Zen Week-End - Option Week-End - 6 kVA", "BASE_WEEKEND", "Zen Week-End"),
-    ("Zen Week-End - Option Flex - 6 kVA", "SEASONAL", "Zen Week-End"),
+    # "Option Flex" reste : l'export Home Assistant (MED-21) reconnaît Zen Flex servie en SEASONAL à ce nom
+    ("Zen Week-End - Option Flex - 6 kVA", "SEASONAL", "Zen Week-End - Option Flex"),
     ("Zen Week-End - Option Heures Creuses + WE - 6 kVA", "HC_WEEKEND", "Zen Week-End"),
     ("Zen Week-End Plus - Option WE + jour choisi - 6 kVA", "BASE_WEEKEND", "Zen Week-End Plus"),
     ("Zen Week-End Plus - Option Heures Creuses + WE + jour choisi - 6 kVA", "HC_WEEKEND", "Zen Week-End Plus"),
     # formes produites par l'ancien scraper EDF (puissance sans tiret)
     ("Zen Week-End - Option Week-End 6 kVA", "BASE_WEEKEND", "Zen Week-End"),
     ("Zen Week-End - HC/HP + WE 6 kVA", "HC_WEEKEND", "Zen Week-End"),
-    ("Zen Week-End - Option Flex 6 kVA", "ZEN_FLEX", "Zen Week-End"),
+    ("Zen Week-End - Option Flex 6 kVA", "ZEN_FLEX", "Zen Week-End - Option Flex"),
     # déjà propres : inchangés
     ("Tarif Bleu", "TEMPO", "Tarif Bleu"),
     ("Tempo", "TEMPO", "Tempo"),
