@@ -448,11 +448,13 @@ export function useAIImport(state: AllOffersState) {
               .filter(o => !o.valid_to)
               .sort((a, b) => (b.subscription_price || 0) - (a.subscription_price || 0))
             let existing = activeCandidates[0]
-            // Dernier recours : offre la plus recente meme expiree
+            // Dernier recours : offre la plus recente (valid_from) meme expiree
             if (!existing && candidatesByPower.length > 0) {
-              existing = [...candidatesByPower].sort((a, b) =>
-                (b.subscription_price || 0) - (a.subscription_price || 0)
-              )[0]
+              existing = [...candidatesByPower].sort((a, b) => {
+                const dateA = a.valid_from ? new Date(a.valid_from).getTime() : 0
+                const dateB = b.valid_from ? new Date(b.valid_from).getTime() : 0
+                return dateB - dateA
+              })[0]
             }
 
             if (existing) {
