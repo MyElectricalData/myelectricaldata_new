@@ -169,31 +169,73 @@ async def get_pdl_with_owner(
     return None, None
 
 
+def paris_today() -> datetime:
+    """Minuit du jour courant à Paris (naïf) : Enedis bascule à minuit heure de Paris."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Europe/Paris")).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+
+
+def days_between(start: str, end: str) -> list[str]:
+    """Jours (YYYY-MM-DD) de [start, end[ : la fin est exclue, comme dateFin Enedis."""
+    current = datetime.strptime(start, "%Y-%m-%d")
+    stop = datetime.strptime(end, "%Y-%m-%d")
+    days = []
+    while current < stop:
+        days.append(current.strftime("%Y-%m-%d"))
+        current += timedelta(days=1)
+    return days
+
+
+def missing_ranges(missing_dates: list[str]) -> list[tuple[str, str]]:
+    """Regroupe des jours manquants en plages consécutives [début, dernier jour + 1[ à demander à Enedis."""
+    ranges: list[tuple[str, str]] = []
+    for day in sorted(missing_dates):
+        next_day = (datetime.strptime(day, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        if ranges and ranges[-1][1] == day:
+            ranges[-1] = (ranges[-1][0], next_day)
+        else:
+            ranges.append((day, next_day))
+    return ranges
+
+
+RECENT_POWER_DAYS = 2  # J-1 et J-2
+RECENT_POWER_TTL_SECONDS = 3 * 3600
+EMPTY_DAY = {"empty": True}  # marqueur de cache : jour ancien sans mesure chez Enedis
+
+
+def power_cache_ttl(day: str, today: datetime, default_ttl: int) -> int:
+    """Durée de cache (secondes) de la puissance max d'un jour publié par Enedis.
+
+    `day` est un jour déjà renvoyé par Enedis (YYYY-MM-DD), `today` minuit à Paris,
+    `default_ttl` la durée de cache par défaut du serveur (CACHE_TTL_SECONDS, 24 h).
+    """
+    # J-1 et J-2 peuvent encore être corrigés par Enedis : cache court, la correction apparaît en 3 h au plus
+    # au lieu de 24 h, pour un appel Enedis de 2 jours au plus par fenêtre de 3 h
+    age = (today - datetime.strptime(day, "%Y-%m-%d")).days
+    if age <= RECENT_POWER_DAYS:
+        return min(RECENT_POWER_TTL_SECONDS, default_ttl)
+    return default_ttl
+
+
 def adjust_date_range(start: str, end: str) -> tuple[str, str]:
     """
-    Adjust date range to ensure it's valid for Enedis API:
-    1. Cap end date to yesterday (J-1) since Enedis only provides data up to J-1
-    2. If start == end, move start to 1 day before
+    Adjust date range to ensure it's valid for Enedis API. The end date is EXCLUDED
+    (like Enedis Data Connect dateFin): end=today serves data up to yesterday (J-1).
+    1. Cap end date to today, since Enedis only provides data up to J-1
+    2. If start >= end, move start to 1 day before end
     Returns (adjusted_start, adjusted_end) as strings (YYYY-MM-DD).
     """
     try:
         start_date = datetime.strptime(start, "%Y-%m-%d")
         end_date = datetime.strptime(end, "%Y-%m-%d")
+        today = paris_today()
 
-        # Use Paris timezone for "today" calculation since Enedis blocks at midnight Paris time
-        from zoneinfo import ZoneInfo
-        paris_tz = ZoneInfo("Europe/Paris")
-        today_paris = datetime.now(paris_tz).replace(hour=0, minute=0, second=0, microsecond=0)
-        today = today_paris.replace(tzinfo=None)
-        # Enedis data is only available up to yesterday (J-1)
-        yesterday = today - timedelta(days=1)
+        # 1. Cap end date to today (excluded): nothing exists after J-1
+        if end_date > today:
+            logger.info(f"[DATE ADJUST] End date {end} is after today (end excluded), capping to {today.strftime('%Y-%m-%d')}")
+            end_date = today
 
-        # 1. Cap end date to yesterday if it's after yesterday (including today)
-        if end_date > yesterday:
-            logger.info(f"[DATE ADJUST] End date {end} is after yesterday (J-1), capping to {yesterday.strftime('%Y-%m-%d')}")
-            end_date = yesterday
-
-        # 2. If start == end, move start to 1 day before
+        # 2. If start >= end, move start to 1 day before end
         if start_date >= end_date:
             adjusted_start = end_date - timedelta(days=1)
             logger.info(f"[DATE ADJUST] Start date {start} is >= end date {end_date.strftime('%Y-%m-%d')}, moving start to 1 day before: {adjusted_start.strftime('%Y-%m-%d')}")
@@ -548,19 +590,13 @@ async def get_consumption_daily(
         return error_response
 
     # New granular cache system: check cache day by day
-    from datetime import datetime, timedelta
 
     all_readings = []
     missing_dates = []
 
     if use_cache:
-        # Generate list of dates to check
-        start_date = datetime.strptime(start, "%Y-%m-%d")
-        end_date = datetime.strptime(end, "%Y-%m-%d")
-        current_date = start_date
-
-        while current_date <= end_date:
-            date_str = current_date.strftime("%Y-%m-%d")
+        # Dates to check: [start, end[ (end excluded)
+        for date_str in days_between(start, end):
             cache_key = f"consumption:daily:{usage_point_id}:{date_str}"
             cached_reading = await cache_service.get(cache_key, encryption_key)
 
@@ -571,8 +607,6 @@ async def get_consumption_daily(
             else:
                 missing_dates.append(date_str)
                 log_if_debug(effective_user, "debug", f"[CACHE MISS] Daily data for on {date_str}", pdl=usage_point_id)
-
-            current_date += timedelta(days=1)
 
         # If we have all data from cache, return it
         if not missing_dates:
@@ -595,60 +629,20 @@ async def get_consumption_daily(
             )
     else:
         # Not using cache, need to fetch all dates
-        start_date = datetime.strptime(start, "%Y-%m-%d")
-        end_date = datetime.strptime(end, "%Y-%m-%d")
-        current_date = start_date
-        while current_date <= end_date:
-            missing_dates.append(current_date.strftime("%Y-%m-%d"))
-            current_date += timedelta(days=1)
+        missing_dates = days_between(start, end)
 
     # Fetch missing data from Enedis only if there are missing dates
     reading_type = None
     if missing_dates:
-        # Group missing dates into continuous ranges to minimize API calls
-        date_ranges = []
-        if missing_dates:
-            missing_dates.sort()
-            range_start = missing_dates[0]
-            range_end = missing_dates[0]
-
-            for i in range(1, len(missing_dates)):
-                prev_date = datetime.strptime(missing_dates[i-1], "%Y-%m-%d")
-                curr_date = datetime.strptime(missing_dates[i], "%Y-%m-%d")
-
-                # Check if dates are consecutive (1 day apart)
-                if (curr_date - prev_date).days == 1:
-                    range_end = missing_dates[i]
-                else:
-                    # Save current range and start new one
-                    date_ranges.append((range_start, range_end))
-                    range_start = missing_dates[i]
-                    range_end = missing_dates[i]
-
-            # Add the last range
-            date_ranges.append((range_start, range_end))
+        # Group missing dates into continuous ranges [first, last + 1[ to minimize API calls
+        date_ranges = missing_ranges(missing_dates)
 
         log_if_debug(effective_user, "info", f"[API CALL] Fetching {len(missing_dates)} missing dates in {len(date_ranges)} API call(s)", pdl=usage_point_id)
 
         # Fetch each range from Enedis
         api_errors = []
-        for range_start, range_end in date_ranges:
+        for api_start, api_end in date_ranges:
             try:
-                # Enedis API requires minimum 2 days range
-                # If range is a single day, extend to previous day
-                start_date_obj = datetime.strptime(range_start, "%Y-%m-%d")
-                end_date_obj = datetime.strptime(range_end, "%Y-%m-%d")
-
-                if start_date_obj == end_date_obj:
-                    # Single day request, extend to include previous day
-                    adjusted_start = (start_date_obj - timedelta(days=1)).strftime("%Y-%m-%d")
-                    log_if_debug(effective_user, "info", f"[API CALL] Single day detected, extending range: {adjusted_start} to {range_end}", pdl=usage_point_id)
-                    api_start = adjusted_start
-                    api_end = range_end
-                else:
-                    api_start = range_start
-                    api_end = range_end
-
                 log_if_debug(effective_user, "info", f"[API CALL] Fetching data from {api_start} to {api_end}", pdl=usage_point_id)
 
                 # Use appropriate adapter based on user type
@@ -687,7 +681,7 @@ async def get_consumption_daily(
                             all_readings.append(reading)
 
             except Exception as e:
-                error_msg = f"Failed to fetch {range_start} to {range_end}: {str(e)}"
+                error_msg = f"Failed to fetch {api_start} to {api_end}: {str(e)}"
                 log_with_pdl("warning", usage_point_id, f"[API ERROR] {error_msg}")
                 api_errors.append(error_msg)
                 # Continue with next range instead of failing completely
@@ -781,14 +775,8 @@ async def get_consumption_detail(
     is_valid, error_response = validate_date_range(start, end, max_years=2, endpoint_type="Detail")
     dates_too_old = not is_valid and error_response is not None and error_response.error is not None and error_response.error.code == "DATE_TOO_OLD"
 
-    # Generate list of all dates in range
-    start_date = datetime.strptime(start, "%Y-%m-%d")
-    end_date = datetime.strptime(end, "%Y-%m-%d")
-    date_list = []
-    current_date = start_date
-    while current_date <= end_date:
-        date_list.append(current_date.strftime("%Y-%m-%d"))
-        current_date += timedelta(days=1)
+    # All dates in range: [start, end[ (end excluded)
+    date_list = days_between(start, end)
 
     token_result = await get_valid_token(usage_point_id, effective_user, db)
     if isinstance(token_result, str):
@@ -849,39 +837,13 @@ async def get_consumption_detail(
             assert error_response is not None
             return error_response
 
-        # Group consecutive missing dates into ranges to minimize API calls
-        date_ranges = []
-        if missing_dates:
-            range_start = missing_dates[0]
-            range_end = missing_dates[0]
-
-            for i in range(1, len(missing_dates)):
-                current = datetime.strptime(missing_dates[i], "%Y-%m-%d")
-                prev = datetime.strptime(missing_dates[i-1], "%Y-%m-%d")
-
-                if (current - prev).days == 1:
-                    # Consecutive day, extend range
-                    range_end = missing_dates[i]
-                else:
-                    # Gap found, save current range and start new one
-                    date_ranges.append((range_start, range_end))
-                    range_start = missing_dates[i]
-                    range_end = missing_dates[i]
-
-            # Add last range
-            date_ranges.append((range_start, range_end))
+        # Group consecutive missing dates into ranges [first, last + 1[ to minimize API calls
+        date_ranges = missing_ranges(missing_dates)
 
         # Fetch each range from Enedis
         for range_start, range_end in date_ranges:
             try:
-                # Enedis API doesn't accept start=end, so add 1 day minimum
-                if range_start == range_end:
-                    range_end_date = datetime.strptime(range_end, "%Y-%m-%d")
-                    range_end_date += timedelta(days=1)
-                    range_end = range_end_date.strftime("%Y-%m-%d")
-                    log_with_pdl("info", usage_point_id, f"[FETCH] {range_start} to {range_end} (extended by 1 day to avoid start=end)")
-                else:
-                    log_with_pdl("info", usage_point_id, f"[FETCH] {range_start} to {range_end}")
+                log_with_pdl("info", usage_point_id, f"[FETCH] {range_start} to {range_end} (end excluded)")
 
                 # Use appropriate adapter based on user type
                 adapter, is_demo = await get_adapter_for_user(effective_user)
@@ -1009,7 +971,7 @@ async def get_consumption_detail_batch(
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
 
-    # Adjust date range: cap end date to yesterday (J-1) and ensure start is before end
+    # Adjust date range: cap end date to today (end excluded) and ensure start is before end
     start, end = adjust_date_range(start, end)
 
     # IMPORTANT: Enforce 2-year limit from TODAY (not yesterday)
@@ -1031,21 +993,21 @@ async def get_consumption_detail_batch(
         start = oldest_allowed.strftime("%Y-%m-%d")
         log_with_pdl("warning", usage_point_id, f"[BATCH] Start date adjusted from {start_date_obj.strftime('%Y-%m-%d')} to {start} (2-year limit)")
 
-    # Cap end date to yesterday
+    # Cap end date to today (end excluded): data only available up to J-1
     end_date_obj = datetime.strptime(end, "%Y-%m-%d")
-    if end_date_obj > yesterday:
-        end = yesterday.strftime("%Y-%m-%d")
-        log_with_pdl("warning", usage_point_id, f"[BATCH] End date adjusted from {end_date_obj.strftime('%Y-%m-%d')} to {end} (data only available up to J-1)")
+    if end_date_obj > today:
+        end = today.strftime("%Y-%m-%d")
+        log_with_pdl("warning", usage_point_id, f"[BATCH] End date adjusted from {end_date_obj.strftime('%Y-%m-%d')} to {end} (end excluded, data only available up to J-1)")
 
     # Enforce maximum 729 days (today - 2 years to yesterday)
     # This prevents excessive date ranges
     start_date_obj = datetime.strptime(start, "%Y-%m-%d")
     end_date_obj = datetime.strptime(end, "%Y-%m-%d")
-    date_range_days = (end_date_obj - start_date_obj).days + 1
+    date_range_days = (end_date_obj - start_date_obj).days  # end excluded
 
     if date_range_days > 729:
         # Adjust start date to be exactly 729 days before end date
-        start_date_obj = end_date_obj - timedelta(days=728)  # 728 days + end day = 729 total
+        start_date_obj = end_date_obj - timedelta(days=729)  # [start, end[ = 729 days
         start = start_date_obj.strftime("%Y-%m-%d")
         log_with_pdl("warning", usage_point_id, f"[BATCH] Date range exceeded 729 days, adjusted start to {start} (729 days from {end})")
 
@@ -1067,14 +1029,8 @@ async def get_consumption_detail_batch(
         else:
             return make_token_error_response(token_result)
 
-    # Generate list of all dates in range
-    start_date = datetime.strptime(start, "%Y-%m-%d")
-    end_date = datetime.strptime(end, "%Y-%m-%d")
-    all_dates = []
-    current_date = start_date
-    while current_date <= end_date:
-        all_dates.append(current_date.strftime("%Y-%m-%d"))
-        current_date += timedelta(days=1)
+    # All dates in range: [start, end[ (end excluded)
+    all_dates = days_between(start, end)
 
     log_if_debug(effective_user, "info", f"[BATCH] Requested {len(all_dates)} days from {start} to {end}", pdl=usage_point_id)
 
@@ -1446,6 +1402,9 @@ async def get_max_power(
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
 
+    # Adjust date range: cap end date to today (end excluded) and ensure start is before end
+    start, end = adjust_date_range(start, end)
+
     token_result = await get_valid_token(usage_point_id, effective_user, db)
     if isinstance(token_result, str):
         access_token = token_result
@@ -1460,28 +1419,76 @@ async def get_max_power(
         assert error_response is not None
         return error_response
 
-    # Check cache
-    if use_cache:
-        cache_key = cache_service.make_cache_key(usage_point_id, "power", start=start, end=end)
-        cached_data = await cache_service.get(cache_key, encryption_key)
-        if cached_data:
-            return APIResponse(success=True, data=_normalize_cached("power", cached_data))
-
     try:
-        # Use appropriate adapter based on user type
-        adapter, is_demo = await get_adapter_for_user(effective_user)
-        if is_demo:
-            data = await adapter.get_max_power(usage_point_id, start, end, encryption_key)
+        requested_dates = days_between(start, end)
+    except ValueError as e:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(code="INVALID_DATE_FORMAT", message=f"Invalid date format. Expected YYYY-MM-DD. Error: {e}"),
+        )
+
+    adapter, is_demo = await get_adapter_for_user(effective_user)
+    secret = encryption_key if is_demo else access_token
+
+    if not use_cache:
+        try:
+            data = await adapter.get_max_power(usage_point_id, start, end, secret)
+            return APIResponse(success=True, data=data)
+        except Exception as e:
+            return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message=str(e)))
+
+    # Cache jour par jour (comme la consommation quotidienne) : seuls les jours absents partent chez Enedis.
+    # Un jour récent sans point (pas encore publié) n'est pas mis en cache ; un jour ancien sans point
+    # (compteur coupé, trou Enedis) l'est, avec un marqueur vide, pour ne pas le redemander à chaque requête
+    points: list[dict[str, Any]] = []
+    missing_dates = []
+    for date_str in requested_dates:
+        cached_point = await cache_service.get(f"consumption:max_power:{usage_point_id}:{date_str}", encryption_key)
+        if cached_point == EMPTY_DAY:
+            continue
+        if cached_point:
+            points.append(as_point(cached_point))
         else:
-            data = await adapter.get_max_power(usage_point_id, start, end, access_token)
+            missing_dates.append(date_str)
 
-        # Cache result
-        if use_cache:
-            await cache_service.set(cache_key, data, encryption_key)
+    unit_cache_key = f"consumption:max_power_unit:{usage_point_id}"
+    unit = None
+    api_errors = []
+    today = paris_today()
+    for api_start, api_end in missing_ranges(missing_dates):
+        try:
+            data = await adapter.get_max_power(usage_point_id, api_start, api_end, secret)
+        except Exception as e:
+            log_with_pdl("warning", usage_point_id, f"[API ERROR] Max power {api_start} to {api_end}: {e}")
+            api_errors.append(f"Failed to fetch {api_start} to {api_end}: {e}")
+            continue
+        if measure_unit(data):
+            unit = measure_unit(data)
+            await cache_service.set(unit_cache_key, {"unit": unit}, encryption_key)
+        published = set()
+        for point in extract_points(data):
+            date_str = point.get("d", "")[:10]
+            if date_str not in missing_dates:
+                continue
+            points.append(point)
+            published.add(date_str)
+            ttl = power_cache_ttl(date_str, today, cache_service.ttl)
+            await cache_service.set(f"consumption:max_power:{usage_point_id}:{date_str}", point, encryption_key, ttl=ttl)
+        for date_str in days_between(api_start, api_end):
+            if date_str not in published and (today - datetime.strptime(date_str, "%Y-%m-%d")).days > RECENT_POWER_DAYS:
+                await cache_service.set(f"consumption:max_power:{usage_point_id}:{date_str}", EMPTY_DAY, encryption_key)
 
-        return APIResponse(success=True, data=data)
-    except Exception as e:
-        return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message=str(e)))
+    if api_errors and not points:
+        return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message="; ".join(api_errors)))
+
+    if unit is None:
+        unit = ((await cache_service.get(unit_cache_key, encryption_key)) or {}).get("unit") or "VA"
+
+    points.sort(key=lambda p: p.get("d", ""))
+    return APIResponse(
+        success=True,
+        data=build_measure(usage_point_id, start, end, points, grandeur_metier="CONS", grandeur_physique="PMA", unite=unit, pas="P1D"),
+    )
 
 
 @router.get("/production/daily/{usage_point_id}", response_model=APIResponse)
@@ -1500,6 +1507,9 @@ async def get_production_daily(
     # Get encryption key and effective user for impersonation support
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
+
+    # Adjust date range: cap end date to today (end excluded) and ensure start is before end
+    start, end = adjust_date_range(start, end)
 
     token_result = await get_valid_token(usage_point_id, effective_user, db)
     if isinstance(token_result, str):
@@ -1555,6 +1565,9 @@ async def get_production_detail(
     # Get encryption key and effective user for impersonation support
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
+
+    # Adjust date range: cap end date to today (end excluded) and ensure start is before end
+    start, end = adjust_date_range(start, end)
 
     token_result = await get_valid_token(usage_point_id, effective_user, db)
     if isinstance(token_result, str):
@@ -1649,7 +1662,7 @@ async def get_production_detail_batch(
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
 
-    # Adjust date range: cap end date to yesterday (J-1) and ensure start is before end
+    # Adjust date range: cap end date to today (end excluded) and ensure start is before end
     start, end = adjust_date_range(start, end)
 
     # IMPORTANT: Enforce 2-year limit from TODAY (not yesterday)
@@ -1671,21 +1684,21 @@ async def get_production_detail_batch(
         start = oldest_allowed.strftime("%Y-%m-%d")
         log_with_pdl("warning", usage_point_id, f"[BATCH PRODUCTION] Start date adjusted from {start_date_obj.strftime('%Y-%m-%d')} to {start} (2-year limit)")
 
-    # Cap end date to yesterday
+    # Cap end date to today (end excluded): data only available up to J-1
     end_date_obj = datetime.strptime(end, "%Y-%m-%d")
-    if end_date_obj > yesterday:
-        end = yesterday.strftime("%Y-%m-%d")
-        log_with_pdl("warning", usage_point_id, f"[BATCH PRODUCTION] End date adjusted from {end_date_obj.strftime('%Y-%m-%d')} to {end} (data only available up to J-1)")
+    if end_date_obj > today:
+        end = today.strftime("%Y-%m-%d")
+        log_with_pdl("warning", usage_point_id, f"[BATCH PRODUCTION] End date adjusted from {end_date_obj.strftime('%Y-%m-%d')} to {end} (end excluded, data only available up to J-1)")
 
     # Enforce maximum 729 days (today - 2 years to yesterday)
     # This prevents excessive date ranges
     start_date_obj = datetime.strptime(start, "%Y-%m-%d")
     end_date_obj = datetime.strptime(end, "%Y-%m-%d")
-    date_range_days = (end_date_obj - start_date_obj).days + 1
+    date_range_days = (end_date_obj - start_date_obj).days  # end excluded
 
     if date_range_days > 729:
         # Adjust start date to be exactly 729 days before end date
-        start_date_obj = end_date_obj - timedelta(days=728)  # 728 days + end day = 729 total
+        start_date_obj = end_date_obj - timedelta(days=729)  # [start, end[ = 729 days
         start = start_date_obj.strftime("%Y-%m-%d")
         log_with_pdl("warning", usage_point_id, f"[BATCH PRODUCTION] Date range exceeded 729 days, adjusted start to {start} (729 days from {end})")
 
@@ -1707,14 +1720,8 @@ async def get_production_detail_batch(
         else:
             return make_token_error_response(token_result)
 
-    # Generate list of all dates in range
-    start_date = datetime.strptime(start, "%Y-%m-%d")
-    end_date = datetime.strptime(end, "%Y-%m-%d")
-    all_dates = []
-    current_date = start_date
-    while current_date <= end_date:
-        all_dates.append(current_date.strftime("%Y-%m-%d"))
-        current_date += timedelta(days=1)
+    # All dates in range: [start, end[ (end excluded)
+    all_dates = days_between(start, end)
 
     log_if_debug(effective_user, "info", f"[BATCH PRODUCTION] Requested {len(all_dates)} days from {start} to {end}", pdl=usage_point_id)
 
