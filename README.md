@@ -228,6 +228,7 @@ Voir [SECURITY.md](apps/api/SECURITY.md) pour plus de détails.
 - [APIs Externes](docs/external-apis/) : Vue d'ensemble Enedis et RTE
 - [API Enedis DataHub](docs/enedis-api/) : Documentation complète Enedis
 - [API RTE](docs/rte-api/) : Tempo, EcoWatt, Consumption, Generation Forecast
+- [API EDF Zen Flex](docs/external-apis/edf-zen-flex.md) : calendrier des jours Éco, Sobriété et Bonus
 
 ### Autres
 

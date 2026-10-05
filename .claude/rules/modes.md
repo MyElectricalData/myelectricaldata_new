@@ -87,6 +87,7 @@ const routes = isServerMode ? serverRoutes : clientRoutes;
 | `enedis_client.py`       |   ❌    |      ✅      | Local-first + gateway |
 | `tempo.py`               |   ✅    |      ✅      | RTE vs SyncService    |
 | `ecowatt.py`             |   ✅    |      ✅      | RTE vs SyncService    |
+| `zen_flex.py`            |   ✅    |      ✅      | EDF vs SyncService    |
 | `consumption_france.py`  |   ✅    |      ✅      | RTE vs SyncService    |
 | `generation_forecast.py` |   ✅    |      ✅      | RTE vs SyncService    |
 | `contribute.py`          |   ✅    |      ✅      | Local vs API distante |
@@ -126,6 +127,7 @@ for range_start, range_end in missing_ranges:
 | ------------- | --------------------------------------------- | ---------------------------------------------- |
 | Tempo sync    | `rte_service.update_tempo_cache()`            | `sync_service.sync_tempo()` (gateway)          |
 | EcoWatt sync  | `rte_service.update_ecowatt_cache()`          | `sync_service.sync_ecowatt()` (gateway)        |
+| Zen Flex sync | `edf_zen_flex_service.update_zen_flex_cache()` | `sync_service.sync_zen_flex()` (gateway)      |
 | France sync   | `rte_service.update_consumption_france...()`  | `sync_service.sync_consumption_france()` (gw)  |
 | Gen. forecast | `rte_service.update_generation_forecast...()` | `sync_service.sync_generation_forecast()` (gw) |
 | PDL sync      | N/A                                           | `sync_service.sync_all()`                      |
@@ -180,6 +182,7 @@ for range_start, range_end in missing_ranges:
 | Design System      | `docs/specs/design/`         | Guidelines UI, composants, couleurs, typographie       |
 | API Enedis         | `docs/external-apis/enedis-api/` | Documentation complète API Enedis DataHub          |
 | API RTE            | `docs/external-apis/rte-api/`    | Documentation API RTE (Tempo, EcoWatt, etc.)       |
+| API EDF Zen Flex   | `docs/external-apis/edf-zen-flex.md` | Calendrier Éco / Sobriété / Bonus (getOPMStatut) |
 
 ### Règle de consultation
 
