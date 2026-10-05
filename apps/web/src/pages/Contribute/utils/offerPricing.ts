@@ -152,25 +152,45 @@ export function formatPower(offer: { power_kva?: number }): string | null {
   return `${offer.power_kva} kVA`
 }
 
+// Puissance en fin de nom, avec ou sans tiret : "Classique - 6 kVA", "Tarif Bleu - BASE 6 kVA"
+const POWER_SUFFIX = /\s*-?\s*\d+\s*kVA\s*$/i
+
+// Types et options qui doublonnent offer_type, du plus long au plus court
+const TYPE_SUFFIXES = [
+  'Option Heures Creuses \\+ WE \\+ jour choisi',
+  'Option Heures Creuses \\+ WE',
+  'Option Heures Creuses',
+  'Option WE \\+ jour choisi',
+  'Option Week-End',
+  'Option Flex',
+  'Option Base',
+  'HC/HP \\+ WE',
+  'BASE_WEEKEND',
+  'HC_NUIT_WEEKEND',
+  'HC_WEEKEND',
+  'ZEN_FLEX',
+  'SEASONAL',
+  'HC/HP',
+  'HC_HP',
+  'TEMPO',
+  'BASE',
+  'EJP',
+]
+const TYPE_SUFFIX = new RegExp(`\\s*-\\s*(${TYPE_SUFFIXES.join('|')})\\s*$`, 'i')
+
 /**
- * Extrait le nom propre d'une offre en retirant le suffixe de periode
- * Format attendu : "Nom de l'offre [01/2025 -> 12/2025]"
+ * Nom commercial d'une offre : retire le suffixe de periode "[date -> date]", puis la
+ * puissance, puis le type ou l'option en fin de nom.
+ * Memes regles que le backend (apps/api/src/services/offer_names.py, MED-22) : le nom de
+ * groupe affiche ici est celui que le serveur stocke.
  */
 export function getCleanOfferName(name: string): string {
-  let cleaned = name
-  // 1. Retirer le suffixe de periode [date -> date] ou [date ->]
-  cleaned = cleaned.replace(/\s*\[.*?\]\s*$/, '')
-  // 2. Retirer "- Option XXX - XX kVA" (forme longue EDF)
-  cleaned = cleaned.replace(/\s*-\s*Option\s+(?:Base|Heures\s+Creuses(?:\s*\+\s*WE(?:\s*\+\s*jour\s+choisi)?)?|Week-End|WE\s*\+\s*jour\s+choisi|Flex)\s*-?\s*\d+\s*kVA\s*$/i, '')
-  // 3. Retirer "- TYPE XX kVA" (forme avec code type)
-  cleaned = cleaned.replace(/\s*-\s*(?:BASE|HC\/?HP|HC_HP|TEMPO|EJP|SEASONAL|BASE_WEEKEND|HC_WEEKEND|HC_NUIT_WEEKEND|ZEN_FLEX)\s+\d+\s*kVA\s*$/i, '')
-  // 4. Retirer "- XX kVA" simple
-  cleaned = cleaned.replace(/\s*-\s*\d+\s*kVA\s*$/i, '')
-  // 5. Retirer les suffixes de type restants (sans kVA)
-  cleaned = cleaned.replace(/\s*-\s*(?:BASE|HC\/?HP|HC_HP|TEMPO|EJP|SEASONAL|BASE_WEEKEND|HC_WEEKEND|HC_NUIT_WEEKEND|ZEN_FLEX)\s*$/i, '')
-  // 6. Retirer les suffixes "- Option XXX" restants
-  cleaned = cleaned.replace(/\s*-\s*Option\s+(?:Base|Heures\s+Creuses(?:\s*\+\s*WE(?:\s*\+\s*jour\s+choisi)?)?|Week-End|WE\s*\+\s*jour\s+choisi|Flex)\s*$/i, '')
-  return cleaned.trim()
+  const cleaned = name
+    .replace(/\s*\[.*?\]\s*$/, '')
+    .replace(POWER_SUFFIX, '')
+    .replace(TYPE_SUFFIX, '')
+    .trim()
+  return cleaned || name
 }
 
 /**

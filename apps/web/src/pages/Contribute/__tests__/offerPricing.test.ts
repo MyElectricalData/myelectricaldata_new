@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { periodsOverlap } from '../utils/offerPricing'
+import { getCleanOfferName, periodsOverlap } from '../utils/offerPricing'
 
 describe('offerPricing', () => {
   describe('periodsOverlap', () => {
@@ -19,6 +19,30 @@ describe('offerPricing', () => {
 
     it('sépare deux périodes datées disjointes', () => {
       expect(periodsOverlap('2025-01-01', '2025-01-31', '2026-02-01', undefined)).toBe(false)
+    })
+  })
+
+  // Mêmes règles que le backend (apps/api/src/services/offer_names.py, MED-22) :
+  // le nom de groupe du front doit être le nom que le serveur stocke
+  describe('getCleanOfferName', () => {
+    it.each([
+      ['Classique - 6 kVA', 'Classique'],
+      ['Électricité Prix ECO -5% - 6 kVA', 'Électricité Prix ECO -5%'],
+      ['FlexiWatt 2 saisons + Pointe Mobile - 6 kVA', 'FlexiWatt 2 saisons + Pointe Mobile'],
+      ['EJP - 6 kVA', 'EJP'],
+      ['Tarif Bleu - BASE 6 kVA', 'Tarif Bleu'],
+      ['Tarif Bleu - HC/HP - 9 kVA', 'Tarif Bleu'],
+      ['Zen Fixe - Option Base - 6 kVA', 'Zen Fixe'],
+      ['Zen Week-End - Option Heures Creuses + WE - 6 kVA', 'Zen Week-End'],
+      ['Zen Week-End Plus - Option WE + jour choisi - 6 kVA', 'Zen Week-End Plus'],
+      ['Zen Week-End - HC/HP + WE 6 kVA', 'Zen Week-End'],
+      ['Zen Week-End 6 kVA', 'Zen Week-End'],
+      ['Tarif Bleu', 'Tarif Bleu'],
+      ['Tempo', 'Tempo'],
+      ['Octopus Go', 'Octopus Go'],
+      ['Classique [01/2025 -> 12/2025]', 'Classique'],
+    ])('%s -> %s', (brut, attendu) => {
+      expect(getCleanOfferName(brut)).toBe(attendu)
     })
   })
 })
