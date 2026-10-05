@@ -70,9 +70,10 @@ Affiche pour chaque contribution :
 ### Edition d'une contribution (FAIT)
 
 - Bouton "Modifier" pour contributions pending et rejected
-- Navigation vers `/contribute/new`
-- Pre-remplissage du formulaire via `onEditContribution`
-- Toast de confirmation "Mode edition active"
+- Navigation vers `/contribute/offers` (onglet « Toutes les offres ») avec un toast d'information :
+  la contribution se corrige en proposant de nouveau les modifications depuis cet onglet
+- L'onglet « Nouvelle contribution » (`/contribute/new`, `NewContribution.tsx`) a été retiré (MED-22) :
+  la création d'offres et de fournisseurs, et l'import d'un JSON généré par une IA, sont dans « Toutes les offres »
 
 ### Suppression d'une contribution (FAIT)
 
