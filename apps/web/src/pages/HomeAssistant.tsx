@@ -60,7 +60,7 @@ interface BaseEntity {
 
 // Entités globales (RTE Tempo, EDF Tempo, EcoWatt)
 /**
- * Entités globales (Tempo, EcoWatt) : entity_id suggéré = sensor.<unique_id>, qui suit entity_prefix
+ * Entités globales (Tempo, Zen Flex, EcoWatt) : entity_id suggéré = sensor.<unique_id>, qui suit entity_prefix
  */
 function getGlobalEntities(prefix: string): BaseEntity[] {
   return [
@@ -158,6 +158,21 @@ function getGlobalEntities(prefix: string): BaseEntity[] {
       icon: 'mdi:currency-eur',
       unit: 'EUR/kWh',
       description: 'Tarif heures pleines jour rouge',
+    },
+    // EDF Zen Flex
+    {
+      entity_id: `sensor.${prefix}_zen_flex_today`,
+      name: 'Zen Flex Aujourd\'hui',
+      device: 'EDF Zen Flex',
+      icon: 'mdi:leaf',
+      description: 'Type du jour Zen Flex (ECO, SOBRIETE, BONUS, unknown)',
+    },
+    {
+      entity_id: `sensor.${prefix}_zen_flex_tomorrow`,
+      name: 'Zen Flex Demain',
+      device: 'EDF Zen Flex',
+      icon: 'mdi:calendar-tomorrow',
+      description: 'Type du lendemain Zen Flex (unknown avant sa publication par EDF)',
     },
     // EcoWatt
     {
