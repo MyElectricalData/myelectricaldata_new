@@ -190,6 +190,16 @@ Le coût utilise l'offre sélectionnée sur le PDL :
   sans coût plutôt qu'avec un coût faux ;
 - autres offres : prix unique de la série.
 
+### Mode d'import
+
+- **Complet (réinitialise)** : supprime les statistiques du préfixe, puis réimporte tout l'historique
+  présent dans la base locale, chaque série partant de 0.
+- **Différentiel (rapide)** : lit dans Home Assistant la dernière heure et la dernière somme de chaque
+  série, puis n'importe que les heures plus récentes, en prolongeant cette somme. Une série sans point
+  sur les 30 derniers jours (Tempo rouge d'avril à octobre, PDL dont la synchronisation s'est arrêtée)
+  est retrouvée sur l'historique mensuel de Home Assistant. Sans aucune statistique existante, l'import
+  différentiel se replie sur un import complet.
+
 ---
 
 ## Exemples
@@ -264,6 +274,15 @@ Les entités créées par une version antérieure gardent leur ancien `entity_id
 - Vérifier `ha_url` et `ha_token` (erreur 401 : token invalide ou expiré)
 - Sans offre sélectionnée sur le PDL, aucune statistique de coût n'est importée
 - Relancer un import complet des statistiques après un changement d'offre
+
+### Consommation négative ou totaux doublés dans le panneau Énergie
+
+Avant la version qui corrige l'import différentiel, chaque import différentiel faisait repartir les
+séries de 0 (une chute de plusieurs milliers de kWh, vue comme une consommation négative) et
+réimportait des heures déjà présentes (totaux annuels deux à trois fois trop élevés). Les séries
+touchées gardent ces valeurs : lancer **une fois** un import en mode **Complet (réinitialise)**, qui les
+supprime et les reconstruit, puis revenir au mode différentiel. Seules les heures encore présentes
+dans la base locale sont réimportées.
 
 ---
 
