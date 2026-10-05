@@ -1,7 +1,7 @@
 // Hook pour l'import JSON IA : validation, matching, deduplication
 // Extrait de AllOffers.tsx lignes 825-1429
 
-import type { EnergyOffer } from '@/api/energy'
+import { energyApi, type EnergyOffer } from '@/api/energy'
 import { toast } from '@/stores/notificationStore'
 import { getFieldKeysForOfferType, getCleanOfferName } from '../utils/offerPricing'
 import type { AllOffersState } from './useAllOffersState'
@@ -39,7 +39,7 @@ type AIJsonOffer = any
 
 export function useAIImport(state: AllOffersState) {
   const {
-    offersArray,
+    queryClient,
     sortedProviders,
     filterProvider,
     filterOfferType,
@@ -207,8 +207,20 @@ export function useAIImport(state: AllOffersState) {
   // Import principal
   const importAIJson = async () => {
     try {
-      // Utiliser les offres du state (même source que l'export, pas de désynchronisation)
-      const currentOffers = offersArray
+      // Rafraîchir les offres depuis le serveur avant comparaison
+      // (évite les faux "Déjà en base" si des offres ont été supprimées ailleurs)
+      const freshOffers = await queryClient.fetchQuery({
+        queryKey: ['energy-offers', 'with-history'],
+        queryFn: async () => {
+          const response = await energyApi.getOffers(undefined, true)
+          if (response.success && Array.isArray(response.data)) {
+            return response.data as EnergyOffer[]
+          }
+          return []
+        },
+        staleTime: 0,
+      })
+      const currentOffers = Array.isArray(freshOffers) ? freshOffers : []
 
       // Nettoyer le JSON
       let cleaned = aiJsonInput.trim()
