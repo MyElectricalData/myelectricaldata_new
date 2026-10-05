@@ -9,6 +9,7 @@ Runs background tasks (Europe/Paris, ~20 gateway calls a day):
 Uses APScheduler for task scheduling.
 """
 
+import asyncio
 import logging
 from datetime import datetime, UTC, timedelta
 from typing import Optional, TYPE_CHECKING
@@ -42,6 +43,8 @@ class SyncScheduler:
     def __init__(self) -> None:
         self._scheduler: Optional["AsyncIOScheduler"] = None
         self._running = False
+        # Une seule sync PDL à la fois : la sync du démarrage peut encore tourner au cron suivant
+        self._sync_lock = asyncio.Lock()
 
     def start(self) -> None:
         """Start the scheduler
@@ -194,6 +197,13 @@ class SyncScheduler:
 
     async def _run_sync(self) -> None:
         """Run sync job, then the scheduled exports (fresh data, even after a partial sync)"""
+        if self._sync_lock.locked():
+            logger.info("[SCHEDULER] Sync already running, skipping this run")
+            return
+        async with self._sync_lock:
+            await self._run_sync_locked()
+
+    async def _run_sync_locked(self) -> None:
         logger.info("[SCHEDULER] Starting scheduled sync...")
 
         try:

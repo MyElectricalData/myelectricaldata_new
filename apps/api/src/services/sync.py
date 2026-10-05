@@ -13,7 +13,7 @@ import logging
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,6 +58,10 @@ def _normalize_utc(ts: datetime | None) -> datetime | None:
 
 # Verrous globaux pour éviter les syncs concurrentes
 _energy_sync_lock = asyncio.Lock()
+
+# Contrainte quotidienne en NULLS NOT DISTINCT (migration c3d4e5f6g7h8, ignorée sous PostgreSQL < 15),
+# lue une fois par process
+_daily_upsert_effective: bool | None = None
 
 
 class SyncService:
@@ -312,6 +316,26 @@ class SyncService:
             return True
         return datetime.now(UTC) - last_sync_at >= timedelta(hours=METADATA_REFRESH_HOURS)
 
+    async def _daily_upsert_is_effective(self) -> bool:
+        """True si ON CONFLICT joue pour les lignes quotidiennes (interval_start NULL).
+
+        Sans NULLS NOT DISTINCT, redemander un jour déjà en base l'insère une seconde fois :
+        le rafraîchissement forcé de J-2/J-1 multiplierait alors les totaux quotidiens.
+        """
+        global _daily_upsert_effective
+        if _daily_upsert_effective is None:
+            result = await self.db.execute(
+                text("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'uq_consumption_data'")
+            )
+            definition = result.scalar() or ""
+            _daily_upsert_effective = "NULLS NOT DISTINCT" in definition
+            if not _daily_upsert_effective:
+                logger.warning(
+                    "[SYNC] Contrainte quotidienne sans NULLS NOT DISTINCT (PostgreSQL < 15) : "
+                    "pas de rafraîchissement forcé de J-2/J-1"
+                )
+        return _daily_upsert_effective
+
     def _force_refresh_from(self, sync_status: SyncStatus, start_date: date, end_date: date) -> date | None:
         """Début de la fenêtre à redemander (J-2, J-1) si le dernier passage date de plus de 6 h."""
         last_sync_at = _normalize_utc(sync_status.last_sync_at)
@@ -524,6 +548,7 @@ class SyncService:
                         total_synced += len(records)
                 except Exception as e:
                     await self.db.rollback()
+                    await self.db.refresh(sync_status)
                     logger.warning(
                         f"[SYNC] Erreur fetch max_power pour {usage_point_id} "
                         f"({current_start} - {current_end}): {e}"
@@ -586,7 +611,7 @@ class SyncService:
         # Détecter les trous dans la base locale (et redemander J-2/J-1 en quotidien, corrigés par Enedis)
         force_refresh_from = (
             self._force_refresh_from(sync_status, start_date, end_date)
-            if granularity == DataGranularity.DAILY
+            if granularity == DataGranularity.DAILY and await self._daily_upsert_is_effective()
             else None
         )
         missing_ranges = await self._find_missing_ranges(

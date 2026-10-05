@@ -61,8 +61,9 @@ def sync_service(db):
 # --- Off-by-one de la sync : la veille (J-1) doit être demandée -----------------------------
 
 
-async def test_sync_demande_la_veille_avec_une_fin_exclue_a_aujourd_hui():
+async def test_sync_demande_la_veille_avec_une_fin_exclue_a_aujourd_hui(monkeypatch):
     """Base vide : la dernière plage demandée à la passerelle se termine (exclue) à aujourd'hui."""
+    monkeypatch.setattr("src.services.sync._daily_upsert_effective", True)
     db = db_with(FakeResult(rows=[]))
     service = sync_service(db)
     service._get_or_create_sync_status = AsyncMock(
@@ -370,3 +371,84 @@ async def test_sync_france_ignoree_au_demarrage_si_recente():
 
     assert result["skipped"] is True
     service._update_sync_tracker.assert_not_awaited()
+
+
+# --- Corrections de la revue -------------------------------------------------------------------
+
+
+async def _forced_window(monkeypatch, constraint_def: str):
+    monkeypatch.setattr("src.services.sync._daily_upsert_effective", None)
+    present = {TODAY - timedelta(days=i) for i in range(1, 31)}  # base complète sur 30 jours
+    db = db_with(FakeResult(scalar=constraint_def), FakeResult(rows=sorted(present)))
+    service = sync_service(db)
+    service._get_or_create_sync_status = AsyncMock(
+        return_value=SimpleNamespace(
+            status=None, last_sync_at=None, error_message=None, error_count=0,
+            records_synced_last_run=0, total_records=0, oldest_data_date=None,
+            newest_data_date=None, next_sync_at=None, last_error_at=None,
+        )
+    )
+    fetch = AsyncMock(return_value={"success": True, "data": None})
+    await service._sync_energy_data(
+        usage_point_id=PRM, data_type="consumption", granularity=DataGranularity.DAILY,
+        max_days=30, fetch_func=fetch, model_class=ConsumptionData,
+    )
+    return [(c.args[1], c.args[2]) for c in fetch.await_args_list]
+
+
+async def test_rafraichissement_force_avec_nulls_not_distinct(monkeypatch):
+    calls = await _forced_window(
+        monkeypatch, "UNIQUE NULLS NOT DISTINCT (usage_point_id, date, granularity, interval_start)"
+    )
+
+    assert calls == [((TODAY - timedelta(days=2)).isoformat(), TODAY.isoformat())]
+
+
+async def test_pas_de_rafraichissement_force_sous_postgresql_14(monkeypatch):
+    """Sans NULLS NOT DISTINCT, redemander J-2/J-1 les insérerait une seconde fois (totaux doublés)."""
+    calls = await _forced_window(monkeypatch, "UNIQUE (usage_point_id, date, granularity, interval_start)")
+
+    assert calls == []
+
+
+async def test_une_seule_sync_a_la_fois():
+    import asyncio
+
+    from src import scheduler as scheduler_module
+
+    sched = scheduler_module.SyncScheduler()
+    started, release = asyncio.Event(), asyncio.Event()
+    runs = 0
+
+    async def lente():
+        nonlocal runs
+        runs += 1
+        started.set()
+        await release.wait()
+
+    sched._run_sync_locked = lente
+    premiere = asyncio.create_task(sched._run_sync())
+    await started.wait()
+    await sched._run_sync()  # cron suivant pendant la sync du démarrage : sauté
+    release.set()
+    await premiere
+
+    assert runs == 1
+
+
+async def test_adapter_transmet_use_cache_false():
+    from src.adapters.myelectricaldata import MyElectricalDataAdapter
+
+    adapter = MyElectricalDataAdapter.__new__(MyElectricalDataAdapter)
+    adapter._make_request = AsyncMock(return_value={})
+
+    await adapter.get_consumption_max_power(PRM, "2026-09-01", "2026-10-01", use_cache=False)
+
+    assert adapter._make_request.await_args.kwargs["params"]["use_cache"] == "false"
+
+
+def test_attente_expiree_purgee(monkeypatch):
+    monkeypatch.setattr(enedis_client, "_detail_chunk_backoff", {"bloc": datetime.now() - timedelta(minutes=1)})
+
+    assert not enedis_client._chunk_in_backoff("bloc")
+    assert enedis_client._detail_chunk_backoff == {}

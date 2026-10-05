@@ -43,7 +43,10 @@ _detail_chunk_backoff: dict[str, datetime] = {}
 
 def _chunk_in_backoff(key: str) -> bool:
     until = _detail_chunk_backoff.get(key)
-    return until is not None and until > datetime.now()
+    if until is not None and until <= datetime.now():
+        del _detail_chunk_backoff[key]
+        return False
+    return until is not None
 
 
 def _backoff_chunk(key: str, chunk_end: date) -> None:
@@ -299,7 +302,7 @@ async def get_consumption_daily(
         # Force fetch from gateway (no cache)
         try:
             adapter = get_med_adapter()
-            response = await adapter.get_consumption_daily(usage_point_id, start, end)
+            response = await adapter.get_consumption_daily(usage_point_id, start, end, use_cache=False)
             data = v5_to_2026(extract_gateway_data(response), grandeur_metier="CONS", grandeur_physique="EA", pas="P1D")
             logger.info(f"[{usage_point_id}] Daily consumption fetched from gateway (cache disabled)")
             return APIResponse(success=True, data=data)
@@ -399,7 +402,7 @@ async def get_consumption_detail(
         # Force fetch from gateway (no cache)
         try:
             adapter = get_med_adapter()
-            response = await adapter.get_consumption_detail(usage_point_id, start, end)
+            response = await adapter.get_consumption_detail(usage_point_id, start, end, use_cache=False)
             data = v5_to_2026(extract_gateway_data(response), grandeur_metier="CONS", grandeur_physique="PA")
             logger.info(f"[{usage_point_id}] Detailed consumption fetched from gateway (cache disabled)")
             return APIResponse(success=True, data=data)
@@ -417,7 +420,7 @@ async def _max_power_data(
     """Puissance max quotidienne : base locale d'abord, passerelle pour les seuls jours manquants."""
     adapter = get_med_adapter()
     if not use_cache:
-        response = await adapter.get_consumption_max_power(usage_point_id, start, end)
+        response = await adapter.get_consumption_max_power(usage_point_id, start, end, use_cache=False)
         return v5_to_2026(extract_gateway_data(response), grandeur_metier="CONS", grandeur_physique="PMA", pas="P1D")
 
     start_date, end_date = parse_date(start), parse_date(end)
@@ -565,7 +568,7 @@ async def get_production_daily(
         # Force fetch from gateway (no cache)
         try:
             adapter = get_med_adapter()
-            response = await adapter.get_production_daily(usage_point_id, start, end)
+            response = await adapter.get_production_daily(usage_point_id, start, end, use_cache=False)
             data = v5_to_2026(extract_gateway_data(response), grandeur_metier="PROD", grandeur_physique="EA", pas="P1D")
             logger.info(f"[{usage_point_id}] Daily production fetched from gateway (cache disabled)")
             return APIResponse(success=True, data=data)
@@ -665,7 +668,7 @@ async def get_production_detail(
         # Force fetch from gateway (no cache)
         try:
             adapter = get_med_adapter()
-            response = await adapter.get_production_detail(usage_point_id, start, end)
+            response = await adapter.get_production_detail(usage_point_id, start, end, use_cache=False)
             data = v5_to_2026(extract_gateway_data(response), grandeur_metier="PROD", grandeur_physique="PA")
             logger.info(f"[{usage_point_id}] Detailed production fetched from gateway (cache disabled)")
             return APIResponse(success=True, data=data)
@@ -815,6 +818,7 @@ async def get_consumption_detail_batch(
                         usage_point_id,
                         current_start.isoformat(),
                         chunk_end.isoformat(),
+                        use_cache=False,
                     )
                     gateway_readings = extract_readings_from_response(response)
                     all_readings.extend(gateway_readings)
@@ -937,6 +941,7 @@ async def get_production_detail_batch(
                         usage_point_id,
                         current_start.isoformat(),
                         chunk_end.isoformat(),
+                        use_cache=False,
                     )
                     gateway_readings = extract_readings_from_response(response)
                     all_readings.extend(gateway_readings)
