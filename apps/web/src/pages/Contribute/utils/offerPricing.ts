@@ -27,8 +27,8 @@ export const OFFER_TYPE_PRICE_FIELDS: Record<string, PriceFieldConfig[]> = {
     { key: 'ejp_peak', label: 'Pointe', color: 'text-red-600 dark:text-red-400' },
   ],
   SEASONAL: [
-    { key: 'hc_price_summer', label: 'HC Ete', color: 'text-blue-600 dark:text-blue-400' },
-    { key: 'hp_price_summer', label: 'HP Ete', color: 'text-red-600 dark:text-red-400' },
+    { key: 'hc_price_summer', label: 'HC Été', color: 'text-blue-600 dark:text-blue-400' },
+    { key: 'hp_price_summer', label: 'HP Été', color: 'text-red-600 dark:text-red-400' },
     { key: 'hc_price_winter', label: 'HC Hiver', color: 'text-blue-600 dark:text-blue-400' },
     { key: 'hp_price_winter', label: 'HP Hiver', color: 'text-red-600 dark:text-red-400' },
   ],
@@ -53,7 +53,7 @@ export const OFFER_TYPE_PRICE_FIELDS: Record<string, PriceFieldConfig[]> = {
 // Layout saisonnier : regroupement des champs par saison (pour affichage sur 2 lignes)
 export const SEASONAL_LAYOUT: Record<string, { label: string; color: string; fields: string[] }[]> = {
   SEASONAL: [
-    { label: 'Ete', color: 'text-orange-600 dark:text-orange-400', fields: ['hc_price_summer', 'hp_price_summer'] },
+    { label: 'Été', color: 'text-orange-600 dark:text-orange-400', fields: ['hc_price_summer', 'hp_price_summer'] },
     { label: 'Hiver', color: 'text-blue-600 dark:text-blue-400', fields: ['hc_price_winter', 'hp_price_winter'] },
   ],
   HC_WEEKEND: [
@@ -124,13 +124,21 @@ export function getTariffColumns(offerType: string): number {
  * Couleur CSS pour un label de champ tarifaire (utilise dans le recap)
  */
 export function getLabelColor(label: string): string {
-  if (label.includes('Bleu') || label === 'HC' || label.includes('HC')) return 'text-blue-600 dark:text-blue-400'
-  if (label.includes('Rouge') || label === 'HP' || label.includes('HP')) return 'text-red-600 dark:text-red-400'
-  if (label.includes('Blanc')) return 'text-gray-600 dark:text-gray-400'
-  if (label.includes('WE') || label.includes('Week-end')) return 'text-green-600 dark:text-green-400'
-  if (label.includes('Ete')) return 'text-orange-600 dark:text-orange-400'
-  if (label.includes('Normal')) return 'text-green-600 dark:text-green-400'
-  if (label.includes('Pointe')) return 'text-red-600 dark:text-red-400'
+  // Tempo : couleurs par jour
+  if (label.includes('Bleu')) return 'text-blue-600 dark:text-blue-400'
+  if (label.includes('Blanc')) return 'text-gray-500 dark:text-gray-300'
+  if (label.includes('Rouge')) return 'text-red-600 dark:text-red-400'
+  // Saisonnier
+  if (label.includes('Été')) return 'text-amber-600 dark:text-amber-400'
+  if (label.includes('Hiver')) return 'text-cyan-600 dark:text-cyan-400'
+  // Week-end
+  if (label.includes('WE') || label.includes('Week-end')) return 'text-purple-600 dark:text-purple-400'
+  // HC/HP standard
+  if (label === 'HC') return 'text-blue-600 dark:text-blue-400'
+  if (label === 'HP') return 'text-red-600 dark:text-red-400'
+  // EJP
+  if (label === 'Normal') return 'text-green-600 dark:text-green-400'
+  if (label === 'Pointe') return 'text-red-600 dark:text-red-400'
   return 'text-gray-600 dark:text-gray-400'
 }
 
@@ -200,12 +208,12 @@ export function getCleanOfferName(name: string): string {
 export function getGroupPeriodLabel(groupName: string): string {
   const parts = groupName.split('##')
   if (parts.length < 2) return ''
-  // parts[1] = date debut ou "active", parts[2] = date fin ou "active"
-  const from = parts[1] || ''
-  const to = parts.length > 2 ? parts[2] : ''
-  if (from === 'active' || !from) return ''
-  if (to === 'active' || !to) return `${from} →`
-  return `${from} → ${to}`
+  const validFrom = parts[1]
+  const validTo = parts[2]
+  if (validFrom === 'active') return ''
+  const monthYear = (date: string) => new Date(date).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+  if (validTo === 'active' || !validTo) return `Valide depuis ${monthYear(validFrom)}`
+  return `${monthYear(validFrom)} → ${monthYear(validTo)}`
 }
 
 /**

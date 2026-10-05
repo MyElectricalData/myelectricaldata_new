@@ -22,6 +22,7 @@ import {
   getFieldKeysForOfferType,
   getCleanOfferName,
   periodsOverlap,
+  getGroupPeriodLabel,
   detectDynamicPriceFields,
 } from '../utils/offerPricing'
 
@@ -558,17 +559,6 @@ export function useAllOffersState() {
   }
 
   // Helper pour extraire et formater la période
-  const getGroupPeriodLabel = (groupKey: string): string => {
-    const parts = groupKey.split('##')
-    if (parts.length < 2) return ''
-    const validFrom = parts[1]
-    const validTo = parts[2]
-    if (validFrom === 'active') return ''
-    if (validTo === 'active' || !validTo) {
-      return `Valide depuis ${new Date(validFrom).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`
-    }
-    return `${new Date(validFrom).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })} → ${new Date(validTo).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`
-  }
 
   // Reset complet après soumission réussie
   const resetAllModifications = () => {

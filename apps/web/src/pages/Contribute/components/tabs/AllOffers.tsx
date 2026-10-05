@@ -183,11 +183,11 @@ export default function AllOffers() {
           {/* Message quand aucune offre pour le type sélectionné */}
           <EmptyTypeMessage state={state} />
 
-          {/* Spacer pour le bouton flottant */}
-          {isEditMode && hasAnyModifications && <div className="h-16" />}
-
           {/* Section offres expirées */}
           <ExpiredOffersSection state={state} />
+
+          {/* Spacer pour le bouton flottant (après la dernière section, pour ne rien masquer) */}
+          {isEditMode && hasAnyModifications && <div className="h-16" />}
         </>
       )}
 

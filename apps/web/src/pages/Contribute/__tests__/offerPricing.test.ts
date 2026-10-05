@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getCleanOfferName, periodsOverlap } from '../utils/offerPricing'
+import { getCleanOfferName, getGroupPeriodLabel, periodsOverlap } from '../utils/offerPricing'
 
 describe('offerPricing', () => {
   describe('periodsOverlap', () => {
@@ -43,6 +43,20 @@ describe('offerPricing', () => {
       ['Classique [01/2025 -> 12/2025]', 'Classique'],
     ])('%s -> %s', (brut, attendu) => {
       expect(getCleanOfferName(brut)).toBe(attendu)
+    })
+  })
+
+  describe('getGroupPeriodLabel', () => {
+    it('ne libelle pas une offre active', () => {
+      expect(getGroupPeriodLabel('Classique##active')).toBe('')
+    })
+
+    it('libelle une periode ouverte en mois et annee', () => {
+      expect(getGroupPeriodLabel('Classique##2025-01-15##active')).toBe('Valide depuis janvier 2025')
+    })
+
+    it('libelle une periode fermee', () => {
+      expect(getGroupPeriodLabel('Classique##2025-01-15##2025-12-31')).toBe('janvier 2025 → décembre 2025')
     })
   })
 })
