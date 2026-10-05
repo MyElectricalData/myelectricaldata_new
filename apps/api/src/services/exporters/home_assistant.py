@@ -436,7 +436,7 @@ class HomeAssistantExporter(BaseExporter):
 
                 # Global exports (not PDL-specific)
                 try:
-                    count = await self._export_tempo(client, db)
+                    count = await self._export_tempo(client, db, usage_point_ids)
                     results["tempo"] = count
                 except Exception as e:
                     logger.error(f"[HA-MQTT] Tempo export failed: {e}")
@@ -580,7 +580,7 @@ class HomeAssistantExporter(BaseExporter):
 
                 # Tempo
                 try:
-                    count = await self._export_tempo(client, db)
+                    count = await self._export_tempo(client, db, usage_point_ids)
                     results["tempo"] = count
                     await emit(f"Tempo exporté ({count} entités)")
                 except Exception as e:
@@ -1592,7 +1592,9 @@ class HomeAssistantExporter(BaseExporter):
     # TEMPO EXPORT (Old MyElectricalData format)
     # =========================================================================
 
-    async def _export_tempo(self, client: aiomqtt.Client, db: AsyncSession) -> int:
+    async def _export_tempo(
+        self, client: aiomqtt.Client, db: AsyncSession, usage_point_ids: list[str] | None = None
+    ) -> int:
         """Export Tempo information via MQTT Discovery (old MyElectricalData format)
 
         Creates entities under two devices:
@@ -1703,20 +1705,22 @@ class HomeAssistantExporter(BaseExporter):
             )
             used = result.scalar() or 0
 
-            # Count remaining days (including today until season end)
+            # Days of this color already announced from today on (today, tomorrow): no longer available
             result = await db.execute(
                 select(func.count(TempoDay.id))
                 .where(TempoDay.id >= today_str)
                 .where(TempoDay.id <= season_end_str)
                 .where(cast(TempoDay.color, String) == color.value)
             )
-            remaining = result.scalar() or 0
+            reserved = result.scalar() or 0
 
             quota = TEMPO_QUOTAS.get(color.value, 0)
+            remaining = max(quota - used - reserved, 0)
 
             days_data[color_name] = {
                 "used": used,
                 "remaining": remaining,
+                "reserved_known_days": reserved,
                 "quota": quota,
             }
 
@@ -1731,6 +1735,7 @@ class HomeAssistantExporter(BaseExporter):
                 attributes={
                     "used": used,
                     "remaining": remaining,
+                    "reserved_known_days": reserved,
                     "quota": quota,
                     "season_start": season_start_str,
                     "season_end": season_end_str,
@@ -1756,10 +1761,10 @@ class HomeAssistantExporter(BaseExporter):
                 "tomorrow": tomorrow_color,
                 "season_start": season_start_str,
                 "season_end": season_end_str,
-                # Jours restants pour content-card-linky (quota - used)
-                "days_blue": days_data.get("blue", {}).get("quota", 0) - days_data.get("blue", {}).get("used", 0),
-                "days_white": days_data.get("white", {}).get("quota", 0) - days_data.get("white", {}).get("used", 0),
-                "days_red": days_data.get("red", {}).get("quota", 0) - days_data.get("red", {}).get("used", 0),
+                # Jours restants pour content-card-linky (getTempoRemainingDays) : quota - passés - déjà connus
+                "days_blue": days_data.get("blue", {}).get("remaining", 0),
+                "days_white": days_data.get("white", {}).get("remaining", 0),
+                "days_red": days_data.get("red", {}).get("remaining", 0),
                 # Détails complets pour usage avancé
                 "days_blue_detail": days_data.get("blue", {}),
                 "days_white_detail": days_data.get("white", {}),
@@ -1773,7 +1778,8 @@ class HomeAssistantExporter(BaseExporter):
         # EDF TEMPO: Price sensors
         # =====================================================================
 
-        for price_key, price_value in TEMPO_PRICES.items():
+        prices, price_source = await self._get_tempo_prices(db, usage_point_ids or [])
+        for price_key, price_value in prices.items():
             price_name = TEMPO_PRICE_NAMES.get(price_key, price_key)
 
             await self._publish_sensor_old_format(
@@ -1786,6 +1792,7 @@ class HomeAssistantExporter(BaseExporter):
                 attributes={
                     "price_type": price_key,
                     "name": price_name,
+                    **price_source,
                 },
                 unit="EUR/kWh",
                 icon="mdi:currency-eur",
@@ -1794,6 +1801,32 @@ class HomeAssistantExporter(BaseExporter):
 
         logger.debug(f"[HA-MQTT] Exported Tempo: {count} sensors")
         return count
+
+    async def _get_tempo_prices(
+        self, db: AsyncSession, usage_point_ids: list[str]
+    ) -> tuple[dict[str, float], dict[str, Any]]:
+        """Prix Tempo publiés : offre TEMPO sélectionnée sur un des PDL exportés, sinon TEMPO_PRICES."""
+        from ...models.energy_provider import EnergyOffer
+        from ...models.pdl import PDL
+
+        if usage_point_ids:
+            result = await db.execute(
+                select(EnergyOffer)
+                .join(PDL, PDL.selected_offer_id == EnergyOffer.id)
+                .where(PDL.usage_point_id.in_(usage_point_ids))
+            )
+            for offer in result.scalars().all():
+                if tariff_profile(offer.offer_type).family != "TEMPO":
+                    continue
+                prices = {key: getattr(offer, f"tempo_{key}") for key in TEMPO_PRICES}
+                if all(value is not None for value in prices.values()):
+                    return {key: float(value) for key, value in prices.items()}, {
+                        "source": "selected_offer",
+                        "offer_name": offer.name,
+                    }
+                logger.warning(f"[HA-MQTT] Offre Tempo '{offer.name}' incomplète, prix par défaut publiés")
+
+        return dict(TEMPO_PRICES), {"source": "default"}
 
     def _get_tempo_color_fr(self, color: str) -> str:
         """Get French name for Tempo color"""

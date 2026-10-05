@@ -476,3 +476,78 @@ def test_categorie_suit_le_prefixe_et_reconnait_hp_hc():
     assert exporter._categorize_ha_topic(
         f"homeassistant/sensor/med_v2_consumption_yesterday_hp/{PRM}/state"
     ) == "Conso HP"
+
+
+# --- Lot 4 : Tempo, jours restants et prix de l'offre ------------------------------------------
+
+
+class TempoResult:
+    def __init__(self, scalar=None, one=None, rows=None):
+        self._scalar, self._one, self._rows = scalar, one, rows or []
+
+    def scalar(self):
+        return self._scalar
+
+    def scalar_one_or_none(self):
+        return self._one
+
+    def scalars(self):
+        return SimpleNamespace(all=lambda: list(self._rows))
+
+
+async def _export_tempo_publications(offer=None):
+    """Bleu : 10 jours passés, 2 déjà connus (aujourd'hui, demain) ; blanc : 43 passés ; rouge : rien."""
+    exporter = HomeAssistantExporter({"mqtt_broker": "mqtt.local"})
+    published: dict[str, dict] = {}
+
+    async def capture(client, *, topic, state=None, attributes=None, **kwargs):
+        published[topic] = {"state": state, "attributes": attributes or {}}
+
+    exporter._publish_sensor_old_format = capture
+    bleu = SimpleNamespace(color=SimpleNamespace(value="BLUE"))
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=[
+        TempoResult(one=bleu), TempoResult(one=bleu),                # aujourd'hui, demain
+        TempoResult(scalar=10), TempoResult(scalar=2),               # bleu : passés, déjà connus
+        TempoResult(scalar=43), TempoResult(scalar=0),               # blanc
+        TempoResult(scalar=0), TempoResult(scalar=0),                # rouge
+        TempoResult(rows=[offer] if offer else []),                  # offre sélectionnée
+    ])
+
+    await exporter._export_tempo(MagicMock(), db, [PRM])
+    return published
+
+
+async def test_tempo_jours_restants_par_quota():
+    published = await _export_tempo_publications()
+
+    bleu = published["myelectricaldata_edf/tempo_days_blue"]
+    assert bleu["state"] == 10  # état inchangé : jours utilisés (choix utilisateur, format v2)
+    assert bleu["attributes"]["remaining"] == 300 - 10 - 2
+    assert bleu["attributes"]["reserved_known_days"] == 2
+    assert published["myelectricaldata_edf/tempo_days_white"]["attributes"]["remaining"] == 0
+    info = published["myelectricaldata_edf/tempo_info"]["attributes"]
+    assert (info["days_blue"], info["days_white"], info["days_red"]) == (288, 0, 22)
+
+
+async def test_tempo_prix_de_l_offre_selectionnee():
+    offer = SimpleNamespace(
+        name="Tempo EDF", offer_type="TEMPO",
+        tempo_blue_hc=0.1, tempo_blue_hp=0.2, tempo_white_hc=0.3,
+        tempo_white_hp=0.4, tempo_red_hc=0.5, tempo_red_hp=0.6,
+    )
+    published = await _export_tempo_publications(offer)
+
+    prix = published["myelectricaldata_edf/tempo_price_red_hp"]
+    assert prix["state"] == 0.6
+    assert prix["attributes"]["source"] == "selected_offer"
+
+
+async def test_tempo_prix_par_defaut_sans_offre_tempo():
+    from src.services.exporters.home_assistant import TEMPO_PRICES
+
+    published = await _export_tempo_publications()
+
+    prix = published["myelectricaldata_edf/tempo_price_red_hp"]
+    assert prix["state"] == TEMPO_PRICES["red_hp"]
+    assert prix["attributes"]["source"] == "default"
