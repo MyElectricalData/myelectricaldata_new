@@ -18,7 +18,7 @@ L'intégration MQTT permet de publier vos données vers n'importe quel broker MQ
 │  │ consumption │───────────────▶  │  med/pdl/consumption    │               │
 │  │ production  │  PUBLISH         │  med/pdl/production     │               │
 │  │ tempo       │                  │  med/tempo/today        │               │
-│  │ ecowatt     │                  │  med/ecowatt/current    │               │
+│  │ ecowatt     │                  │  med/ecowatt/today      │               │
 │  └─────────────┘                  └─────────────────────────┘               │
 │                                          │                                  │
 │                                          ▼                                  │
@@ -89,21 +89,26 @@ MQTT_ENABLED=true
 
 ```
 {prefix}/{pdl}/consumption/daily
-{prefix}/{pdl}/consumption/monthly
+{prefix}/{pdl}/consumption/detailed
+{prefix}/{pdl}/consumption/stats
 {prefix}/{pdl}/production/daily
+{prefix}/{pdl}/production/detailed
+{prefix}/{pdl}/production/stats
 {prefix}/tempo/today
 {prefix}/tempo/tomorrow
-{prefix}/ecowatt/current
-{prefix}/ecowatt/forecast
+{prefix}/tempo/remaining
+{prefix}/ecowatt/today
+{prefix}/status
 ```
 
-### Consommation
+### Consommation et production
 
-| Topic | Payload | Description |
-|-------|---------|-------------|
-| `med/{pdl}/consumption/daily` | `{"value": 15.2, "unit": "kWh", "date": "2024-01-15"}` | Conso journalière |
-| `med/{pdl}/consumption/yesterday` | `{"value": 14.8, "unit": "kWh", "date": "2024-01-14"}` | Conso veille |
-| `med/{pdl}/consumption/monthly` | `{"value": 245.6, "unit": "kWh", "month": "2024-01"}` | Conso mensuelle |
+`{prefix}/{pdl}/consumption/daily` (et `detailed`, `production/daily`, `production/detailed`) publie le
+lot de relevés exporté :
+
+```json
+{"pdl": "12345678901234", "granularity": "daily", "records": 31, "data": [...], "timestamp": "2026-10-05T06:00:00"}
+```
 
 ### Totaux et ventilation HP/HC
 
@@ -114,75 +119,33 @@ Pour un contrat à heures creuses disposant de données détaillées (30 min), i
 `{periode}_hp_kwh` et `{periode}_hc_kwh`, avec `{periode}` valant `yesterday`, `this_week`,
 `this_month` ou `this_year` (par exemple `this_month_hp_kwh`).
 
-### Production
-
-| Topic | Payload | Description |
-|-------|---------|-------------|
-| `med/{pdl}/production/daily` | `{"value": 8.5, "unit": "kWh", "date": "2024-01-15"}` | Prod journalière |
-| `med/{pdl}/production/monthly` | `{"value": 120.3, "unit": "kWh", "month": "2024-01"}` | Prod mensuelle |
+`{prefix}/{pdl}/production/stats` publie les mêmes totaux pour la production.
 
 ### Tempo
 
 | Topic | Payload | Description |
 |-------|---------|-------------|
-| `med/tempo/today` | `{"color": "BLEU", "date": "2024-01-15"}` | Couleur du jour |
-| `med/tempo/tomorrow` | `{"color": "BLANC", "date": "2024-01-16"}` | Couleur demain |
-| `med/tempo/remaining` | `{"blue": 280, "white": 40, "red": 20}` | Jours restants |
+| `{prefix}/tempo/today` | `{"color": "BLUE", "date": "2026-10-05"}` | Couleur du jour (`BLUE`, `WHITE`, `RED` ou `UNKNOWN`) |
+| `{prefix}/tempo/tomorrow` | `{"color": "WHITE", "date": "2026-10-06"}` | Couleur du lendemain |
+| `{prefix}/tempo/remaining` | `{"blue": 280, "white": 43, "red": 22}` | Jours restants dans la saison (1er septembre au 31 août) |
 
 ### EcoWatt
 
 | Topic | Payload | Description |
 |-------|---------|-------------|
-| `med/ecowatt/current` | `{"level": 1, "message": "Consommation normale"}` | Niveau actuel |
-| `med/ecowatt/forecast` | `[{"hour": 0, "level": 1}, ...]` | Prévisions 24h |
+| `{prefix}/ecowatt/today` | `{"date": "2026-10-05", "level": 1, "level_label": "Vert", "next_hour_level": 1, "message": "...", "timestamp": "..."}` | Niveau de l'heure courante et de l'heure suivante (1 vert, 2 orange, 3 rouge) |
+
+### Statut
+
+`{prefix}/status` publie `{"status": "online", "last_export": "...", "pdls_exported": 2}` à chaque export.
 
 ---
 
-## Format des messages
+## Home Assistant
 
-### Payload JSON
-
-Tous les messages sont publiés en JSON :
-
-```json
-{
-  "value": 15.2,
-  "unit": "kWh",
-  "date": "2024-01-15",
-  "pdl": "12345678901234",
-  "quality": "CORRIGE",
-  "timestamp": "2024-01-15T06:00:00+01:00"
-}
-```
-
-### Home Assistant Discovery
-
-L'exportateur supporte MQTT Discovery pour Home Assistant :
-
-```json
-// Topic: homeassistant/sensor/med_12345678901234_consumption/config
-{
-  "name": "Consommation journalière",
-  "unique_id": "med_12345678901234_consumption_daily",
-  "state_topic": "myelectricaldata/12345678901234/consumption/daily",
-  "value_template": "{{ value_json.value }}",
-  "unit_of_measurement": "kWh",
-  "device_class": "energy",
-  "state_class": "total_increasing",
-  "device": {
-    "identifiers": ["med_12345678901234"],
-    "name": "MyElectricalData - Maison",
-    "manufacturer": "MyElectricalData"
-  }
-}
-```
-
-Activer dans la configuration :
-
-```bash
-MQTT_HA_DISCOVERY=true
-MQTT_HA_DISCOVERY_PREFIX=homeassistant
-```
+Cet exporteur publie des topics bruts, sans MQTT Discovery. Pour que les capteurs soient créés
+automatiquement dans Home Assistant, utiliser l'exporteur
+[Home Assistant](home-assistant.md), qui publie la discovery sur le même broker.
 
 ---
 

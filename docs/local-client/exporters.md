@@ -52,22 +52,21 @@ La page **Exporter** (`/export`) permet de configurer les destinations d'export 
 
 ### Home Assistant
 
-Intégration native avec l'API REST de Home Assistant.
+Capteurs créés par MQTT Discovery, et statistiques du panneau Énergie importées par l'API WebSocket.
 
 | Champ | Description |
 |-------|-------------|
-| URL | URL de votre instance HA |
-| Token | Token d'accès longue durée |
-| Intervalle | Fréquence d'export (minutes) |
-| Entités | Sélection des données à exporter |
+| Broker MQTT | Broker utilisé par l'intégration MQTT de Home Assistant |
+| Préfixe de discovery | Celui de l'intégration MQTT (`homeassistant` par défaut) |
+| URL et token | Home Assistant et token longue durée, pour les statistiques |
 
-**Données exportées** :
+**Données exportées** (détail dans [Intégration Home Assistant](integrations/home-assistant.md)) :
 
-- `sensor.med_{pdl}_consumption_daily` : Consommation journalière
-- `sensor.med_{pdl}_consumption_monthly` : Consommation mensuelle
-- `sensor.med_{pdl}_production_daily` : Production journalière
-- `sensor.med_{pdl}_tempo_color` : Couleur Tempo du jour
-- `sensor.med_{pdl}_ecowatt_level` : Niveau EcoWatt
+- `sensor.myelectricaldata_linky_{pdl}_consumption` et `_production` : veille, historique en attributs
+- `sensor.myelectricaldata_linky_{pdl}_consumption_{periode}_{hp,hc}` : heures pleines / creuses
+- `sensor.myelectricaldata_tempo_today` / `_tomorrow` : couleurs Tempo
+- `sensor.myelectricaldata_ecowatt_j0` à `_j2` : signal EcoWatt
+- statistiques `myelectricaldata:consumption_*`, `cost_*`, `production_*` pour le panneau Énergie
 
 ### MQTT
 
@@ -86,11 +85,15 @@ Publication vers un broker MQTT compatible.
 
 ```
 {prefix}/{pdl}/consumption/daily
-{prefix}/{pdl}/consumption/monthly
+{prefix}/{pdl}/consumption/detailed
+{prefix}/{pdl}/consumption/stats     # totaux, dont {yesterday,this_week,this_month,this_year}_{hp,hc}_kwh
 {prefix}/{pdl}/production/daily
-{prefix}/tempo/today
+{prefix}/{pdl}/production/stats
+{prefix}/tempo/today                 # {"color": "BLUE", "date": "..."}
 {prefix}/tempo/tomorrow
-{prefix}/ecowatt/current
+{prefix}/tempo/remaining             # jours restants par couleur dans la saison
+{prefix}/ecowatt/today               # niveau de l'heure courante et de l'heure suivante
+{prefix}/status
 ```
 
 ### VictoriaMetrics
