@@ -4,7 +4,7 @@ Contrat de dates retenu : la borne de fin est EXCLUE partout (Data Connect 2026 
 La PR passait `local_data` en borne incluse alors que le front envoie `today` : on garde l'exclusion.
 """
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -15,7 +15,7 @@ from src.models.client_mode import ConsumptionData, DataGranularity, ProductionD
 from src.services.exporters.home_assistant import HomeAssistantExporter
 from src.services.local_data import LocalDataService
 from src.services.statistics import StatisticsService
-from src.services.sync import SyncService
+from src.services.sync import SyncService, _missing_ranges
 
 PRM = "99999999999991"
 TODAY = date.today()
@@ -128,8 +128,8 @@ def test_modele_max_power_contrainte_unique():
     assert "CONSTRAINT uq_max_power_data UNIQUE (usage_point_id, date)" in _ddl(MaxPowerData)
 
 
-async def test_sync_max_power_ne_demande_jamais_au_dela_de_la_veille():
-    """Enedis refuse une fin >= aujourd'hui sur la puissance max (constat de la PR, à confirmer en live)."""
+async def test_sync_max_power_demande_la_veille_sans_aller_jusqu_a_demain():
+    """Enedis refusait une fin à demain (commit 45a8c66 de la PR) : fin exclue à aujourd'hui, J-1 inclus."""
     db = MagicMock()
     db.execute = AsyncMock(return_value=FakeResult(rows=[], scalar=None))
     db.commit = AsyncMock()
@@ -148,7 +148,51 @@ async def test_sync_max_power_ne_demande_jamais_au_dela_de_la_veille():
 
     calls = service.adapter.get_consumption_max_power.await_args_list
     assert calls, "la sync max power doit interroger la passerelle quand la base est vide"
-    assert max(date.fromisoformat(c.args[2]) for c in calls) <= YESTERDAY
+    assert max(date.fromisoformat(c.args[2]) for c in calls) == TODAY
+
+
+def test_parse_max_power_garde_l_heure_reelle_du_pic(enedis_fixture):
+    service = sync_service(MagicMock())
+    reponse = {"success": True, "data": enedis_fixture("mesure_puissance_conso_max_quotidienne")}
+
+    records = service._parse_max_power_readings(reponse, PRM)
+
+    assert [(r["date"], r["interval_start"], r["value"]) for r in records] == [
+        (date(2026, 9, 29), "13:03", 4680),
+        (date(2026, 9, 30), "12:50", 6510),
+    ]
+
+
+# --- Regroupement des trous et fenêtre de rafraîchissement ------------------------------------
+
+
+def test_missing_ranges_regroupe_les_trous_fin_exclue():
+    d = date(2026, 10, 1)
+    present = {d + timedelta(days=i) for i in (0, 1, 4)}
+
+    assert _missing_ranges(d, d + timedelta(days=6), present) == [
+        (d + timedelta(days=2), d + timedelta(days=4)),
+        (d + timedelta(days=5), d + timedelta(days=6)),
+    ]
+
+
+def test_missing_ranges_redemande_la_fenetre_forcee():
+    d = date(2026, 10, 1)
+    present = {d + timedelta(days=i) for i in range(5)}
+
+    assert _missing_ranges(d, d + timedelta(days=5), present, force_refresh_from=d + timedelta(days=3)) == [
+        (d + timedelta(days=3), d + timedelta(days=5)),
+    ]
+
+
+def test_fenetre_forcee_seulement_apres_six_heures():
+    service = sync_service(MagicMock())
+    recent = SimpleNamespace(last_sync_at=datetime.now(UTC) - timedelta(hours=1))
+    ancien = SimpleNamespace(last_sync_at=datetime.now(UTC) - timedelta(hours=7))
+    start = TODAY - timedelta(days=30)
+
+    assert service._force_refresh_from(recent, start, TODAY) is None
+    assert service._force_refresh_from(ancien, start, TODAY) == TODAY - timedelta(days=2)
 
 
 # --- Statistiques : repli sur les mesures détaillées, selon le pas réel ----------------------

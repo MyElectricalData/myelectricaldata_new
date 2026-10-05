@@ -26,6 +26,7 @@ from ..models.client_mode import (
     ConsumptionData,
     ContractData,
     DataGranularity,
+    MaxPowerData,
     ProductionData,
     SyncStatus,
     SyncStatusType,
@@ -39,6 +40,55 @@ logger = logging.getLogger(__name__)
 # Maximum history to fetch
 MAX_DETAILED_DAYS = 730  # 2 years
 MAX_DAILY_DAYS = 1095  # 3 years
+
+# Contrat et adresse changent rarement : un rafraîchissement par jour suffit
+METADATA_REFRESH_HOURS = 24
+# Enedis peut publier ou corriger J-1 et J-2 avec retard : on les redemande toutes les 6 h
+DAILY_REFRESH_WINDOW_DAYS = 2
+DAILY_REFRESH_INTERVAL = timedelta(hours=6)
+
+
+def _missing_ranges(
+    start_date: date,
+    end_date: date,
+    existing_dates: set[date],
+    force_refresh_from: date | None = None,
+) -> list[tuple[date, date]]:
+    """Regroupe les dates absentes de [start_date, end_date[ en plages (start, end) à end exclu.
+
+    Les dates >= force_refresh_from sont redemandées même si elles existent déjà.
+    """
+    if force_refresh_from is not None:
+        existing_dates = {d for d in existing_dates if d < force_refresh_from}
+
+    ranges: list[tuple[date, date]] = []
+    current = start_date
+    while current < end_date:
+        if current in existing_dates:
+            current += timedelta(days=1)
+            continue
+        range_start = current
+        while current < end_date and current not in existing_dates:
+            current += timedelta(days=1)
+        ranges.append((range_start, current))
+    return ranges
+
+
+def _normalize_utc(ts: datetime | None) -> datetime | None:
+    if ts is None:
+        return None
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=UTC)
+    return ts.astimezone(UTC)
+
+
+def _split_power_datetime(date_str: str) -> tuple[str, str]:
+    """Découpe l'horodatage d'un pic de puissance en (YYYY-MM-DD, HH:MM)."""
+    for sep in ("T", " "):
+        if sep in date_str:
+            day_part, time_part = date_str.split(sep, 1)
+            return day_part[:10], time_part[:5] if len(time_part) >= 5 else "00:00"
+    return date_str[:10], "00:00"
 
 # Verrous globaux pour éviter les syncs concurrentes
 _energy_sync_lock = asyncio.Lock()
@@ -196,6 +246,7 @@ class SyncService:
                 "usage_point_id": usage_point_id,
                 "consumption_daily": "skipped (inactive PDL)",
                 "consumption_detail": "skipped (inactive PDL)",
+                "max_power": "skipped (inactive PDL)",
                 "production_daily": "skipped (inactive PDL)",
                 "production_detail": "skipped (inactive PDL)",
                 "contract": "skipped (inactive PDL)",
@@ -206,23 +257,30 @@ class SyncService:
             "usage_point_id": usage_point_id,
             "consumption_daily": None,
             "consumption_detail": None,
+            "max_power": None,
             "production_daily": None,
             "production_detail": None,
             "contract": None,
             "address": None,
         }
 
-        # Sync contract and address first (they're small)
+        # Sync contract and address first (they're small), at most once a day to spare the API quota
         try:
-            await self._sync_contract(usage_point_id)
-            result["contract"] = "success"
+            if await self._should_refresh_metadata(ContractData, usage_point_id):
+                await self._sync_contract(usage_point_id)
+                result["contract"] = "success"
+            else:
+                result["contract"] = "skipped (recent)"
         except Exception as e:
             logger.warning(f"[SYNC] Failed to sync contract for {usage_point_id}: {e}")
             result["contract"] = f"error: {e}"
 
         try:
-            await self._sync_address(usage_point_id)
-            result["address"] = "success"
+            if await self._should_refresh_metadata(AddressData, usage_point_id):
+                await self._sync_address(usage_point_id)
+                result["address"] = "success"
+            else:
+                result["address"] = "skipped (recent)"
         except Exception as e:
             logger.warning(f"[SYNC] Failed to sync address for {usage_point_id}: {e}")
             result["address"] = f"error: {e}"
@@ -241,6 +299,13 @@ class SyncService:
         except Exception as e:
             logger.warning(f"[SYNC] Failed to sync consumption detail for {usage_point_id}: {e}")
             result["consumption_detail"] = f"error: {e}"
+
+        try:
+            max_power_count = await self._sync_consumption_max_power(usage_point_id)
+            result["max_power"] = f"synced {max_power_count} days"
+        except Exception as e:
+            logger.warning(f"[SYNC] Failed to sync max power for {usage_point_id}: {e}")
+            result["max_power"] = f"error: {e}"
 
         # Sync production data only if PDL has production
         pdl_result = await self.db.execute(
@@ -268,6 +333,25 @@ class SyncService:
             result["production_detail"] = "skipped (no production)"
 
         return result
+
+    async def _should_refresh_metadata(
+        self, model_class: type[ContractData | AddressData], usage_point_id: str
+    ) -> bool:
+        """True si le contrat ou l'adresse n'ont pas été rafraîchis depuis METADATA_REFRESH_HOURS."""
+        result = await self.db.execute(
+            select(model_class.last_sync_at).where(model_class.usage_point_id == usage_point_id)
+        )
+        last_sync_at = _normalize_utc(result.scalar_one_or_none())
+        if last_sync_at is None:
+            return True
+        return datetime.now(UTC) - last_sync_at >= timedelta(hours=METADATA_REFRESH_HOURS)
+
+    def _force_refresh_from(self, sync_status: SyncStatus, start_date: date, end_date: date) -> date | None:
+        """Début de la fenêtre à redemander (J-2, J-1) si le dernier passage date de plus de 6 h."""
+        last_sync_at = _normalize_utc(sync_status.last_sync_at)
+        if last_sync_at is not None and datetime.now(UTC) - last_sync_at < DAILY_REFRESH_INTERVAL:
+            return None
+        return max(start_date, end_date - timedelta(days=DAILY_REFRESH_WINDOW_DAYS))
 
     async def _sync_contract(self, usage_point_id: str) -> None:
         """Sync contract data for a PDL"""
@@ -405,6 +489,7 @@ class SyncService:
         start_date: date,
         end_date: date,
         granularity: DataGranularity,
+        force_refresh_from: date | None = None,
     ) -> list[tuple[date, date]]:
         """Détecte les dates manquantes dans la base locale et les regroupe en plages.
 
@@ -422,35 +507,118 @@ class SyncService:
             )
         )
         existing_dates = {row[0] for row in result.fetchall()}
+        return _missing_ranges(start_date, end_date, existing_dates, force_refresh_from)
 
-        # Générer toutes les dates attendues
-        all_dates = set()
-        current = start_date
-        while current < end_date:
-            all_dates.add(current)
-            current += timedelta(days=1)
+    async def _sync_consumption_max_power(self, usage_point_id: str) -> int:
+        """Sync daily max power (value in VA + time of the peak), same window as daily data."""
+        sync_status = await self._get_or_create_sync_status(
+            usage_point_id, "max_power", DataGranularity.DAILY
+        )
 
-        missing_dates = sorted(all_dates - existing_dates)
+        # [start_date, end_date[ avec end_date = today : J-1 inclus (Enedis refuse une fin à demain)
+        end_date = date.today()
+        start_date = end_date - timedelta(days=MAX_DAILY_DAYS)
 
-        if not missing_dates:
-            return []
+        result = await self.db.execute(
+            select(func.distinct(MaxPowerData.date)).where(
+                and_(
+                    MaxPowerData.usage_point_id == usage_point_id,
+                    MaxPowerData.date >= start_date,
+                    MaxPowerData.date < end_date,
+                )
+            )
+        )
+        existing_dates = {row[0] for row in result.fetchall()}
+        missing_ranges = _missing_ranges(
+            start_date, end_date, existing_dates, self._force_refresh_from(sync_status, start_date, end_date)
+        )
 
-        # Regrouper les dates consécutives en plages
-        ranges: list[tuple[date, date]] = []
-        range_start = missing_dates[0]
-        range_end = missing_dates[0]
+        if not missing_ranges:
+            logger.debug(f"[SYNC] max_power pour {usage_point_id}: aucune donnée manquante")
+            return 0
 
-        for d in missing_dates[1:]:
-            if d == range_end + timedelta(days=1):
-                range_end = d
-            else:
-                ranges.append((range_start, range_end + timedelta(days=1)))
-                range_start = d
-                range_end = d
+        sync_status.status = SyncStatusType.RUNNING
+        sync_status.last_sync_at = datetime.now(UTC)
+        await self.db.commit()
 
-        ranges.append((range_start, range_end + timedelta(days=1)))
+        total_synced = 0
+        errors: list[str] = []
 
-        return ranges
+        for range_start, range_end in missing_ranges:
+            current_start = range_start
+            while current_start < range_end:
+                current_end = min(current_start + timedelta(days=365), range_end)
+                try:
+                    response = await self.adapter.get_consumption_max_power(
+                        usage_point_id, current_start.isoformat(), current_end.isoformat()
+                    )
+                    records = self._parse_max_power_readings(response, usage_point_id)
+                    if records:
+                        await self._upsert_max_power_records(records)
+                        total_synced += len(records)
+                except Exception as e:
+                    await self.db.rollback()
+                    logger.warning(
+                        f"[SYNC] Erreur fetch max_power pour {usage_point_id} "
+                        f"({current_start} - {current_end}): {e}"
+                    )
+                    errors.append(str(e))
+                current_start = current_end
+
+        sync_status.status = SyncStatusType.PARTIAL if errors else SyncStatusType.SUCCESS
+        sync_status.error_message = "; ".join(errors[:5]) if errors else None
+        sync_status.error_count += len(errors)
+        sync_status.records_synced_last_run = total_synced
+        sync_status.total_records += total_synced
+        if total_synced > 0:
+            bounds = await self.db.execute(
+                select(func.min(MaxPowerData.date), func.max(MaxPowerData.date)).where(
+                    MaxPowerData.usage_point_id == usage_point_id
+                )
+            )
+            sync_status.oldest_data_date, sync_status.newest_data_date = bounds.one()
+        sync_status.next_sync_at = datetime.now(UTC) + timedelta(minutes=30)
+        await self.db.commit()
+
+        logger.info(f"[SYNC] max_power pour {usage_point_id}: {total_synced} jours synchronisés")
+        return total_synced
+
+    def _parse_max_power_readings(self, response: Any, usage_point_id: str) -> list[dict[str, Any]]:
+        """Points PMA Data Connect 2026 : `d` est l'heure réelle du pic. Garde le plus haut par jour."""
+        by_day: dict[date, dict[str, Any]] = {}
+        for reading in extract_points(_unwrap(response)):
+            day_str, hhmm = _split_power_datetime(str(reading.get("d", "")))
+            try:
+                day = date.fromisoformat(day_str)
+                value = int(float(reading.get("v")))
+            except (TypeError, ValueError):
+                continue
+            current = by_day.get(day)
+            if current is None or value > current["value"]:
+                by_day[day] = {
+                    "usage_point_id": usage_point_id,
+                    "date": day,
+                    "interval_start": hhmm,
+                    "value": value,
+                    "source": "myelectricaldata",
+                    "raw_data": reading,
+                }
+        return [by_day[d] for d in sorted(by_day)]
+
+    async def _upsert_max_power_records(self, records: list[dict[str, Any]]) -> None:
+        """Upsert max power records on (usage_point_id, date)"""
+        stmt = pg_insert(MaxPowerData).values(records)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_max_power_data",
+            set_={
+                "interval_start": stmt.excluded.interval_start,
+                "value": stmt.excluded.value,
+                "raw_data": stmt.excluded.raw_data,
+                "updated_at": datetime.now(UTC),
+            },
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
 
     async def _sync_energy_data(
         self,
@@ -482,13 +650,18 @@ class SyncService:
             usage_point_id, data_type, granularity
         )
 
-        # Plage totale : du plus ancien possible à J-1
-        end_date = date.today() - timedelta(days=1)
+        # Plage totale [start_date, end_date[ avec end_date = today : J-1 inclus
+        end_date = date.today()
         start_date = end_date - timedelta(days=max_days)
 
-        # Détecter les trous dans la base locale
+        # Détecter les trous dans la base locale (et redemander J-2/J-1 en quotidien, corrigés par Enedis)
+        force_refresh_from = (
+            self._force_refresh_from(sync_status, start_date, end_date)
+            if granularity == DataGranularity.DAILY
+            else None
+        )
         missing_ranges = await self._find_missing_ranges(
-            model_class, usage_point_id, start_date, end_date, granularity
+            model_class, usage_point_id, start_date, end_date, granularity, force_refresh_from
         )
 
         if not missing_ranges:
@@ -530,6 +703,14 @@ class SyncService:
                             current_end.isoformat(),
                         )
 
+                        if isinstance(response, dict) and (
+                            response.get("success") is False or response.get("data") is None
+                        ):
+                            logger.warning(
+                                f"[SYNC] Passerelle sans données pour {usage_point_id} "
+                                f"({current_start} - {current_end}): error={response.get('error')}"
+                            )
+
                         # Parse and store data
                         records = self._parse_meter_reading(
                             response, usage_point_id, granularity
@@ -561,9 +742,16 @@ class SyncService:
             sync_status.total_records += total_synced
 
             if total_synced > 0:
-                if not sync_status.oldest_data_date or start_date < sync_status.oldest_data_date:
-                    sync_status.oldest_data_date = start_date
-                sync_status.newest_data_date = end_date
+                # Bornes réelles en base, pas la plage demandée
+                bounds = await self.db.execute(
+                    select(func.min(model_class.date), func.max(model_class.date)).where(
+                        and_(
+                            model_class.usage_point_id == usage_point_id,
+                            model_class.granularity == granularity,
+                        )
+                    )
+                )
+                sync_status.oldest_data_date, sync_status.newest_data_date = bounds.one()
 
             sync_status.next_sync_at = datetime.now(UTC) + timedelta(minutes=30)
             await self.db.commit()
@@ -629,12 +817,18 @@ class SyncService:
                 logger.warning(f"[SYNC] Failed to parse date '{date_str}': {e}")
                 continue
 
+            try:
+                value_int = int(float(value))
+            except (TypeError, ValueError):
+                logger.warning(f"[SYNC] Failed to parse value '{value}' for date '{date_str}'")
+                continue
+
             records.append({
                 "usage_point_id": usage_point_id,
                 "date": record_date,
                 "granularity": granularity,
                 "interval_start": interval_start,
-                "value": int(value),
+                "value": value_int,
                 "source": "myelectricaldata",
                 "raw_data": reading,
             })
