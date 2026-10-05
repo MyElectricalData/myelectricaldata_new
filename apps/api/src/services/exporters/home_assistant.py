@@ -671,6 +671,12 @@ class HomeAssistantExporter(BaseExporter):
         discovery_config: dict[str, Any] = {
             "name": name,
             "uniq_id": unique_id,
+            # entity_id suggéré à la première découverte (sinon HA le dérive du nom de l'appareil,
+            # ex. sensor.linky_<pdl>_consumption) ; sans effet sur une entité déjà enregistrée.
+            # default_entity_id pour HA >= 2025.10, object_id pour les versions antérieures
+            # (déprécié puis retiré en 2026.4, ignoré sans avertissement quand les deux sont présents)
+            "default_entity_id": f"sensor.{unique_id}",
+            "object_id": unique_id,
             "stat_t": state_topic,
             "json_attr_t": attributes_topic,
             "device": device,
@@ -692,15 +698,11 @@ class HomeAssistantExporter(BaseExporter):
             retain=True,
         )
 
-        # Si le discovery_prefix n'est pas "homeassistant", publier aussi la config
-        # sous "homeassistant/" pour migrer les sensors existants vers les nouveaux topics
+        # Préfixe personnalisé : vider la copie que les versions précédentes retenaient sous
+        # "homeassistant/" (message vide retenu = suppression). Ne jamais le faire avec le préfixe
+        # par défaut, ce serait la config qu'on vient de publier.
         if self.discovery_prefix != "homeassistant":
-            legacy_config_topic = f"homeassistant/sensor/{topic}/config"
-            await client.publish(
-                legacy_config_topic,
-                payload=json.dumps(discovery_config),
-                retain=True,
-            )
+            await client.publish(f"homeassistant/sensor/{topic}/config", payload=b"", retain=True)
 
         # Publish state (retained) - simple value, not JSON
         state_str = str(state) if state is not None else ""
