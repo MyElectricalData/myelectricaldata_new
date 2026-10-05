@@ -56,7 +56,7 @@ Dans l'interface web : **Exporter** > **Home Assistant**.
 | `mqtt_username`, `mqtt_password` | | Identifiants du broker (facultatifs) |
 | `mqtt_use_tls` | `false` | Connexion TLS au broker |
 | `discovery_prefix` | `homeassistant` | Préfixe de discovery de **votre** intégration MQTT |
-| `entity_prefix` | `myelectricaldata` | Préfixe d'identifiant. Les capteurs publiés gardent pour l'instant le préfixe `myelectricaldata` |
+| `entity_prefix` | `myelectricaldata` | Préfixe des topics, `unique_id` et `entity_id` suggérés (minuscules, chiffres et `_`). Permet à deux instances de publier sur le même Home Assistant ; le changer crée de nouvelles entités, sans l'historique des anciennes |
 | `ha_url`, `ha_token` | | Home Assistant et token, pour les statistiques |
 | `statistic_id_prefix` | `myelectricaldata` | Préfixe des statistiques du panneau Énergie |
 

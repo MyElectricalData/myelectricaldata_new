@@ -455,29 +455,28 @@ class SyncScheduler:
     """Scheduler pour le mode client uniquement"""
 
     def start(self):
-        # Sync données PDL : toutes les 30 minutes
-        self._scheduler.add_job(
-            self._run_sync,
-            trigger=IntervalTrigger(minutes=30),
-            next_run_time=datetime.now(UTC),  # Exécution immédiate au démarrage
-        )
+        # Sync données PDL : au démarrage, toutes les 30 min de 6h à 9h30 (publication de J-1
+        # par Enedis), puis 12h et 18h ; une seule sync à la fois (verrou)
+        self._scheduler.add_job(self._run_sync, next_run_time=datetime.now(UTC))
+        self._scheduler.add_job(self._run_sync, trigger=CronTrigger(hour="6-9", minute="*/30"))
+        self._scheduler.add_job(self._run_sync, trigger=CronTrigger(hour="12,18", minute=0))
 
-        # Sync Tempo : toutes les 15 min (6h-23h)
-        # Sync uniquement si la couleur de demain est inconnue
-        self._scheduler.add_job(
-            self._run_tempo_sync,
-            trigger=CronTrigger(minute="*/15", hour="6-23"),
-        )
+        # Sync Tempo : toutes les heures de 7h à 23h (et au démarrage),
+        # uniquement si la couleur de demain est inconnue
+        self._scheduler.add_job(self._run_tempo_sync, trigger=CronTrigger(minute=0, hour="7-23"))
 
         # Sync EcoWatt :
         # - 17h00 quotidien (publication RTE)
         # - 12h15 vendredi (publication anticipée)
-        # - Fallback horaire si J+3 incomplet
+        # - 8h30 et 20h30 (et au démarrage) si J+3 incomplet
         self._scheduler.add_job(self._run_ecowatt_sync, trigger=CronTrigger(hour=17, minute=0))
         self._scheduler.add_job(self._run_ecowatt_sync, trigger=CronTrigger(day_of_week="fri", hour=12, minute=15))
-        self._scheduler.add_job(self._run_ecowatt_sync_if_incomplete, trigger=IntervalTrigger(hours=1))
+        self._scheduler.add_job(self._run_ecowatt_sync_if_incomplete, trigger=CronTrigger(hour="8,20", minute=30))
 
-        # Exports planifiés : vérification chaque minute
+        # Consommation France (8h, 14h, 20h) et prévisions de production (9h, 21h),
+        # au démarrage seulement si la dernière sync a plus de 6 h / 12 h
+
+        # Exports planifiés : vérification chaque minute, et relance après chaque sync PDL
         self._scheduler.add_job(
             self._run_scheduled_exports,
             trigger=IntervalTrigger(minutes=1),
