@@ -54,8 +54,12 @@ def test_tete_alembic_unique():
     assert script.get_heads() == [REVISION]
 
 
-@pytest.fixture(scope="module")
-def pg_url(tmp_path_factory):
+@pytest.fixture(scope="module", params=["postgresql", "sqlite"])
+def db_url(request, tmp_path_factory):
+    """La migration tourne sur le serveur (PostgreSQL) et sur les clients locaux (SQLite par défaut)."""
+    if request.param == "sqlite":
+        yield f"sqlite+aiosqlite:///{tmp_path_factory.mktemp('sqlite') / 'client.db'}"
+        return
     initdb, pg_ctl = _pg_bin("initdb"), _pg_bin("pg_ctl")
     if not (initdb and pg_ctl):
         pytest.skip("binaires PostgreSQL (initdb, pg_ctl) absents")
@@ -121,7 +125,7 @@ SCHEMA = [
         is_active boolean NOT NULL DEFAULT true,
         valid_from timestamptz,
         valid_to timestamptz,
-        created_at timestamptz NOT NULL DEFAULT now()
+        created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
     # tables qui référencent une offre (FK ON DELETE SET NULL en vrai)
@@ -140,7 +144,8 @@ async def _run(url, statements, migrate_times=1, with_refs=False):
     engine = create_async_engine(url)
     try:
         async with engine.begin() as conn:
-            await conn.execute(text("DROP TABLE IF EXISTS energy_offers, pdls, offer_contributions"))
+            for table in ("energy_offers", "pdls", "offer_contributions"):
+                await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
             for ddl in SCHEMA:
                 await conn.execute(text(ddl))
             for stmt, params in statements:
@@ -168,8 +173,8 @@ def _cas_inserts():
 
 
 @pytest.mark.asyncio
-async def test_noms_nettoyes(pg_url):
-    rows = await _run(pg_url, _cas_inserts())
+async def test_noms_nettoyes(db_url):
+    rows = await _run(db_url, _cas_inserts())
     obtenus = {r.id: r.name for r in rows}
     erreurs = [(n, obtenus[f"{i:03d}"], attendu) for i, (n, _, attendu) in enumerate(CAS)
                if obtenus[f"{i:03d}"] != attendu]
@@ -177,15 +182,15 @@ async def test_noms_nettoyes(pg_url):
 
 
 @pytest.mark.asyncio
-async def test_idempotente(pg_url):
-    une = await _run(pg_url, _cas_inserts(), migrate_times=1)
-    deux = await _run(pg_url, _cas_inserts(), migrate_times=2)
+async def test_idempotente(db_url):
+    une = await _run(db_url, _cas_inserts(), migrate_times=1)
+    deux = await _run(db_url, _cas_inserts(), migrate_times=2)
     assert une == deux
 
 
 @pytest.mark.asyncio
-async def test_doublons_desactives_garde_le_plus_recent(pg_url):
-    rows = await _run(pg_url, [
+async def test_doublons_desactives_garde_le_plus_recent(db_url):
+    rows = await _run(db_url, [
         (INSERT, {"id": "old", "p": "edf", "name": "Tarif Bleu", "t": "BASE", "kva": 9,
                   "vf": datetime(2025, 2, 1, tzinfo=UTC), "vt": None}),
         (INSERT, {"id": "new", "p": "edf", "name": "Tarif Bleu - 9 kVA", "t": "BASE", "kva": 9,
@@ -200,8 +205,8 @@ async def test_doublons_desactives_garde_le_plus_recent(pg_url):
 
 
 @pytest.mark.asyncio
-async def test_puissance_seulement_dans_le_nom_recopiee(pg_url):
-    rows = await _run(pg_url, [
+async def test_puissance_seulement_dans_le_nom_recopiee(db_url):
+    rows = await _run(db_url, [
         (INSERT, {"id": "nul", "p": "ohm", "name": "Classique - 9 kVA", "t": "BASE", "kva": None, "vf": None, "vt": None}),
         (INSERT, {"id": "ok", "p": "ohm", "name": "Classique - 9 kVA", "t": "HC_HP", "kva": 12, "vf": None, "vt": None}),
     ])
@@ -209,9 +214,9 @@ async def test_puissance_seulement_dans_le_nom_recopiee(pg_url):
 
 
 @pytest.mark.asyncio
-async def test_grille_expiree_n_evince_pas_l_offre_courante(pg_url):
+async def test_grille_expiree_n_evince_pas_l_offre_courante(db_url):
     """Dans l'app, l'historique reste is_active avec un valid_to : seule une offre courante est dédoublonnée."""
-    rows = await _run(pg_url, [
+    rows = await _run(db_url, [
         (INSERT, {"id": "cur", "p": "ohm", "name": "Classique", "t": "BASE", "kva": 6, "vf": None, "vt": None}),
         (INSERT, {"id": "exp", "p": "ohm", "name": "Classique - 6 kVA", "t": "BASE", "kva": 6,
                   "vf": datetime(2025, 6, 1, tzinfo=UTC), "vt": datetime(2025, 8, 1, tzinfo=UTC)}),
@@ -220,8 +225,8 @@ async def test_grille_expiree_n_evince_pas_l_offre_courante(pg_url):
 
 
 @pytest.mark.asyncio
-async def test_references_repointees_vers_l_offre_gardee(pg_url):
-    rows, refs = await _run(pg_url, [
+async def test_references_repointees_vers_l_offre_gardee(db_url):
+    rows, refs = await _run(db_url, [
         (INSERT, {"id": "old", "p": "edf", "name": "Tarif Bleu", "t": "BASE", "kva": 6, "vf": None, "vt": None}),
         (INSERT, {"id": "new", "p": "edf", "name": "Tarif Bleu - 6 kVA", "t": "BASE", "kva": 6,
                   "vf": datetime(2026, 7, 31, tzinfo=UTC), "vt": None}),
@@ -234,17 +239,17 @@ async def test_references_repointees_vers_l_offre_gardee(pg_url):
 
 
 @pytest.mark.asyncio
-async def test_puissance_recopiee_quelle_que_soit_la_casse(pg_url):
-    rows = await _run(pg_url, [
+async def test_puissance_recopiee_quelle_que_soit_la_casse(db_url):
+    rows = await _run(db_url, [
         (INSERT, {"id": "k", "p": "ohm", "name": "Classique - 9 KVA", "t": "BASE", "kva": None, "vf": None, "vt": None}),
     ])
     assert [(r.name, r.power_kva) for r in rows] == [("Classique", 9)]
 
 
 @pytest.mark.asyncio
-async def test_nom_jamais_vide(pg_url):
+async def test_nom_jamais_vide(db_url):
     """Comme clean_offer_name : si tout le nom est un suffixe, il est laissé tel quel."""
-    rows = await _run(pg_url, [
+    rows = await _run(db_url, [
         (INSERT, {"id": "a", "p": "x", "name": "- BASE", "t": "BASE", "kva": 6, "vf": None, "vt": None}),
         (INSERT, {"id": "b", "p": "y", "name": "6 kVA", "t": "BASE", "kva": 6, "vf": None, "vt": None}),
     ])

@@ -10,11 +10,18 @@ alors que ces informations sont déjà dans power_kva et offer_type. Cette migra
   3. désactive les offres COURANTES devenues doublons (même provider, name, offer_type, power_kva), après
      avoir fait pointer vers l'offre gardée les PDL et les contributions en attente qui les citent.
 
+Portable : elle tourne sur le serveur (PostgreSQL) et sur les clients locaux (SQLite par défaut).
+Les noms sont calculés en Python et écrits par des UPDATE paramétrés, sans fonction propre à un
+dialecte (pas de ~*, regexp_replace ni ::integer).
+
 Revision ID: c3d4e5f6g7h8
 Revises: b2c3d4e5f6g7
 Create Date: 2026-10-05
 
 """
+import re
+from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -28,11 +35,14 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+# Mêmes règles que src/services/offer_names.py, recopiées ici : une migration ne doit pas
+# dépendre du code applicatif.
+
 # Puissance en fin de nom, avec ou sans tiret : "Classique - 6 kVA", "Tarif Bleu - BASE 6 kVA"
-POWER_SUFFIX = r'\s*-?\s*\d+\s*kVA\s*$'
+POWER_SUFFIX = re.compile(r'\s*-?\s*(\d+)\s*kVA\s*$', re.IGNORECASE)
 
 # Clé de groupe du front ("nom##période") envoyée par erreur comme nom d'offre (2 offres en prod)
-GROUP_KEY_SUFFIX = r'\s*##.*$'
+GROUP_KEY_SUFFIX = re.compile(r'\s*##.*$')
 
 # Types et options qui doublonnent offer_type, du plus long au plus court.
 # "Option Flex" n'en fait pas partie : l'export Home Assistant (MED-21) reconnaît Zen Flex servie
@@ -56,72 +66,90 @@ TYPE_SUFFIXES = [
     r'BASE',
     r'EJP',
 ]
-TYPE_SUFFIX = r'\s*-\s*(' + '|'.join(TYPE_SUFFIXES) + r')\s*$'
+TYPE_SUFFIX = re.compile(r'\s*-\s*(' + '|'.join(TYPE_SUFFIXES) + r')\s*$', re.IGNORECASE)
 
 
-# Puissance à recopier dans power_kva (insensible à la casse : "6 kVA", "6 KVA")
-POWER_VALUE = r'(?i)(\d+)\s*kVA\s*$'
+def _clean_name(name: str) -> str:
+    if not name or name.startswith("["):
+        return name
+    for pattern in (POWER_SUFFIX, GROUP_KEY_SUFFIX, TYPE_SUFFIX):
+        # un nom qui ne serait plus qu'un suffixe est laissé tel quel
+        name = pattern.sub("", name).strip() or name
+    return name
 
-# Offre courante : active et sans fin, ou fin à venir. L'historique reste is_active avec un
-# valid_to (deactivate_previous_offers) : il ne doit ni être dédoublonné ni évincer l'offre courante.
-CURRENT_OFFER = "is_active AND (valid_to IS NULL OR valid_to > now())"
 
-
-def _strip_suffix(pattern: str) -> None:
-    # Regex passée en paramètre : pas d'échappement SQL à gérer, et "~*" = insensible à la casse.
-    # Un nom qui ne serait plus qu'un suffixe est laissé tel quel (comme clean_offer_name).
-    op.get_bind().execute(
-        sa.text("""
-            UPDATE energy_offers
-            SET name = btrim(regexp_replace(name, :pattern, '', 'i'))
-            WHERE name ~* :pattern AND btrim(regexp_replace(name, :pattern, '', 'i')) <> ''
-        """),
-        {"pattern": pattern},
-    )
+def _as_utc(value):
+    """Date lue en base : datetime (PostgreSQL) ou texte ISO (SQLite), naïve = UTC."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.strip().replace(" ", "T", 1))
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
 def upgrade() -> None:
-    # Une offre sans power_kva n'a sa puissance que dans le nom : la recopier avant de la retirer
-    op.get_bind().execute(
-        sa.text("""
-            UPDATE energy_offers
-            SET power_kva = substring(name from :power_value)::integer
-            WHERE power_kva IS NULL AND name ~* :pattern
-        """),
-        {"pattern": POWER_SUFFIX, "power_value": POWER_VALUE},
-    )
-    _strip_suffix(POWER_SUFFIX)
-    _strip_suffix(GROUP_KEY_SUFFIX)
-    _strip_suffix(TYPE_SUFFIX)
+    bind = op.get_bind()
 
-    # Doublons courants : on garde l'offre au valid_from le plus récent, les autres sont désactivées
-    # après avoir fait pointer vers l'offre gardée les PDL et les contributions en attente qui les citent
-    op.execute(f"""
-        CREATE TEMP TABLE offer_duplicates AS
-        SELECT id AS duplicate_id, kept_id FROM (
-            SELECT id,
-                   first_value(id) OVER w AS kept_id,
-                   row_number() OVER w AS rn
-            FROM energy_offers
-            WHERE {CURRENT_OFFER}
-            WINDOW w AS (
-                PARTITION BY provider_id, name, offer_type, power_kva
-                ORDER BY valid_from DESC NULLS LAST, created_at DESC
-            )
-        ) ranked
-        WHERE rn > 1
-    """)
-    op.execute("""
-        UPDATE pdls SET selected_offer_id = d.kept_id
-        FROM offer_duplicates d WHERE pdls.selected_offer_id = d.duplicate_id
-    """)
-    op.execute("""
-        UPDATE offer_contributions SET existing_offer_id = d.kept_id
-        FROM offer_duplicates d
-        WHERE offer_contributions.existing_offer_id = d.duplicate_id AND offer_contributions.status = 'pending'
-    """)
-    op.execute("UPDATE energy_offers SET is_active = false WHERE id IN (SELECT duplicate_id FROM offer_duplicates)")
-    op.execute("DROP TABLE offer_duplicates")
+    # 1-2. Noms et puissance (recopiée du nom quand power_kva est vide)
+    updates = []
+    for offer_id, name, power_kva in bind.execute(sa.text("SELECT id, name, power_kva FROM energy_offers")):
+        new_power = power_kva
+        if power_kva is None and name and (match := POWER_SUFFIX.search(name)):
+            new_power = int(match.group(1))
+        new_name = _clean_name(name)
+        if new_name != name or new_power != power_kva:
+            updates.append({"id": offer_id, "name": new_name, "power_kva": new_power})
+    if updates:
+        bind.execute(sa.text("UPDATE energy_offers SET name = :name, power_kva = :power_kva WHERE id = :id"), updates)
+
+    # 3. Doublons COURANTS : l'historique reste is_active avec un valid_to (deactivate_previous_offers),
+    # il ne doit ni être dédoublonné ni évincer l'offre courante
+    now = datetime.now(timezone.utc)
+    groups = defaultdict(list)
+    rows = bind.execute(
+        sa.text(
+            "SELECT id, provider_id, name, offer_type, power_kva, valid_from, valid_to, created_at "
+            "FROM energy_offers WHERE is_active = :active"
+        ),
+        {"active": True},
+    )
+    for row in rows:
+        valid_to = _as_utc(row.valid_to)
+        if valid_to is None or valid_to > now:
+            groups[(row.provider_id, row.name, row.offer_type, row.power_kva)].append(row)
+
+    oldest = datetime.min.replace(tzinfo=timezone.utc)
+    pairs = []
+    for offers in groups.values():
+        if len(offers) < 2:
+            continue
+        # on garde l'offre au valid_from le plus récent (les offres sans valid_from en dernier)
+        offers.sort(
+            key=lambda o: (o.valid_from is not None, _as_utc(o.valid_from) or oldest, _as_utc(o.created_at) or oldest),
+            reverse=True,
+        )
+        pairs += [{"duplicate_id": o.id, "kept_id": offers[0].id} for o in offers[1:]]
+    if not pairs:
+        return
+
+    # les PDL et les contributions en attente qui citent un doublon suivent l'offre gardée
+    tables = sa.inspect(bind).get_table_names()
+    if "pdls" in tables:
+        bind.execute(
+            sa.text("UPDATE pdls SET selected_offer_id = :kept_id WHERE selected_offer_id = :duplicate_id"), pairs
+        )
+    if "offer_contributions" in tables:
+        bind.execute(
+            sa.text(
+                "UPDATE offer_contributions SET existing_offer_id = :kept_id "
+                "WHERE existing_offer_id = :duplicate_id AND status = 'pending'"
+            ),
+            pairs,
+        )
+    bind.execute(
+        sa.text("UPDATE energy_offers SET is_active = :active WHERE id = :duplicate_id"),
+        [{"duplicate_id": p["duplicate_id"], "active": False} for p in pairs],
+    )
 
 
 def downgrade() -> None:
