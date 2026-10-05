@@ -508,15 +508,15 @@ async def get_consumption_daily(
     ),
     end: str = Query(
         ...,
-        description="End date (YYYY-MM-DD)",
+        description="End date (YYYY-MM-DD), EXCLUDED like Enedis dateFin: end=today returns data up to yesterday (J-1)",
         openapi_examples={
             "current_year": {
-                "summary": "End of 2024",
-                "value": "2024-12-31"
+                "summary": "Whole 2024 (end excluded)",
+                "value": "2025-01-01"
             },
             "recent_month": {
-                "summary": "End of current month",
-                "value": "2024-10-31"
+                "summary": "Whole October 2024 (end excluded)",
+                "value": "2024-11-01"
             }
         }
     ),
@@ -741,9 +741,9 @@ async def get_consumption_detail(
     ),
     end: str = Query(
         ...,
-        description="End date (YYYY-MM-DD)",
+        description="End date (YYYY-MM-DD), EXCLUDED like Enedis dateFin: end=today returns data up to yesterday (J-1)",
         openapi_examples={
-            "current_year": {"summary": "End of 2024", "value": "2024-12-31"},
+            "current_year": {"summary": "Whole 2024 (end excluded)", "value": "2025-01-01"},
             "recent_week": {"summary": "Week end", "value": "2024-10-07"}
         }
     ),
@@ -937,10 +937,10 @@ async def get_consumption_detail_batch(
     ),
     end: str = Query(
         ...,
-        description="End date (YYYY-MM-DD)",
+        description="End date (YYYY-MM-DD), EXCLUDED like Enedis dateFin: end=today returns data up to yesterday (J-1)",
         openapi_examples={
             "today": {"summary": "Today", "value": "2024-12-31"},
-            "recent_month": {"summary": "Month end", "value": "2024-10-31"}
+            "recent_month": {"summary": "Whole October 2024 (end excluded)", "value": "2024-11-01"}
         }
     ),
     use_cache: bool = Query(
@@ -1391,7 +1391,7 @@ async def get_max_power(
     request: Request,
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
     start: str = Query(..., description="Start date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "Start of 2024", "value": "2024-01-01"}, "recent_month": {"summary": "Month start", "value": "2024-10-01"}}),
-    end: str = Query(..., description="End date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "End of 2024", "value": "2024-12-31"}, "recent_month": {"summary": "Month end", "value": "2024-10-31"}}),
+    end: str = Query(..., description="End date (YYYY-MM-DD), EXCLUDED like Enedis dateFin: end=today returns data up to yesterday (J-1)", openapi_examples={"current_year": {"summary": "Whole 2024 (end excluded)", "value": "2025-01-01"}, "recent_month": {"summary": "Whole October 2024 (end excluded)", "value": "2024-11-01"}}),
     use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
     impersonated_user: Optional[User] = Depends(get_impersonation_context),
@@ -1497,7 +1497,7 @@ async def get_production_daily(
     request: Request,
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
     start: str = Query(..., description="Start date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "Start of 2024", "value": "2024-01-01"}, "recent_month": {"summary": "Month start", "value": "2024-10-01"}}),
-    end: str = Query(..., description="End date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "End of 2024", "value": "2024-12-31"}, "recent_month": {"summary": "Month end", "value": "2024-10-31"}}),
+    end: str = Query(..., description="End date (YYYY-MM-DD), EXCLUDED like Enedis dateFin: end=today returns data up to yesterday (J-1)", openapi_examples={"current_year": {"summary": "Whole 2024 (end excluded)", "value": "2025-01-01"}, "recent_month": {"summary": "Whole October 2024 (end excluded)", "value": "2024-11-01"}}),
     use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
     impersonated_user: Optional[User] = Depends(get_impersonation_context),
@@ -1555,7 +1555,7 @@ async def get_production_detail(
     request: Request,
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres). 💡 **Astuce**: Utilisez d'abord `GET /pdl/` pour lister vos PDL disponibles.", openapi_examples={"standard_pdl": {"summary": "Standard PDL", "value": "12345678901234"}, "test_pdl": {"summary": "Test PDL", "value": "00000000000000"}}),
     start: str = Query(..., description="Start date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "Start of 2024", "value": "2024-01-01"}, "recent_week": {"summary": "Week start", "value": "2024-10-01"}}),
-    end: str = Query(..., description="End date (YYYY-MM-DD)", openapi_examples={"current_year": {"summary": "End of 2024", "value": "2024-12-31"}, "recent_week": {"summary": "Week end", "value": "2024-10-07"}}),
+    end: str = Query(..., description="End date (YYYY-MM-DD), EXCLUDED like Enedis dateFin: end=today returns data up to yesterday (J-1)", openapi_examples={"current_year": {"summary": "Whole 2024 (end excluded)", "value": "2025-01-01"}, "recent_week": {"summary": "Week end", "value": "2024-10-07"}}),
     use_cache: bool = Query(False, description="Use cached data if available", openapi_examples={"with_cache": {"summary": "Use cache", "value": True}, "without_cache": {"summary": "Fresh data", "value": False}}),
     current_user: User = Depends(get_current_user),
     impersonated_user: Optional[User] = Depends(get_impersonation_context),
@@ -1628,10 +1628,10 @@ async def get_production_detail_batch(
     ),
     end: str = Query(
         ...,
-        description="End date (YYYY-MM-DD)",
+        description="End date (YYYY-MM-DD), EXCLUDED like Enedis dateFin: end=today returns data up to yesterday (J-1)",
         openapi_examples={
             "today": {"summary": "Today", "value": "2024-12-31"},
-            "recent_month": {"summary": "Month end", "value": "2024-10-31"}
+            "recent_month": {"summary": "Whole October 2024 (end excluded)", "value": "2024-11-01"}
         }
     ),
     use_cache: bool = Query(

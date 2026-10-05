@@ -164,22 +164,34 @@ RATE LIMITING
 ## Data Caching Strategy
 
 ```
+PERIOD: end is EXCLUDED, like Enedis dateFin
+   [start, end[ ; end is capped to today (Paris), so end=today serves up to J-1
+   (the web front keeps inclusive dates in its UI and sends end + 1 day)
+
 GRANULAR DAILY CACHING
-1. User requests: GET /consumption/daily/12345678901234?start=2024-01-01&end=2024-12-31&use_cache=true
+1. User requests: GET /consumption/daily/12345678901234?start=2024-01-01&end=2025-01-01&use_cache=true
 
 2. Check cache day-by-day:
-   for each date in range:
+   for each date in [start, end[:
        if cached_data[date] exists:
            add to results
        else:
            add to missing_dates
 
 3. If missing_dates:
-       fetch from Enedis for those dates
+       group consecutive dates into ranges [first, last + 1[
+       fetch each range from Enedis (dateFin excluded)
        cache each date individually
        cache_key = f"consumption:daily:{pdl}:{date}"
 
 4. Return combined cached + fresh data
+
+MAX POWER (/power), same per-day logic:
+   cache_key = f"consumption:max_power:{pdl}:{date}"
+   J-1 and J-2 cached 3 hours (Enedis may still correct them), older days 24 hours
+   a recent day without a point (not yet published) is never cached ;
+   an older day without a point (meter off) is cached as an empty marker
+   unit cached in consumption:max_power_unit:{pdl}
 
 CACHE TTL: 86400 seconds (24 hours)
 ENCRYPTION: user.client_secret
@@ -373,7 +385,7 @@ curl http://localhost:8000/api/pdl/ \
 # }
 
 # 4. Get consumption data (cached)
-curl "http://localhost:8000/api/enedis/consumption/daily/12345678901234?start=2024-01-01&end=2024-12-31&use_cache=true" \
+curl "http://localhost:8000/api/enedis/consumption/daily/12345678901234?start=2024-01-01&end=2025-01-01&use_cache=true" \
   -H "Authorization: Bearer eyJ..."
 
 # Response:
