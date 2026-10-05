@@ -1,7 +1,7 @@
 // Carte d'un groupe d'offres existant + onglets de navigation + ligne nouvelle puissance
 // Composant principal pour le rendu des offres par groupe dans AllOffers
 
-import { Plus, Trash2, Undo2, Calendar, Copy, AlertCircle } from 'lucide-react'
+import { Plus, Trash2, Undo2, Calendar, Copy, AlertCircle, X } from 'lucide-react'
 import type { EnergyOffer } from '@/api/energy'
 import OfferRow from './OfferRow'
 import PriceFieldsEditor from './PriceFieldsEditor'
@@ -89,7 +89,7 @@ export default function OfferGroupCard({ state, groupName }: OfferGroupCardProps
   const {
     groupedOffers, filterOfferType, isEditMode,
     editedOfferNames, setEditedOfferNames,
-    setEditedOffers,
+    editedOffers, setEditedOffers,
     deprecatedOffers, setDeprecatedOffers,
     newPowersData, setNewPowersData,
   } = state
@@ -162,6 +162,7 @@ export default function OfferGroupCard({ state, groupName }: OfferGroupCardProps
             offersInGroup={offersInGroup}
             groupValidFrom={groupValidFrom}
             groupValidTo={groupValidTo}
+            editedOffers={editedOffers}
             setEditedOffers={setEditedOffers}
           />
           {isNameModified && (
@@ -267,14 +268,23 @@ export default function OfferGroupCard({ state, groupName }: OfferGroupCardProps
 
 // --- Éditeur de dates au niveau du groupe ---
 
-function GroupDateEditor({ offersInGroup, groupValidFrom, groupValidTo, setEditedOffers }: {
+export function GroupDateEditor({ offersInGroup, groupValidFrom, groupValidTo, editedOffers, setEditedOffers }: {
   offersInGroup: EnergyOffer[]
   groupValidFrom: string | null
   groupValidTo: string | null
+  editedOffers: AllOffersState['editedOffers']
   setEditedOffers: AllOffersState['setEditedOffers']
 }) {
+  // Champs contrôlés : une date posée ailleurs (import IA, reset) doit s'afficher ici
+  const firstOfferId = offersInGroup[0]?.id
+  const editedGroupDateFrom = editedOffers[firstOfferId]?.valid_from
+  const editedGroupDateTo = editedOffers[firstOfferId]?.valid_to
   const groupDateFromYMD = groupValidFrom ? groupValidFrom.split('T')[0] : ''
   const groupDateToYMD = groupValidTo ? groupValidTo.split('T')[0] : ''
+  const currentDateFrom = editedGroupDateFrom ?? groupDateFromYMD
+  const currentDateTo = editedGroupDateTo ?? groupDateToYMD
+  const isDateFromModified = editedGroupDateFrom !== undefined && editedGroupDateFrom !== groupDateFromYMD
+  const isDateToModified = editedGroupDateTo !== undefined && editedGroupDateTo !== groupDateToYMD
 
   // Propager la date à toutes les offres du groupe
   const propagateDate = (field: 'valid_from' | 'valid_to', value: string) => {
@@ -287,25 +297,47 @@ function GroupDateEditor({ offersInGroup, groupValidFrom, groupValidTo, setEdite
     })
   }
 
+  const dateInputClass = (modified: boolean) =>
+    `w-[130px] px-2 py-1.5 text-sm rounded-lg border-2 bg-white dark:bg-gray-800 focus:ring-2 focus:outline-none ${
+      modified
+        ? 'border-amber-400 dark:border-amber-600 focus:ring-amber-500'
+        : 'border-gray-300 dark:border-gray-600 focus:ring-primary-500'
+    }`
+
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       <Calendar size={14} className="text-gray-400 shrink-0" />
       <input
         type="date"
-        defaultValue={groupDateFromYMD}
+        value={currentDateFrom}
         onChange={(e) => propagateDate('valid_from', e.target.value)}
-        className="w-[130px] px-2 py-1.5 text-sm rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+        className={dateInputClass(isDateFromModified)}
         title="Date de début de validité"
       />
       <span className="text-xs text-gray-400">→</span>
       <input
         type="date"
-        defaultValue={groupDateToYMD}
+        value={currentDateTo}
         onChange={(e) => propagateDate('valid_to', e.target.value)}
-        className="w-[130px] px-2 py-1.5 text-sm rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+        className={dateInputClass(isDateToModified)}
         title="Date de fin de validité (vide = offre active)"
         placeholder="Fin"
       />
+      {currentDateTo && (
+        <button
+          type="button"
+          onClick={() => propagateDate('valid_to', '')}
+          className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300"
+          title="Effacer la date de fin (offre active)"
+        >
+          <X size={14} />
+        </button>
+      )}
+      {(isDateFromModified || isDateToModified) && (
+        <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded whitespace-nowrap">
+          {isDateToModified && !currentDateTo ? 'Réactivée' : 'Date modifiée'}
+        </span>
+      )}
     </div>
   )
 }
