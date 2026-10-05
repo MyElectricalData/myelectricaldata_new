@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.4.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.4.1...2.4.2) (2026-10-05)
+
+### Bug Fixes
+
+* **export:** MED-18 / dernière somme des séries absentes de la fenêtre de 30 jours ([6a20e8c](https://github.com/MyElectricalData/myelectricaldata_new/commit/6a20e8c50477e8486033369b48e39c04acc7f506)), closes [#111](https://github.com/MyElectricalData/myelectricaldata_new/issues/111)
+* **export:** MED-18 / import incrémental sans rejeu, repli sans suppression ([fa36b79](https://github.com/MyElectricalData/myelectricaldata_new/commit/fa36b79f3b1f2f5f2e6f99ba2f133eebe402a36f))
+* **export:** MED-18 / point de reprise par série en import incrémental home assistant ([dc0aae6](https://github.com/MyElectricalData/myelectricaldata_new/commit/dc0aae66ca9718f1ab362b60d1840318e83866a3))
+* **export:** MED-18 / sommes cumulées continues en import incrémental home assistant ([b7b5f6e](https://github.com/MyElectricalData/myelectricaldata_new/commit/b7b5f6eebe03dfe54cb8ea963ad04fa3e3d08093)), closes [#111](https://github.com/MyElectricalData/myelectricaldata_new/issues/111)
+
 ## [2.4.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.4.0...2.4.1) (2026-10-05)
 
 ### Bug Fixes
