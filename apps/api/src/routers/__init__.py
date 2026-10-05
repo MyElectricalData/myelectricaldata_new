@@ -5,6 +5,7 @@ from .enedis import router as enedis_router
 from .admin import router as admin_router
 from .energy_offers import router as energy_offers_router
 from .tempo import router as tempo_router
+from .zen_flex import router as zen_flex_router
 from .ecowatt import router as ecowatt_router
 from .roles import router as roles_router
 from .logs import router as logs_router
@@ -19,6 +20,7 @@ __all__ = [
     "admin_router",
     "energy_offers_router",
     "tempo_router",
+    "zen_flex_router",
     "ecowatt_router",
     "roles_router",
     "logs_router",

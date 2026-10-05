@@ -117,6 +117,16 @@ class SyncScheduler:
             next_run_time=datetime.now(UTC),
         )
 
+        # Zen Flex : J+1 publié par EDF en cours de journée, même rythme que Tempo
+        self._scheduler.add_job(
+            self._run_zen_flex_sync,
+            trigger=CronTrigger(minute="*/15", hour="6-23"),
+            id="sync_zen_flex",
+            name="Sync Zen Flex calendar from gateway",
+            replace_existing=True,
+            next_run_time=datetime.now(UTC),  # Run au démarrage
+        )
+
         # Add EcoWatt sync jobs
         # 1. Daily at 17h00 - RTE updates J+3 around 17h
         self._scheduler.add_job(
@@ -510,6 +520,42 @@ class SyncScheduler:
 
         except Exception as e:
             logger.error(f"[SCHEDULER] Tempo sync failed: {e}")
+
+    async def _run_zen_flex_sync(self) -> None:
+        """Synchro Zen Flex si demain est inconnu ou si l'historique local a des trous"""
+        try:
+            from sqlalchemy import func, select
+
+            from .models.database import async_session_maker
+            from .models.zen_flex_day import ZenFlexDay
+            from .services.edf_zen_flex import OFFER_START, paris_today
+            from .services.sync import SyncService
+
+            async with async_session_maker() as db:
+                today = paris_today()
+                tomorrow = today + timedelta(days=1)
+                known = (await db.execute(
+                    select(func.count()).select_from(ZenFlexDay).where(ZenFlexDay.date.between(OFFER_START, today))
+                )).scalar() or 0
+                tomorrow_known = (await db.execute(
+                    select(ZenFlexDay.id).where(ZenFlexDay.date == tomorrow)
+                )).scalar_one_or_none()
+
+                if tomorrow_known and known >= (today - OFFER_START).days + 1:
+                    logger.debug("[SCHEDULER] Zen Flex à jour, pas de synchro")
+                    return
+
+                sync_result = await SyncService(db).sync_zen_flex()
+                if sync_result.get("errors"):
+                    logger.warning(f"[SCHEDULER] Zen Flex sync completed with errors: {sync_result['errors']}")
+                else:
+                    logger.info(
+                        f"[SCHEDULER] Zen Flex sync completed: "
+                        f"{sync_result.get('created', 0)} created, {sync_result.get('updated', 0)} updated"
+                    )
+
+        except Exception as e:
+            logger.error(f"[SCHEDULER] Zen Flex sync failed: {e}")
 
     async def _run_ecowatt_sync(self) -> None:
         """Run EcoWatt sync job (unconditional)

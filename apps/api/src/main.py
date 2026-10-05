@@ -25,6 +25,7 @@ from .routers import (
     pdl_router,
     roles_router,
     tempo_router,
+    zen_flex_router,
 )
 from .routers.admin_rte import router as admin_rte_router
 from .schemas import APIResponse, ErrorDetail, HealthCheckResponse
@@ -287,6 +288,7 @@ if settings.CLIENT_MODE:
     app.include_router(enedis_client_router)  # Proxy to MyElectricalData gateway
     app.include_router(pdl_router)
     app.include_router(tempo_router)
+    app.include_router(zen_flex_router)
     app.include_router(ecowatt_router)
     app.include_router(energy_offers_router)
     app.include_router(consumption_france_router)  # France national data via gateway
@@ -300,6 +302,7 @@ else:
     app.include_router(admin_router)
     app.include_router(energy_offers_router)
     app.include_router(tempo_router)
+    app.include_router(zen_flex_router)
     app.include_router(ecowatt_router)
     app.include_router(consumption_france_router)
     app.include_router(generation_forecast_router)

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.database import async_session_maker
 from ..models.refresh_tracker import RefreshTracker
+from .edf_zen_flex import edf_zen_flex_service
 from .rte import rte_service
 
 logger = logging.getLogger(__name__)
@@ -262,6 +263,23 @@ async def refresh_generation_forecast_cache_task() -> None:
         await asyncio.sleep(1800)
 
 
+async def refresh_zen_flex_cache_task() -> None:
+    """Rafraîchit le calendrier EDF Zen Flex (toutes les 10 minutes, rattrapage de l'historique par lots)"""
+    while True:
+        try:
+            async with async_session_maker() as db:
+                if await should_refresh(db, 'zen_flex', 10):
+                    result = await edf_zen_flex_service.update_zen_flex_cache(db)
+                    logger.info(
+                        f"[SCHEDULER] Zen Flex : {result['updated']} jours mis à jour, {result['backfilled']} rattrapés"
+                    )
+                    await update_refresh_time(db, 'zen_flex')
+        except Exception as e:
+            logger.error(f"[SCHEDULER ERROR] Failed to refresh Zen Flex cache: {e}")
+
+        await asyncio.sleep(600)
+
+
 def start_background_tasks() -> None:
     """Start all background tasks"""
     asyncio.create_task(refresh_tempo_cache_task())
@@ -269,4 +287,5 @@ def start_background_tasks() -> None:
     asyncio.create_task(refresh_tempo_forecast_cache_task())
     asyncio.create_task(refresh_consumption_france_cache_task())
     asyncio.create_task(refresh_generation_forecast_cache_task())
-    logger.info("[SCHEDULER] Background tasks started (Tempo, EcoWatt, Tempo Forecast, Consumption France, Generation Forecast)")
+    asyncio.create_task(refresh_zen_flex_cache_task())
+    logger.info("[SCHEDULER] Background tasks started (Tempo, EcoWatt, Tempo Forecast, Consumption France, Generation Forecast, Zen Flex)")
