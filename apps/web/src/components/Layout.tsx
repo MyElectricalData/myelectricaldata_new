@@ -79,6 +79,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     localStorage.setItem('sidebarCollapsed', JSON.stringify(sidebarCollapsed))
   }, [sidebarCollapsed])
 
+  // Lock body scroll while the mobile menu is open (prevents background page from scrolling)
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [mobileMenuOpen])
+
+  // Close the mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false)
+  }, [location.pathname])
+
   // Auto-open submenus when on relevant pages
   useEffect(() => {
     if (location.pathname.startsWith('/consumption')) {
@@ -625,16 +640,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Mobile Menu */}
-      <aside className={`md:hidden fixed top-0 left-0 bottom-0 w-64 bg-white dark:bg-gray-800 border-r border-gray-300 dark:border-gray-700 z-50 transform transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`md:hidden flex flex-col fixed top-0 left-0 bottom-0 w-64 bg-white dark:bg-gray-800 border-r border-gray-300 dark:border-gray-700 z-50 transform transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         {/* Logo */}
-        <div className="h-16 flex items-center px-4 border-b border-gray-300 dark:border-gray-700">
+        <div className="h-16 flex-shrink-0 flex items-center px-4 border-b border-gray-300 dark:border-gray-700">
           <Link to="/" onClick={() => setMobileMenuOpen(false)}>
             <img src={isDark ? "/logo-full-white.png" : "/logo-full-black.png"} alt="MyElectricalData" className="h-10 w-auto" />
           </Link>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4">
+        <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-4">
           <div className="space-y-1 px-2">
             {/* Dashboard */}
             <Link
@@ -859,7 +874,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Bottom Actions */}
-        <div className="border-t border-gray-300 dark:border-gray-700 p-2 space-y-1">
+        <div className="flex-shrink-0 border-t border-gray-300 dark:border-gray-700 p-2 space-y-1 max-h-[50vh] overflow-y-auto overscroll-contain">
           {/* User info - Server mode only */}
           {isServerMode && user && (
             <div className="px-3 py-2 text-xs text-gray-600 dark:text-gray-400 border-b border-gray-300 dark:border-gray-600 mb-2 pb-2">
