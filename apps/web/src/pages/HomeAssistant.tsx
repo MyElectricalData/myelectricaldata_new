@@ -851,7 +851,8 @@ export default function HomeAssistant() {
                       className="w-full px-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Topic: <strong>{discoveryPrefix || 'homeassistant'}</strong>/sensor/.../config
+                      Topic: <strong>{discoveryPrefix || 'homeassistant'}</strong>/sensor/.../config. Doit être celui de
+                      l'intégration MQTT de Home Assistant, sinon aucune entité n'est créée.
                     </p>
                   </div>
               </div>
@@ -1252,6 +1253,10 @@ export default function HomeAssistant() {
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   {allEntities.length} entités seront créées via MQTT Discovery
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Les entités créées par une version antérieure gardent l'identifiant choisi alors par Home Assistant
+                  (ex. sensor.linky_&lt;pdl&gt;_consumption) : renommez-les dans Home Assistant pour les aligner.
                 </p>
               </div>
             </div>

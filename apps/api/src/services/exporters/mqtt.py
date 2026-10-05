@@ -24,7 +24,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 import aiomqtt
-from sqlalchemy import String, cast, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import BaseExporter
@@ -37,6 +37,11 @@ TEMPO_QUOTAS = {
     "WHITE": 43,
     "RED": 22,
 }
+
+
+def _color_name(color: Any) -> str:
+    """Couleur Tempo en texte (TempoColor.BLUE → "BLUE"), sérialisable en JSON"""
+    return str(getattr(color, "value", color))
 
 
 class MQTTExporter(BaseExporter):
@@ -394,18 +399,19 @@ class MQTTExporter(BaseExporter):
 
     async def _get_tempo_data(self, db: AsyncSession) -> dict[str, Any] | None:
         """Get Tempo data"""
-        from ...models.tempo import TempoDay
+        from ...models.tempo_day import TempoDay
 
         today = date.today()
         tomorrow = today + timedelta(days=1)
 
+        # TempoDay.id est la date au format YYYY-MM-DD (même clé que l'exporteur Home Assistant)
         # Get today's color
-        stmt = select(TempoDay).where(TempoDay.date == today)
+        stmt = select(TempoDay).where(TempoDay.id == today.isoformat())
         result = await db.execute(stmt)
         today_row = result.scalar_one_or_none()
 
         # Get tomorrow's color
-        stmt = select(TempoDay).where(TempoDay.date == tomorrow)
+        stmt = select(TempoDay).where(TempoDay.id == tomorrow.isoformat())
         result = await db.execute(stmt)
         tomorrow_row = result.scalar_one_or_none()
 
@@ -420,11 +426,11 @@ class MQTTExporter(BaseExporter):
 
         # Count used days by color
         stmt = select(TempoDay.color, func.count(TempoDay.id)).where(
-            TempoDay.date >= season_start,
-            TempoDay.date <= today,
+            TempoDay.id >= season_start.isoformat(),
+            TempoDay.id <= today.isoformat(),
         ).group_by(TempoDay.color)
         result = await db.execute(stmt)
-        used = {row[0]: row[1] for row in result.all()}
+        used = {_color_name(row[0]): row[1] for row in result.all()}
 
         remaining = {
             "blue": TEMPO_QUOTAS["BLUE"] - used.get("BLUE", 0),
@@ -434,11 +440,11 @@ class MQTTExporter(BaseExporter):
 
         return {
             "today": {
-                "color": today_row.color if today_row else "UNKNOWN",
+                "color": _color_name(today_row.color) if today_row else "UNKNOWN",
                 "date": today.isoformat(),
             },
             "tomorrow": {
-                "color": tomorrow_row.color if tomorrow_row else "UNKNOWN",
+                "color": _color_name(tomorrow_row.color) if tomorrow_row else "UNKNOWN",
                 "date": tomorrow.isoformat(),
             },
             "remaining": remaining,
@@ -447,24 +453,27 @@ class MQTTExporter(BaseExporter):
 
     async def _get_ecowatt_data(self, db: AsyncSession) -> dict[str, Any] | None:
         """Get EcoWatt data"""
-        from ...models.ecowatt import EcoWattSignal
+        from ...models.ecowatt import EcoWatt
 
         today = date.today()
         now = datetime.now()
 
-        # Get today's signal
-        stmt = select(EcoWattSignal).where(
-            cast(EcoWattSignal.timestamp, String).like(f"{today.isoformat()}%")
-        ).order_by(EcoWattSignal.timestamp.desc()).limit(1)
+        # Get today's signal (un signal par jour, `periode` = minuit du jour prévu)
+        stmt = (
+            select(EcoWatt)
+            .where(func.date(EcoWatt.periode) == today)
+            .order_by(EcoWatt.generation_datetime.desc())
+            .limit(1)
+        )
         result = await db.execute(stmt)
         signal = result.scalar_one_or_none()
 
         if not signal:
             return None
 
-        # Parse hourly values if available
-        hourly_values = signal.hourly_values or []
-        current_level = signal.level
+        # Parse hourly values if available (24 valeurs, index = heure)
+        hourly_values = signal.values or []
+        current_level = signal.dvalue
         current_hour = now.hour
 
         # Get current hour level if available
