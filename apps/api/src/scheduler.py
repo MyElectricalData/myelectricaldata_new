@@ -448,6 +448,19 @@ class SyncScheduler:
                     if data:
                         count = await vm_exporter.export_production(pdl, data, "detailed")
                         total_exported += count
+        elif config.export_type == ExportType.MQTT:
+            from .services.exporters.mqtt import MQTTExporter
+
+            mqtt_exporter = MQTTExporter(config.config)
+            mqtt_results = await mqtt_exporter.run_full_export(db, usage_point_ids)
+            total_exported += (
+                mqtt_results.get("consumption", 0)
+                + mqtt_results.get("production", 0)
+                + mqtt_results.get("tempo", 0)
+                + mqtt_results.get("ecowatt", 0)
+            )
+            if mqtt_results.get("errors"):
+                errors.extend(mqtt_results["errors"])
         else:
             raise ValueError(f"Unknown export type: {config.export_type}")
 
