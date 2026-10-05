@@ -3737,15 +3737,31 @@ class HomeAssistantExporter(BaseExporter):
         # Calculate cost for each tariff bucket
         cost_by_tariff: dict[str, list[dict[str, Any]]] = {}
 
+        zen_flex_priced = family != "TEMPO" and _is_zen_flex(offer) and _zen_flex_price_seasons(offer) is not None
+
         for tariff_tag, consumption_stats in consumption_by_tariff.items():
             # stat["start"] est l'heure locale (Europe/Paris) : ses 10 premiers caractères donnent le jour.
             # Série vide (aucun jour rouge, pas de nouvelle donnée) : gardée si l'offre a un prix, l'import
             # crée alors la statistique dans HA
-            days = [date.fromisoformat(stat["start"][:10]) for stat in consumption_stats] or [date.today()]
-            day_prices = [price_of(tariff_tag, day) for day in days]
-            if None in day_prices:
-                logger.debug(f"[HA-WS] No price for tariff {tariff_tag}, skipping cost calculation")
-                continue
+            days = [date.fromisoformat(stat["start"][:10]) for stat in consumption_stats]
+            if zen_flex_priced and tariff_tag in tags:
+                # Zen Flex : seules les heures d'un jour absent du calendrier (avant le lancement de l'offre,
+                # rattrapage en cours) restent sans coût ; les autres jours gardent le leur
+                day_prices = [price_of(tariff_tag, day) for day in days]
+                missing = sorted({day for day, price in zip(days, day_prices) if price is None})
+                if missing:
+                    logger.warning(
+                        f"[HA-WS] {pdl} {tariff_tag} : {len(missing)} jours absents du calendrier Zen Flex "
+                        f"({missing[0]} → {missing[-1]}), sans coût"
+                    )
+                    kept = [(stat, price) for stat, price in zip(consumption_stats, day_prices) if price is not None]
+                    consumption_stats = [stat for stat, _ in kept]
+                    day_prices = [price for _, price in kept]
+            else:
+                day_prices = [price_of(tariff_tag, day) for day in days or [date.today()]]
+                if None in day_prices:
+                    logger.debug(f"[HA-WS] No price for tariff {tariff_tag}, skipping cost calculation")
+                    continue
 
             cost_stats = []
             cumulative_cost = 0.0

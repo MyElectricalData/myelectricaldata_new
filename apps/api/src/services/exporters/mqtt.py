@@ -270,15 +270,14 @@ class MQTTExporter(BaseExporter):
             # Export Zen Flex data
             try:
                 zen_flex_data = await self._get_zen_flex_data(db)
-                if zen_flex_data:
-                    for key in ("today", "tomorrow"):
-                        await client.publish(
-                            f"{self.topic_prefix}/zen_flex/{key}",
-                            payload=json.dumps(zen_flex_data[key]),
-                            qos=self.qos,
-                            retain=self.retain,
-                        )
-                    results["zen_flex"] += 1
+                for key in ("today", "tomorrow"):
+                    await client.publish(
+                        f"{self.topic_prefix}/zen_flex/{key}",
+                        payload=json.dumps(zen_flex_data[key]),
+                        qos=self.qos,
+                        retain=self.retain,
+                    )
+                results["zen_flex"] += 1
             except Exception as e:
                 logger.error(f"[MQTT] Error exporting Zen Flex: {e}")
                 results["errors"].append(f"Zen Flex: {str(e)}")
@@ -470,16 +469,17 @@ class MQTTExporter(BaseExporter):
             "season": f"{season_start.year}/{season_end.year}",
         }
 
-    async def _get_zen_flex_data(self, db: AsyncSession) -> dict[str, Any] | None:
-        """Calendrier EDF Zen Flex d'aujourd'hui et de demain (None si aucun des deux n'est connu)"""
+    async def _get_zen_flex_data(self, db: AsyncSession) -> dict[str, Any]:
+        """Calendrier EDF Zen Flex d'aujourd'hui et de demain, UNKNOWN pour un jour absent
+
+        Toujours publié : un message retenu de la veille ne doit pas survivre à une synchro en panne.
+        """
         from ...models.zen_flex_day import ZenFlexDay
 
         today = date.today()
         days = {"today": today, "tomorrow": today + timedelta(days=1)}
         stmt = select(ZenFlexDay).where(ZenFlexDay.id.in_([day.isoformat() for day in days.values()]))
         known = {row.id: row.day_type.value for row in (await db.execute(stmt)).scalars().all()}
-        if not known:
-            return None
 
         return {
             key: {"day_type": known.get(day.isoformat(), "UNKNOWN"), "date": day.isoformat()}

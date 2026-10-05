@@ -202,14 +202,31 @@ async def test_zen_flex_summer_sobriete_day_is_not_seasonal() -> None:
     assert result == {"hp": [0.2091]}
 
 
-async def test_zen_flex_day_missing_from_calendar_drops_the_series() -> None:
-    """Jour non synchronisé : pas de coût faux, la série est écartée"""
+async def test_zen_flex_day_missing_from_calendar_is_skipped_alone() -> None:
+    """Jour non synchronisé (avant le lancement de l'offre, rattrapage en cours) : ses heures n'ont pas
+    de coût, les autres jours gardent le leur"""
     result = await costs(ZEN_FLEX_PROD, ZEN_FLEX_CONSUMPTION, {SOBRIETE_DAY: ZenFlexDayType.SOBRIETE})
-    assert result == {}
+    assert result == {"hp": [0.7253], "hc": [0.2091]}
+
+
+async def test_zen_flex_skipped_days_keep_a_continuous_sum() -> None:
+    exporter = HomeAssistantExporter.__new__(HomeAssistantExporter)
+    exporter.config = {}
+    exporter._get_zen_flex_days = AsyncMock(return_value={SOBRIETE_DAY: ZenFlexDayType.SOBRIETE, ECO_DAY: ZenFlexDayType.ECO})  # type: ignore[method-assign]
+    consumption = {"hp": [stat("2023-10-31T10:00:00+01:00"), stat("2026-01-15T10:00:00+01:00"), stat("2026-01-16T10:00:00+01:00")]}
+    result = await exporter._get_cost_statistics_by_tariff(fake_db(ZEN_FLEX_PROD), "123", consumption)
+    assert [s["start"][:10] for s in result["hp"]] == ["2026-01-15", "2026-01-16"]
+    assert [s["sum"] for s in result["hp"]] == [0.7253, 0.9344]
+
+
+async def test_zen_flex_empty_series_kept() -> None:
+    """Série vide (pas encore d'heure creuse importée) : gardée, l'import crée la statistique"""
+    result = await costs(ZEN_FLEX_PROD, {"hp": [stat("2026-01-16T10:00:00+01:00")], "hc": []}, CALENDAR)
+    assert result == {"hp": [0.2091], "hc": []}
 
 
 async def test_zen_flex_without_calendar_has_no_cost() -> None:
-    assert await costs(ZEN_FLEX_PROD, {"hp": [stat("2026-01-15T10:00:00+01:00")]}) == {}
+    assert await costs(ZEN_FLEX_PROD, {"hp": [stat("2026-01-15T10:00:00+01:00")]}) == {"hp": []}
 
 
 async def test_zen_flex_with_ambiguous_prices_has_no_cost() -> None:

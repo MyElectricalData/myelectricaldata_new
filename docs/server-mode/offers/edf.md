@@ -29,7 +29,7 @@ EDF est le fournisseur historique d'electricite en France. Le scraper recupere l
 |------|------|-------------|
 | Option Week-End | `BASE_WEEKEND` | Tarif reduit le week-end |
 | HC/HP + WE | `HC_WEEKEND` | HC/HP avec tarif week-end |
-| Flex | `ZEN_FLEX` | 345 jours Eco + 20 jours Sobriete |
+| Flex | `ZEN_FLEX` | 345 jours Eco + 20 jours Sobriete ; scraper : Eco dans `*_winter`, Sobriete dans `*_summer` (les offres contribuees rangent l'inverse) ; calendrier des jours : route `/zen-flex` |
 
 ## Methode de scraping
 

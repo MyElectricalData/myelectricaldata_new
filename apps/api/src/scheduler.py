@@ -555,7 +555,7 @@ class SyncScheduler:
                     )
 
         except Exception as e:
-            logger.error(f"[SCHEDULER] Zen Flex sync failed: {e}")
+            logger.error(f"[SCHEDULER] Zen Flex sync failed: {e}", exc_info=True)
 
     async def _run_ecowatt_sync(self) -> None:
         """Run EcoWatt sync job (unconditional)

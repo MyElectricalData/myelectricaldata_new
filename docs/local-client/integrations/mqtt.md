@@ -101,8 +101,8 @@ Pour un contrat à heures creuses disposant de données détaillées (30 min), i
 
 ### Zen Flex
 
-Calendrier de l'offre EDF Zen Week-End Option Flex. Rien n'est publié tant qu'aucun des deux jours
-n'est connu.
+Calendrier de l'offre EDF Zen Week-End Option Flex, publié à chaque export, même quand aucun des
+deux jours n'est connu (`UNKNOWN`) : un message retenu de la veille ne survit pas à une synchro en panne.
 
 | Topic | Payload | Description |
 |-------|---------|-------------|

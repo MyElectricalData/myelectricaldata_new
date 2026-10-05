@@ -142,4 +142,9 @@ async def test_mqtt_zen_flex_unknown_tomorrow(db: AsyncSession) -> None:
 
 
 async def test_mqtt_zen_flex_without_calendar(db: AsyncSession) -> None:
-    assert await make_mqtt_exporter()._get_zen_flex_data(db) is None
+    """Toujours publié : un message retenu de la veille ne doit pas survivre à une synchro en panne"""
+    data = await make_mqtt_exporter()._get_zen_flex_data(db)
+    assert data == {
+        "today": {"day_type": "UNKNOWN", "date": TODAY.isoformat()},
+        "tomorrow": {"day_type": "UNKNOWN", "date": TOMORROW.isoformat()},
+    }

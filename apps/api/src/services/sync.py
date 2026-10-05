@@ -1567,6 +1567,9 @@ class SyncService:
                 result["errors"].append(f"Réponse de la passerelle invalide : {error or response}")
                 return result
 
+            if not calendar_data and start is None:
+                logger.warning("[SYNC] Calendrier Zen Flex vide sur la passerelle (rattrapage pas encore commencé ?)")
+
             for day_data in calendar_data:
                 day_id = str(day_data.get("date") or "")[:10]
                 try:

@@ -112,7 +112,8 @@ class BaseExporter(ABC):
         - Plages HC et puissance : ContractData (cache contrat Enedis du mode client), sinon PDL.
           Plages lues quel que soit leur format de stockage (cf. tariff.parse_offpeak_ranges).
         - Offre choisie EDF Zen Flex : plages HC de la grille fournisseur (hc_schedules de l'offre,
-          sinon 13h-18h et 20h-6h), pas celles du contrat Enedis.
+          sinon 13h-18h et 20h-8h), pas celles du contrat Enedis, et profil HC/HP quelle que soit
+          l'option du PDL (le week-end Zen Flex a aussi ses heures pleines).
 
         Returns:
             Tuple (profil tarifaire, plages HC en minutes, subscribed_power_kva)
@@ -150,9 +151,12 @@ class BaseExporter(ABC):
             )
             offer = result.first()
             if offer and is_zen_flex_offer(offer.offer_type, offer.name):
-                offpeak_ranges = parse_offpeak_ranges(offer.hc_schedules) or ZEN_FLEX_OFFPEAK_RANGES
-                if profile.family == "BASE":
-                    profile = tariff_profile("ZEN_FLEX")
+                offpeak_ranges = parse_offpeak_ranges(offer.hc_schedules)
+                if not offpeak_ranges:
+                    if offer.hc_schedules:
+                        logger.warning(f"[EXPORT] PDL {pdl} : hc_schedules illisible ({offer.hc_schedules!r}), grille Zen Flex EDF")
+                    offpeak_ranges = ZEN_FLEX_OFFPEAK_RANGES
+                profile = tariff_profile("ZEN_FLEX")
 
         return profile, offpeak_ranges, subscribed_power
 

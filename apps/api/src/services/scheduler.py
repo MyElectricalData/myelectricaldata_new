@@ -273,9 +273,11 @@ async def refresh_zen_flex_cache_task() -> None:
                     logger.info(
                         f"[SCHEDULER] Zen Flex : {result['updated']} jours mis à jour, {result['backfilled']} rattrapés"
                     )
+                    if result["errors"]:
+                        logger.warning(f"[SCHEDULER] Zen Flex : {len(result['errors'])} erreurs : {result['errors'][:3]}")
                     await update_refresh_time(db, 'zen_flex')
         except Exception as e:
-            logger.error(f"[SCHEDULER ERROR] Failed to refresh Zen Flex cache: {e}")
+            logger.error(f"[SCHEDULER ERROR] Failed to refresh Zen Flex cache: {e}", exc_info=True)
 
         await asyncio.sleep(600)
 

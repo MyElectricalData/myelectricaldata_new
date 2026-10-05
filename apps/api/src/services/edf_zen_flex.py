@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.zen_flex_day import ZenFlexDay, ZenFlexDayType
@@ -90,8 +91,8 @@ class EDFZenFlexService:
         except ValueError as e:
             raise EDFZenFlexError(f"JSON EDF invalide pour le {day} : {e}") from e
 
-        if not isinstance(payload, dict):
-            raise EDFZenFlexError(f"Réponse EDF inattendue pour le {day} : {payload!r}")
+        if not isinstance(payload, dict) or "couleurJourJ" not in payload:
+            raise EDFZenFlexError(f"Réponse EDF inattendue pour le {day} : {str(payload)[:200]}")
         return payload.get("couleurJourJ"), payload.get("couleurJourJ1")
 
     async def update_zen_flex_cache(
@@ -112,6 +113,9 @@ class EDFZenFlexService:
         def store(day: date, raw: str | None) -> int:
             day_type = parse_opm_value(raw)
             if day_type is None:
+                if raw and raw.strip().upper() != "NON_DETERMINE":
+                    # Valeur nouvelle : signalée, sinon le jour serait redemandé à chaque passe sans bruit
+                    result["errors"].append(f"Valeur EDF inconnue {raw!r} pour le {day}")
                 return 0
             row = known.get(day)
             if row is None:
@@ -133,7 +137,8 @@ class EDFZenFlexService:
             result["errors"].append(str(e))
             return result
         result["updated"] += store(today, raw_today) + store(today + timedelta(days=1), raw_tomorrow)
-        await db.commit()
+        if not await self._commit(db, result):
+            return result
 
         # 2. Rattrapage : un appel sur la veille d'un jour manquant renseigne les deux jours
         missing = (today - timedelta(days=n) for n in range(1, (today - OFFER_START).days + 1))
@@ -153,10 +158,21 @@ class EDFZenFlexService:
                 break
             result["backfilled"] += store(relevant, raw_day) + store(relevant + timedelta(days=1), raw_next)
 
-        if calls:
-            await db.commit()
+        if calls and await self._commit(db, result):
             logger.info(f"[ZEN_FLEX] Rattrapage : {result['backfilled']} jours en {calls} appels EDF")
         return result
+
+    @staticmethod
+    async def _commit(db: AsyncSession, result: dict[str, Any]) -> bool:
+        """Commit d'une passe ; un conflit (passe concurrente, ex. refresh manuel) annule la passe sans planter"""
+        try:
+            await db.commit()
+            return True
+        except IntegrityError as e:
+            await db.rollback()
+            logger.warning(f"[ZEN_FLEX] Passe concurrente, écritures annulées : {e.orig}")
+            result["errors"].append("Conflit avec une autre mise à jour du calendrier, réessayer")
+            return False
 
     async def get_days(self, db: AsyncSession, start: date, end: date) -> list[ZenFlexDay]:
         """Jours connus entre `start` et `end` inclus, triés par date"""

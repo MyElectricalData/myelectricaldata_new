@@ -125,6 +125,13 @@ async def test_fetch_status_rejects_html_served_with_200() -> None:
         await service.fetch_status(TODAY)
 
 
+async def test_fetch_status_rejects_json_without_day_keys() -> None:
+    """JSON d'erreur (ou champs renommés) : erreur, pas « aucune donnée »"""
+    service = EDFZenFlexService(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={"message": "indisponible"})))
+    with pytest.raises(EDFZenFlexError):
+        await service.fetch_status(TODAY)
+
+
 # =============================================================================
 # Cache : aujourd'hui, demain et rattrapage de l'historique
 # =============================================================================
@@ -175,6 +182,15 @@ async def test_backfill_does_not_refetch_known_days(db: AsyncSession, monkeypatc
     edf = FakeEDF()
     await edf.service().update_zen_flex_cache(db, today=TODAY, backfill_limit=10)
     assert edf.days_requested == [TODAY]
+
+
+async def test_unknown_edf_value_is_reported(db: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Valeur EDF nouvelle : jour non écrit, mais signalé (sinon il serait redemandé à chaque passe sans bruit)"""
+    monkeypatch.setattr(edf_zen_flex, "OFFER_START", TODAY - timedelta(days=2))
+    edf = FakeEDF({TODAY - timedelta(days=1): "ZENF_NOUVEAU"})
+    result = await edf.service().update_zen_flex_cache(db, today=TODAY)
+    assert any("ZENF_NOUVEAU" in error for error in result["errors"])
+    assert TODAY - timedelta(days=1) not in await stored(db)
 
 
 async def test_backfill_stops_on_edf_error(db: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:

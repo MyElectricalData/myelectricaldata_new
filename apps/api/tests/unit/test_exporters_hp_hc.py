@@ -90,13 +90,17 @@ def offer_row(offer_type: str, name: str, hc_schedules: object = None) -> Simple
 
 
 async def test_contract_info_zen_flex_uses_edf_supplier_offpeak_grid() -> None:
-    """Zen Flex : 17 h creuses par jour (13h-18h et 20h-6h), pas les 8 h du contrat Enedis (MED-27)"""
+    """Zen Flex : 17 h creuses par jour (13h-18h et 20h-8h, HP 8h-13h et 18h-20h), pas les 8 h du contrat Enedis"""
     zen_flex = offer_row("SEASONAL", "Zen Week-End - Option Flex - 6 kVA")
     profile, ranges, _ = await make_exporter()._get_pdl_contract_info(
         fake_db_with_offer(pdl_with_offer("HC_HP"), zen_flex), "123"
     )
     assert profile.family == "HC_HP"
-    assert ranges == [(780, 1080), (1200, 360)]
+    assert ranges == [(780, 1080), (1200, 480)]
+    offpeak_minutes = sum(1 for m in range(0, 24 * 60, 30) if any(
+        (start <= m < end) if start < end else (m >= start or m < end) for start, end in ranges
+    )) * 30
+    assert offpeak_minutes == 17 * 60
 
 
 async def test_contract_info_zen_flex_prefers_offer_hc_schedules() -> None:
@@ -109,6 +113,16 @@ async def test_contract_info_zen_flex_without_pricing_option_is_hc_hp() -> None:
     zen_flex = offer_row("SEASONAL", "Zen Week-End - Option Flex - 9 kVA")
     profile, _, _ = await make_exporter()._get_pdl_contract_info(fake_db_with_offer(pdl_with_offer(None), zen_flex), "123")
     assert profile.family == "HC_HP"
+
+
+@pytest.mark.parametrize("pricing_option", ["HC_NUIT_WEEKEND", "TEMPO", "BASE"])
+async def test_contract_info_zen_flex_profile_ignores_pricing_option(pricing_option: str) -> None:
+    """Le week-end Zen Flex a aussi ses heures pleines, et le coût suit la famille HC/HP de l'offre"""
+    zen_flex = offer_row("SEASONAL", "Zen Week-End - Option Flex - 6 kVA")
+    profile, _, _ = await make_exporter()._get_pdl_contract_info(
+        fake_db_with_offer(pdl_with_offer(pricing_option), zen_flex), "123"
+    )
+    assert profile == TariffProfile("HC_HP")
 
 
 async def test_contract_info_other_offer_keeps_contract_ranges() -> None:

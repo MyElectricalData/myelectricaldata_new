@@ -86,7 +86,8 @@ async def refresh_zen_flex(
         result = await edf_zen_flex_service.update_zen_flex_cache(db)
 
     if result.get("errors"):
-        return APIResponse(
-            success=False, error=ErrorDetail(code="ZEN_FLEX_SOURCE_ERROR", message="; ".join(result["errors"])[:500])
-        )
+        # Les jours lus avant l'erreur sont enregistrés : les compteurs le disent
+        counts = ", ".join(f"{key}={result[key]}" for key in ("updated", "backfilled", "created") if key in result)
+        message = f"{'; '.join(result['errors'])[:450]} ({counts})"
+        return APIResponse(success=False, error=ErrorDetail(code="ZEN_FLEX_SOURCE_ERROR", message=message))
     return APIResponse(success=True, data=result)

@@ -124,7 +124,7 @@ seule série. Les plages d'heures creuses sont celles du contrat Enedis. À déf
 utilise 22h-6h. Aucun capteur HP/HC n'est publié pour une offre BASE.
 
 Exception : avec l'offre EDF Zen Flex sélectionnée sur le PDL, les heures creuses suivent la grille
-du fournisseur, 17 h par jour, tous les jours (13h-18h et 20h-6h), et non les plages du contrat
+du fournisseur, 17 h par jour, tous les jours (13h-18h et 20h-8h), et non les plages du contrat
 Enedis. Si l'offre définit ses propres plages (`hc_schedules`), ce sont elles qui s'appliquent.
 
 > **Mise à jour depuis une version antérieure.** Un contrat à heures creuses était auparavant exporté
@@ -184,8 +184,10 @@ Le coût utilise l'offre sélectionnée sur le PDL :
 - EDF Zen Flex (`ZEN_FLEX`, ou offre nommée « Option Flex ») : prix Sobriété les jours Sobriété, prix
   Éco les jours Éco et Bonus, d'après le calendrier synchronisé (la remise éventuelle des jours Bonus
   n'est pas modélisée). Les prix Éco et Sobriété sont rangés dans les champs d'hiver et d'été de
-  l'offre : la saison au prix HP le plus élevé est la Sobriété. Un jour absent du calendrier, ou des
-  prix HP identiques, laissent la série sans coût plutôt qu'avec un coût faux ;
+  l'offre : la saison au prix HP le plus élevé est la Sobriété. Les heures d'un jour absent du
+  calendrier (avant le lancement de l'offre en novembre 2023, ou pendant le rattrapage de l'historique)
+  restent sans coût, avec un avertissement dans les logs ; des prix HP identiques laissent la série
+  sans coût plutôt qu'avec un coût faux ;
 - autres offres : prix unique de la série.
 
 ---
