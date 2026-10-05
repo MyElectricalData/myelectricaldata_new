@@ -3,7 +3,8 @@
 b2c3d4e5f6g7 ne traitait que "Tarif Bleu" et "Tempo" : les autres offres gardaient la
 puissance et l'option dans leur nom (ex: "Classique - 6 kVA", "Zen Fixe - Option Base - 6 kVA")
 alors que ces informations sont déjà dans power_kva et offer_type. Cette migration :
-  1. retire la puissance en fin de nom ("- 6 kVA", " 6 kVA") ;
+  1. retire la puissance en fin de nom ("- 6 kVA", " 6 kVA"), après l'avoir recopiée dans
+     power_kva quand celui-ci est vide ;
   2. retire le suffixe de type ou d'option restant ("- BASE", "- Option Heures Creuses + WE"...) ;
   3. désactive les offres actives devenues doublons (même provider, name, offer_type, power_kva).
 
@@ -65,6 +66,15 @@ def _strip_suffix(pattern: str) -> None:
 
 
 def upgrade() -> None:
+    # Une offre sans power_kva n'a sa puissance que dans le nom : la recopier avant de la retirer
+    op.get_bind().execute(
+        sa.text("""
+            UPDATE energy_offers
+            SET power_kva = substring(name from '(\\d+)\\s*kVA\\s*$')::integer
+            WHERE power_kva IS NULL AND name ~* :pattern
+        """),
+        {"pattern": POWER_SUFFIX},
+    )
     _strip_suffix(POWER_SUFFIX)
     _strip_suffix(TYPE_SUFFIX)
 

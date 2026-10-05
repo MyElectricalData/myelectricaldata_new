@@ -181,3 +181,12 @@ async def test_doublons_desactives_garde_le_plus_recent(pg_url):
     actives = {r.id for r in rows if r.is_active}
     assert actives == {"new", "p12"}
     assert {r.name for r in rows} == {"Tarif Bleu"}
+
+
+@pytest.mark.asyncio
+async def test_puissance_seulement_dans_le_nom_recopiee(pg_url):
+    rows = await _run(pg_url, [
+        (INSERT, {"id": "nul", "p": "ohm", "name": "Classique - 9 kVA", "t": "BASE", "kva": None, "vf": None}),
+        (INSERT, {"id": "ok", "p": "ohm", "name": "Classique - 9 kVA", "t": "HC_HP", "kva": 12, "vf": None}),
+    ])
+    assert {(r.id, r.name, r.power_kva) for r in rows} == {("nul", "Classique", 9), ("ok", "Classique", 12)}
