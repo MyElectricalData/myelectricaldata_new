@@ -97,7 +97,7 @@ async def test_contribution_multi_puissances_sans_kva_dans_le_nom(monkeypatch):
     assert [(o.name, o.power_kva) for o in created] == [("Classique", 6), ("Classique", 9)]
 
 
-# Mêmes cas que la migration c3d4e5f6g7h8 : le backend doit produire les noms qu'elle produit
+# Mêmes cas que la migration f4a9c1d7b3e5 : le backend doit produire les noms qu'elle produit
 from tests.integration.test_migration_clean_offer_names_v2 import CAS  # noqa: E402
 
 
@@ -149,19 +149,19 @@ async def test_contribution_une_seule_offre_nom_normalise(monkeypatch):
     assert [(o.name, o.power_kva) for o in created] == [("Zen Fixe", 9)]
 
 
-def test_zen_flex_nettoyee_reste_reconnue_par_l_export_home_assistant():
-    """MED-21 : Zen Flex servie en SEASONAL n'a pas de coût, reconnue à "Option Flex" dans le nom.
-    Le nom nettoyé (migration, contributions) doit garder ce repère, clients déjà déployés compris."""
-    from datetime import date
-
-    from src.services.exporters.home_assistant import _day_price
+@pytest.mark.parametrize("brut", ["Zen Week-End - Option Flex - 6 kVA", "Zen Week-End - Option Flex 6 kVA"])
+def test_zen_flex_nettoyee_reste_reconnue_par_l_export_home_assistant(brut):
+    """MED-21 / MED-27 : une Zen Flex servie en SEASONAL se reconnaît à « Option Flex » dans le nom
+    (is_zen_flex_offer). Le nom nettoyé par la migration et les contributions doit garder ce repère,
+    clients déjà déployés compris."""
+    from src.services.exporters.tariff import is_zen_flex_offer
     from src.services.offer_names import clean_offer_name
 
-    zen_flex = SimpleNamespace(
-        name=clean_offer_name("Zen Week-End - Option Flex - 6 kVA"), offer_type="SEASONAL",
-        hc_price_winter="0.2091", hp_price_winter="0.7253", hc_price_summer="0.1519", hp_price_summer="0.2091",
-    )
-    assert _day_price(zen_flex, "hp", date(2026, 1, 15)) is None
+    nettoye = clean_offer_name(brut)
+    assert nettoye == "Zen Week-End - Option Flex"
+    assert is_zen_flex_offer("SEASONAL", nettoye)
+    # et une offre qui ne l'est pas ne le devient pas
+    assert not is_zen_flex_offer("SEASONAL", clean_offer_name("FlexiWatt 2 saisons - 6 kVA"))
 
 
 def test_repli_tarif_bleu_de_l_export_ha_prend_la_grille_courante():

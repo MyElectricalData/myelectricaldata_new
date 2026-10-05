@@ -4,7 +4,7 @@ from typing import AsyncGenerator, Callable
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from .middleware.trusted_host import TrustedHostExceptHealthMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -25,6 +25,7 @@ from .routers import (
     pdl_router,
     roles_router,
     tempo_router,
+    zen_flex_router,
 )
 from .routers.admin_rte import router as admin_rte_router
 from .schemas import APIResponse, ErrorDetail, HealthCheckResponse
@@ -145,16 +146,8 @@ app = FastAPI(
 # Mount static files for custom Swagger CSS
 app.mount("/static", StaticFiles(directory="/app/static"), name="static")
 
-# Trusted Host middleware to handle proxy headers
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=[
-    "myelectricaldata.fr",
-    "*.myelectricaldata.fr",  # Allow all subdomains
-    "localhost",
-    "127.0.0.1",
-    "backend",
-    "backend-client",  # Client mode Docker service name
-    "host.docker.internal",  # Allow client mode to connect to server mode locally
-])
+# Trusted Host middleware to handle proxy headers (ALLOWED_HOSTS, every host by default in client mode)
+app.add_middleware(TrustedHostExceptHealthMiddleware, allowed_hosts=settings.allowed_hosts)
 
 # CORS middleware - explicit origins required for credentials (httpOnly cookies)
 def get_cors_origins() -> list[str]:
@@ -295,6 +288,7 @@ if settings.CLIENT_MODE:
     app.include_router(enedis_client_router)  # Proxy to MyElectricalData gateway
     app.include_router(pdl_router)
     app.include_router(tempo_router)
+    app.include_router(zen_flex_router)
     app.include_router(ecowatt_router)
     app.include_router(energy_offers_router)
     app.include_router(consumption_france_router)  # France national data via gateway
@@ -308,6 +302,7 @@ else:
     app.include_router(admin_router)
     app.include_router(energy_offers_router)
     app.include_router(tempo_router)
+    app.include_router(zen_flex_router)
     app.include_router(ecowatt_router)
     app.include_router(consumption_france_router)
     app.include_router(generation_forecast_router)

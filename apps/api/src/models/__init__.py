@@ -6,12 +6,14 @@ from .email_verification import EmailVerificationToken
 from .password_reset import PasswordResetToken
 from .energy_provider import EnergyProvider, EnergyOffer, OfferContribution, ContributionMessage
 from .tempo_day import TempoDay, TempoColor
+from .zen_flex_day import ZenFlexDay, ZenFlexDayType
 from .ecowatt import EcoWatt
 from .role import Role, Permission, role_permissions
 from .refresh_tracker import RefreshTracker
 from .client_mode import (
     ConsumptionData,
     ProductionData,
+    MaxPowerData,
     SyncStatus,
     SyncStatusType,
     ExportConfig,
@@ -36,6 +38,8 @@ __all__ = [
     "ContributionMessage",
     "TempoDay",
     "TempoColor",
+    "ZenFlexDay",
+    "ZenFlexDayType",
     "EcoWatt",
     "Role",
     "Permission",
@@ -44,6 +48,7 @@ __all__ = [
     # Client mode models
     "ConsumptionData",
     "ProductionData",
+    "MaxPowerData",
     "SyncStatus",
     "SyncStatusType",
     "ExportConfig",

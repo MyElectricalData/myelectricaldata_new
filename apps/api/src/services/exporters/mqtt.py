@@ -12,6 +12,8 @@ Topic structure:
     {topic_prefix}/{pdl}/production/daily
     {topic_prefix}/tempo/today
     {topic_prefix}/tempo/tomorrow
+    {topic_prefix}/zen_flex/today       (EDF Zen Flex : ECO, SOBRIETE, BONUS ou UNKNOWN)
+    {topic_prefix}/zen_flex/tomorrow
     {topic_prefix}/ecowatt/today
 """
 
@@ -198,6 +200,7 @@ class MQTTExporter(BaseExporter):
             "consumption": 0,
             "production": 0,
             "tempo": 0,
+            "zen_flex": 0,
             "ecowatt": 0,
             "errors": [],
         }
@@ -263,6 +266,21 @@ class MQTTExporter(BaseExporter):
             except Exception as e:
                 logger.error(f"[MQTT] Error exporting Tempo: {e}")
                 results["errors"].append(f"Tempo: {str(e)}")
+
+            # Export Zen Flex data
+            try:
+                zen_flex_data = await self._get_zen_flex_data(db)
+                for key in ("today", "tomorrow"):
+                    await client.publish(
+                        f"{self.topic_prefix}/zen_flex/{key}",
+                        payload=json.dumps(zen_flex_data[key]),
+                        qos=self.qos,
+                        retain=self.retain,
+                    )
+                results["zen_flex"] += 1
+            except Exception as e:
+                logger.error(f"[MQTT] Error exporting Zen Flex: {e}")
+                results["errors"].append(f"Zen Flex: {str(e)}")
 
             # Export EcoWatt data
             try:
@@ -451,6 +469,23 @@ class MQTTExporter(BaseExporter):
             "season": f"{season_start.year}/{season_end.year}",
         }
 
+    async def _get_zen_flex_data(self, db: AsyncSession) -> dict[str, Any]:
+        """Calendrier EDF Zen Flex d'aujourd'hui et de demain, UNKNOWN pour un jour absent
+
+        Toujours publié : un message retenu de la veille ne doit pas survivre à une synchro en panne.
+        """
+        from ...models.zen_flex_day import ZenFlexDay
+
+        today = date.today()
+        days = {"today": today, "tomorrow": today + timedelta(days=1)}
+        stmt = select(ZenFlexDay).where(ZenFlexDay.id.in_([day.isoformat() for day in days.values()]))
+        known = {row.id: row.day_type.value for row in (await db.execute(stmt)).scalars().all()}
+
+        return {
+            key: {"day_type": known.get(day.isoformat(), "UNKNOWN"), "date": day.isoformat()}
+            for key, day in days.items()
+        }
+
     async def _get_ecowatt_data(self, db: AsyncSession) -> dict[str, Any] | None:
         """Get EcoWatt data"""
         from ...models.ecowatt import EcoWatt
@@ -515,6 +550,7 @@ class MQTTExporter(BaseExporter):
                 f"{self.topic_prefix}/+/consumption/+",
                 f"{self.topic_prefix}/+/production/+",
                 f"{self.topic_prefix}/tempo/#",
+                f"{self.topic_prefix}/zen_flex/#",
                 f"{self.topic_prefix}/ecowatt/#",
                 f"{self.topic_prefix}/status",
             ]
@@ -550,6 +586,8 @@ class MQTTExporter(BaseExporter):
                                     pdl = parts[1]
                             elif "/tempo" in topic_str:
                                 category = "Tempo"
+                            elif "/zen_flex" in topic_str:
+                                category = "Zen Flex"
                             elif "/ecowatt" in topic_str:
                                 category = "EcoWatt"
                             elif "/status" in topic_str:

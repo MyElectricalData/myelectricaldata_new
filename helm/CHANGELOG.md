@@ -1,5 +1,44 @@
 # Helm Charts Changelog
 
+## [2.1.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/2.0.1...helm/2.1.0) (2026-10-05)
+
+### Features
+
+* **api:** MED-17 / get_day_total se replie sur les mesures détaillées ([8680779](https://github.com/MyElectricalData/myelectricaldata_new/commit/8680779683b186105741167161a51f7bf55d937a)), closes [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110) [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110)
+* **api:** MED-17 / l'adapter du mode client demande le cache serveur ([bb51d4d](https://github.com/MyElectricalData/myelectricaldata_new/commit/bb51d4da969c434c9c07a1c239639557258e0548)), closes [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110)
+* **api:** MED-17 / puissance max servie depuis la base locale, lots détaillés vides en attente ([4352ba5](https://github.com/MyElectricalData/myelectricaldata_new/commit/4352ba55474f7c600b1d29f6c0f1f9cc42ee7640)), closes [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110) [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110)
+* **api:** MED-17 / scheduler sobre, hôtes acceptés paramétrables, exports après sync ([68eb763](https://github.com/MyElectricalData/myelectricaldata_new/commit/68eb76383282b7c9e9dfce6662caa3b6708bbaa7)), closes [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110)
+* **api:** MED-17 / sync du mode client : J-1, rafraîchissement et puissance max ([a1a73f5](https://github.com/MyElectricalData/myelectricaldata_new/commit/a1a73f569dd7893e234564279e6c359a8b96cda9)), closes [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110) [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110)
+* **api:** MED-17 / table max_power_data et contraintes NULLS NOT DISTINCT ([17211ea](https://github.com/MyElectricalData/myelectricaldata_new/commit/17211eaa56a990bbef3fb3b1c97854b68c1f0033)), closes [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110) [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110)
+* **export:** MED-10 / export home assistant compatible content-card-linky ([1eb9017](https://github.com/MyElectricalData/myelectricaldata_new/commit/1eb90173a14952c2225f8395feb8269a47739ef9))
+* **export:** MED-10 / module tariff partagé pour la ventilation hp/hc ([cd20d27](https://github.com/MyElectricalData/myelectricaldata_new/commit/cd20d2714600d842c113daeabdfa34fa9dbadd18)), closes [#113](https://github.com/MyElectricalData/myelectricaldata_new/issues/113)
+* **export:** MED-17 / préfixe des entités home assistant configurable ([843b006](https://github.com/MyElectricalData/myelectricaldata_new/commit/843b0065c4d2866d8d84e08b8038ac402612995d)), closes [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110)
+* **web:** MED-17 / aperçu des entités home assistant selon le préfixe ([1870f63](https://github.com/MyElectricalData/myelectricaldata_new/commit/1870f63f8ea71294e4a53e32338930d5ceb743a8)), closes [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110)
+* **web:** MED-17 / valeurs par défaut des formulaires d'export au démarrage du conteneur ([5e34dc3](https://github.com/MyElectricalData/myelectricaldata_new/commit/5e34dc3b5ef86d63d609d99fcbe1d66f2194db27)), closes [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110)
+
+### Bug Fixes
+
+* **api:** MED-17 / corrections de la revue : sync unique, rafraîchissement sûr, use_cache transmis ([ffdfad5](https://github.com/MyElectricalData/myelectricaldata_new/commit/ffdfad5085247da4c06719cb1034149f74eed3a9))
+* **api:** MED-17 / puissance max : plage de dates inversée refusée ([ae4dce0](https://github.com/MyElectricalData/myelectricaldata_new/commit/ae4dce042e286263058c2fcc5c66014f2a12bc12)), closes [#128](https://github.com/MyElectricalData/myelectricaldata_new/issues/128)
+* **api:** MED-19 / corrections de la revue (production plafonnée, cache des jours sans mesure) ([91617f6](https://github.com/MyElectricalData/myelectricaldata_new/commit/91617f62de493f5e69320c30ddd84abc93b11b8c))
+* **api:** MED-19 / fin de période exclue et cache jour par jour de la puissance max ([4cd0b4d](https://github.com/MyElectricalData/myelectricaldata_new/commit/4cd0b4d7436317b63c510c21c07cf19da2f723b5))
+* **export:** MED-10 / correctifs de revue de l'export hp/hc ([e86212f](https://github.com/MyElectricalData/myelectricaldata_new/commit/e86212f5fa549e9c5181e823467742424d99328d)), closes [#113](https://github.com/MyElectricalData/myelectricaldata_new/issues/113)
+* **export:** MED-10 / export hp/hc vers home assistant et mqtt ([24beece](https://github.com/MyElectricalData/myelectricaldata_new/commit/24beecefa2b81dc0a699e5bc74118247c22954c6)), closes [#113](https://github.com/MyElectricalData/myelectricaldata_new/issues/113)
+* **export:** MED-10 / pas des relevés au format Data Connect 2026 dans la ventilation hp/hc ([2ec9ba6](https://github.com/MyElectricalData/myelectricaldata_new/commit/2ec9ba6373a4be4fd40ab8f8087ffc594400c65b)), closes [#113](https://github.com/MyElectricalData/myelectricaldata_new/issues/113)
+* **export:** MED-17 / tempo : jours restants par quota et prix de l'offre sélectionnée ([4338986](https://github.com/MyElectricalData/myelectricaldata_new/commit/4338986d16284bcb588195897f95575ca05f4051)), closes [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110)
+* **export:** MED-21 / corrections de la revue du coût et des tests ([84a9e7c](https://github.com/MyElectricalData/myelectricaldata_new/commit/84a9e7c66da91605db68114a870b17cdd3d66d8c))
+* **export:** MED-21 / coût du panneau énergie au prix du jour ([134bcca](https://github.com/MyElectricalData/myelectricaldata_new/commit/134bccacc775f298070f0dd01e02a388ad132a4a))
+* **export:** MED-21 / entity_id suggéré et préfixe de discovery personnalisé ([0ee8be8](https://github.com/MyElectricalData/myelectricaldata_new/commit/0ee8be833d7a21ddc883aded39572f162395574e))
+* **export:** MED-21 / pas de coût pour zen flex servie en seasonal ([07b03fd](https://github.com/MyElectricalData/myelectricaldata_new/commit/07b03fd88f5669785715602f4c9f607177c92e88))
+* **export:** MED-21 / tempo et ecowatt de l'exporteur mqtt générique ([1203ccc](https://github.com/MyElectricalData/myelectricaldata_new/commit/1203ccc522f36d735c9405d05fee7a6896ad9871))
+* MED-17 / corrections de la revue du lot 4 (préfixe, sondes de santé, tempo, env.js) ([1ec1218](https://github.com/MyElectricalData/myelectricaldata_new/commit/1ec12180e7160a48ea4af96e7261c5cde93bccf0))
+* **scheduler:** MED-10 / typage du résultat de l'export home assistant ([f3ce8ad](https://github.com/MyElectricalData/myelectricaldata_new/commit/f3ce8ad3e4473f540215ff28a291bab26498c0dc))
+* **web:** MED-17 / corrections de la revue : découpage annuel en fin exclue, dédup des années ([fd0b4a9](https://github.com/MyElectricalData/myelectricaldata_new/commit/fd0b4a9550d867cb29f256f490f9aee87b4d665a))
+* **web:** MED-17 / échapper le HTML des réponses de test de PDLDetails (XSS) ([1f12692](https://github.com/MyElectricalData/myelectricaldata_new/commit/1f12692489ae16301a89126c9b45e762eaf0de59)), closes [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110)
+* **web:** MED-17 / fin de période alignée sur MED-19 (fin incluse côté interface) ([dea32c9](https://github.com/MyElectricalData/myelectricaldata_new/commit/dea32c97eacd6fa4a2bc703c7d4543fa9713f239))
+* **web:** MED-17 / J-1 enfin affiché, invalidation des requêtes et calendrier détaillé ([7e06098](https://github.com/MyElectricalData/myelectricaldata_new/commit/7e0609834e752742a9b83ffe930b87ccf3436bd2)), closes [#110](https://github.com/MyElectricalData/myelectricaldata_new/issues/110)
+* **web:** MED-19 / fin de période exclue envoyée à l'API ([e2ef631](https://github.com/MyElectricalData/myelectricaldata_new/commit/e2ef6313d689b9f5eccc85df6fb25ba705f048d9))
+
 ## [2.0.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/2.0.0...helm/2.0.1) (2026-10-04)
 
 ### Bug Fixes

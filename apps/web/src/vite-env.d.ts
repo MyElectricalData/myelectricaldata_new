@@ -22,5 +22,12 @@ interface Window {
     VITE_API_BASE_URL?: string
     VITE_BACKEND_URL?: string
     VITE_SERVER_MODE?: string
+    VITE_DEFAULT_MQTT_BROKER?: string
+    VITE_DEFAULT_MQTT_PORT?: string
+    VITE_DEFAULT_TOPIC_PREFIX?: string
+    VITE_DEFAULT_ENTITY_PREFIX?: string
+    VITE_DEFAULT_DISCOVERY_PREFIX?: string
+    VITE_DEFAULT_HA_URL?: string
+    VITE_DEFAULT_VM_URL?: string
   }
 }

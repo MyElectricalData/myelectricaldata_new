@@ -4,6 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { enedisApi } from '@/api/enedis'
 import { getAddressSummary, getContractSummary } from '@/utils/enedisMeasure'
 import { X, Home, FileText, Loader2, Zap, TrendingUp, Battery, Sun, BarChart3 } from 'lucide-react'
+import { highlightJson } from '@/utils/highlightJson'
 
 interface PDLDetailsProps {
   usagePointId: string
@@ -30,7 +31,7 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
   // Test mutations
   const testConsumptionDaily = useMutation({
     mutationFn: async () => {
-      const end = new Date().toISOString().split('T')[0]
+      const end = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0] // fin incluse : hier
       const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       return enedisApi.getConsumptionDaily(usagePointId, { start, end, use_cache: false })
     },
@@ -40,7 +41,7 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
 
   const testConsumptionDetail = useMutation({
     mutationFn: async () => {
-      const end = new Date().toISOString().split('T')[0]
+      const end = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0] // fin incluse : hier
       const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       return enedisApi.getConsumptionDetail(usagePointId, { start, end, use_cache: false })
     },
@@ -50,7 +51,7 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
 
   const testMaxPower = useMutation({
     mutationFn: async () => {
-      const end = new Date().toISOString().split('T')[0]
+      const end = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0] // fin incluse : hier
       const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       return enedisApi.getMaxPower(usagePointId, { start, end, use_cache: false })
     },
@@ -60,7 +61,7 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
 
   const testProductionDaily = useMutation({
     mutationFn: async () => {
-      const end = new Date().toISOString().split('T')[0]
+      const end = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0] // fin incluse : hier
       const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       return enedisApi.getProductionDaily(usagePointId, { start, end, use_cache: false })
     },
@@ -70,7 +71,7 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
 
   const testProductionDetail = useMutation({
     mutationFn: async () => {
-      const end = new Date().toISOString().split('T')[0]
+      const end = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0] // fin incluse : hier
       const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       return enedisApi.getProductionDetail(usagePointId, { start, end, use_cache: false })
     },
@@ -81,28 +82,6 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
   const isLoading = contractLoading || addressLoading
   const isTesting = testConsumptionDaily.isPending || testConsumptionDetail.isPending ||
                      testMaxPower.isPending || testProductionDaily.isPending || testProductionDetail.isPending
-
-  // Syntax highlighting for JSON
-  const highlightJSON = (json: string) => {
-    return json.replace(
-      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
-      (match) => {
-        let cls = 'text-orange-400' // numbers
-        if (/^"/.test(match)) {
-          if (/:$/.test(match)) {
-            cls = 'text-blue-400' // keys
-          } else {
-            cls = 'text-green-400' // strings
-          }
-        } else if (/true|false/.test(match)) {
-          cls = 'text-purple-400' // booleans
-        } else if (/null/.test(match)) {
-          cls = 'text-red-400' // null
-        }
-        return `<span class="${cls}">${match}</span>`
-      }
-    )
-  }
 
   return createPortal(
     <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/50" style={{ zIndex: 9999 }}>
@@ -341,7 +320,7 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
                       <pre
                         className="text-xs leading-relaxed"
                         dangerouslySetInnerHTML={{
-                          __html: highlightJSON(JSON.stringify(testResult, null, 2))
+                          __html: highlightJson(JSON.stringify(testResult, null, 2))
                         }}
                       />
                     ) : (

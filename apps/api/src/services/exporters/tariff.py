@@ -29,6 +29,15 @@ TariffFamily = Literal["BASE", "HC_HP", "TEMPO"]
 
 # Plage par défaut quand le contrat ne fournit aucune plage : 22h00 - 6h00
 DEFAULT_OFFPEAK_RANGES: list[tuple[int, int]] = [(22 * 60, 6 * 60)]
+# EDF Zen Week-End Option Flex : 17 h creuses par jour, tous les jours, HP de 8h à 13h et de 18h à 20h
+# (présentation EDF de l'offre ; grille fournisseur, distincte des plages HC du contrat Enedis)
+ZEN_FLEX_OFFPEAK_RANGES: list[tuple[int, int]] = [(13 * 60, 18 * 60), (20 * 60, 8 * 60)]
+
+
+def is_zen_flex_offer(offer_type: str | None, name: str | None) -> bool:
+    """Offre EDF Zen Week-End Option Flex : typée ZEN_FLEX (scraper EDF) ou SEASONAL nommée
+    « Option Flex » (offres servies par la passerelle)"""
+    return (offer_type or "").strip().upper() == "ZEN_FLEX" or "OPTION FLEX" in (name or "").upper()
 
 
 @dataclass(frozen=True)

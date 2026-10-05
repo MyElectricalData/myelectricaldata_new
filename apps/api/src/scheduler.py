@@ -1,14 +1,15 @@
 """Scheduler for Client Mode
 
-Runs background tasks:
-- Sync data from MyElectricalData API every 30 minutes
-- Run exports after each sync
-- Sync Tempo every 15 min (6h-23h) if tomorrow's color is unknown
+Runs background tasks (Europe/Paris, ~20 gateway calls a day):
+- Sync PDL data at startup, every 30 min from 6h to 9h30, then 12h and 18h
+- Run scheduled exports after each sync, and every minute when due
+- Sync Tempo every hour from 7h to 23h, only while tomorrow's color is unknown
 - Sync EcoWatt at 12h15 (friday) and 17h (daily) if J+3 is incomplete
 
 Uses APScheduler for task scheduling.
 """
 
+import asyncio
 import logging
 from datetime import datetime, UTC, timedelta
 from typing import Optional, TYPE_CHECKING
@@ -36,12 +37,14 @@ except ImportError:
 class SyncScheduler:
     """Scheduler for automatic data synchronization
 
-    Runs sync every 30 minutes to fetch new data from MyElectricalData API.
+    Syncs PDL data when Enedis publishes (morning) and runs scheduled exports after each sync.
     """
 
     def __init__(self) -> None:
         self._scheduler: Optional["AsyncIOScheduler"] = None
         self._running = False
+        # Une seule sync PDL à la fois : la sync du démarrage peut encore tourner au cron suivant
+        self._sync_lock = asyncio.Lock()
 
     def start(self) -> None:
         """Start the scheduler
@@ -64,14 +67,27 @@ class SyncScheduler:
 
         self._scheduler = AsyncIOScheduler()
 
-        # Add sync job - runs every 30 minutes
+        # Sync PDL : au démarrage, puis quand Enedis publie J-1 (matin), puis 2 contrôles en journée
         self._scheduler.add_job(
             self._run_sync,
-            trigger=IntervalTrigger(minutes=30),
-            id="sync_all",
-            name="Sync all PDLs from MyElectricalData API",
+            id="sync_all_startup",
+            name="Sync all PDLs (startup)",
             replace_existing=True,
-            next_run_time=datetime.now(UTC),  # Run immediately on start
+            next_run_time=datetime.now(UTC),
+        )
+        self._scheduler.add_job(
+            self._run_sync,
+            trigger=CronTrigger(hour="6-9", minute="*/30"),
+            id="sync_all_morning",
+            name="Sync all PDLs (6h-9h30 every 30 min)",
+            replace_existing=True,
+        )
+        self._scheduler.add_job(
+            self._run_sync,
+            trigger=CronTrigger(hour="12,18", minute=0),
+            id="sync_all_daytime",
+            name="Sync all PDLs (12h, 18h)",
+            replace_existing=True,
         )
 
         # Add export scheduler job - runs every minute to check for due exports
@@ -83,11 +99,11 @@ class SyncScheduler:
             replace_existing=True,
         )
 
-        # Add Tempo sync job - runs every 15 minutes from 6h to 23h
-        # + run immédiat au démarrage pour remplir l'historique si absent
+        # Add Tempo sync job - every hour from 7h to 23h, only while tomorrow's color is unknown
+        # (RTE publie vers 10h40) + run immédiat au démarrage pour remplir l'historique si absent
         self._scheduler.add_job(
             self._run_tempo_sync,
-            trigger=CronTrigger(minute="*/15", hour="6-23"),
+            trigger=CronTrigger(minute=0, hour="7-23"),
             id="sync_tempo",
             name="Sync Tempo calendar from gateway",
             replace_existing=True,
@@ -99,6 +115,16 @@ class SyncScheduler:
             name="Sync Tempo calendar (startup)",
             replace_existing=True,
             next_run_time=datetime.now(UTC),
+        )
+
+        # Zen Flex : J+1 publié par EDF en cours de journée, même rythme que Tempo
+        self._scheduler.add_job(
+            self._run_zen_flex_sync,
+            trigger=CronTrigger(minute="*/15", hour="6-23"),
+            id="sync_zen_flex",
+            name="Sync Zen Flex calendar from gateway",
+            replace_existing=True,
+            next_run_time=datetime.now(UTC),  # Run au démarrage
         )
 
         # Add EcoWatt sync jobs
@@ -118,42 +144,59 @@ class SyncScheduler:
             name="Sync EcoWatt Friday at 12h15",
             replace_existing=True,
         )
-        # 3. Check every hour if J+3 data is complete (fallback)
+        # 3. Fallback at 8h30 and 20h30 if J+3 data is incomplete (and at startup)
         self._scheduler.add_job(
             self._run_ecowatt_sync_if_incomplete,
-            trigger=IntervalTrigger(hours=1),
+            trigger=CronTrigger(hour="8,20", minute=30),
             id="sync_ecowatt_fallback",
-            name="Sync EcoWatt if incomplete",
+            name="Sync EcoWatt if incomplete (8h30, 20h30)",
             replace_existing=True,
             next_run_time=datetime.now(UTC),  # Run au démarrage
         )
 
-        # Add Consumption France sync job - runs every 15 minutes
-        # RTE data is updated every 15 minutes for realised consumption
+        # Add Consumption France sync job - 8h, 14h, 20h
+        # (au démarrage seulement si la dernière sync a plus de 6 h : redémarrages répétés)
         self._scheduler.add_job(
             self._run_consumption_france_sync,
-            trigger=IntervalTrigger(minutes=15),
+            trigger=CronTrigger(hour="8,14,20", minute=0),
             id="sync_consumption_france",
-            name="Sync Consumption France from gateway",
+            name="Sync Consumption France from gateway (8h, 14h, 20h)",
             replace_existing=True,
-            next_run_time=datetime.now(UTC),  # Run au démarrage
+        )
+        self._scheduler.add_job(
+            self._run_consumption_france_sync,
+            id="sync_consumption_france_startup",
+            name="Sync Consumption France (startup)",
+            replace_existing=True,
+            next_run_time=datetime.now(UTC),
+            kwargs={"min_interval": timedelta(hours=6)},
         )
 
-        # Add Generation Forecast sync job - runs every 30 minutes
-        # Renewable forecasts are updated less frequently
+        # Add Generation Forecast sync job - 9h, 21h (au démarrage si plus de 12 h)
         self._scheduler.add_job(
             self._run_generation_forecast_sync,
-            trigger=IntervalTrigger(minutes=30),
+            trigger=CronTrigger(hour="9,21", minute=0),
             id="sync_generation_forecast",
-            name="Sync Generation Forecast from gateway",
+            name="Sync Generation Forecast from gateway (9h, 21h)",
             replace_existing=True,
-            next_run_time=datetime.now(UTC),  # Run au démarrage
+        )
+        self._scheduler.add_job(
+            self._run_generation_forecast_sync,
+            id="sync_generation_forecast_startup",
+            name="Sync Generation Forecast (startup)",
+            replace_existing=True,
+            next_run_time=datetime.now(UTC),
+            kwargs={"min_interval": timedelta(hours=12)},
         )
 
         self._scheduler.start()
         self._running = True
 
-        logger.info("[SCHEDULER] Started. Data sync every 30min, Tempo every 15min (6h-23h), EcoWatt at 17h/12h15(fri), France data every 15-30min.")
+        logger.info(
+            "[SCHEDULER] Started (~20 gateway calls a day). PDL: startup, 6h-9h30 every 30 min, 12h, 18h. "
+            "Tempo: hourly 7h-23h while tomorrow is unknown. EcoWatt: 17h, Friday 12h15, fallback 8h30/20h30. "
+            "France: 8h/14h/20h. Forecast: 9h/21h."
+        )
 
     def stop(self) -> None:
         """Stop the scheduler"""
@@ -163,7 +206,14 @@ class SyncScheduler:
             logger.info("[SCHEDULER] Stopped")
 
     async def _run_sync(self) -> None:
-        """Run sync job"""
+        """Run sync job, then the scheduled exports (fresh data, even after a partial sync)"""
+        if self._sync_lock.locked():
+            logger.info("[SCHEDULER] Sync already running, skipping this run")
+            return
+        async with self._sync_lock:
+            await self._run_sync_locked()
+
+    async def _run_sync_locked(self) -> None:
         logger.info("[SCHEDULER] Starting scheduled sync...")
 
         try:
@@ -184,7 +234,9 @@ class SyncScheduler:
         except Exception as e:
             logger.error(f"[SCHEDULER] Sync failed: {e}")
 
-    async def _run_scheduled_exports(self) -> None:
+        await self._run_scheduled_exports(force=True)
+
+    async def _run_scheduled_exports(self, force: bool = False) -> None:
         """Vérifie les exports planifiés et les exécute
 
         Gère deux planifications indépendantes pour Home Assistant :
@@ -192,6 +244,8 @@ class SyncScheduler:
         - Energy Dashboard : energy_interval_minutes (JSON config) + next_energy_export_at (JSON config)
 
         Pour les autres types (VictoriaMetrics, MQTT), seul export_interval_minutes est utilisé.
+        force=True (après une sync) lance tous les exports planifiés sans attendre leur échéance ;
+        les exports manuels (sans intervalle) ne sont jamais lancés par le scheduler.
         """
         try:
             from sqlalchemy import select
@@ -213,7 +267,7 @@ class SyncScheduler:
                     # --- Planification MQTT (colonne DB) ---
                     mqtt_interval = config.export_interval_minutes
                     if mqtt_interval and mqtt_interval > 0:
-                        if not config.next_export_at or config.next_export_at <= now:
+                        if force or not config.next_export_at or config.next_export_at <= now:
                             logger.info(f"[SCHEDULER] MQTT export due: {config.name}")
                             try:
                                 await self._run_export(db, config, run_mqtt=True, run_energy=False)
@@ -239,7 +293,7 @@ class SyncScheduler:
                                 except (ValueError, TypeError):
                                     pass
 
-                            if not next_energy_at or next_energy_at <= now:
+                            if force or not next_energy_at or next_energy_at <= now:
                                 logger.info(f"[SCHEDULER] Energy Dashboard export due: {config.name}")
                                 try:
                                     await self._run_export(db, config, run_mqtt=False, run_energy=True)
@@ -467,6 +521,42 @@ class SyncScheduler:
         except Exception as e:
             logger.error(f"[SCHEDULER] Tempo sync failed: {e}")
 
+    async def _run_zen_flex_sync(self) -> None:
+        """Synchro Zen Flex si demain est inconnu ou si l'historique local a des trous"""
+        try:
+            from sqlalchemy import func, select
+
+            from .models.database import async_session_maker
+            from .models.zen_flex_day import ZenFlexDay
+            from .services.edf_zen_flex import OFFER_START, paris_today
+            from .services.sync import SyncService
+
+            async with async_session_maker() as db:
+                today = paris_today()
+                tomorrow = today + timedelta(days=1)
+                known = (await db.execute(
+                    select(func.count()).select_from(ZenFlexDay).where(ZenFlexDay.date.between(OFFER_START, today))
+                )).scalar() or 0
+                tomorrow_known = (await db.execute(
+                    select(ZenFlexDay.id).where(ZenFlexDay.date == tomorrow)
+                )).scalar_one_or_none()
+
+                if tomorrow_known and known >= (today - OFFER_START).days + 1:
+                    logger.debug("[SCHEDULER] Zen Flex à jour, pas de synchro")
+                    return
+
+                sync_result = await SyncService(db).sync_zen_flex()
+                if sync_result.get("errors"):
+                    logger.warning(f"[SCHEDULER] Zen Flex sync completed with errors: {sync_result['errors']}")
+                else:
+                    logger.info(
+                        f"[SCHEDULER] Zen Flex sync completed: "
+                        f"{sync_result.get('created', 0)} created, {sync_result.get('updated', 0)} updated"
+                    )
+
+        except Exception as e:
+            logger.error(f"[SCHEDULER] Zen Flex sync failed: {e}", exc_info=True)
+
     async def _run_ecowatt_sync(self) -> None:
         """Run EcoWatt sync job (unconditional)
 
@@ -517,7 +607,8 @@ class SyncScheduler:
 
             async with async_session_maker() as db:
                 # Check if we have data for today through J+3
-                today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+                # EcoWatt.periode est un DateTime sans fuseau : bornes UTC naïves (asyncpg refuse le mélange)
+                today = datetime.now(UTC).replace(tzinfo=None, hour=0, minute=0, second=0, microsecond=0)
                 dates_needed = [today + timedelta(days=i) for i in range(4)]  # J, J+1, J+2, J+3
 
                 # Query existing data
@@ -553,7 +644,7 @@ class SyncScheduler:
             logger.error(f"[SCHEDULER] EcoWatt fallback sync failed: {e}")
 
 
-    async def _run_consumption_france_sync(self) -> None:
+    async def _run_consumption_france_sync(self, min_interval: timedelta | None = None) -> None:
         """Run Consumption France sync job
 
         Syncs national consumption data from the gateway.
@@ -567,7 +658,7 @@ class SyncScheduler:
 
             async with async_session_maker() as db:
                 sync_service = SyncService(db)
-                sync_result = await sync_service.sync_consumption_france()
+                sync_result = await sync_service.sync_consumption_france(min_interval=min_interval)
 
                 if sync_result.get("errors"):
                     logger.warning(f"[SCHEDULER] Consumption France sync completed with errors: {sync_result['errors']}")
@@ -580,7 +671,7 @@ class SyncScheduler:
         except Exception as e:
             logger.error(f"[SCHEDULER] Consumption France sync failed: {e}")
 
-    async def _run_generation_forecast_sync(self) -> None:
+    async def _run_generation_forecast_sync(self, min_interval: timedelta | None = None) -> None:
         """Run Generation Forecast sync job
 
         Syncs renewable generation forecasts from the gateway.
@@ -594,7 +685,7 @@ class SyncScheduler:
 
             async with async_session_maker() as db:
                 sync_service = SyncService(db)
-                sync_result = await sync_service.sync_generation_forecast()
+                sync_result = await sync_service.sync_generation_forecast(min_interval=min_interval)
 
                 if sync_result.get("errors"):
                     logger.warning(f"[SCHEDULER] Generation Forecast sync completed with errors: {sync_result['errors']}")

@@ -3,7 +3,7 @@
 La puissance est portée par `power_kva` et l'option par `offer_type` : on les retire du nom
 pour qu'une même offre n'existe pas sous plusieurs noms ("Tarif Bleu" et "Tarif Bleu - 9 kVA").
 
-Mêmes règles que la migration `c3d4e5f6g7h8` (alembic/versions/20261005_clean_offer_names_v2.py),
+Mêmes règles que la migration `f4a9c1d7b3e5` (alembic/versions/20261005_clean_offer_names_v2.py),
 qui garde sa propre copie : une migration ne doit pas dépendre du code applicatif.
 """
 import re

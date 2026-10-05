@@ -367,6 +367,48 @@ async def get_tempo_sync_status(
     }
 
 
+# =========================================================================
+# Zen Flex Sync (calendrier EDF Zen Week-End Option Flex)
+# =========================================================================
+
+
+@router.post("/zen-flex/now")
+async def sync_zen_flex_now(
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Synchronise le calendrier Zen Flex depuis la passerelle (bloquant)"""
+    logger.info("[API] Zen Flex sync triggered (immediate)")
+
+    result = await SyncService(db).sync_zen_flex()
+
+    return {
+        "success": not result.get("errors"),
+        "data": result,
+        "message": f"Zen Flex sync completed: {result.get('created', 0)} created, {result.get('updated', 0)} updated.",
+    }
+
+
+@router.get("/zen-flex/status")
+async def get_zen_flex_sync_status(
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Dernière synchro Zen Flex avec la passerelle et nombre de jours connus"""
+    from sqlalchemy import func, select
+
+    from ..models.zen_flex_day import ZenFlexDay
+
+    last_sync = await SyncService(db).get_sync_tracker("zen_flex_client")
+    count = (await db.execute(select(func.count(ZenFlexDay.id)))).scalar() or 0
+
+    return {
+        "success": True,
+        "data": {
+            "last_sync_at": last_sync.isoformat() if last_sync else None,
+            "record_count": count,
+        },
+    }
+
+
 @router.get("/ecowatt/status")
 async def get_ecowatt_sync_status(
     db: AsyncSession = Depends(get_db),

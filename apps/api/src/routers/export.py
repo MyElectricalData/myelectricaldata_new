@@ -44,7 +44,11 @@ class HomeAssistantConfig(BaseModel):
     mqtt_username: Optional[str] = Field(default=None, description="MQTT username")
     mqtt_password: Optional[str] = Field(default=None, description="MQTT password")
     mqtt_use_tls: bool = Field(default=False, description="Use TLS for MQTT connection")
-    entity_prefix: str = Field(default="myelectricaldata", description="Entity ID prefix (e.g., myelectricaldata → sensor.myelectricaldata_tempo_today)")
+    entity_prefix: str = Field(
+        default="myelectricaldata",
+        pattern=r"^[a-z0-9_]+$",
+        description="Entity ID prefix, lowercase letters, digits and underscores (e.g., myelectricaldata → sensor.myelectricaldata_tempo_today)",
+    )
     discovery_prefix: str = Field(default="homeassistant", description="Home Assistant discovery topic prefix")
 
     # WebSocket API mode (Energy Dashboard statistics)
@@ -310,15 +314,14 @@ async def update_export_config(
     if data.export_detailed is not None:
         config.export_detailed = data.export_detailed
     # Gestion de export_interval_minutes :
-    # - Si non fourni (None) : on ne modifie pas
-    # - Si fourni avec valeur > 0 : on applique
-    # - Si fourni avec valeur <= 0 : on met à null (désactive la planification)
-    if data.export_interval_minutes is not None:
-        if data.export_interval_minutes > 0:
+    # - Si champ absent : on ne modifie pas
+    # - Si champ présent avec valeur > 0 : on applique
+    # - Si champ présent avec null/0/négatif : on désactive la planification
+    if "export_interval_minutes" in data.model_fields_set:
+        if data.export_interval_minutes is not None and data.export_interval_minutes > 0:
             logger.info(f"[EXPORT] Setting export_interval_minutes: {config.export_interval_minutes} -> {data.export_interval_minutes}")
             config.export_interval_minutes = data.export_interval_minutes
         else:
-            # 0 ou négatif = désactiver la planification
             logger.warning(
                 f"[EXPORT] Disabling scheduled export (received {data.export_interval_minutes}): "
                 f"{config.export_interval_minutes} -> None"

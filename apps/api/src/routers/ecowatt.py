@@ -349,7 +349,7 @@ async def refresh_ecowatt_cache(
             from ..services.sync import SyncService
             sync_service = SyncService(db)
             result = await sync_service.sync_ecowatt()
-            updated_count = result.get("synced", 0)
+            updated_count = int(result.get("created", 0)) + int(result.get("updated", 0))
         else:
             # Server mode: fetch from RTE API
             updated_count = await rte_service.update_ecowatt_cache(db)

@@ -56,7 +56,7 @@ Dans l'interface web : **Exporter** > **Home Assistant**.
 | `mqtt_username`, `mqtt_password` | | Identifiants du broker (facultatifs) |
 | `mqtt_use_tls` | `false` | Connexion TLS au broker |
 | `discovery_prefix` | `homeassistant` | Préfixe de discovery de **votre** intégration MQTT |
-| `entity_prefix` | `myelectricaldata` | Préfixe d'identifiant. Les capteurs publiés gardent pour l'instant le préfixe `myelectricaldata` |
+| `entity_prefix` | `myelectricaldata` | Préfixe des topics, `unique_id` et `entity_id` suggérés (minuscules, chiffres et `_`). Permet à deux instances de publier sur le même Home Assistant ; le changer crée de nouvelles entités, sans l'historique des anciennes |
 | `ha_url`, `ha_token` | | Home Assistant et token, pour les statistiques |
 | `statistic_id_prefix` | `myelectricaldata` | Préfixe des statistiques du panneau Énergie |
 
@@ -123,6 +123,10 @@ dimanche entièrement en heures creuses. `TEMPO` garde ses 6 séries (couleur x 
 seule série. Les plages d'heures creuses sont celles du contrat Enedis. À défaut, le panneau Énergie
 utilise 22h-6h. Aucun capteur HP/HC n'est publié pour une offre BASE.
 
+Exception : avec l'offre EDF Zen Flex sélectionnée sur le PDL, les heures creuses suivent la grille
+du fournisseur, 17 h par jour, tous les jours (13h-18h et 20h-8h), et non les plages du contrat
+Enedis. Si l'offre définit ses propres plages (`hc_schedules`), ce sont elles qui s'appliquent.
+
 > **Mise à jour depuis une version antérieure.** Un contrat à heures creuses était auparavant exporté
 > en une seule série (`<prefix>:consumption_<pdl>_base`). Il l'est désormais en deux séries
 > (`<prefix>:consumption_<pdl>_hc` et `_hp`). Lancez un import complet des statistiques, puis
@@ -137,6 +141,18 @@ utilise 22h-6h. Aucun capteur HP/HC n'est publié pour une offre BASE.
 | `sensor.myelectricaldata_tempo_days_{blue,white,red}` | jours | Jours consommés dans la saison |
 | `sensor.myelectricaldata_tempo_info` | | Synthèse de la saison en attributs |
 | `sensor.myelectricaldata_tempo_price_{couleur}_{hc,hp}` | EUR/kWh | Prix Tempo (ex. `price_red_hp`) |
+
+### Zen Flex (appareil « EDF Zen Flex »)
+
+Calendrier de l'offre EDF Zen Week-End Option Flex, publié pour tous (comme Tempo), que le PDL ait
+cette offre ou non.
+
+| Entity ID | Valeurs | Description |
+|-----------|---------|-------------|
+| `sensor.myelectricaldata_zen_flex_today` | `ECO` / `SOBRIETE` / `BONUS` / `unknown` | Type du jour (`day_type_fr` et `date` en attributs) |
+| `sensor.myelectricaldata_zen_flex_tomorrow` | `ECO` / `SOBRIETE` / `BONUS` / `unknown` | Type du lendemain, `unknown` tant qu'EDF ne l'a pas publié |
+
+`unknown` signale un jour absent du calendrier : il n'est jamais supposé Éco.
 
 ### EcoWatt (appareil « RTE EcoWatt »)
 
@@ -165,9 +181,14 @@ Le coût utilise l'offre sélectionnée sur le PDL :
 - `HC_WEEKEND`, `WEEKEND`, `BASE_WEEKEND` : prix week-end le samedi et le dimanche (prix de semaine
   s'il n'est pas renseigné) ;
 - `TEMPO` : prix de la couleur et de la période ;
+- EDF Zen Flex (`ZEN_FLEX`, ou offre nommée « Option Flex ») : prix Sobriété les jours Sobriété, prix
+  Éco les jours Éco et Bonus, d'après le calendrier synchronisé (la remise éventuelle des jours Bonus
+  n'est pas modélisée). Les prix Éco et Sobriété sont rangés dans les champs d'hiver et d'été de
+  l'offre : la saison au prix HP le plus élevé est la Sobriété. Les heures d'un jour absent du
+  calendrier (avant le lancement de l'offre en novembre 2023, ou pendant le rattrapage de l'historique)
+  restent sans coût, avec un avertissement dans les logs ; des prix HP identiques laissent la série
+  sans coût plutôt qu'avec un coût faux ;
 - autres offres : prix unique de la série.
-
-L'offre EDF Zen Flex (« Zen Week-End - Option Flex ») n'a pas encore de coût : le calendrier des jours Sobriété n'est pas synchronisé.
 
 ---
 

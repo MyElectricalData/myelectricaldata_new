@@ -2,7 +2,7 @@ apiVersion: v2
 name: myelectricaldata-server
 description: "MyElectricalData Server Mode - Multi-user gateway with direct Enedis API access"
 type: application
-version: 2.0.1
+version: 2.1.0
 appVersion: "1.0.0"
 
 keywords:

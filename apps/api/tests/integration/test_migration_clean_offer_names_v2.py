@@ -1,4 +1,4 @@
-"""Migration c3d4e5f6g7h8 : nettoyage complet des noms d'offres (MED-22).
+"""Migration f4a9c1d7b3e5 : nettoyage complet des noms d'offres (MED-22).
 
 `b2c3d4e5f6g7` est déjà appliquée en prod (révision relevée le 2026-10-05) mais ne traitait
 que "Tarif Bleu" et "Tempo" : 1060 offres actives sur 1091 gardaient "- N kVA". Le
@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 API_DIR = Path(__file__).resolve().parents[2]
 VERSIONS = API_DIR / "alembic" / "versions"
-REVISION = "c3d4e5f6g7h8"
+REVISION = "f4a9c1d7b3e5"
 
 
 def _pg_bin(name: str) -> str | None:
@@ -43,10 +43,16 @@ def _load_migration():
     return module
 
 
-def test_revision_chainee_apres_b2c3():
+def test_revision_chainee_apres_la_tete_precedente():
+    """Elle doit suivre b2c3d4e5f6g7 (déjà appliquée en prod) sans la précéder, et sa révision est unique."""
     module = _load_migration()
     assert module.revision == REVISION
-    assert module.down_revision == "b2c3d4e5f6g7"
+    script = ScriptDirectory.from_config(Config(str(API_DIR / "alembic.ini")))
+    ancestors = {r.revision for r in script.walk_revisions(base="base", head=module.revision)}
+    assert "b2c3d4e5f6g7" in ancestors
+    ids = [path.read_text().split("revision: str = ", 1)[-1].split("\n", 1)[0].strip("\"' ")
+           for path in VERSIONS.glob("*.py") if "revision: str = " in path.read_text() or "revision = " in path.read_text()]
+    assert ids.count(REVISION) == 1, "révision Alembic en double (deux fichiers de migration)"
 
 
 def test_tete_alembic_unique():

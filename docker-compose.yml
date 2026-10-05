@@ -44,6 +44,8 @@ services:
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - ALGORITHM=${ALGORITHM:-HS256}
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-43200}
+      # Hosts accepted in the Host header, comma separated (empty: every host)
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
 
       # === Application ===
       - DEBUG=${DEBUG:-false}
@@ -65,6 +67,14 @@ services:
     environment:
       - VITE_API_BASE_URL=/api
       - VITE_BACKEND_URL=http://backend:8000
+      # Default values of the export forms (prefill a new configuration only)
+      - VITE_DEFAULT_MQTT_BROKER=${VITE_DEFAULT_MQTT_BROKER:-}
+      - VITE_DEFAULT_MQTT_PORT=${VITE_DEFAULT_MQTT_PORT:-1883}
+      - VITE_DEFAULT_TOPIC_PREFIX=${VITE_DEFAULT_TOPIC_PREFIX:-myelectricaldata}
+      - VITE_DEFAULT_ENTITY_PREFIX=${VITE_DEFAULT_ENTITY_PREFIX:-myelectricaldata}
+      - VITE_DEFAULT_DISCOVERY_PREFIX=${VITE_DEFAULT_DISCOVERY_PREFIX:-homeassistant}
+      - VITE_DEFAULT_HA_URL=${VITE_DEFAULT_HA_URL:-}
+      - VITE_DEFAULT_VM_URL=${VITE_DEFAULT_VM_URL:-}
     depends_on:
       backend:
         condition: service_healthy

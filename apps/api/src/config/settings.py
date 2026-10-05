@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # - Connects to MyElectricalData API (not Enedis directly)
     # - Stores data permanently in PostgreSQL
     # - Enables export features (Home Assistant, MQTT, etc.)
-    # - Sync runs every 30 minutes
+    # - Sync runs at startup, every 30 min from 6h to 9h30, then at 12h and 18h
     #
     # When SERVER_MODE=True, the app runs as a multi-user gateway:
     # - Direct access to Enedis API
@@ -90,6 +90,28 @@ class Settings(BaseSettings):
     # URLs
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = "http://localhost:8000"
+
+    # Hosts accepted in the Host header (TrustedHostMiddleware), comma separated, `*.domain` allowed.
+    # Empty: every host in client mode (self-hosted, reached by LAN IP or a personal domain),
+    # the myelectricaldata.fr gateway hosts in server mode.
+    ALLOWED_HOSTS: str = ""
+
+    @property
+    def allowed_hosts(self) -> list[str]:
+        hosts = [host.strip() for host in self.ALLOWED_HOSTS.split(",") if host.strip()]
+        if hosts:
+            return hosts
+        if self.CLIENT_MODE:
+            return ["*"]
+        return [
+            "myelectricaldata.fr",
+            "*.myelectricaldata.fr",
+            "localhost",
+            "127.0.0.1",
+            "backend",
+            "backend-client",  # Client mode Docker service name
+            "host.docker.internal",  # Allow client mode to connect to server mode locally
+        ]
 
     # Cookie settings
     COOKIE_SECURE: bool = False  # Set True in production (HTTPS only)

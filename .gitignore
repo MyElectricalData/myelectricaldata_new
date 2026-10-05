@@ -46,6 +46,7 @@ apps/api/data/*.db
 # OS
 .DS_Store
 Thumbs.db
+@eaDir/
 
 # Docker
 docker-compose.override.yml
