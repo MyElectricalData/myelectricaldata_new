@@ -53,6 +53,7 @@ Ce document définit l'ordre d'affichage des éléments dans le menu de navigati
 | -   | `/api-docs` | Documentation API | `BookOpen`       | Tous    |
 | -   | -           | Mode clair/sombre | `Sun`/`Moon`     | Tous    |
 | -   | `/settings` | Mon compte        | `UserCircle`     | Serveur |
+| -   | `/preferences` | Préférences    | `SlidersHorizontal` | Client |
 | -   | -           | Déconnexion       | `LogOut` (rouge) | Serveur |
 
 ## Fichier source

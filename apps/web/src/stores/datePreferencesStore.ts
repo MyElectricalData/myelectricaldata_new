@@ -57,6 +57,26 @@ export const MONTH_LABELS = [
 ]
 
 /**
+ * Dernier jour proposé pour un mois de référence (1-12).
+ * La date de référence est rejouée sur plusieurs années (période courante et
+ * comparaisons N-1, N-2) : le jour retenu doit exister CHAQUE année, sinon
+ * new Date(année, mois - 1, jour) déborde sur le mois suivant.
+ */
+export function maxDayOfMonth(month: number): number {
+  // Jour 0 du mois suivant = dernier jour de `month`. 2001 n'est pas bissextile :
+  // février plafonne à 28, seul jour de fin de février présent toutes les années.
+  return new Date(2001, month, 0).getDate()
+}
+
+/**
+ * Ramène une date personnalisée sur un jour valide pour son mois
+ * (ex. 31 septembre → 30 septembre).
+ */
+export function normalizeCustomDate(date: CustomDate): CustomDate {
+  return { ...date, day: Math.min(Math.max(date.day, 1), maxDayOfMonth(date.month)) }
+}
+
+/**
  * Calcule la plage de dates selon le preset sélectionné
  * @returns { start: string, end: string } au format YYYY-MM-DD
  */
@@ -128,7 +148,8 @@ export function getDateRangeFromPreset(
     case 'custom':
       // Date personnalisée
       if (customDate) {
-        startDate = calculateStartFromReference(customDate.day, customDate.month)
+        const { day, month } = normalizeCustomDate(customDate)
+        startDate = calculateStartFromReference(day, month)
       } else {
         // Fallback : année glissante
         startDate = new Date(
@@ -163,10 +184,15 @@ export const useDatePreferencesStore = create<DatePreferencesState>()(
       preset: 'tempo', // Année Tempo par défaut
       customDate: { day: 1, month: 1 }, // 1er janvier par défaut pour custom
       setPreset: (preset) => set({ preset }),
-      setCustomDate: (date) => set({ customDate: date }),
+      setCustomDate: (date) => set({ customDate: normalizeCustomDate(date) }),
     }),
     {
       name: 'date-preferences-storage',
+      // Une date invalide déjà enregistrée (ex. 31 février) est corrigée au chargement
+      merge: (persisted, current) => {
+        const state = { ...current, ...(persisted as Partial<DatePreferencesState>) }
+        return { ...state, customDate: normalizeCustomDate(state.customDate) }
+      },
     }
   )
 )

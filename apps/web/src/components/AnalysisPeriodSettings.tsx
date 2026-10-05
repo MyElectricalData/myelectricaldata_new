@@ -1,10 +1,13 @@
+import { useId } from 'react'
 import { Calendar } from 'lucide-react'
+import { useAppMode } from '@/hooks/useAppMode'
 import {
   useDatePreferencesStore,
   getDateRangeFromPreset,
   DATE_PRESET_LABELS,
   DATE_PRESET_DESCRIPTIONS,
   MONTH_LABELS,
+  maxDayOfMonth,
   type DatePreset
 } from '@/stores/datePreferencesStore'
 
@@ -26,6 +29,9 @@ const formatDisplayDate = (dateStr: string) => {
 export default function AnalysisPeriodSettings() {
   const { preset, customDate, setPreset, setCustomDate } = useDatePreferencesStore()
   const { start, end } = getDateRangeFromPreset(preset, customDate)
+  const { isServerMode } = useAppMode()
+  const dayId = useId()
+  const monthId = useId()
 
   return (
     <div className="card border-teal-200 dark:border-teal-800">
@@ -35,7 +41,7 @@ export default function AnalysisPeriodSettings() {
       </div>
       <div className="space-y-4">
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Choisissez la période de référence pour l'affichage de vos données de consommation et production.
+          Choisissez la période de référence des cartes et de la courbe annuelles de la page Consommation (kWh).
         </p>
 
         {/* Preset Selection */}
@@ -43,6 +49,8 @@ export default function AnalysisPeriodSettings() {
           {PRESETS.map((presetKey) => (
             <button
               key={presetKey}
+              type="button"
+              aria-pressed={preset === presetKey}
               onClick={() => setPreset(presetKey)}
               className={`p-4 rounded-lg border-2 transition-colors text-left ${
                 preset === presetKey
@@ -66,21 +74,23 @@ export default function AnalysisPeriodSettings() {
             </p>
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400">Jour :</label>
+                <label htmlFor={dayId} className="text-sm text-gray-600 dark:text-gray-400">Jour :</label>
                 <select
+                  id={dayId}
                   value={customDate.day}
                   onChange={(e) => setCustomDate({ ...customDate, day: parseInt(e.target.value) })}
                   className="input w-20"
                 >
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                  {Array.from({ length: maxDayOfMonth(customDate.month) }, (_, i) => i + 1).map(day => (
                     <option key={day} value={day}>{day}</option>
                   ))}
                 </select>
               </div>
 
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400">Mois :</label>
+                <label htmlFor={monthId} className="text-sm text-gray-600 dark:text-gray-400">Mois :</label>
                 <select
+                  id={monthId}
                   value={customDate.month}
                   onChange={(e) => setCustomDate({ ...customDate, month: parseInt(e.target.value) })}
                   className="input w-40"
@@ -103,7 +113,8 @@ export default function AnalysisPeriodSettings() {
             Du <span className="font-semibold">{formatDisplayDate(start)}</span> au{' '}
             <span className="font-semibold">{formatDisplayDate(end)}</span>
           </p>
-          {preset === 'tempo' && (
+          {/* Le simulateur n'existe qu'en mode serveur */}
+          {isServerMode && preset === 'tempo' && (
             <p className="text-xs text-teal-600 dark:text-teal-400 border-t border-teal-200 dark:border-teal-700 pt-3">
               💡 <strong>Période recommandée pour le simulateur</strong> : l'Année Tempo (1er septembre → 31 août) est idéale pour comparer les offres tarifaires, car elle correspond à la saison Tempo complète avec ses 22 jours Rouge. Cela permet une comparaison précise des offres EJP, Tempo et autres tarifs saisonniers.
             </p>
