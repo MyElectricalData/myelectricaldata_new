@@ -202,9 +202,10 @@ async def test_zen_flex_summer_sobriete_day_is_not_seasonal() -> None:
     assert result == {"hp": [0.2091]}
 
 
-async def test_zen_flex_day_missing_from_calendar_is_skipped_alone() -> None:
-    """Jour non synchronisé (avant le lancement de l'offre, rattrapage en cours) : ses heures n'ont pas
-    de coût, les autres jours gardent le leur"""
+async def test_zen_flex_cost_stops_at_a_day_being_caught_up() -> None:
+    """Jour non synchronisé après le premier jour du calendrier (rattrapage en cours) : le coût s'arrête
+    à ce jour, les jours suivants seront chiffrés une fois le calendrier complet (MED-18). Les jours
+    d'avant le lancement de l'offre restent sans coût (test suivant)"""
     result = await costs(ZEN_FLEX_PROD, ZEN_FLEX_CONSUMPTION, {SOBRIETE_DAY: ZenFlexDayType.SOBRIETE})
     assert result == {"hp": [0.7253], "hc": [0.2091]}
 
