@@ -50,6 +50,7 @@ const ApiDocs = lazy(() => import('./pages/ApiDocs'))
 
 // Client mode export pages
 const HomeAssistant = lazy(() => import('./pages/HomeAssistant'))
+const Preferences = lazy(() => import('./pages/Preferences'))
 const MQTT = lazy(() => import('./pages/MQTT'))
 const VictoriaMetrics = lazy(() => import('./pages/VictoriaMetrics'))
 
@@ -433,6 +434,18 @@ function App() {
                 <Layout>
                   <Suspense fallback={<PageLoader />}>
                     <VictoriaMetrics />
+                  </Suspense>
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/preferences"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Suspense fallback={<PageLoader />}>
+                    <Preferences />
                   </Suspense>
                 </Layout>
               </ProtectedRoute>
