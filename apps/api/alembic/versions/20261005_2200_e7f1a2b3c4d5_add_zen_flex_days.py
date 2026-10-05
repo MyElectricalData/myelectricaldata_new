@@ -1,7 +1,7 @@
 """Add zen_flex_days table (calendrier EDF Zen Flex, MED-27)
 
 Revision ID: e7f1a2b3c4d5
-Revises: b2c3d4e5f6g7
+Revises: c3d4e5f6g7h8
 Create Date: 2026-10-05 22:00:00
 
 """
@@ -15,7 +15,7 @@ from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision: str = "e7f1a2b3c4d5"
-down_revision: Union[str, None] = "b2c3d4e5f6g7"
+down_revision: Union[str, None] = "c3d4e5f6g7h8"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

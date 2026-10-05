@@ -148,3 +148,20 @@ async def test_mqtt_zen_flex_without_calendar(db: AsyncSession) -> None:
         "today": {"day_type": "UNKNOWN", "date": TODAY.isoformat()},
         "tomorrow": {"day_type": "UNKNOWN", "date": TOMORROW.isoformat()},
     }
+
+
+async def test_ha_zen_flex_follows_entity_prefix(db: AsyncSession) -> None:
+    """Préfixe d'entités paramétrable (MED-17) : topics, unique_id et catégorie le suivent"""
+    await add_days(db, {TODAY: ZenFlexDayType.SOBRIETE})
+    exporter = make_ha_exporter()
+    exporter.prefix = "maison"
+    client = MagicMock()
+    client.publish = AsyncMock()
+    await exporter._export_zen_flex(client, db)
+    messages = {c.args[0]: c.kwargs.get("payload") for c in client.publish.await_args_list}
+
+    base = "homeassistant/sensor/maison_edf"
+    assert messages[f"{base}/zen_flex_today/state"] == "SOBRIETE"
+    assert json.loads(messages[f"{base}/zen_flex_today/config"])["uniq_id"] == "maison_zen_flex_today"
+    assert not any("myelectricaldata" in topic for topic in messages)
+    assert exporter._categorize_ha_topic(f"{base}/zen_flex_tomorrow/state") == "Zen Flex Demain"

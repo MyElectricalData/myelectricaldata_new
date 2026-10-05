@@ -1922,8 +1922,8 @@ class HomeAssistantExporter(BaseExporter):
     async def _export_zen_flex(self, client: aiomqtt.Client, db: AsyncSession) -> int:
         """Export du calendrier EDF Zen Flex via MQTT Discovery (appareil EDF Zen Flex)
 
-        - sensor.myelectricaldata_zen_flex_today
-        - sensor.myelectricaldata_zen_flex_tomorrow
+        - sensor.{prefix}_zen_flex_today
+        - sensor.{prefix}_zen_flex_tomorrow
 
         État : ECO, SOBRIETE, BONUS, ou unknown pour un jour absent du calendrier (jamais ECO par défaut)
         """
@@ -1940,9 +1940,9 @@ class HomeAssistantExporter(BaseExporter):
 
             await self._publish_sensor_old_format(
                 client,
-                topic=f"myelectricaldata_edf/zen_flex_{key}",
+                topic=f"{self.prefix}_edf/zen_flex_{key}",
                 name=name,
-                unique_id=f"myelectricaldata_zen_flex_{key}",
+                unique_id=f"{self.prefix}_zen_flex_{key}",
                 device=device,
                 state=day_type,
                 attributes={"date": day.isoformat(), "day_type_fr": ZEN_FLEX_DAY_LABELS_FR.get(day_type, "Inconnu")},
@@ -2334,9 +2334,9 @@ class HomeAssistantExporter(BaseExporter):
             return "Tempo Info"
 
         # EDF Zen Flex sensors
-        elif "myelectricaldata_edf/zen_flex_today" in topic_lower:
+        elif f"{p}_edf/zen_flex_today" in topic_lower:
             return "Zen Flex Aujourd'hui"
-        elif "myelectricaldata_edf/zen_flex_tomorrow" in topic_lower:
+        elif f"{p}_edf/zen_flex_tomorrow" in topic_lower:
             return "Zen Flex Demain"
 
         # Consumption sensors
