@@ -146,7 +146,7 @@ class MyElectricalDataAdapter:
     # =========================================================================
 
     async def get_consumption_daily(
-        self, usage_point_id: str, start: str, end: str
+        self, usage_point_id: str, start: str, end: str, use_cache: bool = True
     ) -> dict[str, Any]:
         """Get daily consumption data
 
@@ -161,11 +161,11 @@ class MyElectricalDataAdapter:
         return await self._make_request(
             "GET",
             f"/enedis/consumption/daily/{usage_point_id}",
-            params={"start": start, "end": end},
+            params={"start": start, "end": end, "use_cache": "true" if use_cache else "false"},
         )
 
     async def get_consumption_detail(
-        self, usage_point_id: str, start: str, end: str
+        self, usage_point_id: str, start: str, end: str, use_cache: bool = True
     ) -> dict[str, Any]:
         """Get detailed consumption data (30-min intervals)
 
@@ -180,11 +180,11 @@ class MyElectricalDataAdapter:
         return await self._make_request(
             "GET",
             f"/enedis/consumption/detail/{usage_point_id}",
-            params={"start": start, "end": end},
+            params={"start": start, "end": end, "use_cache": "true" if use_cache else "false"},
         )
 
     async def get_consumption_max_power(
-        self, usage_point_id: str, start: str, end: str
+        self, usage_point_id: str, start: str, end: str, use_cache: bool = True
     ) -> dict[str, Any]:
         """Get daily maximum power data
 
@@ -196,7 +196,7 @@ class MyElectricalDataAdapter:
         return await self._make_request(
             "GET",
             f"/enedis/power/{usage_point_id}",
-            params={"start": start, "end": end},
+            params={"start": start, "end": end, "use_cache": "true" if use_cache else "false"},
         )
 
     # =========================================================================
@@ -204,7 +204,7 @@ class MyElectricalDataAdapter:
     # =========================================================================
 
     async def get_production_daily(
-        self, usage_point_id: str, start: str, end: str
+        self, usage_point_id: str, start: str, end: str, use_cache: bool = True
     ) -> dict[str, Any]:
         """Get daily production data
 
@@ -216,11 +216,11 @@ class MyElectricalDataAdapter:
         return await self._make_request(
             "GET",
             f"/enedis/production/daily/{usage_point_id}",
-            params={"start": start, "end": end},
+            params={"start": start, "end": end, "use_cache": "true" if use_cache else "false"},
         )
 
     async def get_production_detail(
-        self, usage_point_id: str, start: str, end: str
+        self, usage_point_id: str, start: str, end: str, use_cache: bool = True
     ) -> dict[str, Any]:
         """Get detailed production data (30-min intervals)
 
@@ -232,7 +232,7 @@ class MyElectricalDataAdapter:
         return await self._make_request(
             "GET",
             f"/enedis/production/detail/{usage_point_id}",
-            params={"start": start, "end": end},
+            params={"start": start, "end": end, "use_cache": "true" if use_cache else "false"},
         )
 
     # =========================================================================

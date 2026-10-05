@@ -19,9 +19,11 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..adapters.enedis_format import iso_duration_to_minutes
 from ..models.client_mode import ConsumptionData, DataGranularity, ProductionData
 from ..models.tempo_day import TempoDay
 from .exporters.tariff import is_offpeak_slot
+from .local_data import _interval_of
 
 logger = logging.getLogger(__name__)
 
@@ -150,12 +152,25 @@ class StatisticsService:
         model = self._get_model(direction)
 
         result = await self.db.execute(
-            select(func.coalesce(func.sum(model.value), 0))
+            select(func.sum(model.value))
             .where(model.usage_point_id == usage_point_id)
             .where(model.granularity == DataGranularity.DAILY)
             .where(model.date == target_date)
         )
-        return int(result.scalar() or 0)
+        daily = result.scalar()
+        if daily is not None:
+            return int(daily)
+
+        # Pas de valeur quotidienne : somme des points détaillés (W moyens sur leur pas) convertis en Wh
+        detail = await self.db.execute(
+            select(model.value, model.raw_data)
+            .where(model.usage_point_id == usage_point_id)
+            .where(model.granularity == DataGranularity.DETAILED)
+            .where(model.date == target_date)
+        )
+        return round(
+            sum(row.value * iso_duration_to_minutes(_interval_of(row.raw_data)) / 60 for row in detail.all())
+        )
 
     async def get_current_year_by_month(
         self, usage_point_id: str, direction: str = "consumption"

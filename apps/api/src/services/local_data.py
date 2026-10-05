@@ -13,13 +13,14 @@ This dramatically reduces API calls to the gateway.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select, and_, func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..adapters.enedis_format import address_v5_to_2026, build_measure, contract_v5_to_2026
+from ..adapters.enedis_format import address_v5_to_2026, build_measure, contract_v5_to_2026, extract_points
 from ..services.enedis_contract import offpeak_hours_to_text, parse_address, parse_contract
 from ..models.client_mode import (
     ConsumptionData,
@@ -27,6 +28,7 @@ from ..models.client_mode import (
     ContractData,
     AddressData,
     DataGranularity,
+    MaxPowerData,
     SyncStatus,
 )
 
@@ -366,6 +368,48 @@ class LocalDataService:
 
         return ranges
 
+    async def get_max_power(
+        self,
+        usage_point_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> tuple[list[dict[str, Any]], list[tuple[date, date]]]:
+        """Puissance max quotidienne locale sur [start_date, end_date[ : points 2026 et plages manquantes."""
+        result = await self.db.execute(
+            select(MaxPowerData)
+            .where(
+                and_(
+                    MaxPowerData.usage_point_id == usage_point_id,
+                    MaxPowerData.date >= start_date,
+                    MaxPowerData.date < end_date,
+                )
+            )
+            .order_by(MaxPowerData.date)
+        )
+        rows = result.scalars().all()
+        points = [
+            {"v": str(row.value), "d": f"{row.date.isoformat()} {row.interval_start or '00:00'}:00"}
+            for row in rows
+        ]
+        return points, _missing_ranges(start_date, end_date, {row.date for row in rows})
+
+    async def save_max_power(self, records: list[dict[str, Any]]) -> None:
+        """Upsert de la puissance max sur (usage_point_id, date)"""
+        if not records:
+            return
+        stmt = pg_insert(MaxPowerData).values(records)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_max_power_data",
+            set_={
+                "interval_start": stmt.excluded.interval_start,
+                "value": stmt.excluded.value,
+                "raw_data": stmt.excluded.raw_data,
+                "updated_at": datetime.now(UTC),
+            },
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
+
     async def get_sync_status(
         self,
         usage_point_id: str,
@@ -416,6 +460,67 @@ class LocalDataService:
             logger.warning(f"Failed to extract address: {e}")
 
         return None
+
+
+def _missing_ranges(
+    start_date: date,
+    end_date: date,
+    existing_dates: set[date],
+    force_refresh_from: date | None = None,
+) -> list[tuple[date, date]]:
+    """Regroupe les dates absentes de [start_date, end_date[ en plages (start, end) à end exclu.
+
+    Les dates >= force_refresh_from sont redemandées même si elles existent déjà.
+    """
+    if force_refresh_from is not None:
+        existing_dates = {d for d in existing_dates if d < force_refresh_from}
+
+    ranges: list[tuple[date, date]] = []
+    current = start_date
+    while current < end_date:
+        if current in existing_dates:
+            current += timedelta(days=1)
+            continue
+        range_start = current
+        while current < end_date and current not in existing_dates:
+            current += timedelta(days=1)
+        ranges.append((range_start, current))
+    return ranges
+
+
+def _split_power_datetime(date_str: str) -> tuple[str, str]:
+    """Découpe l'horodatage d'un pic de puissance en (YYYY-MM-DD, HH:MM)."""
+    for sep in ("T", " "):
+        if sep in date_str:
+            day_part, time_part = date_str.split(sep, 1)
+            return day_part[:10], time_part[:5] if len(time_part) >= 5 else "00:00"
+    return date_str[:10], "00:00"
+
+
+def parse_max_power_points(response: Any, usage_point_id: str) -> list[dict[str, Any]]:
+    """Points PMA Data Connect 2026 (une passerelle v5 est convertie) en lignes max_power_data.
+
+    `d` est l'heure réelle du pic ; garde la valeur la plus haute de chaque jour (VA).
+    """
+    by_day: dict[date, dict[str, Any]] = {}
+    for reading in extract_points(_unwrap(response)):
+        day_str, hhmm = _split_power_datetime(str(reading.get("d", "")))
+        try:
+            day = date.fromisoformat(day_str)
+            value = int(float(reading.get("v")))
+        except (TypeError, ValueError):
+            continue
+        current = by_day.get(day)
+        if current is None or value > current["value"]:
+            by_day[day] = {
+                "usage_point_id": usage_point_id,
+                "date": day,
+                "interval_start": hhmm,
+                "value": value,
+                "source": "myelectricaldata",
+                "raw_data": reading,
+            }
+    return [by_day[d] for d in sorted(by_day)]
 
 
 def _unwrap(data: Any) -> Any:

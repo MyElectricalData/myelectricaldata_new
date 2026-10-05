@@ -134,8 +134,11 @@ class HomeAssistantExporter(BaseExporter):
         self.username = self.config.get("mqtt_username")
         self.password = self.config.get("mqtt_password")
         self.use_tls = self.config.get("mqtt_use_tls", False)
-        self.prefix = self.config.get("entity_prefix", "myelectricaldata")
-        self.discovery_prefix = self.config.get("discovery_prefix", "homeassistant")
+        # Préfixe vide (configs enregistrées avant sa validation) : valeur par défaut plutôt qu'un export bloqué
+        self.prefix: str = self.config.get("entity_prefix") or "myelectricaldata"
+        if re.search(r"[\s/#+]", self.prefix):
+            raise ValueError(f"Invalid entity_prefix {self.prefix!r}: no spaces, '/', '#' or '+'")
+        self.discovery_prefix: str = self.config.get("discovery_prefix", "homeassistant")
 
     def _get_device_rte_tempo(self) -> dict[str, Any]:
         """Get device info for RTE Tempo
@@ -434,7 +437,7 @@ class HomeAssistantExporter(BaseExporter):
 
                 # Global exports (not PDL-specific)
                 try:
-                    count = await self._export_tempo(client, db)
+                    count = await self._export_tempo(client, db, usage_point_ids)
                     results["tempo"] = count
                 except Exception as e:
                     logger.error(f"[HA-MQTT] Tempo export failed: {e}")
@@ -578,7 +581,7 @@ class HomeAssistantExporter(BaseExporter):
 
                 # Tempo
                 try:
-                    count = await self._export_tempo(client, db)
+                    count = await self._export_tempo(client, db, usage_point_ids)
                     results["tempo"] = count
                     await emit(f"Tempo exporté ({count} entités)")
                 except Exception as e:
@@ -907,9 +910,9 @@ class HomeAssistantExporter(BaseExporter):
         # Main consumption sensor with history in attributes
         await self._publish_sensor_old_format(
             client,
-            topic=f"myelectricaldata_consumption/{pdl}",
+            topic=f"{self.prefix}_consumption/{pdl}",
             name="consumption",
-            unique_id=f"myelectricaldata_linky_{pdl}_consumption",
+            unique_id=f"{self.prefix}_linky_{pdl}_consumption",
             device=device,
             state=yesterday_kwh,
             attributes={
@@ -936,9 +939,9 @@ class HomeAssistantExporter(BaseExporter):
 
             await self._publish_sensor_old_format(
                 client,
-                topic=f"myelectricaldata_consumption_last_{days_count}_day/{pdl}",
+                topic=f"{self.prefix}_consumption_last_{days_count}_day/{pdl}",
                 name=f"consumption last{days_count}day",
-                unique_id=f"myelectricaldata_linky_{pdl}_consumption_last{days_count}day",
+                unique_id=f"{self.prefix}_linky_{pdl}_consumption_last{days_count}day",
                 device=device,
                 state=round(total_kwh, 2),
                 attributes={
@@ -977,9 +980,9 @@ class HomeAssistantExporter(BaseExporter):
             sensor_key = key.removesuffix("_kwh")
             await self._publish_sensor_old_format(
                 client,
-                topic=f"myelectricaldata_consumption_{sensor_key}/{pdl}",
+                topic=f"{self.prefix}_consumption_{sensor_key}/{pdl}",
                 name=f"consumption {sensor_key.replace('_', ' ')}",
-                unique_id=f"myelectricaldata_linky_{pdl}_consumption_{sensor_key}",
+                unique_id=f"{self.prefix}_linky_{pdl}_consumption_{sensor_key}",
                 device=device,
                 state=value_kwh,
                 attributes={"pdl": pdl, "last_updated": datetime.now().isoformat()},
@@ -1034,9 +1037,9 @@ class HomeAssistantExporter(BaseExporter):
         # Main production sensor with history in attributes
         await self._publish_sensor_old_format(
             client,
-            topic=f"myelectricaldata_production/{pdl}",
+            topic=f"{self.prefix}_production/{pdl}",
             name="production",
-            unique_id=f"myelectricaldata_linky_{pdl}_production",
+            unique_id=f"{self.prefix}_linky_{pdl}_production",
             device=device,
             state=yesterday_kwh,
             attributes={
@@ -1063,9 +1066,9 @@ class HomeAssistantExporter(BaseExporter):
 
             await self._publish_sensor_old_format(
                 client,
-                topic=f"myelectricaldata_production_last_{days_count}_day/{pdl}",
+                topic=f"{self.prefix}_production_last_{days_count}_day/{pdl}",
                 name=f"production last{days_count}day",
-                unique_id=f"myelectricaldata_linky_{pdl}_production_last{days_count}day",
+                unique_id=f"{self.prefix}_linky_{pdl}_production_last{days_count}day",
                 device=device,
                 state=round(total_kwh, 2),
                 attributes={
@@ -1568,9 +1571,9 @@ class HomeAssistantExporter(BaseExporter):
         topic_dir = "consumption" if direction == "consumption" else "production"
         await self._publish_sensor_old_format(
             client,
-            topic=f"myelectricaldata_{topic_dir}/{pdl}",
+            topic=f"{self.prefix}_{topic_dir}/{pdl}",
             name=topic_dir,
-            unique_id=f"myelectricaldata_linky_{pdl}_{topic_dir}",
+            unique_id=f"{self.prefix}_linky_{pdl}_{topic_dir}",
             device=device,
             state=yesterday_kwh,
             attributes=linky_attributes,
@@ -1590,7 +1593,9 @@ class HomeAssistantExporter(BaseExporter):
     # TEMPO EXPORT (Old MyElectricalData format)
     # =========================================================================
 
-    async def _export_tempo(self, client: aiomqtt.Client, db: AsyncSession) -> int:
+    async def _export_tempo(
+        self, client: aiomqtt.Client, db: AsyncSession, usage_point_ids: list[str] | None = None
+    ) -> int:
         """Export Tempo information via MQTT Discovery (old MyElectricalData format)
 
         Creates entities under two devices:
@@ -1636,9 +1641,9 @@ class HomeAssistantExporter(BaseExporter):
 
         await self._publish_sensor_old_format(
             client,
-            topic="myelectricaldata_rte/tempo_today",
+            topic=f"{self.prefix}_rte/tempo_today",
             name="Today",
-            unique_id="myelectricaldata_tempo_today",
+            unique_id=f"{self.prefix}_tempo_today",
             device=device_rte,
             state=today_color,
             attributes={
@@ -1658,9 +1663,9 @@ class HomeAssistantExporter(BaseExporter):
 
         await self._publish_sensor_old_format(
             client,
-            topic="myelectricaldata_rte/tempo_tomorrow",
+            topic=f"{self.prefix}_rte/tempo_tomorrow",
             name="Tomorrow",
-            unique_id="myelectricaldata_tempo_tomorrow",
+            unique_id=f"{self.prefix}_tempo_tomorrow",
             device=device_rte,
             state=tomorrow_color,
             attributes={
@@ -1701,34 +1706,40 @@ class HomeAssistantExporter(BaseExporter):
             )
             used = result.scalar() or 0
 
-            # Count remaining days (including today until season end)
+            # Days of this color already announced from today on (today, tomorrow): no longer available
             result = await db.execute(
                 select(func.count(TempoDay.id))
                 .where(TempoDay.id >= today_str)
                 .where(TempoDay.id <= season_end_str)
                 .where(cast(TempoDay.color, String) == color.value)
             )
-            remaining = result.scalar() or 0
+            reserved = result.scalar() or 0
 
             quota = TEMPO_QUOTAS.get(color.value, 0)
+            if color.value == "BLUE":
+                # 300 bleus sur 365 jours, 301 quand la saison contient un 29 février
+                quota = (season_end - season_start).days + 1 - TEMPO_QUOTAS["WHITE"] - TEMPO_QUOTAS["RED"]
+            remaining = max(quota - used - reserved, 0)
 
             days_data[color_name] = {
                 "used": used,
                 "remaining": remaining,
+                "reserved_known_days": reserved,
                 "quota": quota,
             }
 
             # Publish days_{color} sensor
             await self._publish_sensor_old_format(
                 client,
-                topic=f"myelectricaldata_edf/tempo_days_{color_name}",
+                topic=f"{self.prefix}_edf/tempo_days_{color_name}",
                 name=f"Days {color.value.capitalize()}",
-                unique_id=f"myelectricaldata_tempo_days_{color_name}",
+                unique_id=f"{self.prefix}_tempo_days_{color_name}",
                 device=device_edf,
                 state=used,
                 attributes={
                     "used": used,
                     "remaining": remaining,
+                    "reserved_known_days": reserved,
                     "quota": quota,
                     "season_start": season_start_str,
                     "season_end": season_end_str,
@@ -1744,9 +1755,9 @@ class HomeAssistantExporter(BaseExporter):
 
         await self._publish_sensor_old_format(
             client,
-            topic="myelectricaldata_edf/tempo_info",
+            topic=f"{self.prefix}_edf/tempo_info",
             name="Tempo Info",
-            unique_id="myelectricaldata_tempo_info",
+            unique_id=f"{self.prefix}_tempo_info",
             device=device_edf,
             state=today_color,
             attributes={
@@ -1754,10 +1765,10 @@ class HomeAssistantExporter(BaseExporter):
                 "tomorrow": tomorrow_color,
                 "season_start": season_start_str,
                 "season_end": season_end_str,
-                # Jours restants pour content-card-linky (quota - used)
-                "days_blue": days_data.get("blue", {}).get("quota", 0) - days_data.get("blue", {}).get("used", 0),
-                "days_white": days_data.get("white", {}).get("quota", 0) - days_data.get("white", {}).get("used", 0),
-                "days_red": days_data.get("red", {}).get("quota", 0) - days_data.get("red", {}).get("used", 0),
+                # Jours restants pour content-card-linky (getTempoRemainingDays) : quota - passés - déjà connus
+                "days_blue": days_data.get("blue", {}).get("remaining", 0),
+                "days_white": days_data.get("white", {}).get("remaining", 0),
+                "days_red": days_data.get("red", {}).get("remaining", 0),
                 # Détails complets pour usage avancé
                 "days_blue_detail": days_data.get("blue", {}),
                 "days_white_detail": days_data.get("white", {}),
@@ -1771,19 +1782,21 @@ class HomeAssistantExporter(BaseExporter):
         # EDF TEMPO: Price sensors
         # =====================================================================
 
-        for price_key, price_value in TEMPO_PRICES.items():
+        prices, price_source = await self._get_tempo_prices(db, usage_point_ids or [])
+        for price_key, price_value in prices.items():
             price_name = TEMPO_PRICE_NAMES.get(price_key, price_key)
 
             await self._publish_sensor_old_format(
                 client,
-                topic=f"myelectricaldata_edf/tempo_price_{price_key}",
+                topic=f"{self.prefix}_edf/tempo_price_{price_key}",
                 name=f"Price {price_name}",
-                unique_id=f"myelectricaldata_tempo_price_{price_key}",
+                unique_id=f"{self.prefix}_tempo_price_{price_key}",
                 device=device_edf,
                 state=price_value,
                 attributes={
                     "price_type": price_key,
                     "name": price_name,
+                    **price_source,
                 },
                 unit="EUR/kWh",
                 icon="mdi:currency-eur",
@@ -1792,6 +1805,33 @@ class HomeAssistantExporter(BaseExporter):
 
         logger.debug(f"[HA-MQTT] Exported Tempo: {count} sensors")
         return count
+
+    async def _get_tempo_prices(
+        self, db: AsyncSession, usage_point_ids: list[str]
+    ) -> tuple[dict[str, float], dict[str, Any]]:
+        """Prix Tempo publiés : offre TEMPO sélectionnée sur un des PDL exportés, sinon TEMPO_PRICES."""
+        from ...models.energy_provider import EnergyOffer
+        from ...models.pdl import PDL
+
+        if usage_point_ids:
+            result = await db.execute(
+                select(EnergyOffer)
+                .join(PDL, PDL.selected_offer_id == EnergyOffer.id)
+                .where(PDL.usage_point_id.in_(usage_point_ids))
+                .order_by(PDL.usage_point_id)
+            )
+            for offer in result.scalars().all():
+                if tariff_profile(offer.offer_type).family != "TEMPO":
+                    continue
+                prices = {key: getattr(offer, f"tempo_{key}") for key in TEMPO_PRICES}
+                if all(value is not None for value in prices.values()):
+                    return {key: float(value) for key, value in prices.items()}, {
+                        "source": "selected_offer",
+                        "offer_name": offer.name,
+                    }
+                logger.warning(f"[HA-MQTT] Offre Tempo '{offer.name}' incomplète, prix par défaut publiés")
+
+        return dict(TEMPO_PRICES), {"source": "default"}
 
     def _get_tempo_color_fr(self, color: str) -> str:
         """Get French name for Tempo color"""
@@ -1886,9 +1926,9 @@ class HomeAssistantExporter(BaseExporter):
                 # Use day_value as state (1=Normal, 2=Tendu, 3=Critique)
                 await self._publish_sensor_old_format(
                     client,
-                    topic=f"myelectricaldata_rte/ecowatt_{day_name}",
+                    topic=f"{self.prefix}_rte/ecowatt_{day_name}",
                     name=day_name,
-                    unique_id=f"myelectricaldata_ecowatt_{day_name}",
+                    unique_id=f"{self.prefix}_ecowatt_{day_name}",
                     device=device,
                     state=day_value,
                     attributes=attributes,
@@ -1899,9 +1939,9 @@ class HomeAssistantExporter(BaseExporter):
                 # No data available for this day
                 await self._publish_sensor_old_format(
                     client,
-                    topic=f"myelectricaldata_rte/ecowatt_{day_name}",
+                    topic=f"{self.prefix}_rte/ecowatt_{day_name}",
                     name=day_name,
-                    unique_id=f"myelectricaldata_ecowatt_{day_name}",
+                    unique_id=f"{self.prefix}_ecowatt_{day_name}",
                     device=device,
                     state="unknown",
                     attributes={
@@ -1961,21 +2001,26 @@ class HomeAssistantExporter(BaseExporter):
             # Topics à lire - on s'abonne aux topics HA Discovery
             # Format: {discovery_prefix}/sensor/{topic_path}/state
             # Les topics publiés sont:
-            #   - homeassistant/sensor/myelectricaldata_rte/tempo_today/state
-            #   - homeassistant/sensor/myelectricaldata_edf/tempo_days_blue/state
-            #   - homeassistant/sensor/myelectricaldata_consumption/{pdl}/state
+            #   - homeassistant/sensor/{self.prefix}_rte/tempo_today/state
+            #   - homeassistant/sensor/{self.prefix}_edf/tempo_days_blue/state
+            #   - homeassistant/sensor/{self.prefix}_consumption/{pdl}/state
             #   etc.
             topics_to_read = [
-                f"{self.discovery_prefix}/sensor/myelectricaldata_rte/#",
-                f"{self.discovery_prefix}/sensor/myelectricaldata_edf/#",
-                f"{self.discovery_prefix}/sensor/myelectricaldata_consumption/#",
-                f"{self.discovery_prefix}/sensor/myelectricaldata_consumption_last_7_day/#",
-                f"{self.discovery_prefix}/sensor/myelectricaldata_consumption_last_14_day/#",
-                f"{self.discovery_prefix}/sensor/myelectricaldata_consumption_last_30_day/#",
-                f"{self.discovery_prefix}/sensor/myelectricaldata_production/#",
-                f"{self.discovery_prefix}/sensor/myelectricaldata_production_last_7_day/#",
-                f"{self.discovery_prefix}/sensor/myelectricaldata_production_last_14_day/#",
-                f"{self.discovery_prefix}/sensor/myelectricaldata_production_last_30_day/#",
+                f"{self.discovery_prefix}/sensor/{self.prefix}_rte/#",
+                f"{self.discovery_prefix}/sensor/{self.prefix}_edf/#",
+                f"{self.discovery_prefix}/sensor/{self.prefix}_consumption/#",
+                f"{self.discovery_prefix}/sensor/{self.prefix}_consumption_last_7_day/#",
+                f"{self.discovery_prefix}/sensor/{self.prefix}_consumption_last_14_day/#",
+                f"{self.discovery_prefix}/sensor/{self.prefix}_consumption_last_30_day/#",
+                f"{self.discovery_prefix}/sensor/{self.prefix}_production/#",
+                f"{self.discovery_prefix}/sensor/{self.prefix}_production_last_7_day/#",
+                f"{self.discovery_prefix}/sensor/{self.prefix}_production_last_14_day/#",
+                f"{self.discovery_prefix}/sensor/{self.prefix}_production_last_30_day/#",
+                *(
+                    f"{self.discovery_prefix}/sensor/{self.prefix}_consumption_{period}_{tariff}/#"
+                    for period in ("yesterday", "this_week", "this_month", "this_year")
+                    for tariff in ("hp", "hc")
+                ),
                 # Fallback pour le préfixe personnalisé
                 f"{self.discovery_prefix}/sensor/{self.prefix}/#",
             ]
@@ -2165,23 +2210,24 @@ class HomeAssistantExporter(BaseExporter):
         - {discovery_prefix}/sensor/myelectricaldata_production/{pdl}/state
         """
         topic_lower = topic.lower()
+        p = self.prefix.lower()
 
         # RTE Tempo sensors
-        if "myelectricaldata_rte/tempo_today" in topic_lower:
+        if f"{p}_rte/tempo_today" in topic_lower:
             return "Tempo Aujourd'hui"
-        elif "myelectricaldata_rte/tempo_tomorrow" in topic_lower:
+        elif f"{p}_rte/tempo_tomorrow" in topic_lower:
             return "Tempo Demain"
 
         # RTE EcoWatt sensors
-        elif "myelectricaldata_rte/ecowatt_j0" in topic_lower:
+        elif f"{p}_rte/ecowatt_j0" in topic_lower:
             return "EcoWatt Aujourd'hui"
-        elif "myelectricaldata_rte/ecowatt_j1" in topic_lower:
+        elif f"{p}_rte/ecowatt_j1" in topic_lower:
             return "EcoWatt Demain"
-        elif "myelectricaldata_rte/ecowatt_j2" in topic_lower:
+        elif f"{p}_rte/ecowatt_j2" in topic_lower:
             return "EcoWatt J+2"
 
         # EDF Tempo sensors
-        elif "myelectricaldata_edf/tempo_days_" in topic_lower:
+        elif f"{p}_edf/tempo_days_" in topic_lower:
             if "blue" in topic_lower:
                 return "Tempo Jours Bleus"
             elif "white" in topic_lower:
@@ -2189,13 +2235,13 @@ class HomeAssistantExporter(BaseExporter):
             elif "red" in topic_lower:
                 return "Tempo Jours Rouges"
             return "Tempo Jours"
-        elif "myelectricaldata_edf/tempo_price_" in topic_lower:
+        elif f"{p}_edf/tempo_price_" in topic_lower:
             return "Tempo Prix"
-        elif "myelectricaldata_edf/tempo_info" in topic_lower:
+        elif f"{p}_edf/tempo_info" in topic_lower:
             return "Tempo Info"
 
         # Consumption sensors
-        elif "myelectricaldata_consumption_last_" in topic_lower:
+        elif f"{p}_consumption_last_" in topic_lower:
             if "7" in topic_lower:
                 return "Conso 7 derniers jours"
             elif "14" in topic_lower:
@@ -2203,11 +2249,13 @@ class HomeAssistantExporter(BaseExporter):
             elif "30" in topic_lower:
                 return "Conso 30 derniers jours"
             return "Conso Période"
-        elif "myelectricaldata_consumption/" in topic_lower:
+        elif f"{p}_consumption_" in topic_lower and ("_hp/" in topic_lower or "_hc/" in topic_lower):
+            return "Conso HC" if "_hc/" in topic_lower else "Conso HP"
+        elif f"{p}_consumption/" in topic_lower:
             return "Conso Journalière"
 
         # Production sensors
-        elif "myelectricaldata_production_last_" in topic_lower:
+        elif f"{p}_production_last_" in topic_lower:
             if "7" in topic_lower:
                 return "Prod 7 derniers jours"
             elif "14" in topic_lower:
@@ -2215,7 +2263,7 @@ class HomeAssistantExporter(BaseExporter):
             elif "30" in topic_lower:
                 return "Prod 30 derniers jours"
             return "Prod Période"
-        elif "myelectricaldata_production/" in topic_lower:
+        elif f"{p}_production/" in topic_lower:
             return "Prod Journalière"
 
         # Legacy format fallback

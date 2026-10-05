@@ -52,6 +52,9 @@ backend:
   env:
     TZ: "Europe/Paris"
     PYTHONUNBUFFERED: "1"
+    # Hosts accepted in the Host header, comma separated (`*.domain` allowed).
+    # Empty: every host (client mode, reached by LAN IP or a personal domain).
+    # ALLOWED_HOSTS: "med.example.lan,192.168.1.10"
 
   # Health checks
   livenessProbe:
@@ -117,6 +120,15 @@ frontend:
   env:
     VITE_API_BASE_URL: "/api"
     VITE_BACKEND_URL: "/api"
+    # Default values of the export forms (MQTT, Home Assistant, VictoriaMetrics),
+    # used only to prefill a NEW configuration:
+    # VITE_DEFAULT_MQTT_BROKER: "mqtt.example.lan"
+    # VITE_DEFAULT_MQTT_PORT: "1883"
+    # VITE_DEFAULT_TOPIC_PREFIX: "myelectricaldata"
+    # VITE_DEFAULT_ENTITY_PREFIX: "myelectricaldata"
+    # VITE_DEFAULT_DISCOVERY_PREFIX: "homeassistant"
+    # VITE_DEFAULT_HA_URL: "http://homeassistant.example.lan:8123"
+    # VITE_DEFAULT_VM_URL: "http://victoriametrics:8428"
 
   livenessProbe:
     httpGet:

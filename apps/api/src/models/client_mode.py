@@ -52,7 +52,7 @@ class ConsumptionData(Base, TimestampMixin):
 
     __tablename__ = "consumption_data"
     __table_args__ = (
-        UniqueConstraint("usage_point_id", "date", "granularity", "interval_start", name="uq_consumption_data"),
+        UniqueConstraint("usage_point_id", "date", "granularity", "interval_start", name="uq_consumption_data", postgresql_nulls_not_distinct=True),
         Index("ix_consumption_usage_point_date", "usage_point_id", "date"),
         Index("ix_consumption_granularity_date", "granularity", "date"),
     )
@@ -88,7 +88,7 @@ class ProductionData(Base, TimestampMixin):
 
     __tablename__ = "production_data"
     __table_args__ = (
-        UniqueConstraint("usage_point_id", "date", "granularity", "interval_start", name="uq_production_data"),
+        UniqueConstraint("usage_point_id", "date", "granularity", "interval_start", name="uq_production_data", postgresql_nulls_not_distinct=True),
         Index("ix_production_usage_point_date", "usage_point_id", "date"),
         Index("ix_production_granularity_date", "granularity", "date"),
     )
@@ -113,6 +113,39 @@ class ProductionData(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<ProductionData({self.usage_point_id}, {self.date}, {self.granularity.value}, {self.value}Wh)>"
+
+
+class MaxPowerData(Base, TimestampMixin):
+    """Store daily maximum power data from MyElectricalData API.
+
+    One row per day and per usage point, containing:
+    - maximum apparent power value (VA, unit of Data Connect 2026 PMA)
+    - time of the peak interval (HH:MM)
+    """
+
+    __tablename__ = "max_power_data"
+    __table_args__ = (
+        UniqueConstraint("usage_point_id", "date", name="uq_max_power_data"),
+        Index("ix_max_power_usage_point_date", "usage_point_id", "date"),
+        Index("ix_max_power_date", "date"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    usage_point_id: Mapped[str] = mapped_column(String(14), nullable=False, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+
+    # Start time of interval containing the max power for this day (HH:MM).
+    interval_start: Mapped[str | None] = mapped_column(String(5), nullable=True)
+
+    # Maximum apparent power value in VA (Data Connect 2026 "PMA" is in VA).
+    value: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Source metadata
+    source: Mapped[str] = mapped_column(String(50), default="myelectricaldata")
+    raw_data: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<MaxPowerData({self.usage_point_id}, {self.date}, {self.value}VA)>"
 
 
 class SyncStatusType(str, enum.Enum):

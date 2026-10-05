@@ -32,8 +32,10 @@ import {
   Tag,
 } from 'lucide-react'
 import MetricsSection from '@/components/MetricsSection'
+import { getRuntimeDefaults } from '@/utils/runtimeDefaults'
 
 export default function VictoriaMetrics() {
+  const runtimeDefaults = getRuntimeDefaults()
   const queryClient = useQueryClient()
 
   // State
@@ -50,7 +52,7 @@ export default function VictoriaMetrics() {
   const [formIntervalMinutes, setFormIntervalMinutes] = useState<number | null>(30)
 
   // VictoriaMetrics config
-  const [vmUrl, setVmUrl] = useState('')
+  const [vmUrl, setVmUrl] = useState(runtimeDefaults.vmUrl)
   const [vmDatabase, setVmDatabase] = useState('myelectricaldata')
   const [vmUsername, setVmUsername] = useState('')
   const [vmPassword, setVmPassword] = useState('')

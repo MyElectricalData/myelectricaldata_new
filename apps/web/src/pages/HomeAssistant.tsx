@@ -42,6 +42,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react'
+import { getRuntimeDefaults } from '@/utils/runtimeDefaults'
 
 /**
  * Définition des entités Home Assistant de base (templates)
@@ -58,125 +59,130 @@ interface BaseEntity {
 }
 
 // Entités globales (RTE Tempo, EDF Tempo, EcoWatt)
-const GLOBAL_ENTITIES: BaseEntity[] = [
-  // RTE Tempo
-  {
-    entity_id: 'sensor.myelectricaldata_tempo_today',
-    name: 'Tempo Aujourd\'hui',
-    device: 'RTE Tempo',
-    icon: 'mdi:calendar-today',
-    description: 'Couleur du jour Tempo (BLUE, WHITE, RED)',
-  },
-  {
-    entity_id: 'sensor.myelectricaldata_tempo_tomorrow',
-    name: 'Tempo Demain',
-    device: 'RTE Tempo',
-    icon: 'mdi:calendar-tomorrow',
-    description: 'Couleur du lendemain Tempo',
-  },
-  // EDF Tempo
-  {
-    entity_id: 'sensor.myelectricaldata_tempo_info',
-    name: 'Tempo Info',
-    device: 'EDF Tempo',
-    icon: 'mdi:information',
-    description: 'Informations générales contrat Tempo',
-  },
-  {
-    entity_id: 'sensor.myelectricaldata_tempo_days_blue',
-    name: 'Jours Bleus',
-    device: 'EDF Tempo',
-    icon: 'mdi:calendar',
-    unit: 'jours',
-    description: 'Nombre de jours bleus restants',
-  },
-  {
-    entity_id: 'sensor.myelectricaldata_tempo_days_white',
-    name: 'Jours Blancs',
-    device: 'EDF Tempo',
-    icon: 'mdi:calendar',
-    unit: 'jours',
-    description: 'Nombre de jours blancs restants',
-  },
-  {
-    entity_id: 'sensor.myelectricaldata_tempo_days_red',
-    name: 'Jours Rouges',
-    device: 'EDF Tempo',
-    icon: 'mdi:calendar',
-    unit: 'jours',
-    description: 'Nombre de jours rouges restants',
-  },
-  {
-    entity_id: 'sensor.myelectricaldata_tempo_price_blue_hc',
-    name: 'Prix Bleu HC',
-    device: 'EDF Tempo',
-    icon: 'mdi:currency-eur',
-    unit: 'EUR/kWh',
-    description: 'Tarif heures creuses jour bleu',
-  },
-  {
-    entity_id: 'sensor.myelectricaldata_tempo_price_blue_hp',
-    name: 'Prix Bleu HP',
-    device: 'EDF Tempo',
-    icon: 'mdi:currency-eur',
-    unit: 'EUR/kWh',
-    description: 'Tarif heures pleines jour bleu',
-  },
-  {
-    entity_id: 'sensor.myelectricaldata_tempo_price_white_hc',
-    name: 'Prix Blanc HC',
-    device: 'EDF Tempo',
-    icon: 'mdi:currency-eur',
-    unit: 'EUR/kWh',
-    description: 'Tarif heures creuses jour blanc',
-  },
-  {
-    entity_id: 'sensor.myelectricaldata_tempo_price_white_hp',
-    name: 'Prix Blanc HP',
-    device: 'EDF Tempo',
-    icon: 'mdi:currency-eur',
-    unit: 'EUR/kWh',
-    description: 'Tarif heures pleines jour blanc',
-  },
-  {
-    entity_id: 'sensor.myelectricaldata_tempo_price_red_hc',
-    name: 'Prix Rouge HC',
-    device: 'EDF Tempo',
-    icon: 'mdi:currency-eur',
-    unit: 'EUR/kWh',
-    description: 'Tarif heures creuses jour rouge',
-  },
-  {
-    entity_id: 'sensor.myelectricaldata_tempo_price_red_hp',
-    name: 'Prix Rouge HP',
-    device: 'EDF Tempo',
-    icon: 'mdi:currency-eur',
-    unit: 'EUR/kWh',
-    description: 'Tarif heures pleines jour rouge',
-  },
-  // EcoWatt
-  {
-    entity_id: 'sensor.myelectricaldata_ecowatt_j0',
-    name: 'EcoWatt J0',
-    device: 'RTE EcoWatt',
-    icon: 'mdi:leaf',
-    description: 'Signal EcoWatt aujourd\'hui (1=vert, 2=orange, 3=rouge)',
-  },
-  {
-    entity_id: 'sensor.myelectricaldata_ecowatt_j1',
-    name: 'EcoWatt J+1',
-    device: 'RTE EcoWatt',
-    icon: 'mdi:leaf',
-    description: 'Signal EcoWatt demain',
-  },
-  {
-    entity_id: 'sensor.myelectricaldata_ecowatt_j2',
-    name: 'EcoWatt J+2',
-    device: 'RTE EcoWatt',
-    icon: 'mdi:leaf',
-    description: 'Signal EcoWatt après-demain',
-  },
-]
+/**
+ * Entités globales (Tempo, EcoWatt) : entity_id suggéré = sensor.<unique_id>, qui suit entity_prefix
+ */
+function getGlobalEntities(prefix: string): BaseEntity[] {
+  return [
+    // RTE Tempo
+    {
+      entity_id: `sensor.${prefix}_tempo_today`,
+      name: 'Tempo Aujourd\'hui',
+      device: 'RTE Tempo',
+      icon: 'mdi:calendar-today',
+      description: 'Couleur du jour Tempo (BLUE, WHITE, RED)',
+    },
+    {
+      entity_id: `sensor.${prefix}_tempo_tomorrow`,
+      name: 'Tempo Demain',
+      device: 'RTE Tempo',
+      icon: 'mdi:calendar-tomorrow',
+      description: 'Couleur du lendemain Tempo',
+    },
+    // EDF Tempo
+    {
+      entity_id: `sensor.${prefix}_tempo_info`,
+      name: 'Tempo Info',
+      device: 'EDF Tempo',
+      icon: 'mdi:information',
+      description: 'Informations générales contrat Tempo',
+    },
+    {
+      entity_id: `sensor.${prefix}_tempo_days_blue`,
+      name: 'Jours Bleus',
+      device: 'EDF Tempo',
+      icon: 'mdi:calendar',
+      unit: 'jours',
+      description: 'Jours bleus utilisés (restants en attribut)',
+    },
+    {
+      entity_id: `sensor.${prefix}_tempo_days_white`,
+      name: 'Jours Blancs',
+      device: 'EDF Tempo',
+      icon: 'mdi:calendar',
+      unit: 'jours',
+      description: 'Jours blancs utilisés (restants en attribut)',
+    },
+    {
+      entity_id: `sensor.${prefix}_tempo_days_red`,
+      name: 'Jours Rouges',
+      device: 'EDF Tempo',
+      icon: 'mdi:calendar',
+      unit: 'jours',
+      description: 'Jours rouges utilisés (restants en attribut)',
+    },
+    {
+      entity_id: `sensor.${prefix}_tempo_price_blue_hc`,
+      name: 'Prix Bleu HC',
+      device: 'EDF Tempo',
+      icon: 'mdi:currency-eur',
+      unit: 'EUR/kWh',
+      description: 'Tarif heures creuses jour bleu',
+    },
+    {
+      entity_id: `sensor.${prefix}_tempo_price_blue_hp`,
+      name: 'Prix Bleu HP',
+      device: 'EDF Tempo',
+      icon: 'mdi:currency-eur',
+      unit: 'EUR/kWh',
+      description: 'Tarif heures pleines jour bleu',
+    },
+    {
+      entity_id: `sensor.${prefix}_tempo_price_white_hc`,
+      name: 'Prix Blanc HC',
+      device: 'EDF Tempo',
+      icon: 'mdi:currency-eur',
+      unit: 'EUR/kWh',
+      description: 'Tarif heures creuses jour blanc',
+    },
+    {
+      entity_id: `sensor.${prefix}_tempo_price_white_hp`,
+      name: 'Prix Blanc HP',
+      device: 'EDF Tempo',
+      icon: 'mdi:currency-eur',
+      unit: 'EUR/kWh',
+      description: 'Tarif heures pleines jour blanc',
+    },
+    {
+      entity_id: `sensor.${prefix}_tempo_price_red_hc`,
+      name: 'Prix Rouge HC',
+      device: 'EDF Tempo',
+      icon: 'mdi:currency-eur',
+      unit: 'EUR/kWh',
+      description: 'Tarif heures creuses jour rouge',
+    },
+    {
+      entity_id: `sensor.${prefix}_tempo_price_red_hp`,
+      name: 'Prix Rouge HP',
+      device: 'EDF Tempo',
+      icon: 'mdi:currency-eur',
+      unit: 'EUR/kWh',
+      description: 'Tarif heures pleines jour rouge',
+    },
+    // EcoWatt
+    {
+      entity_id: `sensor.${prefix}_ecowatt_j0`,
+      name: 'EcoWatt J0',
+      device: 'RTE EcoWatt',
+      icon: 'mdi:leaf',
+      description: 'Signal EcoWatt aujourd\'hui (1=vert, 2=orange, 3=rouge)',
+    },
+    {
+      entity_id: `sensor.${prefix}_ecowatt_j1`,
+      name: 'EcoWatt J+1',
+      device: 'RTE EcoWatt',
+      icon: 'mdi:leaf',
+      description: 'Signal EcoWatt demain',
+    },
+    {
+      entity_id: `sensor.${prefix}_ecowatt_j2`,
+      name: 'EcoWatt J+2',
+      device: 'RTE EcoWatt',
+      icon: 'mdi:leaf',
+      description: 'Signal EcoWatt après-demain',
+    },
+  ]
+}
 
 /** Périodes des capteurs HP/HC (cf. tariff.summarize_hp_hc_kwh côté API) */
 const HP_HC_PERIODS = [
@@ -189,10 +195,10 @@ const HP_HC_PERIODS = [
 /**
  * Génère les entités spécifiques à un PDL
  */
-function getPdlEntities(pdl: string): BaseEntity[] {
+function getPdlEntities(pdl: string, prefix: string): BaseEntity[] {
   return [
     {
-      entity_id: `sensor.myelectricaldata_linky_${pdl}_consumption`,
+      entity_id: `sensor.${prefix}_linky_${pdl}_consumption`,
       name: `Consommation ${pdl}`,
       device: `Linky ${pdl}`,
       icon: 'mdi:flash',
@@ -201,7 +207,7 @@ function getPdlEntities(pdl: string): BaseEntity[] {
       description: 'Consommation journalière (avec historique 31j en attributs)',
     },
     {
-      entity_id: `sensor.myelectricaldata_linky_${pdl}_consumption_last7day`,
+      entity_id: `sensor.${prefix}_linky_${pdl}_consumption_last7day`,
       name: `Conso 7j ${pdl}`,
       device: `Linky ${pdl}`,
       icon: 'mdi:flash',
@@ -210,7 +216,7 @@ function getPdlEntities(pdl: string): BaseEntity[] {
       description: 'Total consommation des 7 derniers jours',
     },
     {
-      entity_id: `sensor.myelectricaldata_linky_${pdl}_consumption_last14day`,
+      entity_id: `sensor.${prefix}_linky_${pdl}_consumption_last14day`,
       name: `Conso 14j ${pdl}`,
       device: `Linky ${pdl}`,
       icon: 'mdi:flash',
@@ -219,7 +225,7 @@ function getPdlEntities(pdl: string): BaseEntity[] {
       description: 'Total consommation des 14 derniers jours',
     },
     {
-      entity_id: `sensor.myelectricaldata_linky_${pdl}_consumption_last30day`,
+      entity_id: `sensor.${prefix}_linky_${pdl}_consumption_last30day`,
       name: `Conso 30j ${pdl}`,
       device: `Linky ${pdl}`,
       icon: 'mdi:flash',
@@ -229,7 +235,7 @@ function getPdlEntities(pdl: string): BaseEntity[] {
     },
     ...HP_HC_PERIODS.flatMap(({ key, label }) =>
       (['hp', 'hc'] as const).map((tariff) => ({
-        entity_id: `sensor.myelectricaldata_linky_${pdl}_consumption_${key}_${tariff}`,
+        entity_id: `sensor.${prefix}_linky_${pdl}_consumption_${key}_${tariff}`,
         name: `Conso ${label} ${tariff.toUpperCase()} ${pdl}`,
         device: `Linky ${pdl}`,
         icon: tariff === 'hc' ? 'mdi:weather-night' : 'mdi:white-balance-sunny',
@@ -239,7 +245,7 @@ function getPdlEntities(pdl: string): BaseEntity[] {
       }))
     ),
     {
-      entity_id: `sensor.myelectricaldata_linky_${pdl}_production`,
+      entity_id: `sensor.${prefix}_linky_${pdl}_production`,
       name: `Production ${pdl}`,
       device: `Linky ${pdl}`,
       icon: 'mdi:solar-power',
@@ -248,7 +254,7 @@ function getPdlEntities(pdl: string): BaseEntity[] {
       description: 'Production journalière (avec historique 31j en attributs)',
     },
     {
-      entity_id: `sensor.myelectricaldata_linky_${pdl}_production_last7day`,
+      entity_id: `sensor.${prefix}_linky_${pdl}_production_last7day`,
       name: `Prod 7j ${pdl}`,
       device: `Linky ${pdl}`,
       icon: 'mdi:solar-power',
@@ -257,7 +263,7 @@ function getPdlEntities(pdl: string): BaseEntity[] {
       description: 'Total production des 7 derniers jours',
     },
     {
-      entity_id: `sensor.myelectricaldata_linky_${pdl}_production_last14day`,
+      entity_id: `sensor.${prefix}_linky_${pdl}_production_last14day`,
       name: `Prod 14j ${pdl}`,
       device: `Linky ${pdl}`,
       icon: 'mdi:solar-power',
@@ -266,7 +272,7 @@ function getPdlEntities(pdl: string): BaseEntity[] {
       description: 'Total production des 14 derniers jours',
     },
     {
-      entity_id: `sensor.myelectricaldata_linky_${pdl}_production_last30day`,
+      entity_id: `sensor.${prefix}_linky_${pdl}_production_last30day`,
       name: `Prod 30j ${pdl}`,
       device: `Linky ${pdl}`,
       icon: 'mdi:solar-power',
@@ -278,6 +284,7 @@ function getPdlEntities(pdl: string): BaseEntity[] {
 }
 
 export default function HomeAssistant() {
+  const runtimeDefaults = getRuntimeDefaults()
   const queryClient = useQueryClient()
 
   // State
@@ -308,16 +315,16 @@ export default function HomeAssistant() {
   const [formIntervalMinutes, setFormIntervalMinutes] = useState<number | null>(30)
 
   // MQTT Discovery config
-  const [mqttBroker, setMqttBroker] = useState('')
-  const [mqttPort, setMqttPort] = useState(1883)
+  const [mqttBroker, setMqttBroker] = useState(runtimeDefaults.mqttBroker)
+  const [mqttPort, setMqttPort] = useState(runtimeDefaults.mqttPort)
   const [mqttUsername, setMqttUsername] = useState('')
   const [mqttPassword, setMqttPassword] = useState('')
   const [mqttTls, setMqttTls] = useState(false)
-  const [entityPrefix, setEntityPrefix] = useState('myelectricaldata')
-  const [discoveryPrefix, setDiscoveryPrefix] = useState('homeassistant')
+  const [entityPrefix, setEntityPrefix] = useState(runtimeDefaults.entityPrefix)
+  const [discoveryPrefix, setDiscoveryPrefix] = useState(runtimeDefaults.discoveryPrefix)
 
   // WebSocket API config
-  const [haUrl, setHaUrl] = useState('')
+  const [haUrl, setHaUrl] = useState(runtimeDefaults.haUrl)
   const [haToken, setHaToken] = useState('')
   const [statisticIdPrefix, setStatisticIdPrefix] = useState('myelectricaldata')
 
@@ -368,8 +375,8 @@ export default function HomeAssistant() {
   })()
 
   const allEntities = [
-    ...GLOBAL_ENTITIES,
-    ...pdlIds.flatMap((pdlId) => getPdlEntities(pdlId)),
+    ...getGlobalEntities(entityPrefix),
+    ...pdlIds.flatMap((pdlId) => getPdlEntities(pdlId, entityPrefix)),
   ]
 
   // Group entities by device

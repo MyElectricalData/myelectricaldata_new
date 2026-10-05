@@ -33,8 +33,10 @@ import {
   MessageSquare,
 } from 'lucide-react'
 import MetricsSection from '@/components/MetricsSection'
+import { getRuntimeDefaults } from '@/utils/runtimeDefaults'
 
 export default function MQTT() {
+  const runtimeDefaults = getRuntimeDefaults()
   const queryClient = useQueryClient()
 
   // State
@@ -51,12 +53,12 @@ export default function MQTT() {
   const [formIntervalMinutes, setFormIntervalMinutes] = useState<number | null>(30)
 
   // MQTT config
-  const [mqttBroker, setMqttBroker] = useState('')
-  const [mqttPort, setMqttPort] = useState(1883)
+  const [mqttBroker, setMqttBroker] = useState(runtimeDefaults.mqttBroker)
+  const [mqttPort, setMqttPort] = useState(runtimeDefaults.mqttPort)
   const [mqttUsername, setMqttUsername] = useState('')
   const [mqttPassword, setMqttPassword] = useState('')
   const [mqttTls, setMqttTls] = useState(false)
-  const [topicPrefix, setTopicPrefix] = useState('myelectricaldata')
+  const [topicPrefix, setTopicPrefix] = useState(runtimeDefaults.topicPrefix)
   const [qos, setQos] = useState(0)
   const [retain, setRetain] = useState(true)
 
