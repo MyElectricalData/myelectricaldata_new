@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.4.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.3.0...2.4.0) (2026-10-05)
+
+### Features
+
+* **web:** période d'analyse accessible en mode client ([793dae1](https://github.com/MyElectricalData/myelectricaldata_new/commit/793dae1824e02893ff0481961833684a0995b3fd))
+
 ## [2.3.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.2.0...2.3.0) (2026-10-05)
 
 ### Features
