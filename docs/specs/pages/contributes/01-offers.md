@@ -552,7 +552,6 @@ Permet de copier tous les champs tarifaires (abonnement + prix kWh) d'une ligne 
 - TEMPO : `tempo_blue_hc`, `tempo_blue_hp`, `tempo_white_hc`, `tempo_white_hp`, `tempo_red_hc`, `tempo_red_hp`
 - EJP : `ejp_normal`, `ejp_peak`
 - ZEN_FLEX / SEASONAL : `hc_price_summer`, `hp_price_summer`, `hc_price_winter`, `hp_price_winter`
-  - EDF Zen Flex : prix Éco dans `*_summer`, prix Sobriété dans `*_winter` (convention des offres de la passerelle)
 - ZEN_WEEK_END : `base_price`, `base_price_weekend`
 - ZEN_WEEK_END_HP_HC : `hc_price`, `hp_price`, `hc_price_weekend`, `hp_price_weekend`
 
