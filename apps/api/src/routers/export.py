@@ -52,6 +52,12 @@ class HomeAssistantConfig(BaseModel):
     ha_token: Optional[str] = Field(default=None, description="Long-lived access token for Home Assistant API")
     statistic_id_prefix: str = Field(default="myelectricaldata", description="Statistic ID prefix for Energy Dashboard")
 
+    # content-card-linky : prix pour le calcul des coûts
+    kwh_price: float = Field(default=0.0, description="Prix kWh Base en EUR TTC (pour content-card-linky)")
+    kwh_price_hc: float = Field(default=0.0, description="Prix kWh Heures Creuses en EUR TTC")
+    kwh_price_hp: float = Field(default=0.0, description="Prix kWh Heures Pleines en EUR TTC")
+    linky_card_days: int = Field(default=31, ge=1, le=365, description="Nombre de jours d'historique pour content-card-linky")
+
 
 class MQTTConfig(BaseModel):
     """MQTT export configuration (generic broker with custom topics)"""
@@ -86,7 +92,7 @@ class ExportConfigCreate(BaseModel):
     export_consumption: bool = Field(default=True, description="Export consumption data")
     export_production: bool = Field(default=True, description="Export production data")
     export_detailed: bool = Field(default=False, description="Export detailed (30-min) data")
-    export_interval_minutes: Optional[int] = Field(default=None, description="Auto-export interval (null = manual only)")
+    export_interval_minutes: Optional[int] = Field(default=30, ge=15, description="Auto-export interval in minutes (min 15, default 30, null = manual only)")
 
 
 class ExportConfigUpdate(BaseModel):
@@ -99,7 +105,7 @@ class ExportConfigUpdate(BaseModel):
     export_consumption: Optional[bool] = None
     export_production: Optional[bool] = None
     export_detailed: Optional[bool] = None
-    export_interval_minutes: Optional[int] = Field(default=None, description="Auto-export interval (null = manual only)")
+    export_interval_minutes: Optional[int] = Field(default=None, ge=15, description="Auto-export interval in minutes (min 15, null = manual only)")
 
 
 class ExportConfigResponse(BaseModel):
@@ -202,6 +208,8 @@ async def get_export_config(
             "export_consumption": config.export_consumption,
             "export_production": config.export_production,
             "export_detailed": config.export_detailed,
+            "export_interval_minutes": config.export_interval_minutes,
+            "next_export_at": config.next_export_at.isoformat() if config.next_export_at else None,
             "last_export_at": config.last_export_at.isoformat() if config.last_export_at else None,
             "last_export_status": config.last_export_status,
             "last_export_error": config.last_export_error,
@@ -587,6 +595,124 @@ async def run_export(
     }
 
 
+@router.get("/configs/{config_id}/run/stream")
+async def run_export_stream(
+    config_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Run export with SSE progress streaming
+
+    Streams progress events as SSE (Server-Sent Events).
+    Event types:
+    - progress: {step, total_steps, percent, message, status, consumption, production, tempo, ecowatt}
+    - complete: Final result
+    - error: Error message
+    """
+    stmt = select(ExportConfig).where(ExportConfig.id == config_id)
+    result = await db.execute(stmt)
+    config = result.scalar_one_or_none()
+
+    if not config:
+        async def error_stream() -> AsyncGenerator[str, None]:
+            yield f"event: error\ndata: {json.dumps({'message': 'Export configuration not found'})}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+
+    if not config.is_enabled:
+        async def error_stream() -> AsyncGenerator[str, None]:
+            yield f"event: error\ndata: {json.dumps({'message': 'Export configuration is disabled'})}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+
+    if config.export_type != ExportType.HOME_ASSISTANT:
+        async def error_stream() -> AsyncGenerator[str, None]:
+            yield f"event: error\ndata: {json.dumps({'message': 'Streaming only supported for Home Assistant exports'})}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+
+    # Get PDLs
+    from ..models.pdl import PDL
+
+    if config.usage_point_ids:
+        pdl_stmt = select(PDL).where(PDL.usage_point_id.in_(config.usage_point_ids))
+    else:
+        pdl_stmt = select(PDL).where(PDL.is_active == True)  # noqa: E712
+
+    pdl_result = await db.execute(pdl_stmt)
+    pdls = pdl_result.scalars().all()
+
+    if not pdls:
+        async def empty_stream() -> AsyncGenerator[str, None]:
+            yield f"event: complete\ndata: {json.dumps({'success': True, 'message': 'Aucun PDL à exporter'})}\n\n"
+        return StreamingResponse(empty_stream(), media_type="text/event-stream")
+
+    usage_point_ids = [pdl.usage_point_id for pdl in pdls]
+    config_data = config.config
+    config_id_ref = config.id
+    config_name = config.name
+
+    async def generate_events() -> AsyncGenerator[str, None]:
+        from datetime import datetime
+
+        from ..services.exporters.home_assistant import HomeAssistantExporter
+
+        progress_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+        async def progress_callback(event: dict[str, Any]) -> None:
+            await progress_queue.put(event)
+
+        try:
+            exporter = HomeAssistantExporter(config_data)
+
+            export_task = asyncio.create_task(
+                exporter.run_full_export_with_progress(db, usage_point_ids, progress_callback)
+            )
+
+            while not export_task.done():
+                try:
+                    event = await asyncio.wait_for(progress_queue.get(), timeout=0.5)
+                    event_type = event.pop("event_type", "progress")
+                    yield f"event: {event_type}\ndata: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    continue
+
+            # Vider la queue
+            while not progress_queue.empty():
+                event = await progress_queue.get()
+                event_type = event.pop("event_type", "progress")
+                yield f"event: {event_type}\ndata: {json.dumps(event)}\n\n"
+
+            results = await export_task
+
+            # Mettre à jour le statut en base
+            stmt2 = select(ExportConfig).where(ExportConfig.id == config_id_ref)
+            result2 = await db.execute(stmt2)
+            cfg = result2.scalar_one_or_none()
+            if cfg:
+                cfg.last_export_at = datetime.now()
+                cfg.export_count += 1
+                if results.get("errors"):
+                    cfg.last_export_status = "partial" if results.get("consumption", 0) > 0 else "failed"
+                    cfg.last_export_error = "; ".join(results["errors"][:3])
+                else:
+                    cfg.last_export_status = "success"
+                    cfg.last_export_error = None
+                await db.commit()
+
+            yield f"event: complete\ndata: {json.dumps({'success': True, 'message': f'Export {config_name} terminé', **{k: v for k, v in results.items() if k != 'errors'}, 'errors': results.get('errors') or None})}\n\n"
+
+        except Exception as e:
+            logger.error(f"[EXPORT] SSE run export failed: {e}")
+            yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 # =============================================================================
 # Helpers
 # =============================================================================
@@ -640,6 +766,7 @@ async def _run_home_assistant_full_export(
                     "production_sensors": export_results.get("production", 0),
                     "tempo_sensors": export_results.get("tempo", 0),
                     "ecowatt_sensors": export_results.get("ecowatt", 0),
+                    "energy_dashboard": export_results.get("energy_dashboard"),
                 },
                 "errors": export_results.get("errors") if export_results.get("errors") else None,
             },
@@ -1010,8 +1137,8 @@ async def import_ha_statistics(
 async def import_ha_statistics_stream(
     config_id: str,
     clear_first: bool = True,
-    sync_delay_ms: int = 10000,
-    chunk_size: int = 500,
+    sync_delay_ms: int = 500,
+    chunk_size: int = 2000,
     incremental: bool = False,
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:

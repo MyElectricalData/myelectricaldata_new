@@ -105,6 +105,15 @@ MQTT_ENABLED=true
 | `med/{pdl}/consumption/yesterday` | `{"value": 14.8, "unit": "kWh", "date": "2024-01-14"}` | Conso veille |
 | `med/{pdl}/consumption/monthly` | `{"value": 245.6, "unit": "kWh", "month": "2024-01"}` | Conso mensuelle |
 
+### Totaux et ventilation HP/HC
+
+Le topic `{prefix}/{pdl}/consumption/stats` publie les totaux de consommation en kWh :
+`yesterday_kwh`, `this_week_kwh`, `this_month_kwh` et `this_year_kwh`.
+
+Pour un contrat à heures creuses disposant de données détaillées (30 min), il contient aussi
+`{periode}_hp_kwh` et `{periode}_hc_kwh`, avec `{periode}` valant `yesterday`, `this_week`,
+`this_month` ou `this_year` (par exemple `this_month_hp_kwh`).
+
 ### Production
 
 | Topic | Payload | Description |

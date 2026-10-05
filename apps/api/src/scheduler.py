@@ -185,69 +185,97 @@ class SyncScheduler:
             logger.error(f"[SCHEDULER] Sync failed: {e}")
 
     async def _run_scheduled_exports(self) -> None:
-        """Check for exports that are due and run them
+        """Vérifie les exports planifiés et les exécute
 
-        Each export config has its own interval (export_interval_minutes).
-        This job runs every minute to check which exports are due.
+        Gère deux planifications indépendantes pour Home Assistant :
+        - MQTT Discovery : export_interval_minutes (colonne DB) + next_export_at (colonne DB)
+        - Energy Dashboard : energy_interval_minutes (JSON config) + next_energy_export_at (JSON config)
+
+        Pour les autres types (VictoriaMetrics, MQTT), seul export_interval_minutes est utilisé.
         """
         try:
             from sqlalchemy import select
 
-            from .models.client_mode import ExportConfig
+            from .models.client_mode import ExportConfig, ExportType
             from .models.database import async_session_maker
 
             now = datetime.now(UTC)
 
             async with async_session_maker() as db:
-                # Get enabled exports that have a schedule and are due
+                # Récupérer toutes les configs activées
                 stmt = select(ExportConfig).where(
                     ExportConfig.is_enabled.is_(True),
-                    ExportConfig.export_interval_minutes.isnot(None),
-                    ExportConfig.export_interval_minutes > 0,
                 )
                 result = await db.execute(stmt)
                 configs = result.scalars().all()
 
                 for config in configs:
-                    # Check if export is due
-                    if config.next_export_at and config.next_export_at > now:
-                        continue  # Not yet due
+                    # --- Planification MQTT (colonne DB) ---
+                    mqtt_interval = config.export_interval_minutes
+                    if mqtt_interval and mqtt_interval > 0:
+                        if not config.next_export_at or config.next_export_at <= now:
+                            logger.info(f"[SCHEDULER] MQTT export due: {config.name}")
+                            try:
+                                await self._run_export(db, config, run_mqtt=True, run_energy=False)
+                                config.next_export_at = now + timedelta(minutes=mqtt_interval)
+                                await db.commit()
+                            except Exception as e:
+                                logger.error(f"[SCHEDULER] MQTT export failed for {config.name}: {e}")
+                                config.last_export_status = "failed"
+                                config.last_export_error = str(e)[:500]
+                                config.next_export_at = now + timedelta(minutes=mqtt_interval)
+                                await db.commit()
 
-                    # Export is due (or first run)
-                    logger.info(f"[SCHEDULER] Running scheduled export: {config.name}")
+                    # --- Planification Energy Dashboard (JSON config, HA uniquement) ---
+                    if config.export_type == ExportType.HOME_ASSISTANT:
+                        cfg = config.config or {}
+                        energy_interval = cfg.get("energy_interval_minutes")
+                        if energy_interval and energy_interval > 0:
+                            next_energy_str = cfg.get("next_energy_export_at")
+                            next_energy_at = None
+                            if next_energy_str:
+                                try:
+                                    next_energy_at = datetime.fromisoformat(next_energy_str)
+                                except (ValueError, TypeError):
+                                    pass
 
-                    # export_interval_minutes is guaranteed non-None by the query filter
-                    interval = config.export_interval_minutes or 60  # Fallback should never be used
-
-                    try:
-                        # Run export
-                        await self._run_export(db, config)
-
-                        # Schedule next run
-                        config.next_export_at = now + timedelta(minutes=interval)
-                        await db.commit()
-
-                    except Exception as e:
-                        logger.error(f"[SCHEDULER] Export failed for {config.name}: {e}")
-                        config.last_export_status = "failed"
-                        config.last_export_error = str(e)[:500]
-                        # Still schedule next run to avoid being stuck
-                        config.next_export_at = now + timedelta(minutes=interval)
-                        await db.commit()
+                            if not next_energy_at or next_energy_at <= now:
+                                logger.info(f"[SCHEDULER] Energy Dashboard export due: {config.name}")
+                                try:
+                                    await self._run_export(db, config, run_mqtt=False, run_energy=True)
+                                    # Stocker next_energy_export_at dans le JSON config
+                                    updated_config = dict(config.config)
+                                    updated_config["next_energy_export_at"] = (now + timedelta(minutes=energy_interval)).isoformat()
+                                    config.config = updated_config
+                                    await db.commit()
+                                except Exception as e:
+                                    logger.error(f"[SCHEDULER] Energy Dashboard export failed for {config.name}: {e}")
+                                    updated_config = dict(config.config)
+                                    updated_config["next_energy_export_at"] = (now + timedelta(minutes=energy_interval)).isoformat()
+                                    config.config = updated_config
+                                    await db.commit()
 
         except Exception as e:
             logger.error(f"[SCHEDULER] Scheduled exports check failed: {e}")
 
-    async def _run_export(self, db: "AsyncSession", config: "ExportConfig") -> None:
-        """Run a single export configuration
+    async def _run_export(
+        self,
+        db: "AsyncSession",
+        config: "ExportConfig",
+        run_mqtt: bool = True,
+        run_energy: bool = True,
+    ) -> None:
+        """Exécute un export selon les flags demandés
 
-        For Home Assistant:
-        - MQTT Discovery: Exports sensors (Tempo, EcoWatt, Linky stats) via run_full_export()
-        - WebSocket API: Imports statistics for Energy Dashboard via import_statistics()
+        Pour Home Assistant, MQTT et Energy Dashboard sont indépendants :
+        - run_mqtt=True : exécute MQTT Discovery (si mqtt_enabled dans config)
+        - run_energy=True : exécute Energy Dashboard (si energy_enabled dans config)
 
         Args:
             db: Database session (AsyncSession)
             config: Export configuration (ExportConfig)
+            run_mqtt: Exécuter la partie MQTT Discovery
+            run_energy: Exécuter la partie Energy Dashboard
         """
         from sqlalchemy import select
 
@@ -262,7 +290,7 @@ class SyncScheduler:
             VictoriaMetricsExporter,
         )
 
-        logger.info(f"[SCHEDULER] Running export: {config.name} ({config.export_type.value})")
+        logger.info(f"[SCHEDULER] Running export: {config.name} ({config.export_type.value}) [mqtt={run_mqtt}, energy={run_energy}]")
 
         # Get PDLs to export
         usage_point_ids = config.usage_point_ids
@@ -275,46 +303,26 @@ class SyncScheduler:
         total_exported = 0
         errors: list[str] = []
 
-        # Home Assistant specific handling
+        # Home Assistant : délègue à run_full_export avec les flags
         if config.export_type == ExportType.HOME_ASSISTANT:
             exporter = HomeAssistantExporter(config.config)
-
-            # 1. MQTT Discovery: Export sensors (Tempo, EcoWatt, Linky stats)
-            has_mqtt = bool(config.config.get("mqtt_broker"))
-            if has_mqtt:
-                try:
-                    logger.info(f"[SCHEDULER] Running MQTT Discovery export for {config.name}")
-                    mqtt_result = await exporter.run_full_export(db, usage_point_ids)
-                    mqtt_count = mqtt_result.get("consumption", 0) + mqtt_result.get("production", 0) + mqtt_result.get("tempo", 0) + mqtt_result.get("ecowatt", 0)
-                    total_exported += mqtt_count
-                    if mqtt_result.get("errors"):
-                        errors.extend(mqtt_result["errors"])
-                    logger.info(f"[SCHEDULER] MQTT Discovery: {mqtt_count} sensors exported")
-                except Exception as e:
-                    logger.error(f"[SCHEDULER] MQTT Discovery export failed: {e}")
-                    errors.append(f"MQTT Discovery: {str(e)}")
-
-            # 2. WebSocket API: Import statistics for Energy Dashboard
-            # Utilise le mode incrémental pour importer uniquement les nouvelles données
-            has_websocket = bool(config.config.get("ha_url") and config.config.get("ha_token"))
-            if has_websocket:
-                try:
-                    logger.info(f"[SCHEDULER] Running HA Statistics incremental import for {config.name}")
-                    # Mode incrémental: importe uniquement les données depuis le dernier import
-                    ws_result = await exporter.import_statistics(
-                        db,
-                        usage_point_ids,
-                        clear_first=False,  # Ne pas supprimer en mode incrémental
-                        incremental=True,   # Mode différentiel
-                    )
-                    ws_count = ws_result.get("consumption", 0) + ws_result.get("production", 0)
-                    total_exported += ws_count
-                    if ws_result.get("errors"):
-                        errors.extend(ws_result["errors"])
-                    logger.info(f"[SCHEDULER] HA Statistics: {ws_count} records imported (incremental)")
-                except Exception as e:
-                    logger.error(f"[SCHEDULER] HA Statistics import failed: {e}")
-                    errors.append(f"HA Statistics: {str(e)}")
+            try:
+                ha_results = await exporter.run_full_export(
+                    db, usage_point_ids,
+                    run_mqtt=run_mqtt,
+                    run_energy=run_energy,
+                )
+                total_exported += (
+                    ha_results.get("consumption", 0)
+                    + ha_results.get("production", 0)
+                    + ha_results.get("tempo", 0)
+                    + ha_results.get("ecowatt", 0)
+                )
+                if ha_results.get("errors"):
+                    errors.extend(ha_results["errors"])
+            except Exception as e:
+                logger.error(f"[SCHEDULER] Home Assistant export failed: {e}")
+                errors.append(str(e))
 
         # VictoriaMetrics handling
         elif config.export_type == ExportType.VICTORIAMETRICS:

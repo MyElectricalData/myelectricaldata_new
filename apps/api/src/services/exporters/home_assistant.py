@@ -32,6 +32,7 @@ import json
 import logging
 import re
 import ssl
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -41,6 +42,7 @@ from sqlalchemy import String, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import BaseExporter
+from .tariff import DEFAULT_OFFPEAK_RANGES, is_offpeak, is_offpeak_slot, tariff_profile
 
 logger = logging.getLogger(__name__)
 
@@ -349,7 +351,13 @@ class HomeAssistantExporter(BaseExporter):
     # FULL EXPORT METHOD
     # =========================================================================
 
-    async def run_full_export(self, db: AsyncSession, usage_point_ids: list[str]) -> dict[str, Any]:
+    async def run_full_export(
+        self,
+        db: AsyncSession,
+        usage_point_ids: list[str],
+        run_mqtt: bool = True,
+        run_energy: bool = True,
+    ) -> dict[str, Any]:
         """Run full Home Assistant export via MQTT Discovery
 
         This method exports comprehensive data:
@@ -362,6 +370,8 @@ class HomeAssistantExporter(BaseExporter):
         Args:
             db: Database session
             usage_point_ids: List of PDL numbers to export
+            run_mqtt: Exécuter la partie MQTT Discovery (pour le scheduler)
+            run_energy: Exécuter la partie Energy Dashboard (pour le scheduler)
 
         Returns:
             Export results summary
@@ -369,51 +379,253 @@ class HomeAssistantExporter(BaseExporter):
         from ..statistics import StatisticsService
         stats = StatisticsService(db)
 
+        # Flags de la config (préférences utilisateur) combinés avec les flags d'appel (contrôle scheduler)
+        mqtt_enabled = self.config.get("mqtt_enabled", True) and run_mqtt
+        energy_enabled = self.config.get("energy_enabled", True) and run_energy
+
         results = {
             "consumption": 0,
             "production": 0,
+            "linky_card": 0,
             "tempo": 0,
             "ecowatt": 0,
             "errors": [],
         }
 
-        async with await self._get_mqtt_client() as client:
-            # Publish online status
-            await client.publish(
-                f"{self.prefix}/status",
-                payload="online",
-                retain=True,
-            )
+        if mqtt_enabled:
+            async with await self._get_mqtt_client() as client:
+                # Publish online status
+                await client.publish(
+                    f"{self.prefix}/status",
+                    payload="online",
+                    retain=True,
+                )
 
-            # Global exports (not PDL-specific)
-            try:
-                count = await self._export_tempo(client, db)
-                results["tempo"] = count
-            except Exception as e:
-                logger.error(f"[HA-MQTT] Tempo export failed: {e}")
-                results["errors"].append(f"tempo: {str(e)}")
-
-            try:
-                count = await self._export_ecowatt(client, db)
-                results["ecowatt"] = count
-            except Exception as e:
-                logger.error(f"[HA-MQTT] EcoWatt export failed: {e}")
-                results["errors"].append(f"ecowatt: {str(e)}")
-
-            # Per-PDL exports
-            for pdl in usage_point_ids:
+                # Global exports (not PDL-specific)
                 try:
-                    count = await self._export_consumption_stats(client, stats, pdl)
-                    results["consumption"] += count
-
-                    count = await self._export_production_stats(client, stats, pdl)
-                    results["production"] += count
-
+                    count = await self._export_tempo(client, db)
+                    results["tempo"] = count
                 except Exception as e:
-                    logger.error(f"[HA-MQTT] Export failed for PDL {pdl}: {e}")
-                    results["errors"].append(f"{pdl}: {str(e)}")
+                    logger.error(f"[HA-MQTT] Tempo export failed: {e}")
+                    results["errors"].append(f"tempo: {str(e)}")
 
-        logger.info(f"[HA-MQTT] Full export completed: {results}")
+                try:
+                    count = await self._export_ecowatt(client, db)
+                    results["ecowatt"] = count
+                except Exception as e:
+                    logger.error(f"[HA-MQTT] EcoWatt export failed: {e}")
+                    results["errors"].append(f"ecowatt: {str(e)}")
+
+                # Per-PDL exports (content-card-linky compatible)
+                for pdl in usage_point_ids:
+                    try:
+                        # Sensor principal compatible content-card-linky (consommation)
+                        count = await self._export_linky_card_stats(
+                            client, stats, db, pdl, "consumption"
+                        )
+                        results["consumption"] += count
+                        results["linky_card"] += count
+
+                        # Capteurs HP/HC (contrats à heures creuses)
+                        results["consumption"] += await self._export_hp_hc_sensors(client, db, pdl)
+
+                        # Sensor production (si applicable)
+                        count = await self._export_linky_card_stats(
+                            client, stats, db, pdl, "production"
+                        )
+                        results["production"] += count
+                        results["linky_card"] += count
+
+                    except Exception as e:
+                        logger.error(f"[HA-MQTT] Export failed for PDL {pdl}: {e}")
+                        results["errors"].append(f"{pdl}: {str(e)}")
+
+        if mqtt_enabled:
+            logger.info(f"[HA-MQTT] Full export completed: {results}")
+
+        # Import automatique vers le Energy Dashboard si activé et configuré
+        if energy_enabled and self._has_websocket_config():
+            try:
+                # Lire les paramètres ED depuis la config
+                ed_sync_delay = self.config.get("sync_delay_ms", 500)
+                ed_chunk_size = self.config.get("chunk_size", 2000)
+                ed_incremental = self.config.get("incremental_import", True)
+                logger.info(f"[HA-WS] Lancement de l'import vers Energy Dashboard (incremental={ed_incremental}, chunk={ed_chunk_size}, delay={ed_sync_delay}ms)")
+                ws_results = await self.import_statistics(
+                    db, usage_point_ids,
+                    clear_first=not ed_incremental,
+                    sync_delay_ms=ed_sync_delay,
+                    chunk_size=ed_chunk_size,
+                    incremental=ed_incremental,
+                )
+                results["energy_dashboard"] = ws_results
+                if ws_results.get("success"):
+                    logger.info(
+                        f"[HA-WS] Import Energy Dashboard réussi: "
+                        f"{ws_results.get('consumption', 0)} conso, "
+                        f"{ws_results.get('cost', 0)} coût, "
+                        f"{ws_results.get('production', 0)} prod"
+                    )
+                else:
+                    logger.warning(f"[HA-WS] Import Energy Dashboard échoué: {ws_results.get('message')}")
+                    results["errors"].append(f"energy_dashboard: {ws_results.get('message')}")
+            except Exception as e:
+                logger.error(f"[HA-WS] Import Energy Dashboard échoué: {e}")
+                results["errors"].append(f"energy_dashboard: {str(e)}")
+
+        return results
+
+    async def run_full_export_with_progress(
+        self,
+        db: AsyncSession,
+        usage_point_ids: list[str],
+        progress_callback,
+        run_mqtt: bool = True,
+        run_energy: bool = True,
+    ) -> dict[str, Any]:
+        """Run full export avec callback de progression pour chaque étape
+
+        Étapes :
+        1. Connexion MQTT
+        2. Export Tempo
+        3. Export EcoWatt
+        4. Export par PDL (consommation + production)
+        5. Import Energy Dashboard (si WebSocket configuré)
+
+        Args:
+            db: Database session
+            usage_point_ids: List of PDL numbers
+            progress_callback: async callable(event: dict) pour signaler la progression
+            run_mqtt: Exécuter la partie MQTT Discovery (pour le scheduler)
+            run_energy: Exécuter la partie Energy Dashboard (pour le scheduler)
+        """
+        from ..statistics import StatisticsService
+        stats = StatisticsService(db)
+
+        # Flags de la config (préférences utilisateur) combinés avec les flags d'appel (contrôle scheduler)
+        mqtt_enabled = self.config.get("mqtt_enabled", True) and run_mqtt
+        energy_enabled = self.config.get("energy_enabled", True) and run_energy
+        has_ws = energy_enabled and self._has_websocket_config()
+
+        # Calcul du nombre total d'étapes
+        mqtt_steps = (3 + len(usage_point_ids)) if mqtt_enabled else 0
+        energy_step = 1 if has_ws else 0
+        total_steps = mqtt_steps + energy_step
+        if total_steps == 0:
+            total_steps = 1  # Éviter division par zéro
+        current_step = 0
+
+        results = {
+            "consumption": 0,
+            "production": 0,
+            "linky_card": 0,
+            "tempo": 0,
+            "ecowatt": 0,
+            "errors": [],
+        }
+
+        async def emit(message: str, status: str = "running"):
+            nonlocal current_step
+            current_step += 1
+            percent = min(int(current_step / total_steps * 100), 100)
+            await progress_callback({
+                "event_type": "progress",
+                "step": current_step,
+                "total_steps": total_steps,
+                "percent": percent,
+                "message": message,
+                "status": status,
+                **{k: v for k, v in results.items() if k != "errors"},
+            })
+
+        # Partie MQTT Discovery
+        if mqtt_enabled:
+            await emit("Connexion au broker MQTT...")
+
+            async with await self._get_mqtt_client() as client:
+                await client.publish(f"{self.prefix}/status", payload="online", retain=True)
+
+                # Tempo
+                try:
+                    count = await self._export_tempo(client, db)
+                    results["tempo"] = count
+                    await emit(f"Tempo exporté ({count} entités)")
+                except Exception as e:
+                    logger.error(f"[HA-MQTT] Tempo export failed: {e}")
+                    results["errors"].append(f"tempo: {str(e)}")
+                    await emit(f"Tempo : erreur ({e})", "warning")
+
+                # EcoWatt
+                try:
+                    count = await self._export_ecowatt(client, db)
+                    results["ecowatt"] = count
+                    await emit(f"EcoWatt exporté ({count} entités)")
+                except Exception as e:
+                    logger.error(f"[HA-MQTT] EcoWatt export failed: {e}")
+                    results["errors"].append(f"ecowatt: {str(e)}")
+                    await emit(f"EcoWatt : erreur ({e})", "warning")
+
+                # Par PDL
+                for pdl in usage_point_ids:
+                    try:
+                        count_c = await self._export_linky_card_stats(client, stats, db, pdl, "consumption")
+                        results["consumption"] += count_c
+                        results["linky_card"] += count_c
+                        count_hp_hc = await self._export_hp_hc_sensors(client, db, pdl)
+                        results["consumption"] += count_hp_hc
+                        count_c += count_hp_hc
+
+                        count_p = await self._export_linky_card_stats(client, stats, db, pdl, "production")
+                        results["production"] += count_p
+                        results["linky_card"] += count_p
+
+                        await emit(f"PDL {pdl} exporté ({count_c} conso, {count_p} prod)")
+                    except Exception as e:
+                        logger.error(f"[HA-MQTT] Export failed for PDL {pdl}: {e}")
+                        results["errors"].append(f"{pdl}: {str(e)}")
+                        await emit(f"PDL {pdl} : erreur ({e})", "warning")
+
+        # Partie Energy Dashboard (avec progression granulaire)
+        if has_ws:
+            try:
+                await emit("Import vers Energy Dashboard...")
+
+                # Relayer les événements de progression ED vers le callback principal
+                async def ed_progress_callback(event: dict) -> None:
+                    await progress_callback({
+                        "event_type": "energy_dashboard_progress",
+                        "step": event.get("step", 0),
+                        "total_steps": event.get("total_steps", 0),
+                        "percent": event.get("percent", 0),
+                        "message": event.get("message", ""),
+                        "ed_consumption": event.get("consumption", 0),
+                        "ed_cost": event.get("cost", 0),
+                        "ed_production": event.get("production", 0),
+                    })
+
+                # Lire les paramètres ED depuis la config
+                ed_sync_delay = self.config.get("sync_delay_ms", 500)
+                ed_chunk_size = self.config.get("chunk_size", 2000)
+                ed_incremental = self.config.get("incremental_import", True)
+
+                ws_results = await self.import_statistics_with_progress(
+                    db, usage_point_ids,
+                    clear_first=not ed_incremental,
+                    progress_callback=ed_progress_callback,
+                    sync_delay_ms=ed_sync_delay,
+                    chunk_size=ed_chunk_size,
+                    incremental=ed_incremental,
+                )
+                results["energy_dashboard"] = ws_results
+                if ws_results.get("success"):
+                    logger.info("[HA-WS] Import Energy Dashboard réussi")
+                else:
+                    results["errors"].append(f"energy_dashboard: {ws_results.get('message')}")
+            except Exception as e:
+                logger.error(f"[HA-WS] Import Energy Dashboard échoué: {e}")
+                results["errors"].append(f"energy_dashboard: {str(e)}")
+
+        logger.info(f"[HA-MQTT] Full export with progress completed: {results}")
         return results
 
     async def _publish_sensor_old_format(
@@ -479,6 +691,16 @@ class HomeAssistantExporter(BaseExporter):
             payload=json.dumps(discovery_config),
             retain=True,
         )
+
+        # Si le discovery_prefix n'est pas "homeassistant", publier aussi la config
+        # sous "homeassistant/" pour migrer les sensors existants vers les nouveaux topics
+        if self.discovery_prefix != "homeassistant":
+            legacy_config_topic = f"homeassistant/sensor/{topic}/config"
+            await client.publish(
+                legacy_config_topic,
+                payload=json.dumps(discovery_config),
+                retain=True,
+            )
 
         # Publish state (retained) - simple value, not JSON
         state_str = str(state) if state is not None else ""
@@ -702,6 +924,39 @@ class HomeAssistantExporter(BaseExporter):
         logger.debug(f"[HA-MQTT] Exported consumption stats for {pdl}: {count} sensors")
         return count
 
+    async def _export_hp_hc_sensors(
+        self,
+        client: aiomqtt.Client,
+        db: AsyncSession,
+        pdl: str,
+    ) -> int:
+        """Publie les 8 capteurs HP/HC d'un PDL via MQTT Discovery
+
+        sensor.myelectricaldata_linky_{pdl}_consumption_{yesterday,this_week,this_month,this_year}_{hp,hc}
+        Rien pour un contrat BASE ou sans donnée détaillée (cf. BaseExporter._get_hp_hc_summary).
+        """
+        hp_hc = await self._get_hp_hc_summary(db, pdl, date.today())
+        if not hp_hc:
+            return 0
+
+        device = self._get_device_linky(pdl)
+        for key, value_kwh in hp_hc.items():
+            sensor_key = key.removesuffix("_kwh")
+            await self._publish_sensor_old_format(
+                client,
+                topic=f"myelectricaldata_consumption_{sensor_key}/{pdl}",
+                name=f"consumption {sensor_key.replace('_', ' ')}",
+                unique_id=f"myelectricaldata_linky_{pdl}_consumption_{sensor_key}",
+                device=device,
+                state=value_kwh,
+                attributes={"pdl": pdl, "last_updated": datetime.now().isoformat()},
+                unit="kWh",
+                device_class="energy",
+                state_class="total",
+                icon="mdi:weather-night" if sensor_key.endswith("_hc") else "mdi:white-balance-sunny",
+            )
+        return len(hp_hc)
+
     async def _export_production_stats(
         self,
         client: aiomqtt.Client,
@@ -797,6 +1052,508 @@ class HomeAssistantExporter(BaseExporter):
         return count
 
     # =========================================================================
+    # CONTENT-CARD-LINKY EXPORT
+    # =========================================================================
+
+    @staticmethod
+    def _safe_evolution(current: float, previous: float) -> float:
+        """Calcule le pourcentage d'évolution, retourne 0 si previous est 0"""
+        if previous == 0:
+            return 0.0
+        return round((current - previous) / previous * 100, 1)
+
+    async def _export_linky_card_stats(
+        self,
+        client: aiomqtt.Client,
+        stats: Any,
+        db: AsyncSession,
+        pdl: str,
+        direction: str = "consumption",
+    ) -> int:
+        """Export un sensor compatible content-card-linky via MQTT Discovery
+
+        Crée un sensor unique par PDL avec ~35 attributs :
+        statistiques comparatives, historique journalier, HP/HC, coûts,
+        puissance max, couleurs Tempo.
+
+        Args:
+            client: Client MQTT connecté
+            stats: StatisticsService
+            db: Session DB
+            pdl: Numéro de PDL
+            direction: 'consumption' ou 'production'
+
+        Returns:
+            Nombre de sensors publiés (1 si OK, 0 si erreur)
+        """
+        from ...models.pdl import PDL
+        from ...models.tempo_day import TempoDay
+
+        # Pour la production, vérifier que le PDL en a
+        if direction == "production":
+            result = await db.execute(
+                select(PDL.has_production).where(PDL.usage_point_id == pdl)
+            )
+            has_production = result.scalar_one_or_none()
+            if not has_production:
+                logger.debug(f"[HA-MQTT] PDL {pdl} has no production, skipping linky-card")
+                return 0
+
+        # Les données Enedis sont disponibles au mieux à J-1
+        # On requête jusqu'à hier, puis on identifie le dernier jour avec des données
+        today = date.today()
+        max_date = today - timedelta(days=1)  # J-1 au mieux
+
+        # Configuration
+        nb_days = self.config.get("linky_card_days", 31)
+
+        # Récupérer les prix depuis l'offre sélectionnée du PDL
+        from ...models.energy_provider import EnergyOffer
+        offer_result = await db.execute(
+            select(EnergyOffer.offer_type, EnergyOffer.base_price, EnergyOffer.hc_price, EnergyOffer.hp_price)
+            .join(PDL, PDL.selected_offer_id == EnergyOffer.id)
+            .where(PDL.usage_point_id == pdl)
+        )
+        offer_row = offer_result.first()
+
+        if not offer_row:
+            # Fallback : chercher le Tarif Bleu correspondant au contrat du PDL
+            pdl_info = await db.execute(
+                select(PDL.pricing_option, PDL.subscribed_power)
+                .where(PDL.usage_point_id == pdl)
+            )
+            pdl_row = pdl_info.first()
+            if pdl_row and pdl_row.pricing_option:
+                pricing_option = pdl_row.pricing_option
+                power_kva = pdl_row.subscribed_power
+                # Chercher une offre Tarif Bleu qui matche le type et la puissance
+                fallback_query = (
+                    select(EnergyOffer.offer_type, EnergyOffer.base_price, EnergyOffer.hc_price, EnergyOffer.hp_price)
+                    .where(EnergyOffer.name == "Tarif Bleu")
+                    .where(EnergyOffer.offer_type == pricing_option)
+                )
+                if power_kva:
+                    fallback_query = fallback_query.where(EnergyOffer.power_kva == power_kva)
+                fallback_query = fallback_query.limit(1)
+                fallback_result = await db.execute(fallback_query)
+                offer_row = fallback_result.first()
+
+        if offer_row:
+            offer_type = offer_row.offer_type
+            kwh_price = float(offer_row.base_price or 0)
+            kwh_price_hc = float(offer_row.hc_price or 0)
+            kwh_price_hp = float(offer_row.hp_price or 0)
+            # Pour les offres BASE, utiliser base_price comme prix unique
+            if offer_type == "BASE" and kwh_price > 0:
+                kwh_price_hc = kwh_price
+                kwh_price_hp = kwh_price
+        else:
+            # Fallback sur la config d'export
+            kwh_price = self.config.get("kwh_price", 0.0)
+            kwh_price_hc = self.config.get("kwh_price_hc", 0.0)
+            kwh_price_hp = self.config.get("kwh_price_hp", 0.0)
+
+        device = self._get_device_linky(pdl)
+        oldest_date = today - timedelta(days=nb_days)
+
+        # Récupérer les infos contrat (plages HC, puissance souscrite, week-end creux)
+        tariff_info, offpeak_ranges, subscribed_power_kva = await self._get_pdl_contract_info(db, pdl)
+        weekend_offpeak = tariff_info.weekend_offpeak
+
+        # =====================================================================
+        # BATCH QUERIES (minimiser les allers-retours DB)
+        # =====================================================================
+
+        # 1. Totaux journaliers pour les N derniers jours (jusqu'à J-1 max)
+        daily_totals = await stats.get_daily_totals_range(
+            pdl, oldest_date, max_date, direction
+        )
+
+        # 2. Données détaillées 30min (pour HP/HC + puissance max)
+        detailed_records = await stats.get_detailed_range(
+            pdl, oldest_date, max_date, direction
+        )
+
+        # 3. Couleurs Tempo pour les N derniers jours
+        tempo_colors: dict[str, str] = {}
+        result = await db.execute(
+            select(TempoDay.id, TempoDay.color)
+            .where(TempoDay.id >= oldest_date.isoformat())
+            .where(TempoDay.id <= max_date.isoformat())
+        )
+        for row in result.all():
+            tempo_colors[row[0]] = row[1].value
+
+        # Identifier le dernier jour avec des données disponibles
+        if daily_totals:
+            yesterday = max(daily_totals.keys())
+        else:
+            yesterday = max_date
+        day_before = yesterday - timedelta(days=1)
+
+        # =====================================================================
+        # CALCUL HP/HC ET PUISSANCE MAX PAR JOUR (en mémoire)
+        # =====================================================================
+
+        # Grouper les données détaillées par jour
+        detailed_by_day: dict[date, list[tuple[str | None, int]]] = defaultdict(list)
+        for d, interval_start, value in detailed_records:
+            detailed_by_day[d].append((interval_start, value))
+
+        has_detailed = len(detailed_records) > 0
+        # HP/HC seulement pour un contrat à heures creuses : des plages Enedis peuvent rester
+        # en base après un passage en BASE (cf. routers/pdl.py)
+        has_offpeak = tariff_info.family != "BASE" and (len(offpeak_ranges) > 0 or weekend_offpeak)
+
+        # Calculer HP/HC et max power pour chaque jour
+        daily_hp: dict[date, int] = {}   # Wh
+        daily_hc: dict[date, int] = {}   # Wh
+        daily_mp: dict[date, float] = {}  # kW
+        daily_mp_time: dict[date, str | None] = {}
+        daily_mp_over: dict[date, bool] = {}
+
+        for day_date, intervals in detailed_by_day.items():
+            hp_wh = 0
+            hc_wh = 0
+            max_power_kw = 0.0
+            max_time: str | None = None
+
+            for interval_start, value in intervals:
+                # Les valeurs DETAILED sont en W (puissance moyenne sur 30min)
+                # Énergie sur 30min = W / 2 pour obtenir des Wh
+                wh = value / 2
+
+                # HP/HC
+                if has_offpeak and is_offpeak_slot(day_date, interval_start, offpeak_ranges, weekend_offpeak):
+                    hc_wh += wh
+                else:
+                    hp_wh += wh
+
+                # Puissance max (W → kW)
+                power_kw = value / 1000
+                if power_kw > max_power_kw:
+                    max_power_kw = power_kw
+                    max_time = interval_start
+
+            daily_hp[day_date] = int(hp_wh)
+            daily_hc[day_date] = int(hc_wh)
+            daily_mp[day_date] = round(max_power_kw, 2)
+            daily_mp_time[day_date] = max_time
+            daily_mp_over[day_date] = (
+                max_power_kw > subscribed_power_kva
+                if subscribed_power_kva
+                else False
+            )
+
+        # =====================================================================
+        # ATTRIBUTS "HIER" (= dernier jour avec des données)
+        # =====================================================================
+
+        yesterday_wh = daily_totals.get(yesterday, 0)
+        yesterday_kwh = round(yesterday_wh / 1000, 2)
+        day2_wh = daily_totals.get(day_before, 0)
+        day2_kwh = round(day2_wh / 1000, 2)
+        yesterday_evolution = self._safe_evolution(yesterday_kwh, day2_kwh)
+
+        # HP/HC d'hier
+        if has_detailed and has_offpeak and yesterday in daily_hp:
+            yesterday_hp_kwh = round(daily_hp[yesterday] / 1000, 2)
+            yesterday_hc_kwh = round(daily_hc[yesterday] / 1000, 2)
+        else:
+            yesterday_hp_kwh = -1
+            yesterday_hc_kwh = -1
+
+        # Coût journalier (HC*prix_HC + HP*prix_HP si dispo, sinon total*prix_base)
+        if yesterday_hc_kwh != -1 and yesterday_hp_kwh != -1 and (kwh_price_hc > 0 or kwh_price_hp > 0):
+            daily_cost = round(yesterday_hc_kwh * kwh_price_hc + yesterday_hp_kwh * kwh_price_hp, 2)
+        elif kwh_price > 0:
+            daily_cost = round(yesterday_kwh * kwh_price, 2)
+        else:
+            daily_cost = 0
+
+        # =====================================================================
+        # ATTRIBUTS "SEMAINE"
+        # =====================================================================
+
+        # Semaine courante : lundi → hier
+        monday = today - timedelta(days=today.weekday())
+        current_week_wh = await stats.get_date_range_total(
+            pdl, monday, yesterday, direction
+        )
+        current_week_kwh = round(current_week_wh / 1000, 2)
+
+        # Semaine dernière : lundi-1 → dimanche-1
+        prev_monday = monday - timedelta(days=7)
+        prev_sunday = monday - timedelta(days=1)
+        last_week_wh = await stats.get_date_range_total(
+            pdl, prev_monday, prev_sunday, direction
+        )
+        last_week_kwh = round(last_week_wh / 1000, 2)
+
+        current_week_evolution = self._safe_evolution(current_week_kwh, last_week_kwh)
+
+        # =====================================================================
+        # ATTRIBUTS "MOIS COURANT"
+        # =====================================================================
+
+        first_of_month = date(today.year, today.month, 1)
+        current_month_wh = await stats.get_date_range_total(
+            pdl, first_of_month, yesterday, direction
+        )
+        current_month_kwh = round(current_month_wh / 1000, 2)
+
+        # Même mois A-1
+        current_month_ly_wh = await stats.get_month_total(
+            pdl, today.year - 1, today.month, direction
+        )
+        current_month_ly_kwh = round(current_month_ly_wh / 1000, 2)
+
+        current_month_evolution = self._safe_evolution(
+            current_month_kwh, current_month_ly_kwh
+        )
+
+        # =====================================================================
+        # ATTRIBUTS "MOIS PRECEDENT"
+        # =====================================================================
+
+        if today.month == 1:
+            prev_month, prev_month_year = 12, today.year - 1
+        else:
+            prev_month, prev_month_year = today.month - 1, today.year
+
+        last_month_wh = await stats.get_month_total(
+            pdl, prev_month_year, prev_month, direction
+        )
+        last_month_kwh = round(last_month_wh / 1000, 2)
+
+        last_month_ly_wh = await stats.get_month_total(
+            pdl, prev_month_year - 1, prev_month, direction
+        )
+        last_month_ly_kwh = round(last_month_ly_wh / 1000, 2)
+
+        monthly_evolution = self._safe_evolution(last_month_kwh, last_month_ly_kwh)
+
+        # =====================================================================
+        # ATTRIBUTS "ANNEE"
+        # =====================================================================
+
+        first_of_year = date(today.year, 1, 1)
+        current_year_wh = await stats.get_date_range_total(
+            pdl, first_of_year, yesterday, direction
+        )
+        current_year_kwh = round(current_year_wh / 1000, 2)
+
+        # Même période A-1
+        first_of_year_ly = date(today.year - 1, 1, 1)
+        yesterday_ly = date(today.year - 1, yesterday.month, min(yesterday.day, 28))
+        current_year_ly_wh = await stats.get_date_range_total(
+            pdl, first_of_year_ly, yesterday_ly, direction
+        )
+        current_year_ly_kwh = round(current_year_ly_wh / 1000, 2)
+
+        yearly_evolution = self._safe_evolution(current_year_kwh, current_year_ly_kwh)
+
+        # =====================================================================
+        # PEAK/OFFPEAK PERCENT (année courante)
+        # =====================================================================
+
+        if has_detailed and has_offpeak:
+            hp_year_wh, hc_year_wh = await stats.get_hp_hc_year_total(
+                pdl, today.year, offpeak_ranges, direction, weekend_offpeak
+            )
+            total_year_hp_hc = hp_year_wh + hc_year_wh
+            peak_offpeak_percent = (
+                round(hp_year_wh / total_year_hp_hc * 100, 1)
+                if total_year_hp_hc > 0
+                else 0
+            )
+        else:
+            peak_offpeak_percent = -1
+
+        # =====================================================================
+        # HISTORIQUE JOURNALIER (daily, dailyweek, dailyweek_*)
+        # =====================================================================
+
+        # Construire les listes pour les N derniers jours
+        # daily : array, oldest first, -1 si manquant
+        # dailyweek* : comma-separated, newest first, -1 si manquant
+        daily_array = []  # oldest first
+        dates_newest_first = []  # pour dailyweek*
+        costs_newest = []
+        hc_newest = []
+        hp_newest = []
+        cost_hc_newest = []
+        cost_hp_newest = []
+        mp_newest = []
+        mp_over_newest = []
+        mp_time_newest = []
+        tempo_newest = []
+
+        # Boucler du plus ancien au dernier jour avec données (yesterday)
+        # pour ne pas inclure de jours sans données en fin de liste
+        history_start = yesterday - timedelta(days=nb_days - 1)
+        current_day = history_start
+        while current_day <= yesterday:
+            day = current_day
+            current_day += timedelta(days=1)
+            day_wh = daily_totals.get(day)
+
+            if day_wh is not None:
+                day_kwh = round(day_wh / 1000, 2)
+                daily_array.append(day_kwh)
+            else:
+                day_kwh = -1
+                daily_array.append(-1)
+
+            # Les listes newest-first sont construites en ajoutant au début
+            dates_newest_first.append(f"{day.isoformat()}T00:00:00")
+
+            # HP/HC par jour
+            if has_detailed and has_offpeak and day in daily_hp:
+                hp_kwh = round(daily_hp[day] / 1000, 2)
+                hc_kwh = round(daily_hc[day] / 1000, 2)
+                hc_newest.append(str(hc_kwh))
+                hp_newest.append(str(hp_kwh))
+                # Coûts HP/HC
+                if kwh_price_hc > 0:
+                    cost_hc_newest.append(str(round(hc_kwh * kwh_price_hc, 2)))
+                else:
+                    cost_hc_newest.append("-1")
+                if kwh_price_hp > 0:
+                    cost_hp_newest.append(str(round(hp_kwh * kwh_price_hp, 2)))
+                else:
+                    cost_hp_newest.append("-1")
+                # Coût total du jour (HC*prix_HC + HP*prix_HP)
+                if kwh_price_hc > 0 or kwh_price_hp > 0:
+                    day_cost = round(hc_kwh * kwh_price_hc + hp_kwh * kwh_price_hp, 2)
+                    costs_newest.append(str(day_cost))
+                elif kwh_price > 0:
+                    costs_newest.append(str(round(day_kwh * kwh_price, 2)))
+                else:
+                    costs_newest.append("-1")
+            else:
+                hc_newest.append("-1")
+                hp_newest.append("-1")
+                cost_hc_newest.append("-1")
+                cost_hp_newest.append("-1")
+                # Coût total avec prix base (fallback sans données détaillées)
+                if day_kwh != -1 and kwh_price > 0:
+                    costs_newest.append(str(round(day_kwh * kwh_price, 2)))
+                else:
+                    costs_newest.append("-1")
+
+            # Puissance max
+            if has_detailed and day in daily_mp:
+                mp_newest.append(str(daily_mp[day]))
+                mp_over_newest.append(str(daily_mp_over[day]).lower())
+                if daily_mp_time[day]:
+                    mp_time_newest.append(
+                        f"{day.isoformat()}T{daily_mp_time[day]}:00"
+                    )
+                else:
+                    mp_time_newest.append("-1")
+            else:
+                mp_newest.append("-1")
+                mp_over_newest.append("-1")
+                mp_time_newest.append("-1")
+
+            # Couleur Tempo
+            tempo_color = tempo_colors.get(day.isoformat(), None)
+            tempo_newest.append(tempo_color if tempo_color else "-1")
+
+        # Inverser les listes newest-first (on a construit oldest-first)
+        dates_newest_first.reverse()
+        costs_newest.reverse()
+        hc_newest.reverse()
+        hp_newest.reverse()
+        cost_hc_newest.reverse()
+        cost_hp_newest.reverse()
+        mp_newest.reverse()
+        mp_over_newest.reverse()
+        mp_time_newest.reverse()
+        tempo_newest.reverse()
+
+        # =====================================================================
+        # CONSTRUCTION DES ATTRIBUTS
+        # =====================================================================
+
+        type_compteur = "consommation" if direction == "consumption" else "production"
+
+        linky_attributes: dict[str, Any] = {
+            # Meta
+            "typeCompteur": type_compteur,
+            "serviceEnedis": "myElectricalData",
+            "unit_of_measurement": "kWh",
+            "friendly_name": f"Linky {pdl}",
+            # Hier
+            "yesterday": yesterday_kwh,
+            "day_2": day2_kwh,
+            "yesterday_evolution": yesterday_evolution,
+            "yesterday_HC": yesterday_hc_kwh,
+            "yesterday_HP": yesterday_hp_kwh,
+            "daily_cost": daily_cost,
+            # Semaine
+            "current_week": current_week_kwh,
+            "last_week": last_week_kwh,
+            "current_week_evolution": current_week_evolution,
+            # Mois courant
+            "current_month": current_month_kwh,
+            "current_month_last_year": current_month_ly_kwh,
+            "current_month_evolution": current_month_evolution,
+            # Mois précédent
+            "last_month": last_month_kwh,
+            "last_month_last_year": last_month_ly_kwh,
+            "monthly_evolution": monthly_evolution,
+            # Année
+            "current_year": current_year_kwh,
+            "current_year_last_year": current_year_ly_kwh,
+            "yearly_evolution": yearly_evolution,
+            # HP/HC
+            "peak_offpeak_percent": peak_offpeak_percent,
+            # Historique journalier (newest-first, comme dailyweek)
+            "daily": list(reversed(daily_array)),
+            "dailyweek": ",".join(dates_newest_first),
+            "dailyweek_cost": ",".join(costs_newest),
+            "dailyweek_costHC": ",".join(cost_hc_newest),
+            "dailyweek_costHP": ",".join(cost_hp_newest),
+            "dailyweek_HC": ",".join(hc_newest),
+            "dailyweek_HP": ",".join(hp_newest),
+            "dailyweek_MP": ",".join(mp_newest),
+            "dailyweek_MP_over": ",".join(mp_over_newest),
+            "dailyweek_MP_time": ",".join(mp_time_newest),
+            "dailyweek_Tempo": ",".join(tempo_newest),
+            # Erreur / version
+            "errorLastCall": "",
+            "versionUpdateAvailable": False,
+            "versionGit": "",
+        }
+
+        # =====================================================================
+        # PUBLICATION MQTT
+        # =====================================================================
+
+        topic_dir = "consumption" if direction == "consumption" else "production"
+        await self._publish_sensor_old_format(
+            client,
+            topic=f"myelectricaldata_{topic_dir}/{pdl}",
+            name=topic_dir,
+            unique_id=f"myelectricaldata_linky_{pdl}_{topic_dir}",
+            device=device,
+            state=yesterday_kwh,
+            attributes=linky_attributes,
+            unit="kWh",
+            device_class="energy",
+            state_class="total",
+            icon="mdi:lightning-bolt" if direction == "consumption" else "mdi:solar-power",
+        )
+
+        logger.info(
+            f"[HA-MQTT] Exported linky-card {direction} for {pdl}: "
+            f"yesterday={yesterday_kwh}kWh, {nb_days} days history"
+        )
+        return 1
+
+    # =========================================================================
     # TEMPO EXPORT (Old MyElectricalData format)
     # =========================================================================
 
@@ -842,7 +1599,7 @@ class HomeAssistantExporter(BaseExporter):
             select(TempoDay).where(TempoDay.id == today_str)
         )
         today_tempo = result.scalar_one_or_none()
-        today_color = today_tempo.color.value if today_tempo else "UNKNOWN"
+        today_color = today_tempo.color.value if today_tempo else "Inconnu"
 
         await self._publish_sensor_old_format(
             client,
@@ -864,7 +1621,7 @@ class HomeAssistantExporter(BaseExporter):
             select(TempoDay).where(TempoDay.id == tomorrow_str)
         )
         tomorrow_tempo = result.scalar_one_or_none()
-        tomorrow_color = tomorrow_tempo.color.value if tomorrow_tempo else "UNKNOWN"
+        tomorrow_color = tomorrow_tempo.color.value if tomorrow_tempo else "Inconnu"
 
         await self._publish_sensor_old_format(
             client,
@@ -964,7 +1721,14 @@ class HomeAssistantExporter(BaseExporter):
                 "tomorrow": tomorrow_color,
                 "season_start": season_start_str,
                 "season_end": season_end_str,
-                **{f"days_{k}": v for k, v in days_data.items()},
+                # Jours restants pour content-card-linky (quota - used)
+                "days_blue": days_data.get("blue", {}).get("quota", 0) - days_data.get("blue", {}).get("used", 0),
+                "days_white": days_data.get("white", {}).get("quota", 0) - days_data.get("white", {}).get("used", 0),
+                "days_red": days_data.get("red", {}).get("quota", 0) - days_data.get("red", {}).get("used", 0),
+                # Détails complets pour usage avancé
+                "days_blue_detail": days_data.get("blue", {}),
+                "days_white_detail": days_data.get("white", {}),
+                "days_red_detail": days_data.get("red", {}),
             },
             icon="mdi:information",
         )
@@ -1003,6 +1767,7 @@ class HomeAssistantExporter(BaseExporter):
             "WHITE": "Blanc",
             "RED": "Rouge",
             "UNKNOWN": "Inconnu",
+            "Inconnu": "Inconnu",
         }
         return names.get(color, "Inconnu")
 
@@ -1013,6 +1778,7 @@ class HomeAssistantExporter(BaseExporter):
             "WHITE": "mdi:calendar-alert",
             "RED": "mdi:calendar-remove",
             "UNKNOWN": "mdi:calendar-question",
+            "Inconnu": "mdi:calendar-question",
         }
         return icons.get(color, "mdi:calendar")
 
@@ -1065,12 +1831,19 @@ class HomeAssistantExporter(BaseExporter):
                 if day_name == "j0" and current_hour < len(hour_values):
                     current_hour_value = hour_values[current_hour]
 
+                # Build forecast dict for content-card-linky
+                # Format attendu : {"0h 00min": 1, "1h 00min": 0, ..., "23h 00min": 1}
+                forecast = {}
+                for i, val in enumerate(hour_values):
+                    forecast[f"{i}h 00min"] = val if val is not None else "Pas de valeur"
+
                 # Build attributes with hourly breakdown
                 attributes = {
                     "date": day_date.isoformat(),
                     "day_label": day_label,
                     "message": message,
                     "level_name": self._get_ecowatt_level_name(day_value),
+                    "forecast": forecast,
                     "hourly_values": hour_values,
                 }
                 if current_hour_value is not None:
@@ -1546,11 +2319,27 @@ class HomeAssistantExporter(BaseExporter):
         else:
             return ha_url.replace("http://", "ws://") + "/api/websocket"
 
+    def _ws_connect(self) -> websockets.connect:
+        """Créer une connexion WebSocket avec des timeouts adaptés aux opérations longues
+
+        Désactive les pings automatiques car HA peut mettre du temps à répondre
+        lors des opérations lourdes (clear_statistics, import_statistics).
+        """
+        ws_url = self._get_ws_url()
+        return websockets.connect(
+            ws_url,
+            ping_interval=None,  # Désactiver les pings auto (HA ne répond pas pendant les imports lourds)
+            ping_timeout=None,
+            close_timeout=30,
+            open_timeout=30,
+        )
+
     async def _ws_send_and_receive(
         self,
         ws: websockets.WebSocketClientProtocol,
         message: dict[str, Any],
         msg_id: int,
+        timeout: int = 300,
     ) -> dict[str, Any]:
         """Send a WebSocket message and wait for response
 
@@ -1558,6 +2347,7 @@ class HomeAssistantExporter(BaseExporter):
             ws: WebSocket connection
             message: Message to send (without id)
             msg_id: Message ID to use
+            timeout: Timeout en secondes (défaut: 300s = 5 min)
 
         Returns:
             Response message
@@ -1565,11 +2355,16 @@ class HomeAssistantExporter(BaseExporter):
         message["id"] = msg_id
         await ws.send(json.dumps(message))
 
-        # Wait for response with matching ID
-        while True:
-            response = json.loads(await ws.recv())
-            if response.get("id") == msg_id:
-                return response
+        # Wait for response with matching ID (avec timeout)
+        try:
+            async with asyncio.timeout(timeout):
+                while True:
+                    response = json.loads(await ws.recv())
+                    if response.get("id") == msg_id:
+                        return response
+        except TimeoutError:
+            logger.error(f"[HA-WS] Timeout ({timeout}s) waiting for response to msg_id={msg_id}, type={message.get('type')}")
+            return {"success": False, "error": {"message": f"Timeout après {timeout}s"}}
 
     async def _import_stats_in_chunks(
         self,
@@ -1577,8 +2372,9 @@ class HomeAssistantExporter(BaseExporter):
         stats: list[dict[str, Any]],
         metadata: dict[str, Any],
         msg_id_start: int,
-        chunk_size: int = 500,
-        sync_delay_ms: int = 10000,
+        chunk_size: int = 2000,
+        sync_delay_ms: int = 500,
+        chunk_callback: Any = None,
     ) -> tuple[int, int, list[str]]:
         """Import statistics in chunks to avoid WebSocket timeouts
 
@@ -1589,6 +2385,7 @@ class HomeAssistantExporter(BaseExporter):
             msg_id_start: Starting message ID
             chunk_size: Number of records per chunk (default 500 = ~20 days of hourly data)
             sync_delay_ms: Delay in milliseconds between chunks to let HA ingest data (default 10s)
+            chunk_callback: Optional async callback(imported_count, total_stats) appelé après chaque chunk
 
         Returns:
             Tuple of (total_imported, next_msg_id, errors)
@@ -1640,14 +2437,17 @@ class HomeAssistantExporter(BaseExporter):
 
             if response.get("success", True):
                 total_imported += len(chunk)
-                logger.debug(
+                logger.info(
                     f"[HA-WS] Imported chunk {i//chunk_size + 1}: "
                     f"{len(chunk)} stats for {metadata.get('statistic_id')}"
                 )
+                # Notifier la progression par chunk
+                if chunk_callback:
+                    await chunk_callback(total_imported, len(stats))
             else:
                 error = response.get("error", {}).get("message", "Unknown error")
                 errors.append(f"{metadata.get('statistic_id')} chunk {i//chunk_size + 1}: {error}")
-                logger.warning(f"[HA-WS] Chunk import failed: {error}")
+                logger.error(f"[HA-WS] Chunk import failed for {metadata.get('statistic_id')}: {error}")
 
             # Délai entre les chunks pour laisser HA ingérer les données
             if sync_delay_ms > 0:
@@ -1673,11 +2473,10 @@ class HomeAssistantExporter(BaseExporter):
                 "statistic_ids": [],
             }
 
-        ws_url = self._get_ws_url()
         token = self.config.get("ha_token")
 
         try:
-            async with websockets.connect(ws_url) as ws:
+            async with self._ws_connect() as ws:
                 # Wait for auth_required
                 auth_req = json.loads(await ws.recv())
                 if auth_req.get("type") != "auth_required":
@@ -1777,11 +2576,10 @@ class HomeAssistantExporter(BaseExporter):
                 "oldest_date": None,
             }
 
-        ws_url = self._get_ws_url()
         token = self.config.get("ha_token")
 
         try:
-            async with websockets.connect(ws_url) as ws:
+            async with self._ws_connect() as ws:
                 # Auth
                 auth_req = json.loads(await ws.recv())
                 if auth_req.get("type") != "auth_required":
@@ -1836,8 +2634,10 @@ class HomeAssistantExporter(BaseExporter):
                         if start_ts:
                             # Parse ISO format timestamp
                             if isinstance(start_ts, (int, float)):
-                                # Unix timestamp in seconds
-                                last_dates[stat_id] = datetime.fromtimestamp(start_ts, tz=tz_paris)
+                                # HA retourne les timestamps en secondes,
+                                # mais détecte les ms si la valeur est trop grande (> an 3000)
+                                ts = start_ts / 1000 if start_ts > 32503680000 else start_ts
+                                last_dates[stat_id] = datetime.fromtimestamp(ts, tz=tz_paris)
                             else:
                                 # ISO format string
                                 try:
@@ -1902,11 +2702,10 @@ class HomeAssistantExporter(BaseExporter):
                 "cleared_count": 0,
             }
 
-        ws_url = self._get_ws_url()
         token = self.config.get("ha_token")
 
         try:
-            async with websockets.connect(ws_url) as ws:
+            async with self._ws_connect() as ws:
                 # Auth
                 auth_req = json.loads(await ws.recv())
                 if auth_req.get("type") != "auth_required":
@@ -1958,8 +2757,8 @@ class HomeAssistantExporter(BaseExporter):
         db: AsyncSession,
         usage_point_ids: list[str],
         clear_first: bool = True,
-        sync_delay_ms: int = 10000,
-        chunk_size: int = 500,
+        sync_delay_ms: int = 500,
+        chunk_size: int = 2000,
         incremental: bool = False,
     ) -> dict[str, Any]:
         """Import consumption/production statistics to Home Assistant Energy Dashboard
@@ -2005,7 +2804,6 @@ class HomeAssistantExporter(BaseExporter):
             if not clear_result.get("success"):
                 logger.warning(f"[HA-WS] Failed to clear statistics: {clear_result.get('message')}")
 
-        ws_url = self._get_ws_url()
         token = self.config.get("ha_token")
 
         results = {
@@ -2016,7 +2814,7 @@ class HomeAssistantExporter(BaseExporter):
         }
 
         try:
-            async with websockets.connect(ws_url) as ws:
+            async with self._ws_connect() as ws:
                 # Auth
                 auth_req = json.loads(await ws.recv())
                 if auth_req.get("type") != "auth_required":
@@ -2162,8 +2960,8 @@ class HomeAssistantExporter(BaseExporter):
         usage_point_ids: list[str],
         clear_first: bool = True,
         progress_callback: Any = None,
-        sync_delay_ms: int = 10000,
-        chunk_size: int = 500,
+        sync_delay_ms: int = 500,
+        chunk_size: int = 2000,
         incremental: bool = False,
     ) -> dict[str, Any]:
         """Import statistics with progress callback for SSE streaming
@@ -2225,11 +3023,10 @@ class HomeAssistantExporter(BaseExporter):
                 logger.info("[HA-WS] No existing statistics found, performing full import")
                 incremental = False
 
-        # Calculer le nombre total d'étapes
-        # Pour chaque PDL: 1 (lecture conso) + N tarifs conso + N tarifs coût + 1 prod
-        # Estimation: clear + auth + (PDL * ~15 étapes)
+        # Le total d'étapes est recalculé dynamiquement après chargement des tarifs
         num_pdls = len(usage_point_ids)
-        total_steps = 2 + (num_pdls * 15)  # Estimation
+        # Estimation initiale : 2 (clear+auth) + 4 par PDL (lecture conso + 2 tarifs + calcul coût + 2 coûts + prod)
+        total_steps = 2 + (num_pdls * 7)
         current_step = 0
 
         # Step 1: Clear si demandé (disabled for incremental mode)
@@ -2242,7 +3039,6 @@ class HomeAssistantExporter(BaseExporter):
             await emit_progress(current_step, total_steps, f"Mode incrémental: import depuis {since_date.date() if since_date else 'N/A'}...")
         current_step += 1
 
-        ws_url = self._get_ws_url()
         token = self.config.get("ha_token")
 
         results: dict[str, Any] = {
@@ -2253,7 +3049,7 @@ class HomeAssistantExporter(BaseExporter):
         }
 
         try:
-            async with websockets.connect(ws_url) as ws:
+            async with self._ws_connect() as ws:
                 # Step 2: Auth
                 await emit_progress(current_step, total_steps, "Connexion à Home Assistant...")
                 auth_req = json.loads(await ws.recv())
@@ -2287,6 +3083,20 @@ class HomeAssistantExporter(BaseExporter):
                 }
 
                 for pdl_idx, pdl in enumerate(usage_point_ids):
+                    # Callback de progression par chunk : affiche le nb importé / total en temps réel
+                    async def make_chunk_cb(category: str, label: str):
+                        base = results[category]
+                        async def cb(imported_in_tariff: int, total_in_tariff: int):
+                            # Afficher le compteur temporaire (base + en cours)
+                            tmp = dict(results)
+                            tmp[category] = base + imported_in_tariff
+                            await emit_progress(
+                                current_step, total_steps,
+                                f"{label} ({imported_in_tariff}/{total_in_tariff})",
+                                tmp["consumption"], tmp["cost"], tmp["production"]
+                            )
+                        return cb
+
                     # Étape: Lecture des données de consommation
                     await emit_progress(
                         current_step, total_steps,
@@ -2296,15 +3106,23 @@ class HomeAssistantExporter(BaseExporter):
                     consumption_by_tariff = await self._get_consumption_statistics_by_tariff(db, pdl, since_date)
                     current_step += 1
 
+                    # Recalculer total_steps pour ce PDL maintenant qu'on connaît le nb de tarifs
+                    # Pour ce PDL : N tarifs conso + 1 calcul coût + N tarifs coût + 1 prod = 2N + 2
+                    n_tariffs = len(consumption_by_tariff)
+                    # Ajuster l'estimation (on avait compté 7, on met le vrai chiffre)
+                    total_steps += (2 * n_tariffs + 2) - 7  # Différence entre réel et estimé
+
                     # Import consommation par tarif
                     for tariff_tag, stats in consumption_by_tariff.items():
                         tariff_name = tariff_names.get(tariff_tag, tariff_tag.upper())
+                        current_message = f"PDL {pdl_idx + 1}/{num_pdls}: Import conso {tariff_name}..."
                         await emit_progress(
                             current_step, total_steps,
-                            f"PDL {pdl_idx + 1}/{num_pdls}: Import conso {tariff_name}...",
+                            current_message,
                             results["consumption"], results["cost"], results["production"]
                         )
 
+                        chunk_cb = await make_chunk_cb("consumption", current_message)
                         statistic_id = f"{prefix}:consumption_{pdl}_{tariff_tag}"
                         imported, msg_id, chunk_errors = await self._import_stats_in_chunks(
                             ws,
@@ -2320,6 +3138,7 @@ class HomeAssistantExporter(BaseExporter):
                             msg_id_start=msg_id,
                             chunk_size=chunk_size,
                             sync_delay_ms=sync_delay_ms,
+                            chunk_callback=chunk_cb,
                         )
                         results["consumption"] += imported
                         results["errors"].extend(chunk_errors)
@@ -2336,12 +3155,14 @@ class HomeAssistantExporter(BaseExporter):
 
                     for tariff_tag, cost_stats in cost_by_tariff.items():
                         tariff_name = tariff_names.get(tariff_tag, tariff_tag.upper())
+                        current_message = f"PDL {pdl_idx + 1}/{num_pdls}: Import coût {tariff_name}..."
                         await emit_progress(
                             current_step, total_steps,
-                            f"PDL {pdl_idx + 1}/{num_pdls}: Import coût {tariff_name}...",
+                            current_message,
                             results["consumption"], results["cost"], results["production"]
                         )
 
+                        chunk_cb = await make_chunk_cb("cost", current_message)
                         statistic_id = f"{prefix}:cost_{pdl}_{tariff_tag}"
                         imported, msg_id, chunk_errors = await self._import_stats_in_chunks(
                             ws,
@@ -2357,18 +3178,21 @@ class HomeAssistantExporter(BaseExporter):
                             msg_id_start=msg_id,
                             chunk_size=chunk_size,
                             sync_delay_ms=sync_delay_ms,
+                            chunk_callback=chunk_cb,
                         )
                         results["cost"] += imported
                         results["errors"].extend(chunk_errors)
                         current_step += 1
 
                     # Production
+                    current_message = f"PDL {pdl_idx + 1}/{num_pdls}: Import production..."
                     await emit_progress(
                         current_step, total_steps,
-                        f"PDL {pdl_idx + 1}/{num_pdls}: Import production...",
+                        current_message,
                         results["consumption"], results["cost"], results["production"]
                     )
                     production_stats = await self._get_production_statistics(db, pdl, since_date)
+                    chunk_cb = await make_chunk_cb("production", current_message)
                     statistic_id = f"{prefix}:production_{pdl}"
                     imported, msg_id, chunk_errors = await self._import_stats_in_chunks(
                         ws,
@@ -2384,6 +3208,7 @@ class HomeAssistantExporter(BaseExporter):
                         msg_id_start=msg_id,
                         chunk_size=chunk_size,
                         sync_delay_ms=sync_delay_ms,
+                        chunk_callback=chunk_cb,
                     )
                     results["production"] += imported
                     results["errors"].extend(chunk_errors)
@@ -2432,37 +3257,18 @@ class HomeAssistantExporter(BaseExporter):
         from datetime import timedelta
         from zoneinfo import ZoneInfo
 
-        from ...models.client_mode import ConsumptionData, ContractData, DataGranularity
-        from ...models.pdl import PDL
+        from ...models.client_mode import ConsumptionData, DataGranularity
         from ...models.tempo_day import TempoColor, TempoDay
 
         tz_paris = ZoneInfo("Europe/Paris")
 
-        # 1. Get contract info to determine pricing option
-        # First try ContractData (client mode cache), then fallback to PDL.pricing_option
-        contract_result = await db.execute(
-            select(ContractData).where(ContractData.usage_point_id == pdl)
+        # 1. Profil tarifaire et plages HC (PDL.pricing_option prioritaire, cf. _get_pdl_contract_info)
+        profile, contract_ranges, _ = await self._get_pdl_contract_info(db, pdl)
+        # Aucune plage connue : 22h-6h
+        parsed_offpeak = contract_ranges or DEFAULT_OFFPEAK_RANGES
+        logger.info(
+            f"[HA-WS] PDL {pdl}: tariff={profile}, offpeak_ranges={contract_ranges}, since_date={since_date}"
         )
-        contract = contract_result.scalar_one_or_none()
-
-        pricing_option = "BASE"  # Default
-        offpeak_hours: list[dict] = []
-
-        if contract and contract.pricing_option:
-            pricing_option = contract.pricing_option.upper()
-            # offpeak_hours format: [{"start": "22:00", "end": "06:00"}, ...]
-            offpeak_hours = contract.offpeak_hours or []
-        else:
-            # Fallback: get pricing_option from PDL record
-            pdl_result = await db.execute(
-                select(PDL).where(PDL.usage_point_id == pdl)
-            )
-            pdl_record = pdl_result.scalar_one_or_none()
-            if pdl_record and pdl_record.pricing_option:
-                pricing_option = pdl_record.pricing_option.upper()
-                offpeak_hours = pdl_record.offpeak_hours or []
-
-        logger.info(f"[HA-WS] PDL {pdl}: pricing_option={pricing_option}, offpeak_hours={offpeak_hours}, since_date={since_date}")
 
         # 2. Try to get detailed data (30-min) first, fallback to daily
         # Apply since_date filter if provided (for incremental import)
@@ -2504,7 +3310,7 @@ class HomeAssistantExporter(BaseExporter):
 
         # 3. For TEMPO, load the color calendar
         tempo_colors: dict[str, TempoColor] = {}
-        if "TEMPO" in pricing_option:
+        if profile.family == "TEMPO":
             tempo_result = await db.execute(select(TempoDay))
             for day in tempo_result.scalars().all():
                 # Store by date string YYYY-MM-DD
@@ -2515,14 +3321,14 @@ class HomeAssistantExporter(BaseExporter):
         stats_by_tariff: dict[str, list[dict[str, Any]]] = {}
         cumulative_by_tariff: dict[str, float] = {}
 
-        if "TEMPO" in pricing_option:
+        if profile.family == "TEMPO":
             # 6 buckets: blue_hc, blue_hp, white_hc, white_hp, red_hc, red_hp
             for color in ["blue", "white", "red"]:
                 for period in ["hc", "hp"]:
                     key = f"{color}_{period}"
                     stats_by_tariff[key] = []
                     cumulative_by_tariff[key] = 0.0
-        elif pricing_option in ("HC/HP", "HCHP", "EJP"):
+        elif profile.family == "HC_HP":
             # 2 buckets: hc, hp
             stats_by_tariff["hc"] = []
             stats_by_tariff["hp"] = []
@@ -2532,29 +3338,6 @@ class HomeAssistantExporter(BaseExporter):
             # BASE: 1 bucket
             stats_by_tariff["base"] = []
             cumulative_by_tariff["base"] = 0.0
-
-        # 5. Helper to determine if an hour is in off-peak period
-        def is_offpeak_hour(hour: int, minute: int = 0) -> bool:
-            """Check if given time is in off-peak hours"""
-            if not offpeak_hours:
-                # Default: 22h-6h = heures creuses
-                return hour < 6 or hour >= 22
-
-            time_minutes = hour * 60 + minute
-            for period in offpeak_hours:
-                start_parts = period.get("start", "22:00").split(":")
-                end_parts = period.get("end", "06:00").split(":")
-                start_minutes = int(start_parts[0]) * 60 + int(start_parts[1]) if len(start_parts) >= 2 else 22 * 60
-                end_minutes = int(end_parts[0]) * 60 + int(end_parts[1]) if len(end_parts) >= 2 else 6 * 60
-
-                # Handle overnight periods (e.g., 22:00 -> 06:00)
-                if start_minutes > end_minutes:
-                    if time_minutes >= start_minutes or time_minutes < end_minutes:
-                        return True
-                else:
-                    if start_minutes <= time_minutes < end_minutes:
-                        return True
-            return False
 
         # 6. Helper to convert W → Wh based on interval_length
         def convert_w_to_wh(value_w: int, raw_data: dict | None) -> float:
@@ -2599,14 +3382,14 @@ class HomeAssistantExporter(BaseExporter):
             # Parse time
             if use_detailed and record.interval_start:
                 # Parse interval_start (e.g., "14:30")
-                hour, minute = map(int, record.interval_start.split(":"))
+                hour, minute = map(int, record.interval_start.split(":")[:2])
             else:
                 # Daily data: split into 24 hourly entries
-                hour = 0
+                hour, minute = 0, 0
 
-            # Determine tariff tag based on the hour (not the minute)
-            # The tariff is determined by the START of the hour
-            if "TEMPO" in pricing_option:
+            # Determine tariff tag: TEMPO by hour, HC/HP by the exact start of the slot
+            # (contract ranges can start on the half hour, e.g. 22:30-06:30)
+            if profile.family == "TEMPO":
                 # TEMPO logic: 6h-22h = HP, 22h-6h = HC
                 # For data between 00:00 and 06:00, the color is from the previous day
                 if 6 <= hour < 22:
@@ -2625,10 +3408,9 @@ class HomeAssistantExporter(BaseExporter):
                 color_name = color.value.lower() if hasattr(color, 'value') else str(color).lower()
                 tariff_tag = f"{color_name}_{period}"
 
-            elif pricing_option in ("HC/HP", "HCHP", "EJP"):
-                # HC/HP: use off-peak hours from contract
-                # Use start of hour for tariff determination
-                if is_offpeak_hour(hour, 0):
+            elif profile.family == "HC_HP":
+                # HC/HP: use off-peak hours from contract (weekend fully off-peak for weekend offers)
+                if is_offpeak(record.date, hour, minute, parsed_offpeak, profile.weekend_offpeak):
                     tariff_tag = "hc"
                 else:
                     tariff_tag = "hp"
@@ -2647,7 +3429,7 @@ class HomeAssistantExporter(BaseExporter):
                 hourly_value = value_kwh / 24
                 for h in range(24):
                     # Re-determine tariff for each hour
-                    if "TEMPO" in pricing_option:
+                    if profile.family == "TEMPO":
                         if 6 <= h < 22:
                             h_period = "hp"
                             h_tempo_date = record.date
@@ -2661,8 +3443,8 @@ class HomeAssistantExporter(BaseExporter):
                         h_color = tempo_colors.get(h_date_str, TempoColor.BLUE)
                         h_color_name = h_color.value.lower() if hasattr(h_color, 'value') else str(h_color).lower()
                         h_tariff_tag = f"{h_color_name}_{h_period}"
-                    elif pricing_option in ("HC/HP", "HCHP", "EJP"):
-                        h_tariff_tag = "hc" if is_offpeak_hour(h, 0) else "hp"
+                    elif profile.family == "HC_HP":
+                        h_tariff_tag = "hc" if is_offpeak(record.date, h, 0, parsed_offpeak, profile.weekend_offpeak) else "hp"
                     else:
                         h_tariff_tag = "base"
 
@@ -2748,8 +3530,9 @@ class HomeAssistantExporter(BaseExporter):
         # Build price map based on offer type
         # Convert Decimal to float for calculations
         prices: dict[str, float] = {}
+        family = tariff_profile(offer.offer_type).family
 
-        if offer.offer_type == "TEMPO":
+        if family == "TEMPO":
             # TEMPO has 6 tariffs
             if offer.tempo_blue_hc:
                 prices["blue_hc"] = float(offer.tempo_blue_hc)
@@ -2763,7 +3546,7 @@ class HomeAssistantExporter(BaseExporter):
                 prices["red_hc"] = float(offer.tempo_red_hc)
             if offer.tempo_red_hp:
                 prices["red_hp"] = float(offer.tempo_red_hp)
-        elif offer.offer_type in ("HC_HP", "HCHP"):
+        elif family == "HC_HP":
             # HC/HP has 2 tariffs
             if offer.hc_price:
                 prices["hc"] = float(offer.hc_price)
