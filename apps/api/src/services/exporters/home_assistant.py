@@ -2381,7 +2381,7 @@ class HomeAssistantExporter(BaseExporter):
         Args:
             ws: WebSocket connection
             stats: List of statistics to import (can be empty to just create the entity)
-            metadata: Metadata for the statistic (has_mean, has_sum, statistic_id, name, source, unit)
+            metadata: Metadata for the statistic (has_mean, mean_type, has_sum, statistic_id, name, source, unit_of_measurement, unit_class)
             msg_id_start: Starting message ID
             chunk_size: Number of records per chunk (default 500 = ~20 days of hourly data)
             sync_delay_ms: Delay in milliseconds between chunks to let HA ingest data (default 10s)
@@ -2394,13 +2394,27 @@ class HomeAssistantExporter(BaseExporter):
         errors: list[str] = []
         msg_id = msg_id_start
 
+        # Ensure metadata has mean_type and unit_class for HA Core >= 2026.11 compliance
+        # (has_mean is kept for backwards compatibility with older HA versions)
+        meta = dict(metadata)
+        if "mean_type" not in meta:
+            meta["mean_type"] = 1 if meta.get("has_mean", False) else 0
+        if "unit_class" not in meta:
+            unit = meta.get("unit_of_measurement")
+            if unit in ("kWh", "Wh", "MWh"):
+                meta["unit_class"] = "energy"
+            elif unit in ("W", "kW", "MW"):
+                meta["unit_class"] = "power"
+            else:
+                meta["unit_class"] = None
+
         # Si stats est vide, envoyer quand même pour créer l'entité dans HA
         if not stats:
             response = await self._ws_send_and_receive(
                 ws,
                 {
                     "type": "recorder/import_statistics",
-                    "metadata": metadata,
+                    "metadata": meta,
                     "stats": [],
                 },
                 msg_id=msg_id,
@@ -2408,10 +2422,10 @@ class HomeAssistantExporter(BaseExporter):
             msg_id += 1
 
             if response.get("success", True):
-                logger.debug(f"[HA-WS] Created empty statistic for {metadata.get('statistic_id')}")
+                logger.debug(f"[HA-WS] Created empty statistic for {meta.get('statistic_id')}")
             else:
                 error = response.get("error", {}).get("message", "Unknown error")
-                errors.append(f"{metadata.get('statistic_id')} (empty): {error}")
+                errors.append(f"{meta.get('statistic_id')} (empty): {error}")
                 logger.warning(f"[HA-WS] Failed to create empty statistic: {error}")
 
             # Délai même pour les stats vides si demandé
@@ -2428,7 +2442,7 @@ class HomeAssistantExporter(BaseExporter):
                 ws,
                 {
                     "type": "recorder/import_statistics",
-                    "metadata": metadata,
+                    "metadata": meta,
                     "stats": chunk,
                 },
                 msg_id=msg_id,
@@ -2866,11 +2880,13 @@ class HomeAssistantExporter(BaseExporter):
                             stats,
                             {
                                 "has_mean": False,
+                                "mean_type": 0,
                                 "has_sum": True,
                                 "statistic_id": statistic_id,
                                 "name": f"Consommation {pdl} {tariff_name}",
                                 "source": prefix,
                                 "unit_of_measurement": "kWh",
+                                "unit_class": "energy",
                             },
                             msg_id_start=msg_id,
                             chunk_size=chunk_size,
@@ -2897,11 +2913,13 @@ class HomeAssistantExporter(BaseExporter):
                             cost_stats,
                             {
                                 "has_mean": False,
+                                "mean_type": 0,
                                 "has_sum": True,
                                 "statistic_id": statistic_id,
                                 "name": f"Coût {pdl} {tariff_name}",
                                 "source": prefix,
                                 "unit_of_measurement": "EUR",
+                                "unit_class": None,
                             },
                             msg_id_start=msg_id,
                             chunk_size=chunk_size,
@@ -2923,11 +2941,13 @@ class HomeAssistantExporter(BaseExporter):
                         production_stats,
                         {
                             "has_mean": False,
+                            "mean_type": 0,
                             "has_sum": True,
                             "statistic_id": statistic_id,
                             "name": f"Production {pdl}",
                             "source": prefix,
                             "unit_of_measurement": "kWh",
+                            "unit_class": "energy",
                         },
                         msg_id_start=msg_id,
                         chunk_size=chunk_size,
@@ -3129,11 +3149,13 @@ class HomeAssistantExporter(BaseExporter):
                             stats,
                             {
                                 "has_mean": False,
+                                "mean_type": 0,
                                 "has_sum": True,
                                 "statistic_id": statistic_id,
                                 "name": f"Consommation {pdl} {tariff_name}",
                                 "source": prefix,
                                 "unit_of_measurement": "kWh",
+                                "unit_class": "energy",
                             },
                             msg_id_start=msg_id,
                             chunk_size=chunk_size,
@@ -3169,11 +3191,13 @@ class HomeAssistantExporter(BaseExporter):
                             cost_stats,
                             {
                                 "has_mean": False,
+                                "mean_type": 0,
                                 "has_sum": True,
                                 "statistic_id": statistic_id,
                                 "name": f"Coût {pdl} {tariff_name}",
                                 "source": prefix,
                                 "unit_of_measurement": "EUR",
+                                "unit_class": None,
                             },
                             msg_id_start=msg_id,
                             chunk_size=chunk_size,
@@ -3199,11 +3223,13 @@ class HomeAssistantExporter(BaseExporter):
                         production_stats,
                         {
                             "has_mean": False,
+                            "mean_type": 0,
                             "has_sum": True,
                             "statistic_id": statistic_id,
                             "name": f"Production {pdl}",
                             "source": prefix,
                             "unit_of_measurement": "kWh",
+                            "unit_class": "energy",
                         },
                         msg_id_start=msg_id,
                         chunk_size=chunk_size,
