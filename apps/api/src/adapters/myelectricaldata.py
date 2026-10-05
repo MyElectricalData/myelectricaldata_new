@@ -87,10 +87,15 @@ class MyElectricalDataAdapter:
 
         url = f"{self.base_url}{endpoint}"
 
+        # Default to gateway cache for GET requests to preserve Enedis rate limits
+        query_params = dict(params) if params else {}
+        if method.upper() == "GET":
+            query_params.setdefault("use_cache", "true")
+
         if settings.DEBUG:
             logger.debug(f"[MED] {method} {url}")
-            if params:
-                logger.debug(f"[MED] Params: {params}")
+            if query_params:
+                logger.debug(f"[MED] Params: {query_params}")
 
         client = await self.get_client()
 
@@ -99,7 +104,7 @@ class MyElectricalDataAdapter:
                 method=method,
                 url=url,
                 headers=headers,
-                params=params,
+                params=query_params,
                 json=json_data,
             )
 
