@@ -134,8 +134,9 @@ class HomeAssistantExporter(BaseExporter):
         self.username = self.config.get("mqtt_username")
         self.password = self.config.get("mqtt_password")
         self.use_tls = self.config.get("mqtt_use_tls", False)
-        self.prefix: str = self.config.get("entity_prefix", "myelectricaldata")
-        if not self.prefix or re.search(r"[\s/#+]", self.prefix):
+        # Préfixe vide (configs enregistrées avant sa validation) : valeur par défaut plutôt qu'un export bloqué
+        self.prefix: str = self.config.get("entity_prefix") or "myelectricaldata"
+        if re.search(r"[\s/#+]", self.prefix):
             raise ValueError(f"Invalid entity_prefix {self.prefix!r}: no spaces, '/', '#' or '+'")
         self.discovery_prefix: str = self.config.get("discovery_prefix", "homeassistant")
 
@@ -1715,6 +1716,9 @@ class HomeAssistantExporter(BaseExporter):
             reserved = result.scalar() or 0
 
             quota = TEMPO_QUOTAS.get(color.value, 0)
+            if color.value == "BLUE":
+                # 300 bleus sur 365 jours, 301 quand la saison contient un 29 février
+                quota = (season_end - season_start).days + 1 - TEMPO_QUOTAS["WHITE"] - TEMPO_QUOTAS["RED"]
             remaining = max(quota - used - reserved, 0)
 
             days_data[color_name] = {
@@ -1814,6 +1818,7 @@ class HomeAssistantExporter(BaseExporter):
                 select(EnergyOffer)
                 .join(PDL, PDL.selected_offer_id == EnergyOffer.id)
                 .where(PDL.usage_point_id.in_(usage_point_ids))
+                .order_by(PDL.usage_point_id)
             )
             for offer in result.scalars().all():
                 if tariff_profile(offer.offer_type).family != "TEMPO":

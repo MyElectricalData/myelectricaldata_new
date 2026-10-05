@@ -85,6 +85,9 @@ Une synchronisation des PDL encore en cours au créneau suivant n'est pas relanc
 ALLOWED_HOSTS=med.maison.lan,192.168.1.10
 ```
 
+La sonde de santé `/ping` n'est pas soumise à ce contrôle : le healthcheck Docker (`localhost`) et les
+sondes Kubernetes (IP du pod) continuent de répondre.
+
 ### Valeurs par défaut des formulaires d'export
 
 Variables du conteneur **frontend**, lues au démarrage. Elles ne servent qu'à préremplir une

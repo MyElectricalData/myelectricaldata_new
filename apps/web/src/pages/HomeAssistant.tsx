@@ -93,7 +93,7 @@ function getGlobalEntities(prefix: string): BaseEntity[] {
       device: 'EDF Tempo',
       icon: 'mdi:calendar',
       unit: 'jours',
-      description: 'Nombre de jours bleus restants',
+      description: 'Jours bleus utilisés (restants en attribut)',
     },
     {
       entity_id: `sensor.${prefix}_tempo_days_white`,
@@ -101,7 +101,7 @@ function getGlobalEntities(prefix: string): BaseEntity[] {
       device: 'EDF Tempo',
       icon: 'mdi:calendar',
       unit: 'jours',
-      description: 'Nombre de jours blancs restants',
+      description: 'Jours blancs utilisés (restants en attribut)',
     },
     {
       entity_id: `sensor.${prefix}_tempo_days_red`,
@@ -109,7 +109,7 @@ function getGlobalEntities(prefix: string): BaseEntity[] {
       device: 'EDF Tempo',
       icon: 'mdi:calendar',
       unit: 'jours',
-      description: 'Nombre de jours rouges restants',
+      description: 'Jours rouges utilisés (restants en attribut)',
     },
     {
       entity_id: `sensor.${prefix}_tempo_price_blue_hc`,

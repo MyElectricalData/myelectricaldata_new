@@ -4,9 +4,9 @@ set -e
 # Generate env.js with runtime environment variables
 # This allows configuration at container startup instead of build time
 
-# Valeur insérée entre guillemets dans env.js : antislash et guillemet échappés
+# Valeur insérée entre guillemets dans env.js : antislash, guillemet et retour à la ligne échappés
 # (sans quoi un « " » dans une valeur casse env.js, donc toute l'application)
-js() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+js() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }'; }
 
 cat <<EOF > /usr/share/nginx/html/env.js
 window.__ENV__ = {

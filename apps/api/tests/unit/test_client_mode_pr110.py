@@ -460,9 +460,30 @@ def test_attente_expiree_purgee(monkeypatch):
 def test_prefixe_entite_invalide_refuse():
     import pytest
 
-    for invalide in ("med v2", "med/v2", "med#", "med+", ""):
+    for invalide in ("med v2", "med/v2", "med#", "med+"):
         with pytest.raises(ValueError):
             HomeAssistantExporter({"mqtt_broker": "mqtt.local", "entity_prefix": invalide})
+
+
+def test_prefixe_vide_enregistre_avant_la_validation_retombe_sur_le_defaut():
+    for vide in ("", None):
+        exporter = HomeAssistantExporter({"mqtt_broker": "mqtt.local", "entity_prefix": vide})
+        assert exporter.prefix == "myelectricaldata"
+
+
+def test_prefixe_refuse_a_l_enregistrement_hors_slug():
+    """HA slugifie default_entity_id : un préfixe hors [a-z0-9_] donnerait un entity_id différent de l'aperçu."""
+    import pytest
+    from fastapi import HTTPException
+
+    from src.models.client_mode import ExportType
+    from src.routers.export import _validate_export_config
+
+    _validate_export_config(ExportType.HOME_ASSISTANT, {"mqtt_broker": "mqtt.local", "entity_prefix": "med_v2"})
+    for invalide in ("MED-V2", "méd", "med v2", ""):
+        with pytest.raises(HTTPException) as exc:
+            _validate_export_config(ExportType.HOME_ASSISTANT, {"mqtt_broker": "mqtt.local", "entity_prefix": invalide})
+        assert exc.value.status_code == 400
 
 
 def test_categorie_suit_le_prefixe_et_reconnait_hp_hc():
@@ -551,3 +572,41 @@ async def test_tempo_prix_par_defaut_sans_offre_tempo():
     prix = published["myelectricaldata_edf/tempo_price_red_hp"]
     assert prix["state"] == TEMPO_PRICES["red_hp"]
     assert prix["attributes"]["source"] == "default"
+
+
+def test_ping_repond_quel_que_soit_l_hote():
+    """Sondes Docker (localhost) et Kubernetes (IP du pod) : /ping hors du contrôle de l'en-tête Host."""
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    from src.middleware.trusted_host import TrustedHostExceptHealthMiddleware
+
+    app = Starlette(routes=[
+        Route("/ping", lambda request: PlainTextResponse("pong")),
+        Route("/api/x", lambda request: PlainTextResponse("x")),
+    ])
+    app.add_middleware(TrustedHostExceptHealthMiddleware, allowed_hosts=["med.maison.lan"])
+
+    assert TestClient(app, base_url="http://10.42.0.17:8000").get("/ping").status_code == 200
+    assert TestClient(app, base_url="http://localhost:8000").get("/ping").status_code == 200
+    assert TestClient(app, base_url="http://localhost:8000").get("/api/x").status_code == 400
+    assert TestClient(app, base_url="http://med.maison.lan").get("/api/x").status_code == 200
+
+
+async def test_tempo_quota_bleu_saison_bissextile(monkeypatch):
+    """Saison 2027-2028 (29 février 2028) : 366 jours, donc 301 bleus."""
+    import src.services.exporters.home_assistant as ha
+
+    class FakeDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2027, 10, 5)
+
+    monkeypatch.setattr(ha, "date", FakeDate)
+    published = await _export_tempo_publications()
+
+    bleu = published["myelectricaldata_edf/tempo_days_blue"]["attributes"]
+    assert bleu["quota"] == 301
+    assert bleu["remaining"] == 301 - 10 - 2

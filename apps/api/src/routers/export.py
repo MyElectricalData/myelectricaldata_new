@@ -44,7 +44,11 @@ class HomeAssistantConfig(BaseModel):
     mqtt_username: Optional[str] = Field(default=None, description="MQTT username")
     mqtt_password: Optional[str] = Field(default=None, description="MQTT password")
     mqtt_use_tls: bool = Field(default=False, description="Use TLS for MQTT connection")
-    entity_prefix: str = Field(default="myelectricaldata", description="Entity ID prefix (e.g., myelectricaldata → sensor.myelectricaldata_tempo_today)")
+    entity_prefix: str = Field(
+        default="myelectricaldata",
+        pattern=r"^[a-z0-9_]+$",
+        description="Entity ID prefix, lowercase letters, digits and underscores (e.g., myelectricaldata → sensor.myelectricaldata_tempo_today)",
+    )
     discovery_prefix: str = Field(default="homeassistant", description="Home Assistant discovery topic prefix")
 
     # WebSocket API mode (Energy Dashboard statistics)

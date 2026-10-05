@@ -31,7 +31,7 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
   // Test mutations
   const testConsumptionDaily = useMutation({
     mutationFn: async () => {
-      const end = new Date().toISOString().split('T')[0]
+      const end = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0] // fin incluse : hier
       const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       return enedisApi.getConsumptionDaily(usagePointId, { start, end, use_cache: false })
     },
@@ -41,7 +41,7 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
 
   const testConsumptionDetail = useMutation({
     mutationFn: async () => {
-      const end = new Date().toISOString().split('T')[0]
+      const end = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0] // fin incluse : hier
       const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       return enedisApi.getConsumptionDetail(usagePointId, { start, end, use_cache: false })
     },
@@ -51,7 +51,7 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
 
   const testMaxPower = useMutation({
     mutationFn: async () => {
-      const end = new Date().toISOString().split('T')[0]
+      const end = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0] // fin incluse : hier
       const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       return enedisApi.getMaxPower(usagePointId, { start, end, use_cache: false })
     },
@@ -61,7 +61,7 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
 
   const testProductionDaily = useMutation({
     mutationFn: async () => {
-      const end = new Date().toISOString().split('T')[0]
+      const end = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0] // fin incluse : hier
       const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       return enedisApi.getProductionDaily(usagePointId, { start, end, use_cache: false })
     },
@@ -71,7 +71,7 @@ export default function PDLDetails({ usagePointId, onClose }: PDLDetailsProps) {
 
   const testProductionDetail = useMutation({
     mutationFn: async () => {
-      const end = new Date().toISOString().split('T')[0]
+      const end = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0] // fin incluse : hier
       const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       return enedisApi.getProductionDetail(usagePointId, { start, end, use_cache: false })
     },

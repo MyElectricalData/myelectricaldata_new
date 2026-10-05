@@ -4,7 +4,7 @@ from typing import AsyncGenerator, Callable
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from .middleware.trusted_host import TrustedHostExceptHealthMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -146,7 +146,7 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory="/app/static"), name="static")
 
 # Trusted Host middleware to handle proxy headers (ALLOWED_HOSTS, every host by default in client mode)
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
+app.add_middleware(TrustedHostExceptHealthMiddleware, allowed_hosts=settings.allowed_hosts)
 
 # CORS middleware - explicit origins required for credentials (httpOnly cookies)
 def get_cors_origins() -> list[str]:
