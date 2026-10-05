@@ -46,6 +46,31 @@ from .tariff import DEFAULT_OFFPEAK_RANGES, is_offpeak, is_offpeak_slot, tariff_
 
 logger = logging.getLogger(__name__)
 
+# Coût du panneau Énergie : mois d'hiver de l'offre SEASONAL (cf. offers/seasonal.py) et
+# offres dont le samedi et le dimanche ont leur propre prix (*_price_weekend)
+SEASONAL_WINTER_MONTHS = frozenset({11, 12, 1, 2, 3})
+WEEKEND_PRICE_OPTIONS = frozenset({"HC_WEEKEND", "WEEKEND", "BASE_WEEKEND"})
+
+
+def _day_price(offer: Any, tariff_tag: str, day: date) -> float | None:
+    """Prix du kWh d'une série base / hc / hp pour un jour donné (hors Tempo)
+
+    - SEASONAL : prix d'hiver (novembre-mars) ou d'été (avril-octobre)
+    - HC_WEEKEND, WEEKEND, BASE_WEEKEND : prix week-end le samedi et le dimanche, sinon (ou
+      s'il n'est pas renseigné) prix de semaine
+    - autres offres : prix unique de la série
+    """
+    option = (offer.offer_type or "").strip().upper()
+    if option == "SEASONAL":
+        season = "winter" if day.month in SEASONAL_WINTER_MONTHS else "summer"
+        price = getattr(offer, f"{tariff_tag}_price_{season}", None)
+    else:
+        price = getattr(offer, f"{tariff_tag}_price", None)
+        if option in WEEKEND_PRICE_OPTIONS and day.weekday() >= 5:
+            price = getattr(offer, f"{tariff_tag}_price_weekend", None) or price
+    return float(price) if price else None
+
+
 # Tempo quotas per season (EDF contract limits)
 TEMPO_QUOTAS = {
     "BLUE": 300,   # 300 jours/an
@@ -3529,55 +3554,39 @@ class HomeAssistantExporter(BaseExporter):
             logger.warning(f"[HA-WS] Energy offer {pdl_record.selected_offer_id} not found")
             return {}
 
-        # Build price map based on offer type
-        # Convert Decimal to float for calculations
-        prices: dict[str, float] = {}
+        # Prix du kWh par série et par jour (Decimal → float). Tempo : prix fixe par couleur ;
+        # autres offres : prix pouvant dépendre de la saison ou du week-end (cf. _day_price)
         family = tariff_profile(offer.offer_type).family
 
         if family == "TEMPO":
-            # TEMPO has 6 tariffs
-            if offer.tempo_blue_hc:
-                prices["blue_hc"] = float(offer.tempo_blue_hc)
-            if offer.tempo_blue_hp:
-                prices["blue_hp"] = float(offer.tempo_blue_hp)
-            if offer.tempo_white_hc:
-                prices["white_hc"] = float(offer.tempo_white_hc)
-            if offer.tempo_white_hp:
-                prices["white_hp"] = float(offer.tempo_white_hp)
-            if offer.tempo_red_hc:
-                prices["red_hc"] = float(offer.tempo_red_hc)
-            if offer.tempo_red_hp:
-                prices["red_hp"] = float(offer.tempo_red_hp)
-        elif family == "HC_HP":
-            # HC/HP has 2 tariffs
-            if offer.hc_price:
-                prices["hc"] = float(offer.hc_price)
-            if offer.hp_price:
-                prices["hp"] = float(offer.hp_price)
+            tempo_prices = {
+                tag: float(value)
+                for tag in ("blue_hc", "blue_hp", "white_hc", "white_hp", "red_hc", "red_hp")
+                if (value := getattr(offer, f"tempo_{tag}"))
+            }
+
+            def price_of(tariff_tag: str, day: date) -> float | None:
+                return tempo_prices.get(tariff_tag)
         else:
-            # BASE has 1 tariff
-            if offer.base_price:
-                prices["base"] = float(offer.base_price)
+            tags = ("hc", "hp") if family == "HC_HP" else ("base",)
 
-        logger.info(f"[HA-WS] Using prices from offer '{offer.name}': {prices}")
-
-        if not prices:
-            logger.warning(f"[HA-WS] No prices found in offer '{offer.name}'")
-            return {}
+            def price_of(tariff_tag: str, day: date) -> float | None:
+                return _day_price(offer, tariff_tag, day) if tariff_tag in tags else None
 
         # Calculate cost for each tariff bucket
         cost_by_tariff: dict[str, list[dict[str, Any]]] = {}
 
         for tariff_tag, consumption_stats in consumption_by_tariff.items():
-            if tariff_tag not in prices:
+            # stat["start"] est l'heure locale (Europe/Paris) : ses 10 premiers caractères donnent le jour
+            day_prices = [price_of(tariff_tag, date.fromisoformat(stat["start"][:10])) for stat in consumption_stats]
+            if not day_prices or None in day_prices:
                 logger.debug(f"[HA-WS] No price for tariff {tariff_tag}, skipping cost calculation")
                 continue
 
-            price_per_kwh = prices[tariff_tag]
             cost_stats = []
             cumulative_cost = 0.0
 
-            for stat in consumption_stats:
+            for stat, price_per_kwh in zip(consumption_stats, day_prices, strict=True):
                 # stat has: start, state (kWh for this period), sum (cumulative kWh)
                 consumption_kwh = stat["state"]
                 cost_eur = consumption_kwh * price_per_kwh
@@ -3591,6 +3600,11 @@ class HomeAssistantExporter(BaseExporter):
 
             cost_by_tariff[tariff_tag] = cost_stats
             logger.debug(f"[HA-WS] {pdl} cost {tariff_tag}: {len(cost_stats)} records, total={cumulative_cost:.2f} EUR")
+
+        if consumption_by_tariff and not cost_by_tariff:
+            logger.warning(f"[HA-WS] No prices found in offer '{offer.name}' ({offer.offer_type})")
+        else:
+            logger.info(f"[HA-WS] Costs from offer '{offer.name}' ({offer.offer_type}): {sorted(cost_by_tariff)}")
 
         return cost_by_tariff
 
