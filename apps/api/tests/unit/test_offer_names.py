@@ -89,3 +89,55 @@ async def test_contribution_multi_puissances_sans_kva_dans_le_nom(monkeypatch):
 
     created = [c.args[0] for c in db.add.call_args_list if c.args[0].__class__.__name__ == "EnergyOffer"]
     assert [(o.name, o.power_kva) for o in created] == [("Classique", 6), ("Classique", 9)]
+
+
+# Mêmes cas que la migration c3d4e5f6g7h8 : le backend doit produire les noms qu'elle produit
+from tests.integration.test_migration_clean_offer_names_v2 import CAS  # noqa: E402
+
+
+@pytest.mark.parametrize(("brut", "_type", "attendu"), CAS)
+def test_clean_offer_name_meme_regle_que_la_migration(brut, _type, attendu):
+    from src.services.offer_names import clean_offer_name
+
+    assert clean_offer_name(brut) == attendu
+
+
+@pytest.mark.parametrize("marqueur", [
+    "[SUPPRESSION] EDF - Tarif Bleu - 6 kVA",
+    "[RENOMMAGE] Classique - 6 kVA",
+    "[SUPPRESSION FOURNISSEUR] OHM",
+])
+def test_clean_offer_name_laisse_les_marqueurs(marqueur):
+    from src.services.offer_names import clean_offer_name
+
+    assert clean_offer_name(marqueur) == marqueur
+
+
+@pytest.mark.asyncio
+async def test_contribution_une_seule_offre_nom_normalise(monkeypatch):
+    monkeypatch.setattr(energy_offers, "deactivate_previous_offers", AsyncMock(return_value=0))
+    db = MagicMock()
+    db.flush = AsyncMock()
+    db.execute = AsyncMock()
+    contribution = SimpleNamespace(
+        id="c2",
+        contribution_type="NEW_OFFER",
+        existing_provider_id="p1",
+        provider_name=None,
+        provider_website=None,
+        offer_name="Zen Fixe - Option Base - 9 kVA",
+        offer_type="BASE",
+        description=None,
+        pricing_data={"subscription_price": 15.0, "base_price": 0.2},
+        power_variants=None,
+        power_kva=9,
+        hc_schedules=None,
+        valid_from=None,
+        price_sheet_url=None,
+        status="PENDING",
+    )
+
+    await energy_offers.apply_contribution_changes(contribution, db, reviewer_id="admin")
+
+    created = [c.args[0] for c in db.add.call_args_list if c.args[0].__class__.__name__ == "EnergyOffer"]
+    assert [(o.name, o.power_kva) for o in created] == [("Zen Fixe", 9)]
