@@ -183,9 +183,11 @@ export default function ConsumptionEuro() {
       const startDate = startDate_obj.getFullYear() + '-' +
         String(startDate_obj.getMonth() + 1).padStart(2, '0') + '-' +
         String(startDate_obj.getDate()).padStart(2, '0')
-      const endDate = yesterday.getFullYear() + '-' +
-        String(yesterday.getMonth() + 1).padStart(2, '0') + '-' +
-        String(yesterday.getDate()).padStart(2, '0')
+      // Use today (not yesterday) because backend uses exclusive end: date < end_date
+      const today_obj = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0)
+      const endDate = today_obj.getFullYear() + '-' +
+        String(today_obj.getMonth() + 1).padStart(2, '0') + '-' +
+        String(today_obj.getDate()).padStart(2, '0')
 
       setDateRange({ start: startDate, end: endDate })
 

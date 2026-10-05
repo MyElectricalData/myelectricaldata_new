@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Download, BarChart3, Loader2, CalendarDays, CalendarRange } from 'lucide-react'
 import { toast } from '@/stores/notificationStore'
@@ -444,6 +444,25 @@ export function DetailedCurve({
     return mergedData
   }
 
+  // Dates having cached detailed data, computed once per data change instead of once per calendar cell
+  const availableDatesSet = useMemo(() => {
+    const dates = new Set<string>()
+    if (!selectedPDL) return dates
+
+    const allDetailQueries = queryClient.getQueryCache().findAll({
+      queryKey: [cacheKeyPrefix, selectedPDL],
+      exact: false,
+    })
+    for (const query of allDetailQueries) {
+      const responseData = query.state.data as any
+      for (const reading of getReadings(responseData?.data)) {
+        if (reading.date) dates.add(reading.date.split(' ')[0].split('T')[0])
+      }
+    }
+    return dates
+  // detailByDayData / detailWeekOffset: recompute when the parent loads data (week navigation, PDL switch)
+  }, [selectedPDL, cacheKeyPrefix, queryClient, detailByDayData, detailWeekOffset])
+
   const renderCalendar = () => {
     const todayUTC = new Date()
     const yesterdayUTC = new Date(Date.UTC(
@@ -479,30 +498,11 @@ export function DetailedCurve({
 
       // Check if data exists for this day
       let hasData = false
-      if (isInRange && dayDate && selectedPDL) {
+      if (isInRange && dayDate) {
         const dateStr = dayDate.getFullYear() + '-' +
                        String(dayDate.getMonth() + 1).padStart(2, '0') + '-' +
                        String(dayDate.getDate()).padStart(2, '0')
-
-        // Search through all cached queries for this date
-        const queryCache = queryClient.getQueryCache()
-        const allDetailQueries = queryCache.findAll({
-          queryKey: [cacheKeyPrefix, selectedPDL],
-          exact: false,
-        })
-
-        for (const query of allDetailQueries) {
-          const responseData = query.state.data as any
-          const readings = getReadings(responseData?.data)
-          if (readings.length === 0) continue
-          hasData = readings.some((reading: any) => {
-            if (!reading.date) return false
-            const readingDate = reading.date.split(' ')[0].split('T')[0]
-            return readingDate === dateStr
-          })
-
-          if (hasData) break
-        }
+        hasData = availableDatesSet.has(dateStr)
       }
 
       // Calculate currently selected date in UTC

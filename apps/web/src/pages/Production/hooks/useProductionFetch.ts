@@ -44,7 +44,7 @@ export function useProductionFetch({
     }
 
     // Invalidate existing queries to force refetch
-    queryClient.invalidateQueries({ queryKey: ['production', selectedPDL] })
+    queryClient.invalidateQueries({ queryKey: ['productionDaily', selectedPDL] })
 
     // Collapse all sections before fetching new data
     setIsChartsExpanded(false)
@@ -85,9 +85,11 @@ export function useProductionFetch({
     const startDate = startDate_obj.getFullYear() + '-' +
                       String(startDate_obj.getMonth() + 1).padStart(2, '0') + '-' +
                       String(startDate_obj.getDate()).padStart(2, '0')
-    const endDate = yesterday.getFullYear() + '-' +
-                    String(yesterday.getMonth() + 1).padStart(2, '0') + '-' +
-                    String(yesterday.getDate()).padStart(2, '0')
+    // Use today (not yesterday) because backend uses exclusive end: date < end_date
+    const today_obj = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0)
+    const endDate = today_obj.getFullYear() + '-' +
+                    String(today_obj.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(today_obj.getDate()).padStart(2, '0')
 
     logger.log(`Final date range for API: ${startDate} → ${endDate}`)
 
@@ -121,9 +123,10 @@ export function useProductionFetch({
                        String(twoYearsAgo.getMonth() + 1).padStart(2, '0') + '-' +
                        String(twoYearsAgo.getDate()).padStart(2, '0')
 
-      const endDate = yesterday.getFullYear() + '-' +
-                     String(yesterday.getMonth() + 1).padStart(2, '0') + '-' +
-                     String(yesterday.getDate()).padStart(2, '0')
+      // Use today (not yesterday) because backend uses exclusive end: date < end_date
+      const endDate = today.getFullYear() + '-' +
+                     String(today.getMonth() + 1).padStart(2, '0') + '-' +
+                     String(today.getDate()).padStart(2, '0')
 
       logger.log(`Detailed data: Requesting 2 years via batch endpoint (${startDate} to ${endDate}) - 729 days`)
 

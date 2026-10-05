@@ -58,7 +58,7 @@ export function useConsumptionFetch({
     }
 
     // Invalidate existing queries to force refetch
-    queryClient.invalidateQueries({ queryKey: ['consumption', selectedPDL] })
+    queryClient.invalidateQueries({ queryKey: ['consumptionDaily', selectedPDL] })
     queryClient.invalidateQueries({ queryKey: ['maxPower', selectedPDL] })
 
     // Collapse all sections before fetching new data
@@ -108,14 +108,16 @@ export function useConsumptionFetch({
     logger.log(`Daily consumption: Requesting full 3 years (API will return error if too old)`)
 
     // Format dates as YYYY-MM-DD using LOCAL time (user's perspective)
+    // Backend uses exclusive end_date (date < end), so use TODAY to include yesterday
+    const today_obj = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0)
     const startDate = startDate_obj.getFullYear() + '-' +
                       String(startDate_obj.getMonth() + 1).padStart(2, '0') + '-' +
                       String(startDate_obj.getDate()).padStart(2, '0')
-    const endDate = yesterday.getFullYear() + '-' +
-                    String(yesterday.getMonth() + 1).padStart(2, '0') + '-' +
-                    String(yesterday.getDate()).padStart(2, '0')
+    const endDate = today_obj.getFullYear() + '-' +
+                    String(today_obj.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(today_obj.getDate()).padStart(2, '0')
 
-    logger.log(`Final date range for API: ${startDate} → ${endDate}`)
+    logger.log(`Final date range for API: ${startDate} → ${endDate} (end exclusive, includes yesterday)`)
 
     // Setting dateRange will trigger React Query to fetch data
     setDateRange({ start: startDate, end: endDate })
@@ -147,11 +149,12 @@ export function useConsumptionFetch({
                        String(twoYearsAgo.getMonth() + 1).padStart(2, '0') + '-' +
                        String(twoYearsAgo.getDate()).padStart(2, '0')
 
-      const endDate = yesterday.getFullYear() + '-' +
-                     String(yesterday.getMonth() + 1).padStart(2, '0') + '-' +
-                     String(yesterday.getDate()).padStart(2, '0')
+      // Backend uses exclusive end_date (date < end), so use TODAY to include yesterday
+      const endDate = today.getFullYear() + '-' +
+                     String(today.getMonth() + 1).padStart(2, '0') + '-' +
+                     String(today.getDate()).padStart(2, '0')
 
-      logger.log(`Detailed data: Requesting 2 years via batch endpoint (${startDate} to ${endDate}) - 729 days`)
+      logger.log(`Detailed data: Requesting 2 years via batch endpoint (${startDate} to ${endDate}) - 730 days`)
 
       try {
         // Single batch call to get all detailed data for 2 years
@@ -258,7 +261,7 @@ export function useConsumptionFetch({
 
       try {
         // Invalidate production queries to force refetch
-        queryClient.invalidateQueries({ queryKey: ['production', productionPdlUsagePointId] })
+        queryClient.invalidateQueries({ queryKey: ['productionDaily', productionPdlUsagePointId] })
 
         // Fetch production daily data (3 years)
         // Use LOCAL time for user's perspective
@@ -280,11 +283,13 @@ export function useConsumptionFetch({
         const startDate3y = threeYearsAgo.getFullYear() + '-' +
                            String(threeYearsAgo.getMonth() + 1).padStart(2, '0') + '-' +
                            String(threeYearsAgo.getDate()).padStart(2, '0')
-        const endDate = yesterdayLocal.getFullYear() + '-' +
-                       String(yesterdayLocal.getMonth() + 1).padStart(2, '0') + '-' +
-                       String(yesterdayLocal.getDate()).padStart(2, '0')
+        // Backend uses exclusive end_date (date < end), so use today to include yesterday
+        const todayProd = new Date(nowLocal.getFullYear(), nowLocal.getMonth(), nowLocal.getDate(), 12, 0, 0, 0)
+        const endDate = todayProd.getFullYear() + '-' +
+                       String(todayProd.getMonth() + 1).padStart(2, '0') + '-' +
+                       String(todayProd.getDate()).padStart(2, '0')
 
-        logger.log(`Fetching production daily data: ${startDate3y} → ${endDate}`)
+        logger.log(`Fetching production daily data: ${startDate3y} → ${endDate} (end exclusive)`)
 
         // Note: We don't await these - they will be fetched and cached in background
         // The production page will use the cached data when the user navigates to it
@@ -305,18 +310,10 @@ export function useConsumptionFetch({
         })
 
         // Fetch production detailed data (2 years) via batch endpoint
-        // Use LOCAL time for user's perspective
-        const todayLocal = new Date(
-          nowLocal.getFullYear(),
-          nowLocal.getMonth(),
-          nowLocal.getDate(),
-          12, 0, 0, 0
-        )
-
         const twoYearsAgo = new Date(
-          todayLocal.getFullYear() - 2,
-          todayLocal.getMonth(),
-          todayLocal.getDate(),
+          todayProd.getFullYear() - 2,
+          todayProd.getMonth(),
+          todayProd.getDate(),
           12, 0, 0, 0
         )
 
