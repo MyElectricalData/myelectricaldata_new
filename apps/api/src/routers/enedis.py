@@ -200,10 +200,11 @@ def missing_ranges(missing_dates: list[str]) -> list[tuple[str, str]]:
 
 RECENT_POWER_DAYS = 2  # J-1 et J-2
 RECENT_POWER_TTL_SECONDS = 3 * 3600
+EMPTY_DAY = {"empty": True}  # marqueur de cache : jour ancien sans mesure chez Enedis
 
 
 def power_cache_ttl(day: str, today: datetime, default_ttl: int) -> int:
-    """Durée de cache (secondes) de la puissance max d'un jour publié ; 0 = ne pas la mettre en cache.
+    """Durée de cache (secondes) de la puissance max d'un jour publié par Enedis.
 
     `day` est un jour déjà renvoyé par Enedis (YYYY-MM-DD), `today` minuit à Paris,
     `default_ttl` la durée de cache par défaut du serveur (CACHE_TTL_SECONDS, 24 h).
@@ -1418,6 +1419,14 @@ async def get_max_power(
         assert error_response is not None
         return error_response
 
+    try:
+        requested_dates = days_between(start, end)
+    except ValueError as e:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(code="INVALID_DATE_FORMAT", message=f"Invalid date format. Expected YYYY-MM-DD. Error: {e}"),
+        )
+
     adapter, is_demo = await get_adapter_for_user(effective_user)
     secret = encryption_key if is_demo else access_token
 
@@ -1428,18 +1437,22 @@ async def get_max_power(
         except Exception as e:
             return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message=str(e)))
 
-    # Cache jour par jour (comme la consommation quotidienne) : seuls les jours absents partent chez Enedis,
-    # et un jour pas encore publié (aucun point) n'est jamais mis en cache
+    # Cache jour par jour (comme la consommation quotidienne) : seuls les jours absents partent chez Enedis.
+    # Un jour récent sans point (pas encore publié) n'est pas mis en cache ; un jour ancien sans point
+    # (compteur coupé, trou Enedis) l'est, avec un marqueur vide, pour ne pas le redemander à chaque requête
     points: list[dict[str, Any]] = []
     missing_dates = []
-    for date_str in days_between(start, end):
+    for date_str in requested_dates:
         cached_point = await cache_service.get(f"consumption:max_power:{usage_point_id}:{date_str}", encryption_key)
+        if cached_point == EMPTY_DAY:
+            continue
         if cached_point:
             points.append(as_point(cached_point))
         else:
             missing_dates.append(date_str)
 
-    unit = "VA"
+    unit_cache_key = f"consumption:max_power_unit:{usage_point_id}"
+    unit = None
     api_errors = []
     today = paris_today()
     for api_start, api_end in missing_ranges(missing_dates):
@@ -1449,18 +1462,27 @@ async def get_max_power(
             log_with_pdl("warning", usage_point_id, f"[API ERROR] Max power {api_start} to {api_end}: {e}")
             api_errors.append(f"Failed to fetch {api_start} to {api_end}: {e}")
             continue
-        unit = measure_unit(data) or unit
+        if measure_unit(data):
+            unit = measure_unit(data)
+            await cache_service.set(unit_cache_key, {"unit": unit}, encryption_key)
+        published = set()
         for point in extract_points(data):
             date_str = point.get("d", "")[:10]
             if date_str not in missing_dates:
                 continue
             points.append(point)
+            published.add(date_str)
             ttl = power_cache_ttl(date_str, today, cache_service.ttl)
-            if ttl > 0:
-                await cache_service.set(f"consumption:max_power:{usage_point_id}:{date_str}", point, encryption_key, ttl=ttl)
+            await cache_service.set(f"consumption:max_power:{usage_point_id}:{date_str}", point, encryption_key, ttl=ttl)
+        for date_str in days_between(api_start, api_end):
+            if date_str not in published and (today - datetime.strptime(date_str, "%Y-%m-%d")).days > RECENT_POWER_DAYS:
+                await cache_service.set(f"consumption:max_power:{usage_point_id}:{date_str}", EMPTY_DAY, encryption_key)
 
     if api_errors and not points:
         return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message="; ".join(api_errors)))
+
+    if unit is None:
+        unit = ((await cache_service.get(unit_cache_key, encryption_key)) or {}).get("unit") or "VA"
 
     points.sort(key=lambda p: p.get("d", ""))
     return APIResponse(
@@ -1485,6 +1507,9 @@ async def get_production_daily(
     # Get encryption key and effective user for impersonation support
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
+
+    # Adjust date range: cap end date to today (end excluded) and ensure start is before end
+    start, end = adjust_date_range(start, end)
 
     token_result = await get_valid_token(usage_point_id, effective_user, db)
     if isinstance(token_result, str):
@@ -1540,6 +1565,9 @@ async def get_production_detail(
     # Get encryption key and effective user for impersonation support
     encryption_key = get_encryption_key(current_user, impersonated_user)
     effective_user = impersonated_user or current_user
+
+    # Adjust date range: cap end date to today (end excluded) and ensure start is before end
+    start, end = adjust_date_range(start, end)
 
     token_result = await get_valid_token(usage_point_id, effective_user, db)
     if isinstance(token_result, str):

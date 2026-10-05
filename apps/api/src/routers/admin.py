@@ -193,6 +193,8 @@ async def clear_user_cache(
                 f"consumption:detail:{pdl.usage_point_id}:*",
                 f"consumption:daily:{pdl.usage_point_id}:*",
                 f"consumption:reading_type:{pdl.usage_point_id}",
+                f"consumption:max_power:{pdl.usage_point_id}:*",
+                f"consumption:max_power_unit:{pdl.usage_point_id}",
                 f"production:detail:{pdl.usage_point_id}:*",
                 f"production:daily:{pdl.usage_point_id}:*",
                 f"production:reading_type:{pdl.usage_point_id}",
@@ -272,7 +274,9 @@ async def clear_all_consumption_cache(
         patterns = [
             "consumption:detail:*",
             "consumption:daily:*",
-            "consumption:yearly:*"
+            "consumption:yearly:*",
+            "consumption:max_power:*",
+            "consumption:max_power_unit:*"
         ]
 
         for pattern in patterns:
@@ -343,6 +347,8 @@ async def clear_all_cache(
             "consumption:detail:*",
             "consumption:daily:*",
             "consumption:yearly:*",
+            "consumption:max_power:*",
+            "consumption:max_power_unit:*",
             "production:detail:*",
             "production:daily:*",
             "production:yearly:*"

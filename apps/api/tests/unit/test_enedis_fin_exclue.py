@@ -44,13 +44,15 @@ class FakeEnedis:
         self.calls: list[tuple[str, str, str]] = []
         self.published_until = published_until  # dernier jour publié : J-published_until
         self.pma = pma
+        self.power_unit = "VA"
+        self.holes: set[str] = set()  # jours sans mesure (compteur coupé)
 
     def _days(self, kind: str, start: str, end: str) -> list[str]:
         self.calls.append((kind, start, end))
         if start >= end:
             raise RuntimeError(f"ADAM-ERR0069 dateDebut {start} >= dateFin {end}")
         last = date.fromisoformat(j(self.published_until))
-        return [d for d in days(start, end) if date.fromisoformat(d) <= last]
+        return [d for d in days(start, end) if date.fromisoformat(d) <= last and d not in self.holes]
 
     async def get_consumption_daily(self, pdl: str, start: str, end: str, token: str) -> dict[str, Any]:
         points = [{"v": "1000", "d": d, "p": "P1D"} for d in self._days("daily", start, end)]
@@ -66,8 +68,16 @@ class FakeEnedis:
         return build_measure(pdl, start, end, points, grandeur_metier="CONS", grandeur_physique="PA", unite="W")
 
     async def get_max_power(self, pdl: str, start: str, end: str, token: str) -> dict[str, Any]:
-        points = [{"v": self.pma, "d": f"{d} 12:00:00", "p": "P1D"} for d in self._days("power", start, end)]
-        return build_measure(pdl, start, end, points, grandeur_metier="CONS", grandeur_physique="PMA", unite="VA", pas="P1D")
+        points = [{"v": self.pma, "d": f"{d} 12:00:00"} for d in self._days("power", start, end)]
+        return build_measure(pdl, start, end, points, grandeur_metier="CONS", grandeur_physique="PMA", unite=self.power_unit, pas="P1D")
+
+    async def get_production_daily(self, pdl: str, start: str, end: str, token: str) -> dict[str, Any]:
+        points = [{"v": "800", "d": d, "p": "P1D"} for d in self._days("prod_daily", start, end)]
+        return build_measure(pdl, start, end, points, grandeur_metier="PROD", grandeur_physique="EA", unite="Wh", pas="P1D")
+
+    async def get_production_detail(self, pdl: str, start: str, end: str, token: str) -> dict[str, Any]:
+        points = [{"v": "200", "d": f"{d} 12:00:00", "p": "PT30M"} for d in self._days("prod_detail", start, end)]
+        return build_measure(pdl, start, end, points, grandeur_metier="PROD", grandeur_physique="PA", unite="W")
 
 
 class FakeCache:
@@ -122,7 +132,13 @@ REQUEST = SimpleNamespace(scope={"route": SimpleNamespace(path="/enedis/test")},
 
 
 async def call(handler, start: str, end: str, use_cache: bool = False) -> Any:
-    response = await handler(
+    response = await raw_call(handler, start, end, use_cache)
+    assert response.success, response.error
+    return response.data
+
+
+async def raw_call(handler, start: str, end: str, use_cache: bool = False) -> Any:
+    return await handler(
         request=REQUEST,
         usage_point_id=PRM,
         start=start,
@@ -132,8 +148,6 @@ async def call(handler, start: str, end: str, use_cache: bool = False) -> Any:
         impersonated_user=None,
         db=None,
     )
-    assert response.success, response.error
-    return response.data
 
 
 def points_of(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -292,6 +306,54 @@ async def test_power_jours_recents_caches_moins_longtemps(enedis, cache):
     assert cache.ttls[f"consumption:max_power:{PRM}:{j(1)}"] == 3 * 3600
     assert cache.ttls[f"consumption:max_power:{PRM}:{j(2)}"] == 3 * 3600
     assert cache.ttls[f"consumption:max_power:{PRM}:{j(4)}"] == 86400
+
+
+async def test_power_jours_anciens_sans_mesure_pas_redemandes(enedis, cache):
+    enedis.holes = {j(20), j(10)}
+    await call(router.get_max_power, j(30), j(0), use_cache=True)
+
+    data = await call(router.get_max_power, j(30), j(0), use_cache=True)
+
+    assert len(enedis.calls) == 1
+    assert j(20) not in served_days(data) and len(served_days(data)) == 28
+
+
+async def test_power_jour_recent_sans_mesure_redemande(enedis, cache):
+    enedis.published_until = 2
+    await call(router.get_max_power, j(5), j(0), use_cache=True)
+    await call(router.get_max_power, j(5), j(0), use_cache=True)
+
+    assert enedis.calls[-1] == ("power", j(1), j(0))
+
+
+async def test_power_unite_conservee_depuis_le_cache(enedis, cache):
+    enedis.power_unit = "kVA"
+    await call(router.get_max_power, j(5), j(2), use_cache=True)
+
+    data = await call(router.get_max_power, j(5), j(2), use_cache=True)
+
+    assert len(enedis.calls) == 1
+    assert data["grandeur"][0]["unite"] == "kVA"
+
+
+@pytest.mark.parametrize("use_cache", [True, False])
+async def test_power_date_invalide(enedis, cache, use_cache):
+    response = await raw_call(router.get_max_power, "2026-13-01", j(0), use_cache)
+
+    assert not response.success
+    assert response.error.code == "INVALID_DATE_FORMAT"
+    assert enedis.calls == []
+
+
+# --- production -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("handler, kind", [("get_production_daily", "prod_daily"), ("get_production_detail", "prod_detail")])
+async def test_production_fin_plafonnee_a_today(enedis, cache, handler, kind):
+    data = await call(getattr(router, handler), j(4), j(-1))
+
+    assert enedis.calls == [(kind, j(4), j(0))]
+    assert served_days(data) == [j(4), j(3), j(2), j(1)]
 
 
 # --- compte de démo -------------------------------------------------------------------------
