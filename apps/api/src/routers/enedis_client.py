@@ -23,14 +23,32 @@ from ..middleware import get_current_user
 from ..models import PDL, User
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
-from ..adapters.enedis_format import address_v5_to_2026, contract_v5_to_2026, extract_points, v5_to_2026
+from ..adapters.enedis_format import address_v5_to_2026, build_measure, contract_v5_to_2026, extract_points, v5_to_2026
 from ..services.local_data import (
     LocalDataService,
     format_daily_response,
     format_detail_response,
+    parse_max_power_points,
 )
 
 logger = logging.getLogger(__name__)
+
+# Bloc détaillé vide ou en erreur : pas de nouvel appel avant 12 h (périodes antérieures à la mise
+# en service, PDL sans production). Les blocs récents, où Enedis publie encore, ne sont jamais mis
+# en attente. Mémoire du process : perdue au redémarrage, propre à chaque worker.
+DETAIL_CHUNK_BACKOFF = timedelta(hours=12)
+DETAIL_CHUNK_RECENT_DAYS = 2
+_detail_chunk_backoff: dict[str, datetime] = {}
+
+
+def _chunk_in_backoff(key: str) -> bool:
+    until = _detail_chunk_backoff.get(key)
+    return until is not None and until > datetime.now()
+
+
+def _backoff_chunk(key: str, chunk_end: date) -> None:
+    if chunk_end <= date.today() - timedelta(days=DETAIL_CHUNK_RECENT_DAYS):
+        _detail_chunk_backoff[key] = datetime.now() + DETAIL_CHUNK_BACKOFF
 
 router = APIRouter(
     prefix="/enedis",
@@ -393,12 +411,42 @@ async def get_consumption_detail(
             )
 
 
+async def _max_power_data(
+    db: AsyncSession, usage_point_id: str, start: str, end: str, use_cache: bool
+) -> dict:
+    """Puissance max quotidienne : base locale d'abord, passerelle pour les seuls jours manquants."""
+    adapter = get_med_adapter()
+    if not use_cache:
+        response = await adapter.get_consumption_max_power(usage_point_id, start, end)
+        return v5_to_2026(extract_gateway_data(response), grandeur_metier="CONS", grandeur_physique="PMA", pas="P1D")
+
+    start_date, end_date = parse_date(start), parse_date(end)
+    local_service = LocalDataService(db)
+    points, missing_ranges = await local_service.get_max_power(usage_point_id, start_date, end_date)
+
+    if missing_ranges:
+        for range_start, range_end in missing_ranges:
+            try:
+                response = await adapter.get_consumption_max_power(
+                    usage_point_id, range_start.isoformat(), range_end.isoformat()
+                )
+                await local_service.save_max_power(parse_max_power_points(response, usage_point_id))
+            except Exception as e:
+                logger.warning(f"[{usage_point_id}] Max power {range_start} - {range_end} échoué: {e}")
+        points, _ = await local_service.get_max_power(usage_point_id, start_date, end_date)
+
+    return build_measure(
+        usage_point_id, start, end, points,
+        grandeur_metier="CONS", grandeur_physique="PMA", unite="VA", pas="P1D",
+    )
+
+
 @router.get("/consumption/max_power/{usage_point_id}", response_model=APIResponse)
 async def get_max_power(
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres)"),
     start: str = Query(..., description="Date de début (YYYY-MM-DD)"),
     end: str = Query(..., description="Date de fin (YYYY-MM-DD)"),
-    use_cache: bool = Query(False, description="Use cached data if available (ignored in client mode)"),
+    use_cache: bool = Query(True, description="Use local cache and only fetch missing days"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -414,9 +462,7 @@ async def get_max_power(
         )
 
     try:
-        adapter = get_med_adapter()
-        response = await adapter.get_consumption_max_power(usage_point_id, start, end)
-        data = v5_to_2026(extract_gateway_data(response), grandeur_metier="CONS", grandeur_physique="PMA", pas="P1D")
+        data = await _max_power_data(db, usage_point_id, start, end, use_cache)
         return APIResponse(success=True, data=data)
     except Exception as e:
         logger.error(f"[{usage_point_id}] Error fetching max power: {e}")
@@ -641,7 +687,7 @@ async def get_power(
     usage_point_id: str = Path(..., description="Point de livraison (14 chiffres)"),
     start: str = Query(..., description="Date de début (YYYY-MM-DD)"),
     end: str = Query(..., description="Date de fin (YYYY-MM-DD)"),
-    use_cache: bool = Query(False, description="Use cached data if available (ignored in client mode)"),
+    use_cache: bool = Query(True, description="Use local cache and only fetch missing days"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
@@ -657,9 +703,7 @@ async def get_power(
         )
 
     try:
-        adapter = get_med_adapter()
-        response = await adapter.get_consumption_max_power(usage_point_id, start, end)
-        data = v5_to_2026(extract_gateway_data(response), grandeur_metier="CONS", grandeur_physique="PMA", pas="P1D")
+        data = await _max_power_data(db, usage_point_id, start, end, use_cache)
         return APIResponse(success=True, data=data)
     except Exception as e:
         logger.error(f"[{usage_point_id}] Error fetching max power: {e}")
@@ -734,6 +778,10 @@ async def get_consumption_detail_batch(
                 current_start = range_start
                 while current_start < range_end:
                     chunk_end = min(current_start + timedelta(days=7), range_end)
+                    backoff_key = f"consumption:{usage_point_id}:{current_start}:{chunk_end}"
+                    if _chunk_in_backoff(backoff_key):
+                        current_start = chunk_end
+                        continue
                     try:
                         response = await adapter.get_consumption_detail(
                             usage_point_id,
@@ -741,8 +789,11 @@ async def get_consumption_detail_batch(
                             chunk_end.isoformat(),
                         )
                         gateway_readings = extract_readings_from_response(response)
+                        if not gateway_readings:
+                            _backoff_chunk(backoff_key, chunk_end)
                         all_readings.extend(gateway_readings)
                     except Exception as chunk_error:
+                        _backoff_chunk(backoff_key, chunk_end)
                         logger.warning(
                             f"[{usage_point_id}] Chunk {current_start} - {chunk_end} échoué: {chunk_error}"
                         )
@@ -849,6 +900,10 @@ async def get_production_detail_batch(
                 current_start = range_start
                 while current_start < range_end:
                     chunk_end = min(current_start + timedelta(days=7), range_end)
+                    backoff_key = f"production:{usage_point_id}:{current_start}:{chunk_end}"
+                    if _chunk_in_backoff(backoff_key):
+                        current_start = chunk_end
+                        continue
                     try:
                         response = await adapter.get_production_detail(
                             usage_point_id,
@@ -856,8 +911,11 @@ async def get_production_detail_batch(
                             chunk_end.isoformat(),
                         )
                         gateway_readings = extract_readings_from_response(response)
+                        if not gateway_readings:
+                            _backoff_chunk(backoff_key, chunk_end)
                         all_readings.extend(gateway_readings)
                     except Exception as chunk_error:
+                        _backoff_chunk(backoff_key, chunk_end)
                         logger.warning(
                             f"[{usage_point_id}] Chunk {current_start} - {chunk_end} échoué: {chunk_error}"
                         )

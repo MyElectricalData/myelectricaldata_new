@@ -33,7 +33,7 @@ from ..models.client_mode import (
 )
 from ..adapters.enedis_format import address_v5_to_2026, contract_v5_to_2026, extract_points
 from ..services.enedis_contract import parse_address, parse_contract
-from ..services.local_data import _unwrap
+from ..services.local_data import LocalDataService, _missing_ranges, _unwrap, parse_max_power_points
 
 logger = logging.getLogger(__name__)
 
@@ -48,32 +48,6 @@ DAILY_REFRESH_WINDOW_DAYS = 2
 DAILY_REFRESH_INTERVAL = timedelta(hours=6)
 
 
-def _missing_ranges(
-    start_date: date,
-    end_date: date,
-    existing_dates: set[date],
-    force_refresh_from: date | None = None,
-) -> list[tuple[date, date]]:
-    """Regroupe les dates absentes de [start_date, end_date[ en plages (start, end) à end exclu.
-
-    Les dates >= force_refresh_from sont redemandées même si elles existent déjà.
-    """
-    if force_refresh_from is not None:
-        existing_dates = {d for d in existing_dates if d < force_refresh_from}
-
-    ranges: list[tuple[date, date]] = []
-    current = start_date
-    while current < end_date:
-        if current in existing_dates:
-            current += timedelta(days=1)
-            continue
-        range_start = current
-        while current < end_date and current not in existing_dates:
-            current += timedelta(days=1)
-        ranges.append((range_start, current))
-    return ranges
-
-
 def _normalize_utc(ts: datetime | None) -> datetime | None:
     if ts is None:
         return None
@@ -81,14 +55,6 @@ def _normalize_utc(ts: datetime | None) -> datetime | None:
         return ts.replace(tzinfo=UTC)
     return ts.astimezone(UTC)
 
-
-def _split_power_datetime(date_str: str) -> tuple[str, str]:
-    """Découpe l'horodatage d'un pic de puissance en (YYYY-MM-DD, HH:MM)."""
-    for sep in ("T", " "):
-        if sep in date_str:
-            day_part, time_part = date_str.split(sep, 1)
-            return day_part[:10], time_part[:5] if len(time_part) >= 5 else "00:00"
-    return date_str[:10], "00:00"
 
 # Verrous globaux pour éviter les syncs concurrentes
 _energy_sync_lock = asyncio.Lock()
@@ -552,9 +518,9 @@ class SyncService:
                     response = await self.adapter.get_consumption_max_power(
                         usage_point_id, current_start.isoformat(), current_end.isoformat()
                     )
-                    records = self._parse_max_power_readings(response, usage_point_id)
+                    records = parse_max_power_points(response, usage_point_id)
                     if records:
-                        await self._upsert_max_power_records(records)
+                        await LocalDataService(self.db).save_max_power(records)
                         total_synced += len(records)
                 except Exception as e:
                     await self.db.rollback()
@@ -582,43 +548,6 @@ class SyncService:
 
         logger.info(f"[SYNC] max_power pour {usage_point_id}: {total_synced} jours synchronisés")
         return total_synced
-
-    def _parse_max_power_readings(self, response: Any, usage_point_id: str) -> list[dict[str, Any]]:
-        """Points PMA Data Connect 2026 : `d` est l'heure réelle du pic. Garde le plus haut par jour."""
-        by_day: dict[date, dict[str, Any]] = {}
-        for reading in extract_points(_unwrap(response)):
-            day_str, hhmm = _split_power_datetime(str(reading.get("d", "")))
-            try:
-                day = date.fromisoformat(day_str)
-                value = int(float(reading.get("v")))
-            except (TypeError, ValueError):
-                continue
-            current = by_day.get(day)
-            if current is None or value > current["value"]:
-                by_day[day] = {
-                    "usage_point_id": usage_point_id,
-                    "date": day,
-                    "interval_start": hhmm,
-                    "value": value,
-                    "source": "myelectricaldata",
-                    "raw_data": reading,
-                }
-        return [by_day[d] for d in sorted(by_day)]
-
-    async def _upsert_max_power_records(self, records: list[dict[str, Any]]) -> None:
-        """Upsert max power records on (usage_point_id, date)"""
-        stmt = pg_insert(MaxPowerData).values(records)
-        stmt = stmt.on_conflict_do_update(
-            constraint="uq_max_power_data",
-            set_={
-                "interval_start": stmt.excluded.interval_start,
-                "value": stmt.excluded.value,
-                "raw_data": stmt.excluded.raw_data,
-                "updated_at": datetime.now(UTC),
-            },
-        )
-        await self.db.execute(stmt)
-        await self.db.commit()
 
     async def _sync_energy_data(
         self,

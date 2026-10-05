@@ -13,9 +13,10 @@ from sqlalchemy.schema import CreateTable
 
 from src.models.client_mode import ConsumptionData, DataGranularity, ProductionData
 from src.services.exporters.home_assistant import HomeAssistantExporter
-from src.services.local_data import LocalDataService
+from src.routers import enedis_client
+from src.services.local_data import LocalDataService, _missing_ranges, parse_max_power_points
 from src.services.statistics import StatisticsService
-from src.services.sync import SyncService, _missing_ranges
+from src.services.sync import SyncService
 
 PRM = "99999999999991"
 TODAY = date.today()
@@ -152,10 +153,9 @@ async def test_sync_max_power_demande_la_veille_sans_aller_jusqu_a_demain():
 
 
 def test_parse_max_power_garde_l_heure_reelle_du_pic(enedis_fixture):
-    service = sync_service(MagicMock())
     reponse = {"success": True, "data": enedis_fixture("mesure_puissance_conso_max_quotidienne")}
 
-    records = service._parse_max_power_readings(reponse, PRM)
+    records = parse_max_power_points(reponse, PRM)
 
     assert [(r["date"], r["interval_start"], r["value"]) for r in records] == [
         (date(2026, 9, 29), "13:03", 4680),
@@ -241,3 +241,53 @@ async def test_export_ha_respecte_le_prefixe_configure():
     assert topics
     assert not [t for t in topics if "myelectricaldata_" in t], topics
     assert all("med_v2" in t for t in topics), topics
+
+
+# --- Route puissance max : base locale d'abord ------------------------------------------------
+
+
+async def test_max_power_servi_depuis_la_base_ne_sollicite_pas_la_passerelle(monkeypatch):
+    service = MagicMock()
+    service.get_max_power = AsyncMock(return_value=([{"v": "6510", "d": "2026-09-30 12:50:00"}], []))
+    adapter = MagicMock(get_consumption_max_power=AsyncMock())
+    monkeypatch.setattr(enedis_client, "LocalDataService", lambda db: service)
+    monkeypatch.setattr(enedis_client, "get_med_adapter", lambda: adapter)
+
+    data = await enedis_client._max_power_data(MagicMock(), PRM, "2026-09-30", "2026-10-01", use_cache=True)
+
+    adapter.get_consumption_max_power.assert_not_awaited()
+    grandeur = data["grandeur"][0]
+    assert (grandeur["grandeurPhysique"], grandeur["unite"]) == ("PMA", "VA")
+    assert grandeur["points"] == [{"v": "6510", "d": "2026-09-30 12:50:00"}]
+
+
+async def test_max_power_complete_les_jours_manquants_puis_relit_la_base(monkeypatch, enedis_fixture):
+    service = MagicMock()
+    service.get_max_power = AsyncMock(side_effect=[
+        ([], [(date(2026, 9, 29), date(2026, 10, 1))]),
+        ([{"v": "4680", "d": "2026-09-29 13:03:00"}, {"v": "6510", "d": "2026-09-30 12:50:00"}], []),
+    ])
+    service.save_max_power = AsyncMock()
+    reponse = {"success": True, "data": enedis_fixture("mesure_puissance_conso_max_quotidienne")}
+    adapter = MagicMock(get_consumption_max_power=AsyncMock(return_value=reponse))
+    monkeypatch.setattr(enedis_client, "LocalDataService", lambda db: service)
+    monkeypatch.setattr(enedis_client, "get_med_adapter", lambda: adapter)
+
+    data = await enedis_client._max_power_data(MagicMock(), PRM, "2026-09-29", "2026-10-01", use_cache=True)
+
+    adapter.get_consumption_max_power.assert_awaited_once_with(PRM, "2026-09-29", "2026-10-01")
+    assert [r["value"] for r in service.save_max_power.await_args.args[0]] == [4680, 6510]
+    assert len(data["grandeur"][0]["points"]) == 2
+
+
+# --- Lots détaillés vides : mise en attente des seuls blocs anciens --------------------------
+
+
+def test_bloc_detaille_ancien_vide_mis_en_attente(monkeypatch):
+    monkeypatch.setattr(enedis_client, "_detail_chunk_backoff", {})
+
+    enedis_client._backoff_chunk("ancien", TODAY - timedelta(days=30))
+    enedis_client._backoff_chunk("recent", TODAY)
+
+    assert enedis_client._chunk_in_backoff("ancien")
+    assert not enedis_client._chunk_in_backoff("recent")
