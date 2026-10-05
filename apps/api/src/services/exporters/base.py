@@ -12,8 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .tariff import (
+    ZEN_FLEX_OFFPEAK_RANGES,
     TariffProfile,
     hp_hc_window_start,
+    is_zen_flex_offer,
     parse_offpeak_ranges,
     summarize_hp_hc_kwh,
     tariff_profile,
@@ -109,15 +111,20 @@ class BaseExporter(ABC):
           code d'acheminement Enedis (distribution_tariff, ex. BTINFMUDT), pas l'option fournisseur.
         - Plages HC et puissance : ContractData (cache contrat Enedis du mode client), sinon PDL.
           Plages lues quel que soit leur format de stockage (cf. tariff.parse_offpeak_ranges).
+        - Offre choisie EDF Zen Flex : plages HC de la grille fournisseur (hc_schedules de l'offre,
+          sinon 13h-18h et 20h-6h), pas celles du contrat Enedis.
 
         Returns:
             Tuple (profil tarifaire, plages HC en minutes, subscribed_power_kva)
         """
         from ...models.client_mode import ContractData
+        from ...models.energy_provider import EnergyOffer
         from ...models.pdl import PDL
 
         result = await db.execute(
-            select(PDL.pricing_option, PDL.offpeak_hours, PDL.subscribed_power).where(PDL.usage_point_id == pdl)
+            select(PDL.pricing_option, PDL.offpeak_hours, PDL.subscribed_power, PDL.selected_offer_id).where(
+                PDL.usage_point_id == pdl
+            )
         )
         pdl_data = result.first()
         result = await db.execute(
@@ -132,8 +139,22 @@ class BaseExporter(ABC):
         if not offpeak_ranges and pdl_data:
             offpeak_ranges = parse_offpeak_ranges(pdl_data.offpeak_hours)
         subscribed_power = (contract and contract.subscribed_power) or (pdl_data and pdl_data.subscribed_power) or None
+        profile = tariff_profile(pricing_option)
 
-        return tariff_profile(pricing_option), offpeak_ranges, subscribed_power
+        selected_offer_id = getattr(pdl_data, "selected_offer_id", None) if pdl_data else None
+        if selected_offer_id:
+            result = await db.execute(
+                select(EnergyOffer.offer_type, EnergyOffer.name, EnergyOffer.hc_schedules).where(
+                    EnergyOffer.id == selected_offer_id
+                )
+            )
+            offer = result.first()
+            if offer and is_zen_flex_offer(offer.offer_type, offer.name):
+                offpeak_ranges = parse_offpeak_ranges(offer.hc_schedules) or ZEN_FLEX_OFFPEAK_RANGES
+                if profile.family == "BASE":
+                    profile = tariff_profile("ZEN_FLEX")
+
+        return profile, offpeak_ranges, subscribed_power
 
     async def _get_hp_hc_summary(self, db: AsyncSession, pdl: str, today: date) -> dict[str, float] | None:
         """Totaux HP/HC (kWh) d'hier, de la semaine, du mois et de l'année d'un PDL

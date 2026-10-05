@@ -46,7 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...models.zen_flex_day import ZenFlexDayType
 from .base import BaseExporter
-from .tariff import DEFAULT_OFFPEAK_RANGES, is_offpeak, is_offpeak_slot, tariff_profile
+from .tariff import DEFAULT_OFFPEAK_RANGES, is_offpeak, is_offpeak_slot, is_zen_flex_offer, tariff_profile
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +57,7 @@ WEEKEND_PRICE_OPTIONS = frozenset({"HC_WEEKEND", "WEEKEND", "BASE_WEEKEND"})
 
 
 def _is_zen_flex(offer: Any) -> bool:
-    """Offre EDF Zen Week-End Option Flex : typée ZEN_FLEX (scraper EDF) ou SEASONAL nommée « Option Flex »
-    (offres servies par la passerelle)"""
-    option = (offer.offer_type or "").strip().upper()
-    return option == "ZEN_FLEX" or "OPTION FLEX" in (offer.name or "").upper()
+    return is_zen_flex_offer(offer.offer_type, offer.name)
 
 
 def _zen_flex_price_seasons(offer: Any) -> tuple[str, str] | None:

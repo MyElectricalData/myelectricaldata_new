@@ -64,6 +64,59 @@ async def test_contract_info_unknown_pdl() -> None:
     assert (profile, ranges, power) == (TariffProfile("BASE"), [], None)
 
 
+def fake_db_with_offer(pdl_row: SimpleNamespace, offer_row: SimpleNamespace | None) -> MagicMock:
+    """execute() : ligne PDL (avec offre choisie), ligne ContractData absente, puis l'offre"""
+    results = []
+    for value in (pdl_row, None, offer_row):
+        result = MagicMock()
+        result.first.return_value = value
+        results.append(result)
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=results)
+    return db
+
+
+def pdl_with_offer(pricing_option: str | None) -> SimpleNamespace:
+    return SimpleNamespace(
+        pricing_option=pricing_option,
+        offpeak_hours={"default": "HC (22H00-6H00)"},  # plage Enedis, pas la grille Zen Flex
+        subscribed_power=6,
+        selected_offer_id="offre-1",
+    )
+
+
+def offer_row(offer_type: str, name: str, hc_schedules: object = None) -> SimpleNamespace:
+    return SimpleNamespace(offer_type=offer_type, name=name, hc_schedules=hc_schedules)
+
+
+async def test_contract_info_zen_flex_uses_edf_supplier_offpeak_grid() -> None:
+    """Zen Flex : 17 h creuses par jour (13h-18h et 20h-6h), pas les 8 h du contrat Enedis (MED-27)"""
+    zen_flex = offer_row("SEASONAL", "Zen Week-End - Option Flex - 6 kVA")
+    profile, ranges, _ = await make_exporter()._get_pdl_contract_info(
+        fake_db_with_offer(pdl_with_offer("HC_HP"), zen_flex), "123"
+    )
+    assert profile.family == "HC_HP"
+    assert ranges == [(780, 1080), (1200, 360)]
+
+
+async def test_contract_info_zen_flex_prefers_offer_hc_schedules() -> None:
+    zen_flex = offer_row("ZEN_FLEX", "Zen Week-End - Option Flex 6 kVA", {"ranges": ["12:00-17:00", "21:00-07:00"]})
+    _, ranges, _ = await make_exporter()._get_pdl_contract_info(fake_db_with_offer(pdl_with_offer(None), zen_flex), "123")
+    assert ranges == [(720, 1020), (1260, 420)]
+
+
+async def test_contract_info_zen_flex_without_pricing_option_is_hc_hp() -> None:
+    zen_flex = offer_row("SEASONAL", "Zen Week-End - Option Flex - 9 kVA")
+    profile, _, _ = await make_exporter()._get_pdl_contract_info(fake_db_with_offer(pdl_with_offer(None), zen_flex), "123")
+    assert profile.family == "HC_HP"
+
+
+async def test_contract_info_other_offer_keeps_contract_ranges() -> None:
+    flexiwatt = offer_row("SEASONAL", "FlexiWatt 2 saisons - 6 kVA")
+    _, ranges, _ = await make_exporter()._get_pdl_contract_info(fake_db_with_offer(pdl_with_offer("HC_HP"), flexiwatt), "123")
+    assert ranges == [(1320, 360)]
+
+
 # =============================================================================
 # _get_hp_hc_summary
 # =============================================================================
