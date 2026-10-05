@@ -42,6 +42,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react'
+import { getRuntimeDefaults } from '@/utils/runtimeDefaults'
 
 /**
  * Définition des entités Home Assistant de base (templates)
@@ -283,6 +284,7 @@ function getPdlEntities(pdl: string, prefix: string): BaseEntity[] {
 }
 
 export default function HomeAssistant() {
+  const runtimeDefaults = getRuntimeDefaults()
   const queryClient = useQueryClient()
 
   // State
@@ -313,16 +315,16 @@ export default function HomeAssistant() {
   const [formIntervalMinutes, setFormIntervalMinutes] = useState<number | null>(30)
 
   // MQTT Discovery config
-  const [mqttBroker, setMqttBroker] = useState('')
-  const [mqttPort, setMqttPort] = useState(1883)
+  const [mqttBroker, setMqttBroker] = useState(runtimeDefaults.mqttBroker)
+  const [mqttPort, setMqttPort] = useState(runtimeDefaults.mqttPort)
   const [mqttUsername, setMqttUsername] = useState('')
   const [mqttPassword, setMqttPassword] = useState('')
   const [mqttTls, setMqttTls] = useState(false)
-  const [entityPrefix, setEntityPrefix] = useState('myelectricaldata')
-  const [discoveryPrefix, setDiscoveryPrefix] = useState('homeassistant')
+  const [entityPrefix, setEntityPrefix] = useState(runtimeDefaults.entityPrefix)
+  const [discoveryPrefix, setDiscoveryPrefix] = useState(runtimeDefaults.discoveryPrefix)
 
   // WebSocket API config
-  const [haUrl, setHaUrl] = useState('')
+  const [haUrl, setHaUrl] = useState(runtimeDefaults.haUrl)
   const [haToken, setHaToken] = useState('')
   const [statisticIdPrefix, setStatisticIdPrefix] = useState('myelectricaldata')
 
