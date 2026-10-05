@@ -452,3 +452,27 @@ def test_attente_expiree_purgee(monkeypatch):
 
     assert not enedis_client._chunk_in_backoff("bloc")
     assert enedis_client._detail_chunk_backoff == {}
+
+
+# --- Lot 4 : préfixe des entités Home Assistant --------------------------------------------------
+
+
+def test_prefixe_entite_invalide_refuse():
+    import pytest
+
+    for invalide in ("med v2", "med/v2", "med#", "med+", ""):
+        with pytest.raises(ValueError):
+            HomeAssistantExporter({"mqtt_broker": "mqtt.local", "entity_prefix": invalide})
+
+
+def test_categorie_suit_le_prefixe_et_reconnait_hp_hc():
+    exporter = HomeAssistantExporter({"mqtt_broker": "mqtt.local", "entity_prefix": "med_v2"})
+
+    assert exporter._categorize_ha_topic("homeassistant/sensor/med_v2_rte/tempo_today/state") == "Tempo Aujourd'hui"
+    assert exporter._categorize_ha_topic(f"homeassistant/sensor/med_v2_consumption/{PRM}/state") == "Conso Journalière"
+    assert exporter._categorize_ha_topic(
+        f"homeassistant/sensor/med_v2_consumption_this_month_hc/{PRM}/state"
+    ) == "Conso HC"
+    assert exporter._categorize_ha_topic(
+        f"homeassistant/sensor/med_v2_consumption_yesterday_hp/{PRM}/state"
+    ) == "Conso HP"

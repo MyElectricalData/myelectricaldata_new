@@ -14,6 +14,7 @@ from src.services.exporters.tariff import TariffProfile
 def make_exporter() -> HomeAssistantExporter:
     exporter = HomeAssistantExporter.__new__(HomeAssistantExporter)
     exporter.config = {}
+    exporter.prefix = "myelectricaldata"
     return exporter
 
 
