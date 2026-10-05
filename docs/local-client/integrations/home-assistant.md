@@ -193,12 +193,21 @@ Le coût utilise l'offre sélectionnée sur le PDL :
 ### Mode d'import
 
 - **Complet (réinitialise)** : supprime les statistiques du préfixe, puis réimporte tout l'historique
-  présent dans la base locale, chaque série partant de 0.
-- **Différentiel (rapide)** : lit dans Home Assistant la dernière heure et la dernière somme de chaque
-  série, puis n'importe que les heures plus récentes, en prolongeant cette somme. Une série sans point
+  présent dans la base locale, chaque série partant de 0. Un échec de la suppression n'interrompt pas
+  l'import (avertissement dans les logs).
+- **Différentiel (rapide)** : lit dans Home Assistant, pour chaque série (consommation, coût et
+  production, séparément), un point de reprise et la somme à ce point, puis réimporte les heures qui
+  suivent en prolongeant cette somme. Le point de reprise est placé 3 jours avant la dernière heure de
+  la série : les corrections d'Enedis sur les derniers jours sont ainsi réécrites. Une série sans point
   sur les 30 derniers jours (Tempo rouge d'avril à octobre, PDL dont la synchronisation s'est arrêtée)
-  est retrouvée sur l'historique mensuel de Home Assistant. Sans aucune statistique existante, l'import
-  différentiel se replie sur un import complet.
+  est retrouvée sur l'historique mensuel de Home Assistant. Sans aucune statistique existante pour les
+  PDL importés, l'import différentiel devient un import complet, sans suppression. Si la lecture des
+  statistiques échoue, l'import différentiel s'arrête en erreur, sans rien écrire.
+
+L'export s'arrête à la première heure qu'il ne sait pas encore classer, et la reprend à l'import
+suivant : un jour Tempo dont la couleur n'est pas encore synchronisée (les jours antérieurs au
+calendrier connu restent en bleu), ou, pour le coût Zen Flex, un jour absent du calendrier après son
+premier jour connu.
 
 ---
 
