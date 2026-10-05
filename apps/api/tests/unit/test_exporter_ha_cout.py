@@ -21,10 +21,10 @@ PRICE_FIELDS = (
 )
 
 
-def offer(offer_type: str, **prices: str) -> SimpleNamespace:
+def offer(offer_type: str, name: str | None = None, **prices: str) -> SimpleNamespace:
     fields: dict[str, Any] = dict.fromkeys(PRICE_FIELDS)
     fields.update({k: Decimal(v) for k, v in prices.items()})
-    return SimpleNamespace(name=f"Offre {offer_type}", offer_type=offer_type, **fields)
+    return SimpleNamespace(name=name or f"Offre {offer_type}", offer_type=offer_type, **fields)
 
 
 def fake_db(offer_row: SimpleNamespace) -> MagicMock:
@@ -156,3 +156,20 @@ async def test_zen_flex_has_no_cost_even_with_fixed_prices() -> None:
     """Prix Éco / Sobriété dans *_winter / *_summer, jours Sobriété inconnus (MED-27) : pas de coût faux"""
     zen_flex = offer("ZEN_FLEX", hc_price="0.15", hp_price="0.20", hc_price_winter="0.15", hc_price_summer="0.40")
     assert await costs(zen_flex, {"hc": [stat("2026-01-15T02:00:00+01:00")]}) == {}
+
+
+async def test_zen_flex_stored_as_seasonal_has_no_cost() -> None:
+    """Données réelles de la passerelle : Zen Flex typée SEASONAL, prix Sobriété dans *_winter (MED-27)"""
+    zen_flex = offer(
+        "SEASONAL", name="Zen Week-End - Option Flex - 6 kVA",
+        hc_price_winter="0.2091", hp_price_winter="0.7253", hc_price_summer="0.1519", hp_price_summer="0.2091",
+    )
+    assert await costs(zen_flex, {"hp": [stat("2026-01-15T10:00:00+01:00")]}) == {}
+
+
+async def test_enercoop_flexiwatt_keeps_seasonal_cost() -> None:
+    flexiwatt = offer(
+        "SEASONAL", name="FlexiWatt 2 saisons - 6 kVA",
+        hc_price_winter="0.2310", hp_price_winter="0.3113", hc_price_summer="0.1358", hp_price_summer="0.1940",
+    )
+    assert await costs(flexiwatt, {"hp": [stat("2026-01-15T10:00:00+01:00")]}) == {"hp": [0.3113]}

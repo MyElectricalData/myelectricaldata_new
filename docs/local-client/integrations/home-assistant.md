@@ -167,7 +167,7 @@ Le coût utilise l'offre sélectionnée sur le PDL :
 - `TEMPO` : prix de la couleur et de la période ;
 - autres offres : prix unique de la série.
 
-`ZEN_FLEX` n'a pas encore de coût : le calendrier des jours Sobriété n'est pas synchronisé.
+L'offre EDF Zen Flex (« Zen Week-End - Option Flex ») n'a pas encore de coût : le calendrier des jours Sobriété n'est pas synchronisé.
 
 ---
 

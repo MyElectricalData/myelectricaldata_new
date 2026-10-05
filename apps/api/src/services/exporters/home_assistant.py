@@ -58,12 +58,14 @@ def _day_price(offer: Any, tariff_tag: str, day: date) -> float | None:
     - SEASONAL : prix d'hiver (novembre-mars) ou d'été (avril-octobre)
     - HC_WEEKEND, WEEKEND, BASE_WEEKEND : prix week-end le samedi et le dimanche, sinon (ou
       s'il n'est pas renseigné) prix de semaine
-    - ZEN_FLEX : aucun prix tant que le calendrier Sobriété n'est pas synchronisé
+    - EDF Zen Flex (ZEN_FLEX, ou SEASONAL nommée « Option Flex ») : aucun prix tant que le calendrier
+      Sobriété n'est pas synchronisé
     - autres offres : prix unique de la série
     """
     option = (offer.offer_type or "").strip().upper()
-    if option == "ZEN_FLEX":
-        # Prix Éco / Sobriété rangés dans *_winter / *_summer, jours Sobriété non synchronisés (MED-27)
+    if option == "ZEN_FLEX" or "OPTION FLEX" in (offer.name or "").upper():
+        # EDF Zen Flex : prix Éco / Sobriété rangés dans *_winter / *_summer (la passerelle la sert typée
+        # SEASONAL, nom « Zen Week-End - Option Flex »), jours Sobriété non synchronisés (MED-27)
         return None
     if option == "SEASONAL":
         season = "winter" if day.month in SEASONAL_WINTER_MONTHS else "summer"
