@@ -195,19 +195,28 @@ Le coût utilise l'offre sélectionnée sur le PDL :
 - **Complet (réinitialise)** : supprime les statistiques du préfixe, puis réimporte tout l'historique
   présent dans la base locale, chaque série partant de 0. Un échec de la suppression n'interrompt pas
   l'import (avertissement dans les logs).
-- **Différentiel (rapide)** : lit dans Home Assistant, pour chaque série (consommation, coût et
-  production, séparément), un point de reprise et la somme à ce point, puis réimporte les heures qui
-  suivent en prolongeant cette somme. Le point de reprise est placé 3 jours avant la dernière heure de
-  la série : les corrections d'Enedis sur les derniers jours sont ainsi réécrites. Une série sans point
-  sur les 30 derniers jours (Tempo rouge d'avril à octobre, PDL dont la synchronisation s'est arrêtée)
-  est retrouvée sur l'historique mensuel de Home Assistant. Sans aucune statistique existante pour les
-  PDL importés, l'import différentiel devient un import complet, sans suppression. Si la lecture des
-  statistiques échoue, l'import différentiel s'arrête en erreur, sans rien écrire.
+- **Différentiel (rapide)** : lit dans Home Assistant la dernière heure et la dernière somme de chaque
+  série (consommation, coût et production, séparément), puis n'importe que les heures plus récentes,
+  en prolongeant cette somme. Une série sans point sur les 30 derniers jours (Tempo rouge d'avril à
+  octobre, PDL dont la synchronisation s'est arrêtée) est retrouvée sur l'historique mensuel de Home
+  Assistant. Sans aucune statistique existante pour les PDL importés, l'import différentiel devient un
+  import complet, sans aucune suppression. Si la lecture des statistiques échoue, l'import
+  différentiel s'arrête en erreur, sans rien écrire.
 
 L'export s'arrête à la première heure qu'il ne sait pas encore classer, et la reprend à l'import
-suivant : un jour Tempo dont la couleur n'est pas encore synchronisée (les jours antérieurs au
-calendrier connu restent en bleu), ou, pour le coût Zen Flex, un jour absent du calendrier après son
-premier jour connu.
+suivant : un jour Tempo postérieur au dernier jour connu du calendrier (couleur pas encore publiée),
+ou, pour le coût Zen Flex, un jour absent du calendrier après son premier jour connu (rattrapage en
+cours). Un jour Tempo manquant au milieu du calendrier est compté en bleu, avec un avertissement
+dans le résultat de l'import ; les jours antérieurs au calendrier sont aussi comptés en bleu.
+
+Limites du mode différentiel (un import **Complet** les rattrape) :
+
+- une heure déjà importée n'est jamais réécrite : une correction d'Enedis sur des données déjà
+  exportées (relevés quotidiens de J-1 ou J-2) n'est pas reprise ;
+- une série qui apparaît après coup (offre choisie plus tard pour le coût, production démarrée après
+  la consommation) commence à la date de reprise des autres séries du PDL, sans l'historique antérieur ;
+- une série qui n'est plus alimentée (offre retirée, production arrêtée) fait relire la base locale
+  depuis sa dernière heure à chaque import, ce qui ralentit l'import sans fausser les sommes.
 
 ---
 
