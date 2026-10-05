@@ -65,6 +65,7 @@ Capteurs créés par MQTT Discovery, et statistiques du panneau Énergie import�
 - `sensor.myelectricaldata_linky_{pdl}_consumption` et `_production` : veille, historique en attributs
 - `sensor.myelectricaldata_linky_{pdl}_consumption_{periode}_{hp,hc}` : heures pleines / creuses
 - `sensor.myelectricaldata_tempo_today` / `_tomorrow` : couleurs Tempo
+- `sensor.myelectricaldata_zen_flex_today` / `_tomorrow` : jours EDF Zen Flex (Éco, Sobriété, Bonus)
 - `sensor.myelectricaldata_ecowatt_j0` à `_j2` : signal EcoWatt
 - statistiques `myelectricaldata:consumption_*`, `cost_*`, `production_*` pour le panneau Énergie
 
@@ -89,6 +90,8 @@ Publication vers un broker MQTT compatible.
 {prefix}/tempo/today                 # {"color": "BLUE", "date": "..."}
 {prefix}/tempo/tomorrow
 {prefix}/tempo/remaining             # jours restants par couleur dans la saison
+{prefix}/zen_flex/today               # {"day_type": "ECO", "date": "..."} (ECO, SOBRIETE, BONUS, UNKNOWN)
+{prefix}/zen_flex/tomorrow
 {prefix}/ecowatt/today               # niveau de l'heure courante et de l'heure suivante
 {prefix}/status
 ```

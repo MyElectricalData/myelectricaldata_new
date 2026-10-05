@@ -5,7 +5,7 @@ This allows entities to have unique_id, device grouping, and full HA UI manageme
 
 Compatible with the original MyElectricalData entity structure:
 - Topics: myelectricaldata_rte/, myelectricaldata_edf/, myelectricaldata_consumption/, etc.
-- Devices: RTE Tempo, EDF Tempo, RTE EcoWatt, Linky {pdl}
+- Devices: RTE Tempo, EDF Tempo, EDF Zen Flex, RTE EcoWatt, Linky {pdl}
 
 Entities created:
 - RTE Tempo device:
@@ -15,6 +15,9 @@ Entities created:
   - sensor.myelectricaldata_tempo_info (contract info)
   - sensor.myelectricaldata_tempo_days_{blue,white,red} (days count per color)
   - sensor.myelectricaldata_tempo_price_{blue_hp,blue_hc,white_hp,white_hc,red_hp,red_hc}
+- EDF Zen Flex device:
+  - sensor.myelectricaldata_zen_flex_today (ECO, SOBRIETE, BONUS ou unknown)
+  - sensor.myelectricaldata_zen_flex_tomorrow
 - RTE EcoWatt device:
   - sensor.myelectricaldata_ecowatt_j0 (today)
   - sensor.myelectricaldata_ecowatt_j1 (tomorrow)
@@ -41,8 +44,9 @@ import websockets
 from sqlalchemy import String, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...models.zen_flex_day import ZenFlexDayType
 from .base import BaseExporter
-from .tariff import DEFAULT_OFFPEAK_RANGES, is_offpeak, is_offpeak_slot, tariff_profile
+from .tariff import DEFAULT_OFFPEAK_RANGES, is_offpeak, is_offpeak_slot, is_zen_flex_offer, tariff_profile
 
 logger = logging.getLogger(__name__)
 
@@ -52,22 +56,45 @@ SEASONAL_WINTER_MONTHS = frozenset({11, 12, 1, 2, 3})
 WEEKEND_PRICE_OPTIONS = frozenset({"HC_WEEKEND", "WEEKEND", "BASE_WEEKEND"})
 
 
-def _day_price(offer: Any, tariff_tag: str, day: date) -> float | None:
+def _is_zen_flex(offer: Any) -> bool:
+    return is_zen_flex_offer(offer.offer_type, offer.name)
+
+
+def _zen_flex_price_seasons(offer: Any) -> tuple[str, str] | None:
+    """Champs de prix Éco et Sobriété d'une offre Zen Flex : ("summer", "winter") ou ("winter", "summer")
+
+    Les prix Éco et Sobriété sont rangés dans *_winter / *_summer, mais dans un sens qui dépend de la
+    source : Sobriété dans *_winter pour les offres de la passerelle (contributions), Éco dans *_winter
+    pour le scraper EDF. Rend (saison Éco, saison Sobriété), ou None si on ne peut pas trancher : le
+    coût est alors omis plutôt que faux.
+    """
+    # Le HP Sobriété est par construction le plus cher (0,72 contre 0,21 €/kWh en 2026) : il tranche
+    hp_winter, hp_summer = offer.hp_price_winter, offer.hp_price_summer
+    if not hp_winter or not hp_summer or hp_winter == hp_summer:
+        return None
+    return ("summer", "winter") if hp_winter > hp_summer else ("winter", "summer")
+
+
+def _day_price(offer: Any, tariff_tag: str, day: date, zen_flex_day: ZenFlexDayType | None = None) -> float | None:
     """Prix du kWh d'une série base / hc / hp pour un jour donné (hors Tempo)
 
+    - EDF Zen Flex (ZEN_FLEX, ou SEASONAL nommée « Option Flex ») : prix Sobriété les jours Sobriété,
+      prix Éco les jours Éco et Bonus ; aucun prix pour un jour absent du calendrier
     - SEASONAL : prix d'hiver (novembre-mars) ou d'été (avril-octobre)
     - HC_WEEKEND, WEEKEND, BASE_WEEKEND : prix week-end le samedi et le dimanche, sinon (ou
       s'il n'est pas renseigné) prix de semaine
-    - EDF Zen Flex (ZEN_FLEX, ou SEASONAL nommée « Option Flex ») : aucun prix tant que le calendrier
-      Sobriété n'est pas synchronisé
     - autres offres : prix unique de la série
     """
     option = (offer.offer_type or "").strip().upper()
-    if option == "ZEN_FLEX" or "OPTION FLEX" in (offer.name or "").upper():
-        # EDF Zen Flex : prix Éco / Sobriété rangés dans *_winter / *_summer (la passerelle la sert typée
-        # SEASONAL, nom « Zen Week-End - Option Flex »), jours Sobriété non synchronisés (MED-27)
-        return None
-    if option == "SEASONAL":
+    if _is_zen_flex(offer):
+        seasons = _zen_flex_price_seasons(offer)
+        if seasons is None or zen_flex_day is None:
+            return None
+        eco, sobriete = seasons
+        # Jour Bonus : facturé au prix Éco (la remise éventuelle n'est pas modélisée)
+        season = sobriete if zen_flex_day == ZenFlexDayType.SOBRIETE else eco
+        price = getattr(offer, f"{tariff_tag}_price_{season}", None)
+    elif option == "SEASONAL":
         season = "winter" if day.month in SEASONAL_WINTER_MONTHS else "summer"
         price = getattr(offer, f"{tariff_tag}_price_{season}", None)
     else:
@@ -76,6 +103,10 @@ def _day_price(offer: Any, tariff_tag: str, day: date) -> float | None:
             price = getattr(offer, f"{tariff_tag}_price_weekend", None) or price
     return float(price) if price else None
 
+
+# Zen Flex : libellés et icônes par type de jour (état « unknown » : mdi:help-circle, « Inconnu »)
+ZEN_FLEX_DAY_LABELS_FR = {"ECO": "Éco", "SOBRIETE": "Sobriété", "BONUS": "Bonus"}
+ZEN_FLEX_ICONS = {"ECO": "mdi:leaf", "SOBRIETE": "mdi:home-alert", "BONUS": "mdi:gift"}
 
 # Tempo quotas per season (EDF contract limits)
 TEMPO_QUOTAS = {
@@ -167,6 +198,16 @@ class HomeAssistantExporter(BaseExporter):
         return {
             "identifiers": ["edf_tempo"],
             "name": "EDF Tempo",
+            "manufacturer": "MyElectricalData",
+            "model": "EDF",
+            "sw_version": SOFTWARE_VERSION,
+        }
+
+    def _get_device_edf_zen_flex(self) -> dict[str, Any]:
+        """Appareil EDF Zen Flex (calendrier Éco / Sobriété / Bonus de l'offre Zen Week-End Option Flex)"""
+        return {
+            "identifiers": ["edf_zen_flex"],
+            "name": "EDF Zen Flex",
             "manufacturer": "MyElectricalData",
             "model": "EDF",
             "sw_version": SOFTWARE_VERSION,
@@ -422,6 +463,7 @@ class HomeAssistantExporter(BaseExporter):
             "production": 0,
             "linky_card": 0,
             "tempo": 0,
+            "zen_flex": 0,
             "ecowatt": 0,
             "errors": [],
         }
@@ -442,6 +484,13 @@ class HomeAssistantExporter(BaseExporter):
                 except Exception as e:
                     logger.error(f"[HA-MQTT] Tempo export failed: {e}")
                     results["errors"].append(f"tempo: {str(e)}")
+
+                try:
+                    count = await self._export_zen_flex(client, db)
+                    results["zen_flex"] = count
+                except Exception as e:
+                    logger.error(f"[HA-MQTT] Zen Flex export failed: {e}")
+                    results["errors"].append(f"zen_flex: {str(e)}")
 
                 try:
                     count = await self._export_ecowatt(client, db)
@@ -542,7 +591,7 @@ class HomeAssistantExporter(BaseExporter):
         has_ws = energy_enabled and self._has_websocket_config()
 
         # Calcul du nombre total d'étapes
-        mqtt_steps = (3 + len(usage_point_ids)) if mqtt_enabled else 0
+        mqtt_steps = (4 + len(usage_point_ids)) if mqtt_enabled else 0
         energy_step = 1 if has_ws else 0
         total_steps = mqtt_steps + energy_step
         if total_steps == 0:
@@ -554,6 +603,7 @@ class HomeAssistantExporter(BaseExporter):
             "production": 0,
             "linky_card": 0,
             "tempo": 0,
+            "zen_flex": 0,
             "ecowatt": 0,
             "errors": [],
         }
@@ -588,6 +638,16 @@ class HomeAssistantExporter(BaseExporter):
                     logger.error(f"[HA-MQTT] Tempo export failed: {e}")
                     results["errors"].append(f"tempo: {str(e)}")
                     await emit(f"Tempo : erreur ({e})", "warning")
+
+                # Zen Flex
+                try:
+                    count = await self._export_zen_flex(client, db)
+                    results["zen_flex"] = count
+                    await emit(f"Zen Flex exporté ({count} entités)")
+                except Exception as e:
+                    logger.error(f"[HA-MQTT] Zen Flex export failed: {e}")
+                    results["errors"].append(f"zen_flex: {str(e)}")
+                    await emit(f"Zen Flex : erreur ({e})", "warning")
 
                 # EcoWatt
                 try:
@@ -1859,6 +1919,39 @@ class HomeAssistantExporter(BaseExporter):
     # ECOWATT EXPORT (Old MyElectricalData format)
     # =========================================================================
 
+    async def _export_zen_flex(self, client: aiomqtt.Client, db: AsyncSession) -> int:
+        """Export du calendrier EDF Zen Flex via MQTT Discovery (appareil EDF Zen Flex)
+
+        - sensor.{prefix}_zen_flex_today
+        - sensor.{prefix}_zen_flex_tomorrow
+
+        État : ECO, SOBRIETE, BONUS, ou unknown pour un jour absent du calendrier (jamais ECO par défaut)
+        """
+        from ...models.zen_flex_day import ZenFlexDay
+
+        today = date.today()
+        device = self._get_device_edf_zen_flex()
+        count = 0
+
+        for key, name, day in (("today", "Today", today), ("tomorrow", "Tomorrow", today + timedelta(days=1))):
+            result = await db.execute(select(ZenFlexDay).where(ZenFlexDay.id == day.isoformat()))
+            row = result.scalar_one_or_none()
+            day_type = row.day_type.value if row else "unknown"
+
+            await self._publish_sensor_old_format(
+                client,
+                topic=f"{self.prefix}_edf/zen_flex_{key}",
+                name=name,
+                unique_id=f"{self.prefix}_zen_flex_{key}",
+                device=device,
+                state=day_type,
+                attributes={"date": day.isoformat(), "day_type_fr": ZEN_FLEX_DAY_LABELS_FR.get(day_type, "Inconnu")},
+                icon=ZEN_FLEX_ICONS.get(day_type, "mdi:help-circle"),
+            )
+            count += 1
+
+        return count
+
     async def _export_ecowatt(self, client: aiomqtt.Client, db: AsyncSession) -> int:
         """Export EcoWatt information via MQTT Discovery (old MyElectricalData format)
 
@@ -2239,6 +2332,12 @@ class HomeAssistantExporter(BaseExporter):
             return "Tempo Prix"
         elif f"{p}_edf/tempo_info" in topic_lower:
             return "Tempo Info"
+
+        # EDF Zen Flex sensors
+        elif f"{p}_edf/zen_flex_today" in topic_lower:
+            return "Zen Flex Aujourd'hui"
+        elif f"{p}_edf/zen_flex_tomorrow" in topic_lower:
+            return "Zen Flex Demain"
 
         # Consumption sensors
         elif f"{p}_consumption_last_" in topic_lower:
@@ -3623,22 +3722,46 @@ class HomeAssistantExporter(BaseExporter):
                 return tempo_prices.get(tariff_tag)
         else:
             tags = ("hc", "hp") if family == "HC_HP" else ("base",)
+            # Zen Flex : type de chaque jour (Éco / Sobriété / Bonus) lu dans le calendrier synchronisé
+            zen_flex_days: dict[date, ZenFlexDayType] = {}
+            if _is_zen_flex(offer):
+                stat_days = [date.fromisoformat(stat["start"][:10]) for stats in consumption_by_tariff.values() for stat in stats]
+                if stat_days:
+                    zen_flex_days = await self._get_zen_flex_days(db, min(stat_days), max(stat_days))
 
             def price_of(tariff_tag: str, day: date) -> float | None:
-                return _day_price(offer, tariff_tag, day) if tariff_tag in tags else None
+                if tariff_tag not in tags:
+                    return None
+                return _day_price(offer, tariff_tag, day, zen_flex_days.get(day))
 
         # Calculate cost for each tariff bucket
         cost_by_tariff: dict[str, list[dict[str, Any]]] = {}
+
+        zen_flex_priced = family != "TEMPO" and _is_zen_flex(offer) and _zen_flex_price_seasons(offer) is not None
 
         for tariff_tag, consumption_stats in consumption_by_tariff.items():
             # stat["start"] est l'heure locale (Europe/Paris) : ses 10 premiers caractères donnent le jour.
             # Série vide (aucun jour rouge, pas de nouvelle donnée) : gardée si l'offre a un prix, l'import
             # crée alors la statistique dans HA
-            days = [date.fromisoformat(stat["start"][:10]) for stat in consumption_stats] or [date.today()]
-            day_prices = [price_of(tariff_tag, day) for day in days]
-            if None in day_prices:
-                logger.debug(f"[HA-WS] No price for tariff {tariff_tag}, skipping cost calculation")
-                continue
+            days = [date.fromisoformat(stat["start"][:10]) for stat in consumption_stats]
+            if zen_flex_priced and tariff_tag in tags:
+                # Zen Flex : seules les heures d'un jour absent du calendrier (avant le lancement de l'offre,
+                # rattrapage en cours) restent sans coût ; les autres jours gardent le leur
+                day_prices = [price_of(tariff_tag, day) for day in days]
+                missing = sorted({day for day, price in zip(days, day_prices) if price is None})
+                if missing:
+                    logger.warning(
+                        f"[HA-WS] {pdl} {tariff_tag} : {len(missing)} jours absents du calendrier Zen Flex "
+                        f"({missing[0]} → {missing[-1]}), sans coût"
+                    )
+                    kept = [(stat, price) for stat, price in zip(consumption_stats, day_prices) if price is not None]
+                    consumption_stats = [stat for stat, _ in kept]
+                    day_prices = [price for _, price in kept]
+            else:
+                day_prices = [price_of(tariff_tag, day) for day in days or [date.today()]]
+                if None in day_prices:
+                    logger.debug(f"[HA-WS] No price for tariff {tariff_tag}, skipping cost calculation")
+                    continue
 
             cost_stats = []
             cumulative_cost = 0.0
@@ -3664,6 +3787,13 @@ class HomeAssistantExporter(BaseExporter):
             logger.info(f"[HA-WS] Costs from offer '{offer.name}' ({offer.offer_type}): {sorted(cost_by_tariff)}")
 
         return cost_by_tariff
+
+    async def _get_zen_flex_days(self, db: AsyncSession, start: date, end: date) -> dict[date, ZenFlexDayType]:
+        """Calendrier Zen Flex connu entre `start` et `end` inclus"""
+        from ...models.zen_flex_day import ZenFlexDay
+
+        result = await db.execute(select(ZenFlexDay).where(ZenFlexDay.date >= start, ZenFlexDay.date <= end))
+        return {date.fromisoformat(str(row.id)): ZenFlexDayType(row.day_type) for row in result.scalars().all()}
 
     async def _get_production_statistics(
         self,

@@ -74,6 +74,8 @@ L'export se lance depuis cette page (les exports MQTT ne sont pas encore planifi
 {prefix}/tempo/today
 {prefix}/tempo/tomorrow
 {prefix}/tempo/remaining
+{prefix}/zen_flex/today
+{prefix}/zen_flex/tomorrow
 {prefix}/ecowatt/today
 {prefix}/status
 ```
@@ -96,6 +98,16 @@ Pour un contrat à heures creuses disposant de données détaillées (30 min), i
 | `{prefix}/tempo/today` | `{"color": "BLUE", "date": "2026-10-05"}` | Couleur du jour (`BLUE`, `WHITE`, `RED` ou `UNKNOWN`) |
 | `{prefix}/tempo/tomorrow` | `{"color": "WHITE", "date": "2026-10-06"}` | Couleur du lendemain |
 | `{prefix}/tempo/remaining` | `{"blue": 280, "white": 43, "red": 22}` | Jours restants dans la saison (1er septembre au 31 août) |
+
+### Zen Flex
+
+Calendrier de l'offre EDF Zen Week-End Option Flex, publié à chaque export, même quand aucun des
+deux jours n'est connu (`UNKNOWN`) : un message retenu de la veille ne survit pas à une synchro en panne.
+
+| Topic | Payload | Description |
+|-------|---------|-------------|
+| `{prefix}/zen_flex/today` | `{"day_type": "ECO", "date": "2026-10-05"}` | Type du jour (`ECO`, `SOBRIETE`, `BONUS` ou `UNKNOWN`) |
+| `{prefix}/zen_flex/tomorrow` | `{"day_type": "UNKNOWN", "date": "2026-10-06"}` | Type du lendemain, `UNKNOWN` tant qu'EDF ne l'a pas publié |
 
 ### EcoWatt
 

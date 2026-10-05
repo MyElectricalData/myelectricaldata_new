@@ -268,6 +268,22 @@ class MyElectricalDataAdapter:
 
         return await self._make_request("GET", "/tempo/days", params=params or None)
 
+    # =========================================================================
+    # Zen Flex Calendar (EDF Zen Week-End Option Flex)
+    # =========================================================================
+
+    async def get_zen_flex_calendar(
+        self, start: Optional[str] = None, end: Optional[str] = None
+    ) -> dict[str, Any]:
+        """Calendrier Zen Flex de la passerelle (jours Éco, Sobriété, Bonus)
+
+        Args:
+            start: Date de début incluse (YYYY-MM-DD), défaut : lancement de l'offre
+            end: Date de fin incluse (YYYY-MM-DD), défaut : demain
+        """
+        params = {key: value for key, value in (("start", start), ("end", end)) if value}
+        return await self._make_request("GET", "/zen-flex/days", params=params or None)
+
     async def get_tempo_remaining(self) -> dict[str, Any]:
         """Get remaining Tempo days for current season"""
         return await self._make_request("GET", "/tempo/remaining")

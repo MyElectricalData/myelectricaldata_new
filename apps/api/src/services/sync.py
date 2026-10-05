@@ -21,6 +21,8 @@ from ..adapters.myelectricaldata import get_med_adapter
 from ..models import PDL, EnergyProvider, EnergyOffer
 from ..models.ecowatt import EcoWatt
 from ..models.tempo_day import TempoDay, TempoColor
+from ..models.zen_flex_day import ZenFlexDay, ZenFlexDayType
+from .edf_zen_flex import OFFER_START, paris_today
 from ..models.client_mode import (
     AddressData,
     ConsumptionData,
@@ -1535,6 +1537,61 @@ class SyncService:
 
         except Exception as e:
             logger.error(f"[SYNC] Failed to sync Tempo: {e}")
+            result["errors"].append(str(e))
+
+        return result
+
+    async def sync_zen_flex(self) -> dict[str, Any]:
+        """Synchronise le calendrier EDF Zen Flex depuis la passerelle
+
+        Historique local incomplet (premier passage, ou passerelle encore en rattrapage) : tout le
+        calendrier est redemandé ; sinon seuls les derniers jours.
+        """
+        logger.info("[SYNC] Syncing Zen Flex calendar from remote gateway...")
+        result: dict[str, Any] = {"created": 0, "updated": 0, "errors": []}
+
+        try:
+            await self._update_sync_tracker("zen_flex_client")
+
+            today = paris_today()
+            rows = (await self.db.execute(select(ZenFlexDay))).scalars().all()
+            known: dict[str, ZenFlexDay] = {str(row.id): row for row in rows}
+            past_days = sum(1 for row in rows if OFFER_START <= row.date <= today)
+            complete = past_days >= (today - OFFER_START).days + 1
+            start = (today - timedelta(days=7)).isoformat() if complete else None
+
+            response = await self.adapter.get_zen_flex_calendar(start=start)
+            calendar_data = response.get("data") if isinstance(response, dict) else None
+            if not response.get("success") or not isinstance(calendar_data, list):
+                error = response.get("error") if isinstance(response, dict) else None
+                result["errors"].append(f"Réponse de la passerelle invalide : {error or response}")
+                return result
+
+            if not calendar_data and start is None:
+                logger.warning("[SYNC] Calendrier Zen Flex vide sur la passerelle (rattrapage pas encore commencé ?)")
+
+            for day_data in calendar_data:
+                day_id = str(day_data.get("date") or "")[:10]
+                try:
+                    day = date.fromisoformat(day_id)
+                    day_type = ZenFlexDayType(str(day_data.get("day_type", "")).upper())
+                except ValueError:
+                    logger.warning(f"[SYNC] Jour Zen Flex invalide ignoré : {day_data}")
+                    continue
+
+                existing = known.get(day_id)
+                if existing is None:
+                    self.db.add(ZenFlexDay(id=day_id, date=day, day_type=day_type))
+                    result["created"] += 1
+                elif existing.day_type != day_type:
+                    existing.day_type = day_type  # type: ignore[assignment]
+                    result["updated"] += 1
+
+            await self.db.commit()
+            logger.info(f"[SYNC] Zen Flex sync complete: {result['created']} created, {result['updated']} updated")
+
+        except Exception as e:
+            logger.error(f"[SYNC] Failed to sync Zen Flex: {e}")
             result["errors"].append(str(e))
 
         return result
