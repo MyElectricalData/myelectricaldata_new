@@ -49,37 +49,18 @@ L'intégration MQTT permet de publier vos données vers n'importe quel broker MQ
 
 ## Configuration
 
-### Via l'interface web
+Dans l'interface web : **Exporter** > **MQTT**, puis **Tester la connexion** et **Sauvegarder**.
+L'export se lance depuis cette page (les exports MQTT ne sont pas encore planifiés).
 
-1. Aller dans **Exporter** > **MQTT**
-2. Renseigner :
-   - **Broker** : `mqtt://localhost:1883` ou `mqtt://user:pass@host:1883`
-   - **Topic prefix** : `myelectricaldata` (optionnel)
-   - **QoS** : 1 (recommandé)
-   - **Retain** : Activé (recommandé)
-3. Cliquer sur **Tester la connexion**
-4. Si OK, activer l'export et **Sauvegarder**
-
-### Via variables d'environnement
-
-```bash
-# .env.client
-
-# Broker sans authentification
-MQTT_BROKER=mqtt://localhost:1883
-
-# Broker avec authentification
-MQTT_BROKER=mqtt://user:password@mosquitto:1883
-
-# Broker TLS
-MQTT_BROKER=mqtts://broker.example.com:8883
-
-# Configuration
-MQTT_TOPIC_PREFIX=myelectricaldata
-MQTT_QOS=1
-MQTT_RETAIN=true
-MQTT_ENABLED=true
-```
+| Champ | Défaut | Description |
+|-------|--------|-------------|
+| `broker` | | Nom d'hôte ou IP du broker (ex. `mosquitto`, `192.168.1.10`), sans `mqtt://` |
+| `port` | `1883` | Port du broker (8883 en TLS en général) |
+| `username`, `password` | | Identifiants (facultatifs) |
+| `use_tls` | `false` | Connexion TLS |
+| `topic_prefix` | `myelectricaldata` | Préfixe des topics |
+| `qos` | `0` | Niveau de QoS (0, 1 ou 2) |
+| `retain` | `true` | Messages retenus par le broker |
 
 ---
 
@@ -88,26 +69,13 @@ MQTT_ENABLED=true
 ### Structure des topics
 
 ```
-{prefix}/{pdl}/consumption/daily
-{prefix}/{pdl}/consumption/detailed
 {prefix}/{pdl}/consumption/stats
-{prefix}/{pdl}/production/daily
-{prefix}/{pdl}/production/detailed
 {prefix}/{pdl}/production/stats
 {prefix}/tempo/today
 {prefix}/tempo/tomorrow
 {prefix}/tempo/remaining
 {prefix}/ecowatt/today
 {prefix}/status
-```
-
-### Consommation et production
-
-`{prefix}/{pdl}/consumption/daily` (et `detailed`, `production/daily`, `production/detailed`) publie le
-lot de relevés exporté :
-
-```json
-{"pdl": "12345678901234", "granularity": "daily", "records": 31, "data": [...], "timestamp": "2026-10-05T06:00:00"}
 ```
 
 ### Totaux et ventilation HP/HC
@@ -119,7 +87,7 @@ Pour un contrat à heures creuses disposant de données détaillées (30 min), i
 `{periode}_hp_kwh` et `{periode}_hc_kwh`, avec `{periode}` valant `yesterday`, `this_week`,
 `this_month` ou `this_year` (par exemple `this_month_hp_kwh`).
 
-`{prefix}/{pdl}/production/stats` publie les mêmes totaux pour la production.
+`{prefix}/{pdl}/production/stats` publie `yesterday_kwh`, `this_month_kwh` et `this_year_kwh` pour la production.
 
 ### Tempo
 
@@ -158,8 +126,8 @@ automatiquement dans Home Assistant, utiliser l'exporteur
   {
     "id": "mqtt-in",
     "type": "mqtt in",
-    "topic": "myelectricaldata/+/consumption/daily",
-    "qos": "1",
+    "topic": "myelectricaldata/+/consumption/stats",
+    "qos": "0",
     "datatype": "json"
   },
   {
@@ -178,14 +146,14 @@ automatiquement dans Home Assistant, utiliser l'exporteur
 ### Monitoring avec Node-RED
 
 ```javascript
-// Fonction pour calculer le coût
-const consumption = msg.payload.value;
-const tempoColor = global.get('tempo_color') || 'BLEU';
+// Coût approximatif de la veille (topic {prefix}/{pdl}/consumption/stats)
+const consumption = msg.payload.yesterday_kwh;
+const tempoColor = global.get('tempo_color') || 'BLUE'; // payload.color de {prefix}/tempo/today
 
 const prices = {
-  BLEU: { hp: 0.1609, hc: 0.1296 },
-  BLANC: { hp: 0.1894, hc: 0.1486 },
-  ROUGE: { hp: 0.7324, hc: 0.1568 }
+  BLUE: { hp: 0.1609, hc: 0.1296 },
+  WHITE: { hp: 0.1894, hc: 0.1486 },
+  RED: { hp: 0.7324, hc: 0.1568 }
 };
 
 const price = prices[tempoColor].hp; // Simplification
@@ -198,45 +166,22 @@ return msg;
 
 ## QoS et Retain
 
-### Niveaux de QoS
+| QoS | Description |
+|-----|-------------|
+| **0** | Au plus une fois (défaut) |
+| 1 | Au moins une fois |
+| 2 | Exactement une fois |
 
-| QoS | Description | Recommandation |
-|-----|-------------|----------------|
-| 0 | At most once | Non recommandé (perte possible) |
-| **1** | At least once | **Recommandé** (défaut) |
-| 2 | Exactly once | Surcharge réseau |
-
-### Retain
-
-Avec `retain=true`, le dernier message est conservé par le broker. Les nouveaux subscribers reçoivent immédiatement la dernière valeur connue.
-
-```bash
-# Recommandé pour MyElectricalData
-MQTT_RETAIN=true
-```
+Avec `retain` activé (défaut), le broker conserve le dernier message de chaque topic : un nouvel
+abonné reçoit immédiatement la dernière valeur connue.
 
 ---
 
 ## Sécurité
 
-### Authentification
-
-```bash
-# Utilisateur/mot de passe
-MQTT_BROKER=mqtt://user:password@broker:1883
-```
-
-### TLS/SSL
-
-```bash
-# Connexion chiffrée
-MQTT_BROKER=mqtts://broker.example.com:8883
-
-# Avec certificat client (optionnel)
-MQTT_CA_CERT=/path/to/ca.crt
-MQTT_CLIENT_CERT=/path/to/client.crt
-MQTT_CLIENT_KEY=/path/to/client.key
-```
+- **Authentification** : renseigner `username` et `password`.
+- **TLS** : activer `use_tls` et utiliser le port TLS du broker (souvent 8883). Les certificats
+  clients ne sont pas pris en charge.
 
 ---
 

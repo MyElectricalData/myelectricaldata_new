@@ -74,7 +74,7 @@ Publication vers un broker MQTT compatible.
 
 | Champ | Description |
 |-------|-------------|
-| Broker | URL du broker (mqtt://host:port) |
+| Broker | Nom d'hôte ou IP du broker, et port |
 | Username | Utilisateur (optionnel) |
 | Password | Mot de passe (optionnel) |
 | Topic prefix | Préfixe des topics |
@@ -84,10 +84,7 @@ Publication vers un broker MQTT compatible.
 **Topics publiés** :
 
 ```
-{prefix}/{pdl}/consumption/daily
-{prefix}/{pdl}/consumption/detailed
 {prefix}/{pdl}/consumption/stats     # totaux, dont {yesterday,this_week,this_month,this_year}_{hp,hc}_kwh
-{prefix}/{pdl}/production/daily
 {prefix}/{pdl}/production/stats
 {prefix}/tempo/today                 # {"color": "BLUE", "date": "..."}
 {prefix}/tempo/tomorrow

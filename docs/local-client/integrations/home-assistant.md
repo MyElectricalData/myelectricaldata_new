@@ -56,7 +56,7 @@ Dans l'interface web : **Exporter** > **Home Assistant**.
 | `mqtt_username`, `mqtt_password` | | Identifiants du broker (facultatifs) |
 | `mqtt_use_tls` | `false` | Connexion TLS au broker |
 | `discovery_prefix` | `homeassistant` | Préfixe de discovery de **votre** intégration MQTT |
-| `entity_prefix` | `myelectricaldata` | Préfixe des topics de l'appareil |
+| `entity_prefix` | `myelectricaldata` | Préfixe d'identifiant. Les capteurs publiés gardent pour l'instant le préfixe `myelectricaldata` |
 | `ha_url`, `ha_token` | | Home Assistant et token, pour les statistiques |
 | `statistic_id_prefix` | `myelectricaldata` | Préfixe des statistiques du panneau Énergie |
 
@@ -68,8 +68,12 @@ Home Assistant ne crée aucune entité.
 
 Avec un préfixe autre que `homeassistant`, les versions précédentes publiaient aussi une copie de chaque
 configuration sous `homeassistant/`. Cette copie n'est plus publiée, et l'export vide celle qui était
-restée retenue sur le broker. Si un autre Home Assistant écoute `homeassistant/` sur le même broker,
-les entités MyElectricalData y disparaissent.
+restée retenue sur le broker.
+
+> **Avant la mise à jour**, si vous avez changé `discovery_prefix` : vérifiez qu'il est bien celui de
+> l'intégration MQTT de Home Assistant. Si Home Assistant écoute encore `homeassistant/`, ses entités
+> MyElectricalData n'existaient que grâce à la copie : le premier export les supprime (avec leurs
+> personnalisations). Alignez `discovery_prefix` sur Home Assistant, et elles sont recréées.
 
 ---
 
