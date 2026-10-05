@@ -37,7 +37,7 @@ import re
 import ssl
 from collections import defaultdict
 from datetime import date, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
 import aiomqtt
 import websockets
@@ -3780,7 +3780,7 @@ class HomeAssistantExporter(BaseExporter):
         from ...models.zen_flex_day import ZenFlexDay
 
         result = await db.execute(select(ZenFlexDay).where(ZenFlexDay.date >= start, ZenFlexDay.date <= end))
-        return {cast(date, row.date): ZenFlexDayType(row.day_type) for row in result.scalars().all()}
+        return {date.fromisoformat(str(row.id)): ZenFlexDayType(row.day_type) for row in result.scalars().all()}
 
     async def _get_production_statistics(
         self,
