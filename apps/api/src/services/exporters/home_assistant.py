@@ -2726,31 +2726,35 @@ class HomeAssistantExporter(BaseExporter):
                 "statistic_ids": [],
             }
 
-    # Import différentiel : les derniers jours sont réécrits à chaque import, car la synchro relit J-2 et
-    # J-1 (corrections Enedis, DAILY_REFRESH_WINDOW_DAYS = 2 dans services/sync.py)
-    INCREMENTAL_REPLAY_DAYS = 3
     # Fenêtre de la première lecture des statistiques ; au-delà, recherche sur l'historique mensuel
     RECENT_WINDOW_DAYS = 30
 
     def _now(self) -> datetime:
         return datetime.now(ZoneInfo("Europe/Paris"))
 
+    def _warn(self, message: str) -> None:
+        """Avertissement de l'import en cours : dans les logs et dans le résultat (clé `warnings`)"""
+        logger.warning(f"[HA-WS] {message}")
+        warnings = getattr(self, "_export_warnings", None)
+        if warnings is not None:
+            warnings.append(message)
+
     async def get_last_statistic_dates(
         self,
         usage_point_ids: list[str] | None = None,
-        rewind_days: int = 0,
     ) -> dict[str, Any]:
         """Point de reprise de chaque statistique pour l'import différentiel
 
         Uses WebSocket API: recorder/statistics_during_period. Le point de reprise d'une série est sa
-        dernière ligne HA (ou, avec `rewind_days`, la dernière ligne au plus tard `rewind_days` jours
-        avant elle) et la somme de cette ligne : l'import réécrit les heures suivantes en prolongeant
-        cette somme. Une série sans ligne récente est cherchée sur l'historique mensuel ; si cette
-        recherche échoue, la lecture échoue (une série sans point de reprise repartirait de 0).
+        dernière ligne HA et la somme de cette ligne : l'import n'écrit que les heures suivantes, en
+        prolongeant cette somme. Les heures déjà écrites ne sont jamais réécrites : une heure que le
+        builder ne produirait plus (passage du quotidien au détaillé, plages HC modifiées) garderait
+        son ancienne somme au milieu d'une série réécrite. Une série sans ligne récente est cherchée sur
+        l'historique mensuel. La lecture échoue si cette recherche échoue ou si une ligne n'a pas de
+        somme : une série sans point de reprise repartirait de 0.
 
         Args:
             usage_point_ids: PDL importés : les séries des autres PDL sont ignorées (None = toutes)
-            rewind_days: jours réécrits avant la dernière ligne de chaque série
 
         Returns:
             Dict with:
@@ -2790,7 +2794,6 @@ class HomeAssistantExporter(BaseExporter):
 
         token = self.config.get("ha_token")
         tz_paris = ZoneInfo("Europe/Paris")
-        rewind = timedelta(days=rewind_days)
 
         try:
             async with self._ws_connect() as ws:
@@ -2823,24 +2826,28 @@ class HomeAssistantExporter(BaseExporter):
                 last_dates: dict[str, datetime] = {}
                 last_sums: dict[str, float] = {}
                 for stat_id, rows in self._rows_by_statistic(response.get("result") or {}, tz_paris).items():
-                    point = self._resume_point(rows, rewind)
-                    if point is not None:
-                        self._set_resume_point(stat_id, point, last_dates, last_sums)
+                    self._set_resume_point(stat_id, rows[-1], last_dates, last_sums)
 
-                # Series without a resume point in the window (TEMPO red from April to October, PDL whose
-                # sync stopped, series younger than the replay): without it they would restart at 0.
-                # Their date counts in oldest_date, so the database is read back far enough
+                # Series without a point in the window (TEMPO red from April to October, PDL whose sync
+                # stopped): without their last sum they would restart at 0. Their date counts in
+                # oldest_date, so the database is read back far enough
                 missing = [stat_id for stat_id in statistic_ids if stat_id not in last_dates]
                 if missing:
-                    error = await self._resume_points_beyond_window(ws, missing, rewind, last_dates, last_sums, tz_paris)
+                    error = await self._resume_points_beyond_window(ws, missing, last_dates, last_sums, tz_paris)
                     if error:
                         logger.error(f"[HA-WS] {error}")
                         return failure(error)
 
+                without_sum = sorted(stat_id for stat_id in last_dates if stat_id not in last_sums)
+                if without_sum:
+                    error = f"Somme absente dans Home Assistant pour {without_sum} : la série repartirait de 0"
+                    logger.error(f"[HA-WS] {error}")
+                    return failure(error)
+
                 oldest_date = min(last_dates.values()) if last_dates else None
                 logger.info(
-                    f"[HA-WS] Found resume points for {len(last_dates)}/{len(statistic_ids)} statistics "
-                    f"(replay {rewind_days} days). Oldest: {oldest_date.isoformat() if oldest_date else 'None'}"
+                    f"[HA-WS] Found resume points for {len(last_dates)}/{len(statistic_ids)} statistics. "
+                    f"Oldest: {oldest_date.isoformat() if oldest_date else 'None'}"
                 )
                 return {
                     "success": True,
@@ -2900,15 +2907,6 @@ class HomeAssistantExporter(BaseExporter):
         return rows_by_id
 
     @staticmethod
-    def _resume_point(
-        rows: list[tuple[datetime, float | None]], rewind: timedelta
-    ) -> tuple[datetime, float | None] | None:
-        """Dernière ligne au plus tard `rewind` avant la dernière ligne de la série, None si aucune"""
-        target = rows[-1][0] - rewind
-        candidates = [row for row in rows if row[0] <= target]
-        return candidates[-1] if candidates else None
-
-    @staticmethod
     def _set_resume_point(
         stat_id: str,
         point: tuple[datetime, float | None],
@@ -2923,19 +2921,17 @@ class HomeAssistantExporter(BaseExporter):
         self,
         ws: websockets.WebSocketClientProtocol,
         statistic_ids: list[str],
-        rewind: timedelta,
         last_dates: dict[str, datetime],
         last_sums: dict[str, float],
         tz: ZoneInfo,
     ) -> str | None:
-        """Point de reprise de séries sans ligne utilisable dans la fenêtre récente ; rend l'erreur
+        """Dernière heure et dernière somme de séries absentes de la fenêtre récente ; rend l'erreur
 
-        Le premier et le dernier mois de chaque série viennent de l'historique mensuel (HA agrège côté
-        serveur, la réponse n'a que quelques lignes par série), puis les heures d'une requête horaire
-        qui démarre `rewind` (plus un jour) avant le dernier mois, une requête par date de départ : une
-        série arrêtée depuis longtemps n'alourdit pas celle d'une série arrêtée récemment. Une série
-        dont toutes les heures tiennent dans le rejeu repart de sa première heure, à 0. Une série
-        absente de l'historique mensuel n'a jamais eu de ligne (création à vide) : elle part de 0.
+        Le dernier mois de chaque série vient de l'historique mensuel (HA agrège côté serveur, la
+        réponse n'a que quelques lignes par série), puis la dernière heure exacte d'une requête horaire
+        sur ce mois, une requête par mois de départ : une série arrêtée depuis longtemps n'alourdit pas
+        celle d'une série arrêtée récemment. Une série absente de l'historique mensuel n'a jamais eu de
+        ligne (création à vide) : elle part de 0.
         """
         monthly = await self._ws_send_and_receive(
             ws,
@@ -2951,39 +2947,30 @@ class HomeAssistantExporter(BaseExporter):
         if not monthly.get("success", True):
             return f"Recherche mensuelle impossible pour {len(statistic_ids)} statistiques : {monthly.get('error')}"
 
-        first_month: dict[str, datetime] = {}
-        ids_by_start: dict[datetime, list[str]] = defaultdict(list)
+        ids_by_month: dict[datetime, list[str]] = defaultdict(list)
         for stat_id, months in self._rows_by_statistic(monthly.get("result") or {}, tz).items():
-            first_month[stat_id] = months[0][0]
-            ids_by_start[months[-1][0] - rewind - timedelta(days=1)].append(stat_id)
+            ids_by_month[months[-1][0]].append(stat_id)
 
-        for msg_id, (hourly_start, ids) in enumerate(sorted(ids_by_start.items()), start=3):
+        for msg_id, (month_start, ids) in enumerate(sorted(ids_by_month.items()), start=3):
             hourly = await self._ws_send_and_receive(
                 ws,
                 {
                     "type": "recorder/statistics_during_period",
-                    "start_time": hourly_start.isoformat(),
+                    "start_time": month_start.isoformat(),
                     "statistic_ids": sorted(ids),
                     "period": "hour",
                 },
                 msg_id=msg_id,
             )
             if not hourly.get("success", True):
-                return f"Recherche horaire depuis {hourly_start.date()} impossible pour {ids} : {hourly.get('error')}"
+                return f"Recherche horaire depuis {month_start.date()} impossible pour {ids} : {hourly.get('error')}"
 
             rows_by_id = self._rows_by_statistic(hourly.get("result") or {}, tz)
             for stat_id in ids:
                 rows = rows_by_id.get(stat_id)
                 if not rows:
-                    return f"Aucune heure de {stat_id} depuis {hourly_start.date()} malgré son historique mensuel"
-                point = self._resume_point(rows, rewind)
-                if point is None and hourly_start <= first_month[stat_id]:
-                    # Toute la série tient dans le rejeu : réécrite depuis sa première heure, à 0
-                    point = (rows[0][0] - timedelta(hours=1), 0.0)
-                elif point is None:
-                    logger.warning(f"[HA-WS] {stat_id} : pas de ligne avant le rejeu, reprise à sa dernière heure")
-                    point = rows[-1]
-                self._set_resume_point(stat_id, point, last_dates, last_sums)
+                    return f"Aucune heure de {stat_id} depuis {month_start.date()} malgré son historique mensuel"
+                self._set_resume_point(stat_id, rows[-1], last_dates, last_sums)
 
         found = [stat_id for stat_id in statistic_ids if stat_id in last_dates]
         logger.info(f"[HA-WS] {len(found)}/{len(statistic_ids)} statistics resumed beyond the recent window: {found}")
@@ -3188,9 +3175,7 @@ class HomeAssistantExporter(BaseExporter):
         réécrirait tout depuis 0 par-dessus les séries existantes, sans les supprimer. Sans aucune
         statistique, le plus ancien point est None et l'import devient complet.
         """
-        result = await self.get_last_statistic_dates(
-            usage_point_ids=usage_point_ids, rewind_days=self.INCREMENTAL_REPLAY_DAYS
-        )
+        result = await self.get_last_statistic_dates(usage_point_ids=usage_point_ids)
         if not result.get("success"):
             error = f"Lecture des statistiques Home Assistant impossible, import différentiel interrompu : {result.get('message')}"
             logger.error(f"[HA-WS] {error}")
@@ -3246,9 +3231,11 @@ class HomeAssistantExporter(BaseExporter):
             if since_date:
                 logger.info(f"[HA-WS] Incremental mode: oldest resume point {since_date}")
             else:
-                # No existing data, fall back to full import
+                # No existing data for these PDLs: full import, WITHOUT clearing (clear_statistics would
+                # delete the series of every PDL of the prefix, including those not imported here)
                 logger.info("[HA-WS] No existing statistics found, performing full import")
                 incremental = False
+                clear_first = False
 
         # Optionally clear existing statistics (disabled for incremental mode)
         if clear_first and not incremental:
@@ -3258,11 +3245,13 @@ class HomeAssistantExporter(BaseExporter):
 
         token = self.config.get("ha_token")
 
+        self._export_warnings: list[str] = []
         results = {
             "consumption": 0,
             "production": 0,
             "cost": 0,
             "errors": [],
+            "warnings": self._export_warnings,
         }
 
         try:
@@ -3487,9 +3476,11 @@ class HomeAssistantExporter(BaseExporter):
             if since_date:
                 logger.info(f"[HA-WS] Incremental mode: oldest resume point {since_date}")
             else:
-                # No existing data, fall back to full import
+                # No existing data for these PDLs: full import, WITHOUT clearing (clear_statistics would
+                # delete the series of every PDL of the prefix, including those not imported here)
                 logger.info("[HA-WS] No existing statistics found, performing full import")
                 incremental = False
+                clear_first = False
 
         # Le total d'étapes est recalculé dynamiquement après chargement des tarifs
         num_pdls = len(usage_point_ids)
@@ -3509,11 +3500,13 @@ class HomeAssistantExporter(BaseExporter):
 
         token = self.config.get("ha_token")
 
+        self._export_warnings = []
         results: dict[str, Any] = {
             "consumption": 0,
             "production": 0,
             "cost": 0,
             "errors": [],
+            "warnings": self._export_warnings,
         }
 
         try:
@@ -3809,16 +3802,22 @@ class HomeAssistantExporter(BaseExporter):
                 day_str = day.date.strftime("%Y-%m-%d") if hasattr(day.date, 'strftime') else str(day.date)[:10]
                 tempo_colors[day_str] = day.color
         first_known_tempo = min(tempo_colors) if tempo_colors else None
+        last_known_tempo = max(tempo_colors) if tempo_colors else None
+        tempo_holes: set[str] = set()
 
         def tempo_color(tempo_date: Any) -> Any:
-            """Couleur du jour ; bleu avant le début du calendrier connu (historique antérieur, comme
-            avant), None pour un jour manquant après son début (pas encore synchronisé)"""
+            """Couleur du jour. None pour un jour postérieur au dernier jour connu (pas encore publié :
+            l'export s'y arrête). Bleu, comme avant, pour un jour antérieur au calendrier (historique) ou
+            manquant en son milieu (jamais rattrapé : client éteint, la synchro ne relit que la saison
+            courante), avec un avertissement dans ce second cas"""
             date_str = tempo_date.strftime("%Y-%m-%d")
             if date_str in tempo_colors:
                 return tempo_colors[date_str]
-            if first_known_tempo is None or date_str < first_known_tempo:
-                return TempoColor.BLUE
-            return None
+            if last_known_tempo is not None and date_str > last_known_tempo:
+                return None
+            if first_known_tempo is not None and date_str > first_known_tempo:
+                tempo_holes.add(date_str)
+            return TempoColor.BLUE
 
         # 4. Initialize stats buckets based on pricing option
         stats_by_tariff: dict[str, list[dict[str, Any]]] = {}
@@ -3842,8 +3841,8 @@ class HomeAssistantExporter(BaseExporter):
             stats_by_tariff["base"] = []
             cumulative_by_tariff["base"] = 0.0
 
-        # TEMPO : première heure (date, heure) dont la couleur n'est pas encore connue, après le début
-        # du calendrier. L'export s'y arrête pour toutes les séries : l'heure n'est pas rangée en bleu par
+        # TEMPO : première heure (date, heure) dont la couleur n'est pas encore publiée (après le dernier
+        # jour connu). L'export s'y arrête pour toutes les séries : l'heure n'est pas rangée en bleu par
         # défaut (elle serait recomptée dans sa vraie couleur ensuite), et aucune série ne la dépasse
         # (elle serait perdue)
         unknown_color_from: tuple[Any, int] | None = None
@@ -3969,6 +3968,12 @@ class HomeAssistantExporter(BaseExporter):
         # 7. Build final statistics from hourly aggregation
         # Sort by (date, hour) to maintain chronological order
         sorted_keys = sorted(hourly_aggregation.keys(), key=lambda k: (k[1], k[2]))
+        if tempo_holes:
+            holes = sorted(tempo_holes)
+            self._warn(
+                f"{pdl} : {len(holes)} jours absents du calendrier Tempo ({', '.join(holes[:5])}"
+                f"{'…' if len(holes) > 5 else ''}), comptés en bleu"
+            )
         if unknown_color_from is not None:
             logger.warning(
                 f"[HA-WS] {pdl}: couleur Tempo inconnue le {unknown_color_from[0]} à {unknown_color_from[1]}h, "
