@@ -63,14 +63,47 @@ POSTGRES_WORK_MEM=8MB
 
 ### Scheduler
 
-```bash
-# Heure de synchronisation quotidienne (format 24h, défaut: 06:00)
-SYNC_HOUR=6
-SYNC_MINUTE=0
+Le planning n'est pas configurable : il suit les heures de publication d'Enedis et de RTE (heure de
+`TZ`), pour une vingtaine d'appels par jour à la passerelle.
 
-# Activer/désactiver le scheduler (défaut: true)
-SCHEDULER_ENABLED=true
+| Synchronisation | Quand |
+| --- | --- |
+| Données des PDL (conso, production, puissance max, contrat, adresse) | au démarrage, toutes les 30 min de 6h à 9h30, puis 12h et 18h |
+| Exports planifiés (Home Assistant, MQTT, VictoriaMetrics) | après chaque synchronisation des PDL, et à leur propre intervalle |
+| Tempo | toutes les heures de 7h à 23h, tant que la couleur du lendemain est inconnue |
+| EcoWatt | 17h, vendredi 12h15, et 8h30 / 20h30 si J+3 est incomplet |
+| Consommation France | 8h, 14h, 20h |
+| Prévisions de production | 9h, 21h |
+
+Une synchronisation des PDL encore en cours au créneau suivant n'est pas relancée en parallèle.
+
+### Hôtes acceptés
+
+```bash
+# Hôtes acceptés dans l'en-tête Host, séparés par des virgules (`*.domaine` accepté).
+# Vide (défaut) : tous les hôtes, pour joindre l'interface par une IP du réseau local ou un domaine perso.
+ALLOWED_HOSTS=med.maison.lan,192.168.1.10
 ```
+
+### Valeurs par défaut des formulaires d'export
+
+Variables du conteneur **frontend**, lues au démarrage. Elles ne servent qu'à préremplir une
+**nouvelle** configuration d'export : une configuration enregistrée les remplace.
+
+```bash
+VITE_DEFAULT_MQTT_BROKER=mqtt.maison.lan
+VITE_DEFAULT_MQTT_PORT=1883
+VITE_DEFAULT_TOPIC_PREFIX=myelectricaldata        # MQTT générique
+VITE_DEFAULT_ENTITY_PREFIX=myelectricaldata       # Home Assistant (topics et unique_id des entités)
+VITE_DEFAULT_DISCOVERY_PREFIX=homeassistant
+VITE_DEFAULT_HA_URL=http://homeassistant.local:8123
+VITE_DEFAULT_VM_URL=http://victoriametrics:8428
+```
+
+Le préfixe d'entité Home Assistant (`entity_prefix`) permet à deux instances de publier sur le même
+Home Assistant sans collision. Le changer sur une configuration existante crée de **nouvelles**
+entités (sans l'historique des anciennes) et laisse les anciennes configurations retenues dans le
+broker. Il ne peut contenir ni espace, ni `/`, `#` ou `+`.
 
 ### Mode debug
 
