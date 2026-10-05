@@ -1,5 +1,9 @@
 # Exemple d'import JSON batch
 
+> L'écran d'import qui utilisait ce format était dans l'onglet « Nouvelle contribution », retiré par MED-22.
+> Le format reste celui accepté par l'API (`POST /energy/contribute/batch`). Dans l'interface, l'import
+> passe désormais par le « Mode IA » de l'onglet « Toutes les offres », au format décrit par son prompt.
+
 Ce document fournit des exemples concrets d'import JSON pour la contribution d'offres d'énergie.
 
 ## Formats supportés

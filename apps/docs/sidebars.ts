@@ -171,7 +171,6 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         "specs/pages/contributes/offers",
-        "specs/pages/contributes/new-offers",
         "specs/pages/contributes/my-offers",
       ],
     },

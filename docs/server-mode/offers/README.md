@@ -21,7 +21,7 @@ Structure de donnees pour une offre:
 
 | Champ | Type | Description |
 |-------|------|-------------|
-| `name` | str | Nom de l'offre (ex: "Tarif Bleu - BASE 6 kVA") |
+| `name` | str | Nom commercial seul (ex: "Tarif Bleu"). La puissance est dans `power_kva` et l'option dans `offer_type`, jamais dans le nom (MED-22). Seule exception : « Zen Week-End - Option Flex », que l'export Home Assistant reconnaît à ce nom |
 | `offer_type` | str | Type: BASE, HC_HP, TEMPO, SEASONAL, etc. |
 | `description` | str | Description detaillee |
 | `subscription_price` | float | Abonnement mensuel TTC (EUR/mois) |

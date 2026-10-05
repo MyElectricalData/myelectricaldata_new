@@ -8,9 +8,20 @@ Cette page permet aux utilisateurs de contribuer en ajoutant ou mettant à jour 
 Contribute/
 ├── components/          # Composants UI
 │   ├── tabs/           # Composants des onglets
-│   │   ├── NewContribution.tsx      # Formulaire de nouvelle contribution
 │   │   ├── MyContributions.tsx      # Liste des contributions de l'utilisateur
-│   │   └── AllOffers.tsx            # Édition inline des offres existantes
+│   │   └── AllOffers.tsx            # Orchestrateur de l'édition des offres existantes
+│   ├── alloffers/      # Sous-composants d'AllOffers
+│   │   ├── ProviderSelector.tsx     # Choix du fournisseur (+ purge, nouveau fournisseur)
+│   │   ├── NewProviderForm.tsx      # Création d'un fournisseur
+│   │   ├── OfferTypeSelector.tsx    # Choix du type d'offre
+│   │   ├── OfferGroupCard.tsx       # Groupe d'offres (nom, dates, puissances)
+│   │   ├── OfferRow.tsx             # Ligne d'une puissance (prix éditables, actions)
+│   │   ├── PriceFieldsEditor.tsx    # Champs de prix d'une nouvelle puissance
+│   │   ├── NewGroupForm.tsx         # Nouveau groupe d'offres
+│   │   ├── ExpiredOffersSection.tsx # Offres expirées (réactivation, suppression)
+│   │   ├── AIImportPanel.tsx        # Import JSON généré par une IA
+│   │   ├── RecapModal.tsx           # Récapitulatif avant envoi
+│   │   └── ConfirmDialog.tsx        # Confirmation avant perte des modifications
 │   ├── forms/          # Composants de formulaires
 │   │   └── PowerVariantForm.tsx     # Formulaire pour les variantes de puissance
 │   ├── cards/          # Composants de cartes
@@ -21,30 +32,24 @@ Contribute/
 │   ├── useProviders.ts              # Récupération des fournisseurs
 │   ├── useOffers.ts                 # Récupération des offres
 │   ├── useContributionForm.ts       # Gestion du formulaire
+│   ├── useAllOffersState.ts         # État partagé d'AllOffers (filtres, modifications, groupes)
+│   ├── useOfferSubmission.ts        # Construction et envoi des contributions
+│   ├── useAIImport.ts               # Import IA : validation, rapprochement, déduplication
 │   └── index.ts        # Barrel export
 ├── types/              # Types TypeScript
 │   ├── contribute.types.ts          # Définitions de types
+│   ├── allOffers.types.ts           # Types et libellés d'AllOffers
 │   └── index.ts        # Barrel export
 ├── utils/              # Fonctions utilitaires
 │   ├── contribute.utils.ts          # Fonctions helpers
+│   ├── offerPricing.ts              # Champs de prix par type, nom commercial, périodes
+│   ├── aiPrompt.ts                  # Prompt de l'import IA
 │   └── index.ts        # Barrel export
 ├── index.tsx           # Composant principal
 └── README.md           # Documentation (ce fichier)
 ```
 
 ## Composants principaux
-
-### NewContribution
-
-Formulaire pour soumettre une nouvelle offre ou un nouveau fournisseur.
-
-**Fonctionnalités** :
-
-- Choix du type de contribution (nouvelle offre / nouveau fournisseur)
-- Formulaire adaptatif selon le type d'offre (BASE, HC/HP, TEMPO, etc.)
-- Support des variantes de puissance (3, 6, 9, 12 kVA, etc.)
-- Import JSON pour batch d'offres
-- Édition de contributions existantes
 
 ### MyContributions
 
@@ -64,9 +69,18 @@ Interface d'édition inline des offres existantes pour soumettre des mises à jo
 **Fonctionnalités** :
 
 - Filtrage par fournisseur et type d'offre
-- Édition inline des prix
+- Édition inline des prix et des dates de validité d'un groupe
+- Nouveaux groupes, nouvelles puissances, nouveau fournisseur
+- Import d'un JSON multi-offres généré par une IA
+- Offres expirées : réactivation, suppression
 - Récapitulatif des modifications avant envoi
 - Soumission groupée de contributions
+
+Le nom d'une offre est son nom commercial seul (`getCleanOfferName`) : la puissance est
+dans `power_kva` et l'option dans `offer_type`. Le backend applique les mêmes règles
+(`apps/api/src/services/offer_names.py`).
+Seule exception : « Option Flex » reste dans le nom (« Zen Week-End - Option Flex »), car l'export
+Home Assistant s'en sert pour reconnaître une offre Zen Flex servie en `SEASONAL`.
 
 ## Hooks personnalisés
 
@@ -127,7 +141,7 @@ interface PowerVariant {
 Type des onglets de la page.
 
 ```typescript
-type TabType = 'new' | 'mine' | 'offers'
+type TabType = 'mine' | 'offers'
 ```
 
 ## Utilitaires
@@ -155,7 +169,7 @@ index.tsx (état global)
     ↓
 TabNavigation (navigation)
     ↓
-NewContribution / MyContributions / AllOffers (onglets)
+MyContributions / AllOffers (onglets)
     ↓
 Hooks (useContributions, useProviders, useOffers)
     ↓

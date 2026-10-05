@@ -9,6 +9,7 @@ from ..middleware import get_current_user, require_permission, require_action, r
 from ..services.email import email_service
 from ..services.slack import slack_service
 from ..services.offers import get_all_offer_types
+from ..services.offer_names import clean_offer_name
 from ..config import settings
 import logging
 
@@ -127,7 +128,7 @@ async def apply_contribution_changes(
             for variant in contribution.power_variants:
                 power_kva = variant.get("power_kva")
                 subscription_price = variant.get("subscription_price")
-                offer_name = f"{contribution.offer_name} - {power_kva} kVA"
+                offer_name = clean_offer_name(contribution.offer_name)
                 offer = EnergyOffer(
                     provider_id=provider_id,
                     name=offer_name,
@@ -181,7 +182,7 @@ async def apply_contribution_changes(
 
             offer = EnergyOffer(
                 provider_id=provider_id,
-                name=contribution.offer_name,
+                name=clean_offer_name(contribution.offer_name),
                 offer_type=contribution.offer_type,
                 description=contribution.description,
                 subscription_price=pricing.get("subscription_price", 0),
@@ -298,7 +299,7 @@ async def apply_contribution_changes(
             if offer_maybe:
                 pricing = contribution.pricing_data or {}
                 offer = offer_maybe
-                offer.name = contribution.offer_name
+                offer.name = clean_offer_name(contribution.offer_name)
                 offer.offer_type = contribution.offer_type
                 offer.description = contribution.description
                 offer.subscription_price = pricing.get("subscription_price", 0)
@@ -1360,7 +1361,7 @@ async def bulk_approve_contributions(
 
                 offer = EnergyOffer(
                     provider_id=provider_id,
-                    name=contribution.offer_name,
+                    name=clean_offer_name(contribution.offer_name),
                     offer_type=contribution.offer_type,
                     description=contribution.description,
                     subscription_price=pricing.get("subscription_price", 0),
@@ -1432,7 +1433,7 @@ async def bulk_approve_contributions(
 
                         if offer_maybe:
                             # Extract new name from "[RENOMMAGE] NewName"
-                            new_name = contribution.offer_name.replace("[RENOMMAGE] ", "")
+                            new_name = clean_offer_name(contribution.offer_name.replace("[RENOMMAGE] ", ""))
                             old_name = offer_maybe.name
                             offer_maybe.name = new_name
                             offer_maybe.updated_at = datetime.now(UTC)
@@ -1510,7 +1511,7 @@ async def bulk_approve_contributions(
 
                     if offer_maybe:
                         offer = offer_maybe
-                        offer.name = contribution.offer_name
+                        offer.name = clean_offer_name(contribution.offer_name)
                         offer.offer_type = contribution.offer_type
                         offer.description = contribution.description
                         offer.subscription_price = pricing.get("subscription_price", 0)
