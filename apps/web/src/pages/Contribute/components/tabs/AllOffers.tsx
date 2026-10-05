@@ -25,6 +25,7 @@ export default function AllOffers() {
   const {
     isEditMode, setIsEditMode,
     filterProvider,
+    filterOfferType,
     isAddingProvider,
     showAIMode, setShowAIMode,
     showRecapModal,
@@ -143,8 +144,22 @@ export default function AllOffers() {
         )}
       </div>
 
+      {/* Sans fournisseur ou sans type choisi : inviter à sélectionner (ni groupes ni création) */}
+      {!showAIMode && (!filterProvider || filterOfferType === 'all') && (
+        <div className="text-center py-8 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900 rounded-lg border border-dashed border-gray-300 dark:border-gray-700">
+          <p className="text-lg mb-2">
+            {!filterProvider
+              ? 'Sélectionnez un fournisseur pour voir les offres disponibles'
+              : 'Sélectionnez un type d\'offre pour afficher les tarifs'}
+          </p>
+          <p className="text-sm">
+            Vous pourrez ensuite modifier les tarifs et soumettre vos contributions.
+          </p>
+        </div>
+      )}
+
       {/* Contenu principal (masqué en mode IA) */}
-      {!showAIMode && (
+      {!showAIMode && filterProvider && filterOfferType !== 'all' && (
         <>
           {/* Onglets de groupes d'offres (mode lecture) */}
           <GroupTabs state={state} />
