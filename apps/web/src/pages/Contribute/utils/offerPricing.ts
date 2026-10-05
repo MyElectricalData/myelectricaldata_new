@@ -200,7 +200,8 @@ export function getGroupNameWithoutPeriod(groupName: string): string {
 
 /**
  * Verifie si deux periodes se chevauchent
- * Une date vide signifie "pas de borne" (offre active / debut inconnu)
+ * Une date de fin vide signifie "pas de borne" (offre active) ; une date de debut vide
+ * d'un seul cote designe une offre legacy, distincte d'une grille datee
  */
 export function periodsOverlap(
   start1?: string,
@@ -215,7 +216,9 @@ export function periodsOverlap(
 
   // Si les deux n'ont pas de start, elles se chevauchent
   if (!s1 && !s2) return true
-  if (!s1 || !s2) return true
+  // Si l'une a un valid_from et l'autre non, ce sont des periodes differentes
+  // (l'une est une offre "legacy" sans date, l'autre est une nouvelle grille datee)
+  if (!s1 || !s2) return false
 
   const end1Eff = e1 || new Date('9999-12-31')
   const end2Eff = e2 || new Date('9999-12-31')
