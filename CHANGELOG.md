@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.4.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.4.0...2.4.1) (2026-10-05)
+
+### Bug Fixes
+
+* **web:** MED-29 / revue de la période d'analyse en mode client ([c5da979](https://github.com/MyElectricalData/myelectricaldata_new/commit/c5da9796bd6f5b750e2d64e24cc411f644410dfb))
+
 ## [2.4.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.3.0...2.4.0) (2026-10-05)
 
 ### Features
