@@ -2823,6 +2823,14 @@ class HomeAssistantExporter(BaseExporter):
                 last_sums: dict[str, float] = {}
                 self._collect_last_entries(response.get("result", {}), last_dates, last_sums, tz_paris)
 
+                # Series without any point in the window (TEMPO red from April to October, PDL whose
+                # sync stopped): without their last sum they would restart at 0. Their last date also
+                # counts in oldest_date, otherwise the hours between it and the other series' dates
+                # would never be read back from the database
+                missing = [stat_id for stat_id in statistic_ids if stat_id not in last_dates]
+                if missing:
+                    await self._collect_last_entries_beyond_window(ws, missing, last_dates, last_sums, tz_paris)
+
                 # Find the oldest "last date" - this is where we need to start the incremental import
                 oldest_date = min(last_dates.values()) if last_dates else None
 
@@ -2888,6 +2896,62 @@ class HomeAssistantExporter(BaseExporter):
                     last_sums[stat_id] = float(sum_v)
                 except (TypeError, ValueError):
                     logger.warning(f"[HA-WS] Could not parse sum for {stat_id}: {sum_v}")
+
+    async def _collect_last_entries_beyond_window(
+        self,
+        ws: websockets.WebSocketClientProtocol,
+        statistic_ids: list[str],
+        last_dates: dict[str, datetime],
+        last_sums: dict[str, float],
+        tz: ZoneInfo,
+    ) -> None:
+        """Dernière heure et dernière somme de séries absentes de la fenêtre récente
+
+        Le dernier mois de chaque série vient de l'historique mensuel (quelques lignes par série), puis
+        la dernière heure exacte d'une requête horaire sur ce mois, groupée par mois de départ : une
+        série arrêtée depuis longtemps n'alourdit pas celle d'une série arrêtée récemment. En cas
+        d'échec, les séries restent inconnues (elles repartent de 0, comme avant).
+        """
+        monthly = await self._ws_send_and_receive(
+            ws,
+            {
+                "type": "recorder/statistics_during_period",
+                "start_time": datetime(2010, 1, 1, tzinfo=tz).isoformat(),
+                "statistic_ids": statistic_ids,
+                "period": "month",
+                "types": ["sum"],
+            },
+            msg_id=2,
+        )
+        if not monthly.get("success", True):
+            logger.warning(f"[HA-WS] Monthly lookup failed for {len(statistic_ids)} statistics: {monthly.get('error')}")
+            return
+
+        ids_by_month: dict[datetime, list[str]] = defaultdict(list)
+        for stat_id, entries in (monthly.get("result") or {}).items():
+            if entries and isinstance(entries, list):
+                month_start = self._parse_ha_timestamp(entries[-1].get("start"), tz)
+                if month_start is not None:
+                    ids_by_month[month_start].append(stat_id)
+
+        for msg_id, (month_start, ids) in enumerate(sorted(ids_by_month.items()), start=3):
+            hourly = await self._ws_send_and_receive(
+                ws,
+                {
+                    "type": "recorder/statistics_during_period",
+                    "start_time": month_start.isoformat(),
+                    "statistic_ids": sorted(ids),
+                    "period": "hour",
+                },
+                msg_id=msg_id,
+            )
+            if not hourly.get("success", True):
+                logger.warning(f"[HA-WS] Hourly lookup since {month_start} failed for {ids}: {hourly.get('error')}")
+                continue
+            self._collect_last_entries(hourly.get("result") or {}, last_dates, last_sums, tz)
+
+        found = [stat_id for stat_id in statistic_ids if stat_id in last_dates]
+        logger.info(f"[HA-WS] {len(found)}/{len(statistic_ids)} statistics found beyond the recent window: {found}")
 
     @staticmethod
     def _extract_per_pdl_state(
