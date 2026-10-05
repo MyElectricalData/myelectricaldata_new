@@ -460,8 +460,9 @@ export function DetailedCurve({
       }
     }
     return dates
-  // detailByDayData / detailWeekOffset: recompute when the parent loads data (week navigation, PDL switch)
-  }, [selectedPDL, cacheKeyPrefix, queryClient, detailByDayData, detailWeekOffset])
+  // detailByDayData: recompute when the parent loads data (memoized on the query cache content)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPDL, cacheKeyPrefix, queryClient, detailByDayData])
 
   const renderCalendar = () => {
     const todayUTC = new Date()
@@ -978,7 +979,7 @@ export function DetailedCurve({
                 {detailDateRange && (
                   <>
                     <p className="text-xs text-gray-500 dark:text-gray-500">
-                      Période demandée : du {new Date(detailDateRange.start).toLocaleDateString('fr-FR')} au {new Date(detailDateRange.end).toLocaleDateString('fr-FR')}
+                      Période demandée : du {new Date(detailDateRange.start).toLocaleDateString('fr-FR')} au {new Date(new Date(detailDateRange.end).getTime() - 86400000).toLocaleDateString('fr-FR')}
                     </p>
                     {(() => {
                       if (!detailDateRange) return null
@@ -1027,7 +1028,7 @@ export function DetailedCurve({
               </p>
               {detailDateRange && (
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Du {new Date(detailDateRange.start).toLocaleDateString('fr-FR')} au {new Date(detailDateRange.end).toLocaleDateString('fr-FR')}
+                  Du {new Date(detailDateRange.start).toLocaleDateString('fr-FR')} au {new Date(new Date(detailDateRange.end).getTime() - 86400000).toLocaleDateString('fr-FR')}
                 </p>
               )}
             </div>

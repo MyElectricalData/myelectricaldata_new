@@ -432,11 +432,16 @@ export function useConsumptionCalcs({
     })
 
     // Dédupliquer les entrées de yearsByPreset (une période peut être "previous" d'un bloc et "current" d'un autre)
-    // On garde l'entrée avec le PLUS de mois pour chaque label (la version "current" est plus complète que la version "previous")
+    // On garde l'entrée avec le PLUS de mois pour chaque label (la version "current" est plus complète que la version "previous"),
+    // et à nombre de mois égal celle qui finit le plus tard (sinon le dernier mois de la version tronquée l'emporte)
     const bestByLabel = new Map<string, typeof yearsByPreset[0]>()
     for (const entry of yearsByPreset) {
       const existing = bestByLabel.get(entry.label)
-      if (!existing || entry.byMonth.length > existing.byMonth.length) {
+      if (
+        !existing ||
+        entry.byMonth.length > existing.byMonth.length ||
+        (entry.byMonth.length === existing.byMonth.length && entry.endDate > existing.endDate)
+      ) {
         bestByLabel.set(entry.label, entry)
       }
     }
