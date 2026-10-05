@@ -257,6 +257,7 @@ MODE SERVEUR                    MODE CLIENT
 /simulator                      ✗
 /faq                            ✗
 /settings                       ✗
+                                /preferences ← période d'analyse
 /admin/*                        ✗
                                 /export ← NOUVEAU
 ```
