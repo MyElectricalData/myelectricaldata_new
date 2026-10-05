@@ -300,13 +300,13 @@ async def test_power_end_today_sans_cache_sert_j_moins_1(enedis, cache):
     assert enedis.calls == [("power", j(4), j(0))]
 
 
-def test_power_cache_ttl_court_pour_j_moins_1_et_j_moins_2():
+def test_cache_ttl_court_pour_j_moins_1_et_j_moins_2():
     today = datetime.combine(today_paris(), datetime.min.time())
 
-    assert router.power_cache_ttl(j(1), today, 86400) == 3 * 3600
-    assert router.power_cache_ttl(j(2), today, 86400) == 3 * 3600
-    assert router.power_cache_ttl(j(3), today, 86400) == 86400
-    assert router.power_cache_ttl(j(1), today, 600) == 600  # jamais plus long que le défaut serveur
+    assert router.recent_cache_ttl(j(1), today, 86400) == 3 * 3600
+    assert router.recent_cache_ttl(j(2), today, 86400) == 3 * 3600
+    assert router.recent_cache_ttl(j(3), today, 86400) == 86400
+    assert router.recent_cache_ttl(j(1), today, 600) == 600  # jamais plus long que le défaut serveur
 
 
 async def test_power_jours_recents_caches_moins_longtemps(enedis, cache):
@@ -475,6 +475,13 @@ async def test_production_batch_reutilise_le_cache_du_detail(enedis, cache):
 
     assert len(enedis.calls) == 1
     assert len(points_of(data)) == 5 * 48
+
+
+async def test_production_batch_jours_recents_caches_moins_longtemps(enedis, cache):
+    await call(router.get_production_detail_batch, j(4), j(0), use_cache=True)
+
+    assert cache.ttls[f"production:detail:daily:{PRM}:{j(1)}"] == 3 * 3600
+    assert cache.ttls[f"production:detail:daily:{PRM}:{j(4)}"] == 86400
 
 
 async def test_production_detail_jour_ancien_partiel_garde_tel_quel(enedis, cache):
