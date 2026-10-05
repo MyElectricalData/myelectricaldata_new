@@ -162,3 +162,16 @@ def test_zen_flex_nettoyee_reste_reconnue_par_l_export_home_assistant():
         hc_price_winter="0.2091", hp_price_winter="0.7253", hc_price_summer="0.1519", hp_price_summer="0.2091",
     )
     assert _day_price(zen_flex, "hp", date(2026, 1, 15)) is None
+
+
+def test_repli_tarif_bleu_de_l_export_ha_prend_la_grille_courante():
+    """Après la migration, "Tarif Bleu" désigne aussi l'ancienne grille désactivée et l'historique :
+    le repli de l'export HA (PDL sans offre choisie) ne doit retenir que la grille courante la plus récente."""
+    from sqlalchemy.dialects import postgresql
+
+    from src.services.exporters.home_assistant import tarif_bleu_fallback_query
+
+    sql = str(tarif_bleu_fallback_query("BASE", 6).compile(dialect=postgresql.dialect())).lower()
+    assert "energy_offers.is_active" in sql
+    assert "energy_offers.valid_to is null" in sql
+    assert "order by energy_offers.valid_from desc nulls last" in sql

@@ -47,5 +47,7 @@ def clean_offer_name(name: str | None) -> str | None:
     """
     if not name or name.startswith("["):
         return name
-    cleaned = TYPE_SUFFIX.sub("", GROUP_KEY_SUFFIX.sub("", POWER_SUFFIX.sub("", name))).strip()
-    return cleaned or name
+    for pattern in (POWER_SUFFIX, GROUP_KEY_SUFFIX, TYPE_SUFFIX):
+        # un nom qui ne serait plus qu'un suffixe est laissé tel quel (comme la migration)
+        name = pattern.sub("", name).strip() or name
+    return name

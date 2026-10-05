@@ -183,13 +183,14 @@ const TYPE_SUFFIX = new RegExp(`\\s*-\\s*(${TYPE_SUFFIXES.join('|')})\\s*$`, 'i'
  * groupe affiche ici est celui que le serveur stocke.
  */
 export function getCleanOfferName(name: string): string {
-  const cleaned = name
-    .replace(/\s*\[.*?\]\s*$/, '')
-    .replace(POWER_SUFFIX, '')
-    .replace(/\s*##.*$/, '') // cle de groupe (nom##periode) envoyee par erreur comme nom
-    .replace(TYPE_SUFFIX, '')
-    .trim()
-  return cleaned || name
+  const passes = [
+    /\s*\[.*?\]\s*$/, // periode "[date -> date]"
+    POWER_SUFFIX,
+    /\s*##.*$/, // cle de groupe (nom##periode) envoyee par erreur comme nom
+    TYPE_SUFFIX,
+  ]
+  // un nom qui ne serait plus qu'un suffixe est laisse tel quel (comme le backend)
+  return passes.reduce((current, pattern) => current.replace(pattern, '').trim() || current, name)
 }
 
 /**

@@ -52,6 +52,28 @@ SEASONAL_WINTER_MONTHS = frozenset({11, 12, 1, 2, 3})
 WEEKEND_PRICE_OPTIONS = frozenset({"HC_WEEKEND", "WEEKEND", "BASE_WEEKEND"})
 
 
+def tarif_bleu_fallback_query(pricing_option: str, power_kva: int | None):
+    """Tarif Bleu de repli pour un PDL sans offre choisie : la grille courante la plus récente.
+
+    Plusieurs lignes portent le nom « Tarif Bleu » (historique, ancienne grille désactivée par la
+    migration c3d4e5f6g7h8) : sans filtre ni tri, limit(1) pouvait retenir un ancien prix.
+    """
+    from sqlalchemy import or_, select
+
+    from ...models.energy_provider import EnergyOffer
+
+    query = (
+        select(EnergyOffer.offer_type, EnergyOffer.base_price, EnergyOffer.hc_price, EnergyOffer.hp_price)
+        .where(EnergyOffer.name == "Tarif Bleu")
+        .where(EnergyOffer.offer_type == pricing_option)
+        .where(EnergyOffer.is_active.is_(True))
+        .where(or_(EnergyOffer.valid_to.is_(None), EnergyOffer.valid_to > datetime.now()))
+    )
+    if power_kva:
+        query = query.where(EnergyOffer.power_kva == power_kva)
+    return query.order_by(EnergyOffer.valid_from.desc().nulls_last()).limit(1)
+
+
 def _day_price(offer: Any, tariff_tag: str, day: date) -> float | None:
     """Prix du kWh d'une série base / hc / hp pour un jour donné (hors Tempo)
 
@@ -1160,15 +1182,7 @@ class HomeAssistantExporter(BaseExporter):
                 pricing_option = pdl_row.pricing_option
                 power_kva = pdl_row.subscribed_power
                 # Chercher une offre Tarif Bleu qui matche le type et la puissance
-                fallback_query = (
-                    select(EnergyOffer.offer_type, EnergyOffer.base_price, EnergyOffer.hc_price, EnergyOffer.hp_price)
-                    .where(EnergyOffer.name == "Tarif Bleu")
-                    .where(EnergyOffer.offer_type == pricing_option)
-                )
-                if power_kva:
-                    fallback_query = fallback_query.where(EnergyOffer.power_kva == power_kva)
-                fallback_query = fallback_query.limit(1)
-                fallback_result = await db.execute(fallback_query)
+                fallback_result = await db.execute(tarif_bleu_fallback_query(pricing_option, power_kva))
                 offer_row = fallback_result.first()
 
         if offer_row:

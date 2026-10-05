@@ -110,21 +110,27 @@ CAS = [
     ("Octopus Go", "HC_HP", "Octopus Go"),
 ]
 
-SCHEMA = """
-CREATE TABLE energy_offers (
-    id varchar(36) PRIMARY KEY,
-    provider_id varchar(36) NOT NULL,
-    name varchar(255) NOT NULL,
-    offer_type varchar(50) NOT NULL,
-    power_kva integer,
-    is_active boolean NOT NULL DEFAULT true,
-    valid_from timestamptz,
-    created_at timestamptz NOT NULL DEFAULT now()
-)
-"""
+SCHEMA = [
+    """
+    CREATE TABLE energy_offers (
+        id varchar(36) PRIMARY KEY,
+        provider_id varchar(36) NOT NULL,
+        name varchar(255) NOT NULL,
+        offer_type varchar(50) NOT NULL,
+        power_kva integer,
+        is_active boolean NOT NULL DEFAULT true,
+        valid_from timestamptz,
+        valid_to timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    # tables qui référencent une offre (FK ON DELETE SET NULL en vrai)
+    "CREATE TABLE pdls (id varchar(36) PRIMARY KEY, selected_offer_id varchar(36))",
+    "CREATE TABLE offer_contributions (id varchar(36) PRIMARY KEY, existing_offer_id varchar(36), status varchar(50) NOT NULL)",
+]
 
 
-async def _run(url, statements, migrate_times=1):
+async def _run(url, statements, migrate_times=1, with_refs=False):
     module = _load_migration()
 
     def _upgrade(sync_conn):
@@ -134,25 +140,30 @@ async def _run(url, statements, migrate_times=1):
     engine = create_async_engine(url)
     try:
         async with engine.begin() as conn:
-            await conn.execute(text("DROP TABLE IF EXISTS energy_offers"))
-            await conn.execute(text(SCHEMA))
+            await conn.execute(text("DROP TABLE IF EXISTS energy_offers, pdls, offer_contributions"))
+            for ddl in SCHEMA:
+                await conn.execute(text(ddl))
             for stmt, params in statements:
                 await conn.execute(text(stmt), params)
             for _ in range(migrate_times):
                 await conn.run_sync(_upgrade)
             rows = await conn.execute(text(
                 "SELECT id, name, offer_type, power_kva, is_active FROM energy_offers ORDER BY id"))
-            return rows.all()
+            if not with_refs:
+                return rows.all()
+            refs = {r.id: r.selected_offer_id for r in (await conn.execute(text("SELECT * FROM pdls")))}
+            refs |= {r.id: r.existing_offer_id for r in (await conn.execute(text("SELECT * FROM offer_contributions")))}
+            return rows.all(), refs
     finally:
         await engine.dispose()
 
 
-INSERT = ("INSERT INTO energy_offers (id, provider_id, name, offer_type, power_kva, valid_from) "
-          "VALUES (:id, :p, :name, :t, :kva, :vf)")
+INSERT = ("INSERT INTO energy_offers (id, provider_id, name, offer_type, power_kva, valid_from, valid_to) "
+          "VALUES (:id, :p, :name, :t, :kva, :vf, :vt)")
 
 
 def _cas_inserts():
-    return [(INSERT, {"id": f"{i:03d}", "p": f"prov{i:03d}", "name": n, "t": t, "kva": 6, "vf": None})
+    return [(INSERT, {"id": f"{i:03d}", "p": f"prov{i:03d}", "name": n, "t": t, "kva": 6, "vf": None, "vt": None})
             for i, (n, t, _) in enumerate(CAS)]
 
 
@@ -176,12 +187,12 @@ async def test_idempotente(pg_url):
 async def test_doublons_desactives_garde_le_plus_recent(pg_url):
     rows = await _run(pg_url, [
         (INSERT, {"id": "old", "p": "edf", "name": "Tarif Bleu", "t": "BASE", "kva": 9,
-                  "vf": datetime(2025, 2, 1, tzinfo=UTC)}),
+                  "vf": datetime(2025, 2, 1, tzinfo=UTC), "vt": None}),
         (INSERT, {"id": "new", "p": "edf", "name": "Tarif Bleu - 9 kVA", "t": "BASE", "kva": 9,
-                  "vf": datetime(2026, 2, 1, tzinfo=UTC)}),
+                  "vf": datetime(2026, 2, 1, tzinfo=UTC), "vt": None}),
         # même nom, autre puissance : ce n'est pas un doublon
         (INSERT, {"id": "p12", "p": "edf", "name": "Tarif Bleu - 12 kVA", "t": "BASE", "kva": 12,
-                  "vf": datetime(2026, 2, 1, tzinfo=UTC)}),
+                  "vf": datetime(2026, 2, 1, tzinfo=UTC), "vt": None}),
     ])
     actives = {r.id for r in rows if r.is_active}
     assert actives == {"new", "p12"}
@@ -191,7 +202,50 @@ async def test_doublons_desactives_garde_le_plus_recent(pg_url):
 @pytest.mark.asyncio
 async def test_puissance_seulement_dans_le_nom_recopiee(pg_url):
     rows = await _run(pg_url, [
-        (INSERT, {"id": "nul", "p": "ohm", "name": "Classique - 9 kVA", "t": "BASE", "kva": None, "vf": None}),
-        (INSERT, {"id": "ok", "p": "ohm", "name": "Classique - 9 kVA", "t": "HC_HP", "kva": 12, "vf": None}),
+        (INSERT, {"id": "nul", "p": "ohm", "name": "Classique - 9 kVA", "t": "BASE", "kva": None, "vf": None, "vt": None}),
+        (INSERT, {"id": "ok", "p": "ohm", "name": "Classique - 9 kVA", "t": "HC_HP", "kva": 12, "vf": None, "vt": None}),
     ])
     assert {(r.id, r.name, r.power_kva) for r in rows} == {("nul", "Classique", 9), ("ok", "Classique", 12)}
+
+
+@pytest.mark.asyncio
+async def test_grille_expiree_n_evince_pas_l_offre_courante(pg_url):
+    """Dans l'app, l'historique reste is_active avec un valid_to : seule une offre courante est dédoublonnée."""
+    rows = await _run(pg_url, [
+        (INSERT, {"id": "cur", "p": "ohm", "name": "Classique", "t": "BASE", "kva": 6, "vf": None, "vt": None}),
+        (INSERT, {"id": "exp", "p": "ohm", "name": "Classique - 6 kVA", "t": "BASE", "kva": 6,
+                  "vf": datetime(2025, 6, 1, tzinfo=UTC), "vt": datetime(2025, 8, 1, tzinfo=UTC)}),
+    ])
+    assert {r.id: r.is_active for r in rows} == {"cur": True, "exp": True}
+
+
+@pytest.mark.asyncio
+async def test_references_repointees_vers_l_offre_gardee(pg_url):
+    rows, refs = await _run(pg_url, [
+        (INSERT, {"id": "old", "p": "edf", "name": "Tarif Bleu", "t": "BASE", "kva": 6, "vf": None, "vt": None}),
+        (INSERT, {"id": "new", "p": "edf", "name": "Tarif Bleu - 6 kVA", "t": "BASE", "kva": 6,
+                  "vf": datetime(2026, 7, 31, tzinfo=UTC), "vt": None}),
+        ("INSERT INTO pdls VALUES ('pdl1', 'old')", {}),
+        ("INSERT INTO offer_contributions VALUES ('c_pending', 'old', 'pending'), ('c_done', 'old', 'approved')", {}),
+    ], with_refs=True)
+    assert {r.id: r.is_active for r in rows} == {"old": False, "new": True}
+    # le PDL et la contribution en attente suivent l'offre gardée ; l'historique approuvé ne bouge pas
+    assert refs == {"pdl1": "new", "c_pending": "new", "c_done": "old"}
+
+
+@pytest.mark.asyncio
+async def test_puissance_recopiee_quelle_que_soit_la_casse(pg_url):
+    rows = await _run(pg_url, [
+        (INSERT, {"id": "k", "p": "ohm", "name": "Classique - 9 KVA", "t": "BASE", "kva": None, "vf": None, "vt": None}),
+    ])
+    assert [(r.name, r.power_kva) for r in rows] == [("Classique", 9)]
+
+
+@pytest.mark.asyncio
+async def test_nom_jamais_vide(pg_url):
+    """Comme clean_offer_name : si tout le nom est un suffixe, il est laissé tel quel."""
+    rows = await _run(pg_url, [
+        (INSERT, {"id": "a", "p": "x", "name": "- BASE", "t": "BASE", "kva": 6, "vf": None, "vt": None}),
+        (INSERT, {"id": "b", "p": "y", "name": "6 kVA", "t": "BASE", "kva": 6, "vf": None, "vt": None}),
+    ])
+    assert {r.id: r.name for r in rows} == {"a": "- BASE", "b": "6 kVA"}

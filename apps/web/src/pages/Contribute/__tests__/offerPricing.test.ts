@@ -46,6 +46,10 @@ describe('offerPricing', () => {
       // cle de groupe du front (nom##periode) envoyee comme nom
       ['Tarif Bleu##2026-02-06##active - 3 kVA', 'Tarif Bleu'],
       ['Tarif Bleu##2026-02-06##active', 'Tarif Bleu'],
+      // jamais vide : un nom qui n'est qu'un suffixe reste tel quel (comme le backend)
+      ['- BASE', '- BASE'],
+      ['6 kVA', '6 kVA'],
+      ['Classique - 9 KVA', 'Classique'],
     ])('%s -> %s', (brut, attendu) => {
       expect(getCleanOfferName(brut)).toBe(attendu)
     })
