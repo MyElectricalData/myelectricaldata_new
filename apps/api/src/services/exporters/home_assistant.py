@@ -2726,119 +2726,122 @@ class HomeAssistantExporter(BaseExporter):
                 "statistic_ids": [],
             }
 
-    async def get_last_statistic_dates(self) -> dict[str, Any]:
-        """Get the last recorded date for each statistic ID
+    # Import différentiel : les derniers jours sont réécrits à chaque import, car la synchro relit J-2 et
+    # J-1 (corrections Enedis, DAILY_REFRESH_WINDOW_DAYS = 2 dans services/sync.py)
+    INCREMENTAL_REPLAY_DAYS = 3
+    # Fenêtre de la première lecture des statistiques ; au-delà, recherche sur l'historique mensuel
+    RECENT_WINDOW_DAYS = 30
 
-        Uses WebSocket API: recorder/statistics_during_period to get recent stats
-        and determine the last timestamp for each statistic.
+    def _now(self) -> datetime:
+        return datetime.now(ZoneInfo("Europe/Paris"))
+
+    async def get_last_statistic_dates(
+        self,
+        usage_point_ids: list[str] | None = None,
+        rewind_days: int = 0,
+    ) -> dict[str, Any]:
+        """Point de reprise de chaque statistique pour l'import différentiel
+
+        Uses WebSocket API: recorder/statistics_during_period. Le point de reprise d'une série est sa
+        dernière ligne HA (ou, avec `rewind_days`, la dernière ligne au plus tard `rewind_days` jours
+        avant elle) et la somme de cette ligne : l'import réécrit les heures suivantes en prolongeant
+        cette somme. Une série sans ligne récente est cherchée sur l'historique mensuel ; si cette
+        recherche échoue, la lecture échoue (une série sans point de reprise repartirait de 0).
+
+        Args:
+            usage_point_ids: PDL importés : les séries des autres PDL sont ignorées (None = toutes)
+            rewind_days: jours réécrits avant la dernière ligne de chaque série
 
         Returns:
             Dict with:
             - success: bool
             - message: str
-            - last_dates: Dict[statistic_id, datetime] - Last recorded date per stat
-            - oldest_date: datetime | None - The oldest "last date" (for incremental sync)
+            - last_dates: Dict[statistic_id, isoformat] - point de reprise de chaque série
+            - last_sums: Dict[statistic_id, float] - somme HA au point de reprise
+            - oldest_date: isoformat | None - le plus ancien point de reprise
         """
-        from datetime import datetime, timedelta
-        from zoneinfo import ZoneInfo
+
+        def failure(message: str) -> dict[str, Any]:
+            return {"success": False, "message": message, "last_dates": {}, "last_sums": {}, "oldest_date": None}
 
         if not self._has_websocket_config():
-            return {
-                "success": False,
-                "message": "Configuration WebSocket manquante (ha_url, ha_token)",
-                "last_dates": {},
-                "oldest_date": None,
-            }
+            return failure("Configuration WebSocket manquante (ha_url, ha_token)")
 
         prefix = self.config.get("statistic_id_prefix", "myelectricaldata")
 
         # First, list all statistics with our prefix
         list_result = await self.list_statistics(prefix)
         if not list_result.get("success"):
-            return {
-                "success": False,
-                "message": list_result.get("message", "Failed to list statistics"),
-                "last_dates": {},
-                "oldest_date": None,
-            }
+            return failure(list_result.get("message", "Failed to list statistics"))
 
         statistic_ids = list_result.get("statistic_ids", [])
+        if usage_point_ids is not None:
+            statistic_ids = [
+                stat_id for stat_id in statistic_ids if self._statistic_belongs_to(prefix, stat_id, usage_point_ids)
+            ]
         if not statistic_ids:
             return {
                 "success": True,
                 "message": "Aucune statistique existante - import complet requis",
                 "last_dates": {},
+                "last_sums": {},
                 "oldest_date": None,
             }
 
         token = self.config.get("ha_token")
+        tz_paris = ZoneInfo("Europe/Paris")
+        rewind = timedelta(days=rewind_days)
 
         try:
             async with self._ws_connect() as ws:
                 # Auth
                 auth_req = json.loads(await ws.recv())
                 if auth_req.get("type") != "auth_required":
-                    return {"success": False, "message": "Unexpected HA response", "last_dates": {}, "oldest_date": None}
+                    return failure("Unexpected HA response")
 
                 await ws.send(json.dumps({"type": "auth", "access_token": token}))
                 auth_result = json.loads(await ws.recv())
 
                 if auth_result.get("type") != "auth_ok":
-                    return {
-                        "success": False,
-                        "message": f"Authentification échouée: {auth_result.get('message', 'Unknown error')}",
-                        "last_dates": {},
-                        "oldest_date": None,
-                    }
+                    return failure(f"Authentification échouée: {auth_result.get('message', 'Unknown error')}")
 
-                # Query statistics for the last 30 days to find the most recent entry
-                # We use a wide range to ensure we catch the latest data
-                tz_paris = ZoneInfo("Europe/Paris")
-                now = datetime.now(tz_paris)
-                start_time = (now - timedelta(days=30)).isoformat()
-
+                # Hourly statistics of the recent window
+                start_time = (self._now() - timedelta(days=self.RECENT_WINDOW_DAYS)).isoformat()
                 response = await self._ws_send_and_receive(
                     ws,
                     {
                         "type": "recorder/statistics_during_period",
                         "start_time": start_time,
                         "statistic_ids": statistic_ids,
-                        "period": "hour",  # Get hourly data for precision
+                        "period": "hour",
                     },
                     msg_id=1,
                 )
-
                 if not response.get("success", True):
-                    return {
-                        "success": False,
-                        "message": response.get("error", {}).get("message", "Unknown error"),
-                        "last_dates": {},
-                        "oldest_date": None,
-                    }
+                    return failure(response.get("error", {}).get("message", "Unknown error"))
 
-                # Extract last date and last sum for each statistic: the sum is the starting
-                # point of the cumulative series in incremental mode (otherwise it restarts at 0
-                # and the Energy dashboard sees a giant negative delta)
                 last_dates: dict[str, datetime] = {}
                 last_sums: dict[str, float] = {}
-                self._collect_last_entries(response.get("result", {}), last_dates, last_sums, tz_paris)
+                for stat_id, rows in self._rows_by_statistic(response.get("result") or {}, tz_paris).items():
+                    point = self._resume_point(rows, rewind)
+                    if point is not None:
+                        self._set_resume_point(stat_id, point, last_dates, last_sums)
 
-                # Series without any point in the window (TEMPO red from April to October, PDL whose
-                # sync stopped): without their last sum they would restart at 0. Their last date also
-                # counts in oldest_date, otherwise the hours between it and the other series' dates
-                # would never be read back from the database
+                # Series without a resume point in the window (TEMPO red from April to October, PDL whose
+                # sync stopped, series younger than the replay): without it they would restart at 0.
+                # Their date counts in oldest_date, so the database is read back far enough
                 missing = [stat_id for stat_id in statistic_ids if stat_id not in last_dates]
                 if missing:
-                    await self._collect_last_entries_beyond_window(ws, missing, last_dates, last_sums, tz_paris)
+                    error = await self._resume_points_beyond_window(ws, missing, rewind, last_dates, last_sums, tz_paris)
+                    if error:
+                        logger.error(f"[HA-WS] {error}")
+                        return failure(error)
 
-                # Find the oldest "last date" - this is where we need to start the incremental import
                 oldest_date = min(last_dates.values()) if last_dates else None
-
                 logger.info(
-                    f"[HA-WS] Found last dates for {len(last_dates)}/{len(statistic_ids)} statistics. "
-                    f"Oldest: {oldest_date.isoformat() if oldest_date else 'None'}"
+                    f"[HA-WS] Found resume points for {len(last_dates)}/{len(statistic_ids)} statistics "
+                    f"(replay {rewind_days} days). Oldest: {oldest_date.isoformat() if oldest_date else 'None'}"
                 )
-
                 return {
                     "success": True,
                     "message": f"Dernières dates récupérées pour {len(last_dates)} statistiques",
@@ -2849,13 +2852,15 @@ class HomeAssistantExporter(BaseExporter):
 
         except Exception as e:
             logger.error(f"[HA-WS] Failed to get last statistic dates: {e}")
-            return {
-                "success": False,
-                "message": f"Erreur: {str(e)}",
-                "last_dates": {},
-                "last_sums": {},
-                "oldest_date": None,
-            }
+            return failure(f"Erreur: {str(e)}")
+
+    @staticmethod
+    def _statistic_belongs_to(prefix: str, stat_id: str, usage_point_ids: list[str]) -> bool:
+        return any(
+            stat_id.startswith((f"{prefix}:consumption_{pdl}_", f"{prefix}:cost_{pdl}_"))
+            or stat_id == f"{prefix}:production_{pdl}"
+            for pdl in usage_point_ids
+        )
 
     @staticmethod
     def _parse_ha_timestamp(value: Any, tz: ZoneInfo) -> datetime | None:
@@ -2870,47 +2875,67 @@ class HomeAssistantExporter(BaseExporter):
             return None
 
     @classmethod
-    def _collect_last_entries(
-        cls,
-        result_data: dict[str, Any],
-        last_dates: dict[str, datetime],
-        last_sums: dict[str, float],
-        tz: ZoneInfo,
-    ) -> None:
-        """Dernière heure et dernière somme de chaque statistique d'une réponse statistics_during_period"""
+    def _rows_by_statistic(
+        cls, result_data: dict[str, Any], tz: ZoneInfo
+    ) -> dict[str, list[tuple[datetime, float | None]]]:
+        """(début, somme) de chaque ligne d'une réponse statistics_during_period, dans l'ordre"""
+        rows_by_id: dict[str, list[tuple[datetime, float | None]]] = {}
         for stat_id, entries in result_data.items():
             if not entries or not isinstance(entries, list):
                 continue
-            # Entries are sorted by time, last entry is most recent
-            last_entry = entries[-1]
-            start_ts = last_entry.get("start")
-            if start_ts:
-                parsed = cls._parse_ha_timestamp(start_ts, tz)
-                if parsed is None:
-                    logger.warning(f"[HA-WS] Could not parse timestamp for {stat_id}: {start_ts}")
-                else:
-                    last_dates[stat_id] = parsed
-            sum_v = last_entry.get("sum")
-            if sum_v is not None:
+            rows: list[tuple[datetime, float | None]] = []
+            for entry in entries:
+                start = cls._parse_ha_timestamp(entry.get("start"), tz)
+                if start is None:
+                    logger.warning(f"[HA-WS] Could not parse timestamp for {stat_id}: {entry.get('start')}")
+                    continue
                 try:
-                    last_sums[stat_id] = float(sum_v)
+                    total = float(entry["sum"]) if entry.get("sum") is not None else None
                 except (TypeError, ValueError):
-                    logger.warning(f"[HA-WS] Could not parse sum for {stat_id}: {sum_v}")
+                    logger.warning(f"[HA-WS] Could not parse sum for {stat_id}: {entry.get('sum')}")
+                    total = None
+                rows.append((start, total))
+            if rows:
+                rows_by_id[stat_id] = sorted(rows, key=lambda row: row[0])
+        return rows_by_id
 
-    async def _collect_last_entries_beyond_window(
+    @staticmethod
+    def _resume_point(
+        rows: list[tuple[datetime, float | None]], rewind: timedelta
+    ) -> tuple[datetime, float | None] | None:
+        """Dernière ligne au plus tard `rewind` avant la dernière ligne de la série, None si aucune"""
+        target = rows[-1][0] - rewind
+        candidates = [row for row in rows if row[0] <= target]
+        return candidates[-1] if candidates else None
+
+    @staticmethod
+    def _set_resume_point(
+        stat_id: str,
+        point: tuple[datetime, float | None],
+        last_dates: dict[str, datetime],
+        last_sums: dict[str, float],
+    ) -> None:
+        last_dates[stat_id] = point[0]
+        if point[1] is not None:
+            last_sums[stat_id] = point[1]
+
+    async def _resume_points_beyond_window(
         self,
         ws: websockets.WebSocketClientProtocol,
         statistic_ids: list[str],
+        rewind: timedelta,
         last_dates: dict[str, datetime],
         last_sums: dict[str, float],
         tz: ZoneInfo,
-    ) -> None:
-        """Dernière heure et dernière somme de séries absentes de la fenêtre récente
+    ) -> str | None:
+        """Point de reprise de séries sans ligne utilisable dans la fenêtre récente ; rend l'erreur
 
-        Le dernier mois de chaque série vient de l'historique mensuel (quelques lignes par série), puis
-        la dernière heure exacte d'une requête horaire sur ce mois, groupée par mois de départ : une
-        série arrêtée depuis longtemps n'alourdit pas celle d'une série arrêtée récemment. En cas
-        d'échec, les séries restent inconnues (elles repartent de 0, comme avant).
+        Le premier et le dernier mois de chaque série viennent de l'historique mensuel (HA agrège côté
+        serveur, la réponse n'a que quelques lignes par série), puis les heures d'une requête horaire
+        qui démarre `rewind` (plus un jour) avant le dernier mois, une requête par date de départ : une
+        série arrêtée depuis longtemps n'alourdit pas celle d'une série arrêtée récemment. Une série
+        dont toutes les heures tiennent dans le rejeu repart de sa première heure, à 0. Une série
+        absente de l'historique mensuel n'a jamais eu de ligne (création à vide) : elle part de 0.
         """
         monthly = await self._ws_send_and_receive(
             ws,
@@ -2924,34 +2949,45 @@ class HomeAssistantExporter(BaseExporter):
             msg_id=2,
         )
         if not monthly.get("success", True):
-            logger.warning(f"[HA-WS] Monthly lookup failed for {len(statistic_ids)} statistics: {monthly.get('error')}")
-            return
+            return f"Recherche mensuelle impossible pour {len(statistic_ids)} statistiques : {monthly.get('error')}"
 
-        ids_by_month: dict[datetime, list[str]] = defaultdict(list)
-        for stat_id, entries in (monthly.get("result") or {}).items():
-            if entries and isinstance(entries, list):
-                month_start = self._parse_ha_timestamp(entries[-1].get("start"), tz)
-                if month_start is not None:
-                    ids_by_month[month_start].append(stat_id)
+        first_month: dict[str, datetime] = {}
+        ids_by_start: dict[datetime, list[str]] = defaultdict(list)
+        for stat_id, months in self._rows_by_statistic(monthly.get("result") or {}, tz).items():
+            first_month[stat_id] = months[0][0]
+            ids_by_start[months[-1][0] - rewind - timedelta(days=1)].append(stat_id)
 
-        for msg_id, (month_start, ids) in enumerate(sorted(ids_by_month.items()), start=3):
+        for msg_id, (hourly_start, ids) in enumerate(sorted(ids_by_start.items()), start=3):
             hourly = await self._ws_send_and_receive(
                 ws,
                 {
                     "type": "recorder/statistics_during_period",
-                    "start_time": month_start.isoformat(),
+                    "start_time": hourly_start.isoformat(),
                     "statistic_ids": sorted(ids),
                     "period": "hour",
                 },
                 msg_id=msg_id,
             )
             if not hourly.get("success", True):
-                logger.warning(f"[HA-WS] Hourly lookup since {month_start} failed for {ids}: {hourly.get('error')}")
-                continue
-            self._collect_last_entries(hourly.get("result") or {}, last_dates, last_sums, tz)
+                return f"Recherche horaire depuis {hourly_start.date()} impossible pour {ids} : {hourly.get('error')}"
+
+            rows_by_id = self._rows_by_statistic(hourly.get("result") or {}, tz)
+            for stat_id in ids:
+                rows = rows_by_id.get(stat_id)
+                if not rows:
+                    return f"Aucune heure de {stat_id} depuis {hourly_start.date()} malgré son historique mensuel"
+                point = self._resume_point(rows, rewind)
+                if point is None and hourly_start <= first_month[stat_id]:
+                    # Toute la série tient dans le rejeu : réécrite depuis sa première heure, à 0
+                    point = (rows[0][0] - timedelta(hours=1), 0.0)
+                elif point is None:
+                    logger.warning(f"[HA-WS] {stat_id} : pas de ligne avant le rejeu, reprise à sa dernière heure")
+                    point = rows[-1]
+                self._set_resume_point(stat_id, point, last_dates, last_sums)
 
         found = [stat_id for stat_id in statistic_ids if stat_id in last_dates]
-        logger.info(f"[HA-WS] {len(found)}/{len(statistic_ids)} statistics found beyond the recent window: {found}")
+        logger.info(f"[HA-WS] {len(found)}/{len(statistic_ids)} statistics resumed beyond the recent window: {found}")
+        return None
 
     @staticmethod
     def _extract_per_pdl_state(
@@ -2959,18 +2995,16 @@ class HomeAssistantExporter(BaseExporter):
         pdl: str,
         last_sums_raw: dict[str, float],
         last_dates_raw: dict[str, str],
-    ) -> tuple[dict[str, float], dict[str, float], float, dict[str, datetime], datetime | None]:
-        """Répartit les dernières sommes et dates (statistic_id → valeur) d'un PDL par catégorie
+    ) -> tuple[dict[str, float], dict[str, float], float, dict[str, datetime], dict[str, datetime], datetime | None]:
+        """Répartit les points de reprise (statistic_id → somme, date) d'un PDL par catégorie
 
-        - consommation : somme de départ et dernière date par tarif (la date filtre les heures déjà
-          exportées : since_date est la plus ancienne de toutes les séries, la requête SQL relit donc
-          des heures déjà présentes dans HA pour les tarifs plus à jour)
-        - coût : somme de départ par tarif (dérivé de la consommation déjà filtrée)
-        - production : somme de départ et dernière date
+        Chaque série a son propre point de reprise : la consommation et le coût d'un même tarif ne
+        s'arrêtent pas forcément à la même heure (import interrompu, jour Zen Flex rattrapé, offre
+        choisie après coup).
 
         Returns:
             (init_consumption_sums, init_cost_sums, init_production_sum,
-             last_dates_by_consumption_tariff, last_date_production)
+             last_dates_by_consumption_tariff, last_dates_by_cost_tariff, last_date_production)
         """
         consumption_prefix = f"{prefix}:consumption_{pdl}_"
         cost_prefix = f"{prefix}:cost_{pdl}_"
@@ -2980,6 +3014,7 @@ class HomeAssistantExporter(BaseExporter):
         init_cost: dict[str, float] = {}
         init_production = 0.0
         last_dates_consumption: dict[str, datetime] = {}
+        last_dates_cost: dict[str, datetime] = {}
         last_date_production: datetime | None = None
 
         for stat_id, sum_v in last_sums_raw.items():
@@ -2997,10 +3032,69 @@ class HomeAssistantExporter(BaseExporter):
                 continue
             if stat_id.startswith(consumption_prefix):
                 last_dates_consumption[stat_id[len(consumption_prefix):]] = parsed
+            elif stat_id.startswith(cost_prefix):
+                last_dates_cost[stat_id[len(cost_prefix):]] = parsed
             elif stat_id == production_id:
                 last_date_production = parsed
 
-        return init_consumption, init_cost, init_production, last_dates_consumption, last_date_production
+        return (
+            init_consumption, init_cost, init_production, last_dates_consumption, last_dates_cost, last_date_production
+        )
+
+    @staticmethod
+    def _continue_series(
+        stats: list[dict[str, Any]],
+        resume: datetime | None = None,
+        initial_sum: float = 0.0,
+        digits: int = 3,
+    ) -> list[dict[str, Any]]:
+        """Heures postérieures au point de reprise, la somme prolongeant celle de HA à ce point
+
+        `stats` est une série complète (somme cumulée depuis 0 sur la période lue) : la somme émise est
+        initial_sum + (somme de l'heure - somme au point de reprise). La différence de deux cumuls
+        arrondis ne cumule pas les arrondis des `state` (ex. un relevé quotidien découpé en 24).
+        """
+        base = 0.0
+        continued: list[dict[str, Any]] = []
+        for stat in stats:
+            if resume is not None and datetime.fromisoformat(stat["start"]) <= resume:
+                base = stat["sum"]
+                continue
+            continued.append({**stat, "sum": round(initial_sum + stat["sum"] - base, digits)})
+        return continued
+
+    @staticmethod
+    def _profile_tariff_tags(profile: Any) -> set[str]:
+        """Séries de consommation (et de coût) du profil tarifaire actuel"""
+        if profile.family == "TEMPO":
+            return {f"{color}_{period}" for color in ("blue", "white", "red") for period in ("hc", "hp")}
+        if profile.family == "HC_HP":
+            return {"hc", "hp"}
+        return {"base"}
+
+    async def _incremental_since(
+        self,
+        db: AsyncSession,
+        pdl: str,
+        last_consumption: dict[str, datetime],
+        last_cost: dict[str, datetime],
+        last_production: datetime | None,
+    ) -> datetime | None:
+        """Date de relecture de la base pour un PDL : le plus ancien point de reprise de SES séries
+
+        Seules comptent les séries du profil tarifaire actuel et la production : une série d'un ancien
+        profil (hc/hp après un passage en Tempo) ne fait pas relire toute la base à chaque import.
+        None : aucune série, tout l'historique est importé.
+        """
+        if not (last_consumption or last_cost or last_production):
+            return None
+        profile, _, _ = await self._get_pdl_contract_info(db, pdl)
+        tags = self._profile_tariff_tags(profile)
+        points = [d for tag, d in last_consumption.items() if tag in tags]
+        points += [d for tag, d in last_cost.items() if tag in tags]
+        if last_production is not None:
+            points.append(last_production)
+        return min(points) if points else None
 
     async def clear_statistics(self, statistic_ids: list[str] | None = None) -> dict[str, Any]:
         """Clear statistics from Home Assistant
@@ -3085,6 +3179,30 @@ class HomeAssistantExporter(BaseExporter):
                 "message": f"Erreur: {str(e)}",
             }
 
+    async def _read_incremental_state(
+        self, usage_point_ids: list[str]
+    ) -> tuple[str | None, dict[str, float], dict[str, str], datetime | None]:
+        """État HA de l'import différentiel : (erreur, sommes, dates de reprise, plus ancien point)
+
+        Une erreur de lecture arrête l'import différentiel : se replier sur un import complet
+        réécrirait tout depuis 0 par-dessus les séries existantes, sans les supprimer. Sans aucune
+        statistique, le plus ancien point est None et l'import devient complet.
+        """
+        result = await self.get_last_statistic_dates(
+            usage_point_ids=usage_point_ids, rewind_days=self.INCREMENTAL_REPLAY_DAYS
+        )
+        if not result.get("success"):
+            error = f"Lecture des statistiques Home Assistant impossible, import différentiel interrompu : {result.get('message')}"
+            logger.error(f"[HA-WS] {error}")
+            return error, {}, {}, None
+        oldest = result.get("oldest_date")
+        return (
+            None,
+            result.get("last_sums") or {},
+            result.get("last_dates") or {},
+            datetime.fromisoformat(oldest) if oldest else None,
+        )
+
     async def import_statistics(
         self,
         db: AsyncSession,
@@ -3117,20 +3235,16 @@ class HomeAssistantExporter(BaseExporter):
 
         prefix = self.config.get("statistic_id_prefix", "myelectricaldata")
 
-        # For incremental mode, get the last imported date, plus the last sum and date of each
-        # statistic: the new records continue the cumulative series and skip what HA already has
+        # Incremental mode: resume point (date and HA sum) of each statistic, see _read_incremental_state
         since_date: datetime | None = None
         last_sums_raw: dict[str, float] = {}
         last_dates_raw: dict[str, str] = {}
         if incremental:
-            last_dates_result = await self.get_last_statistic_dates()
-            if last_dates_result.get("success") and last_dates_result.get("oldest_date"):
-                from datetime import datetime
-                oldest_date_str = last_dates_result["oldest_date"]
-                since_date = datetime.fromisoformat(oldest_date_str)
-                last_sums_raw = last_dates_result.get("last_sums") or {}
-                last_dates_raw = last_dates_result.get("last_dates") or {}
-                logger.info(f"[HA-WS] Incremental mode: importing data since {since_date}")
+            error, last_sums_raw, last_dates_raw, since_date = await self._read_incremental_state(usage_point_ids)
+            if error:
+                return {"success": False, "message": error, "consumption": 0, "production": 0, "cost": 0, "errors": [error]}
+            if since_date:
+                logger.info(f"[HA-WS] Incremental mode: oldest resume point {since_date}")
             else:
                 # No existing data, fall back to full import
                 logger.info("[HA-WS] No existing statistics found, performing full import")
@@ -3187,15 +3301,20 @@ class HomeAssistantExporter(BaseExporter):
                 mode_str = "incremental" if incremental else "full"
                 logger.info(f"[HA-WS] Processing {len(usage_point_ids)} PDLs ({mode_str} mode): {usage_point_ids}")
                 for pdl in usage_point_ids:
-                    init_consumption, init_cost, init_production, last_consumption, last_production = (
-                        self._extract_per_pdl_state(prefix, pdl, last_sums_raw, last_dates_raw)
-                    )
+                    (
+                        init_consumption, init_cost, init_production, last_consumption, last_cost, last_production
+                    ) = self._extract_per_pdl_state(prefix, pdl, last_sums_raw, last_dates_raw)
+                    # Each PDL reads the database back from the oldest resume point of ITS series
+                    pdl_since = await self._incremental_since(db, pdl, last_consumption, last_cost, last_production)
 
                     # Get consumption data by tariff
-                    logger.info(f"[HA-WS] Getting consumption data for PDL {pdl}" + (f" (since {since_date})" if since_date else ""))
-                    consumption_by_tariff = await self._get_consumption_statistics_by_tariff(
-                        db, pdl, since_date, initial_sums=init_consumption, last_dates_by_tariff=last_consumption
-                    )
+                    logger.info(f"[HA-WS] Getting consumption data for PDL {pdl}" + (f" (since {pdl_since})" if pdl_since else ""))
+                    # Consumption read WITHOUT filter: the cost series has its own resume point
+                    consumption_hours = await self._get_consumption_statistics_by_tariff(db, pdl, pdl_since)
+                    consumption_by_tariff = {
+                        tag: self._continue_series(stats, last_consumption.get(tag), init_consumption.get(tag, 0.0))
+                        for tag, stats in consumption_hours.items()
+                    }
                     logger.info(f"[HA-WS] Got {len(consumption_by_tariff)} tariff buckets for {pdl}: {list(consumption_by_tariff.keys())}")
 
                     for tariff_tag, stats in consumption_by_tariff.items():
@@ -3228,7 +3347,7 @@ class HomeAssistantExporter(BaseExporter):
                     # Get cost data from consumption and energy offer prices
                     logger.info(f"[HA-WS] Calculating costs for PDL {pdl}")
                     cost_by_tariff = await self._get_cost_statistics_by_tariff(
-                        db, pdl, consumption_by_tariff, initial_sums=init_cost
+                        db, pdl, consumption_hours, initial_sums=init_cost, last_dates_by_tariff=last_cost
                     )
 
                     for tariff_tag, cost_stats in cost_by_tariff.items():
@@ -3261,7 +3380,7 @@ class HomeAssistantExporter(BaseExporter):
                     # Get production data (production has no tariff distinction)
                     # Import même si vide pour créer l'entité dans HA
                     production_stats = await self._get_production_statistics(
-                        db, pdl, since_date, initial_sum=init_production, last_date=last_production
+                        db, pdl, pdl_since, initial_sum=init_production, last_date=last_production
                     )
                     statistic_id = f"{prefix}:production_{pdl}"
 
@@ -3357,20 +3476,16 @@ class HomeAssistantExporter(BaseExporter):
                     "production": production,
                 })
 
-        # For incremental mode, get the last imported date, plus the last sum and date of each
-        # statistic (see import_statistics)
+        # Incremental mode: resume point (date and HA sum) of each statistic, see _read_incremental_state
         since_date: datetime | None = None
         last_sums_raw: dict[str, float] = {}
         last_dates_raw: dict[str, str] = {}
         if incremental:
-            last_dates_result = await self.get_last_statistic_dates()
-            if last_dates_result.get("success") and last_dates_result.get("oldest_date"):
-                from datetime import datetime as dt
-                oldest_date_str = last_dates_result["oldest_date"]
-                since_date = dt.fromisoformat(oldest_date_str)
-                last_sums_raw = last_dates_result.get("last_sums") or {}
-                last_dates_raw = last_dates_result.get("last_dates") or {}
-                logger.info(f"[HA-WS] Incremental mode: importing data since {since_date}")
+            error, last_sums_raw, last_dates_raw, since_date = await self._read_incremental_state(usage_point_ids)
+            if error:
+                return {"success": False, "message": error, "consumption": 0, "production": 0, "cost": 0, "errors": [error]}
+            if since_date:
+                logger.info(f"[HA-WS] Incremental mode: oldest resume point {since_date}")
             else:
                 # No existing data, fall back to full import
                 logger.info("[HA-WS] No existing statistics found, performing full import")
@@ -3436,9 +3551,11 @@ class HomeAssistantExporter(BaseExporter):
                 }
 
                 for pdl_idx, pdl in enumerate(usage_point_ids):
-                    init_consumption, init_cost, init_production, last_consumption, last_production = (
-                        self._extract_per_pdl_state(prefix, pdl, last_sums_raw, last_dates_raw)
-                    )
+                    (
+                        init_consumption, init_cost, init_production, last_consumption, last_cost, last_production
+                    ) = self._extract_per_pdl_state(prefix, pdl, last_sums_raw, last_dates_raw)
+                    # Each PDL reads the database back from the oldest resume point of ITS series
+                    pdl_since = await self._incremental_since(db, pdl, last_consumption, last_cost, last_production)
 
                     # Callback de progression par chunk : affiche le nb importé / total en temps réel
                     async def make_chunk_cb(category: str, label: str):
@@ -3460,9 +3577,12 @@ class HomeAssistantExporter(BaseExporter):
                         f"PDL {pdl_idx + 1}/{num_pdls}: Lecture consommation...",
                         results["consumption"], results["cost"], results["production"]
                     )
-                    consumption_by_tariff = await self._get_consumption_statistics_by_tariff(
-                        db, pdl, since_date, initial_sums=init_consumption, last_dates_by_tariff=last_consumption
-                    )
+                    # Consumption read WITHOUT filter: the cost series has its own resume point
+                    consumption_hours = await self._get_consumption_statistics_by_tariff(db, pdl, pdl_since)
+                    consumption_by_tariff = {
+                        tag: self._continue_series(stats, last_consumption.get(tag), init_consumption.get(tag, 0.0))
+                        for tag, stats in consumption_hours.items()
+                    }
                     current_step += 1
 
                     # Recalculer total_steps pour ce PDL maintenant qu'on connaît le nb de tarifs
@@ -3510,7 +3630,7 @@ class HomeAssistantExporter(BaseExporter):
                         results["consumption"], results["cost"], results["production"]
                     )
                     cost_by_tariff = await self._get_cost_statistics_by_tariff(
-                        db, pdl, consumption_by_tariff, initial_sums=init_cost
+                        db, pdl, consumption_hours, initial_sums=init_cost, last_dates_by_tariff=last_cost
                     )
                     current_step += 1
 
@@ -3553,7 +3673,7 @@ class HomeAssistantExporter(BaseExporter):
                         results["consumption"], results["cost"], results["production"]
                     )
                     production_stats = await self._get_production_statistics(
-                        db, pdl, since_date, initial_sum=init_production, last_date=last_production
+                        db, pdl, pdl_since, initial_sum=init_production, last_date=last_production
                     )
                     chunk_cb = await make_chunk_cb("production", current_message)
                     statistic_id = f"{prefix}:production_{pdl}"
@@ -3688,6 +3808,17 @@ class HomeAssistantExporter(BaseExporter):
                 # Store by date string YYYY-MM-DD
                 day_str = day.date.strftime("%Y-%m-%d") if hasattr(day.date, 'strftime') else str(day.date)[:10]
                 tempo_colors[day_str] = day.color
+        first_known_tempo = min(tempo_colors) if tempo_colors else None
+
+        def tempo_color(tempo_date: Any) -> Any:
+            """Couleur du jour ; bleu avant le début du calendrier connu (historique antérieur, comme
+            avant), None pour un jour manquant après son début (pas encore synchronisé)"""
+            date_str = tempo_date.strftime("%Y-%m-%d")
+            if date_str in tempo_colors:
+                return tempo_colors[date_str]
+            if first_known_tempo is None or date_str < first_known_tempo:
+                return TempoColor.BLUE
+            return None
 
         # 4. Initialize stats buckets based on pricing option
         stats_by_tariff: dict[str, list[dict[str, Any]]] = {}
@@ -3699,17 +3830,23 @@ class HomeAssistantExporter(BaseExporter):
                 for period in ["hc", "hp"]:
                     key = f"{color}_{period}"
                     stats_by_tariff[key] = []
-                    cumulative_by_tariff[key] = initial_sums.get(key, 0.0)
+                    cumulative_by_tariff[key] = 0.0
         elif profile.family == "HC_HP":
             # 2 buckets: hc, hp
             stats_by_tariff["hc"] = []
             stats_by_tariff["hp"] = []
-            cumulative_by_tariff["hc"] = initial_sums.get("hc", 0.0)
-            cumulative_by_tariff["hp"] = initial_sums.get("hp", 0.0)
+            cumulative_by_tariff["hc"] = 0.0
+            cumulative_by_tariff["hp"] = 0.0
         else:
             # BASE: 1 bucket
             stats_by_tariff["base"] = []
-            cumulative_by_tariff["base"] = initial_sums.get("base", 0.0)
+            cumulative_by_tariff["base"] = 0.0
+
+        # TEMPO : première heure (date, heure) dont la couleur n'est pas encore connue, après le début
+        # du calendrier. L'export s'y arrête pour toutes les séries : l'heure n'est pas rangée en bleu par
+        # défaut (elle serait recomptée dans sa vraie couleur ensuite), et aucune série ne la dépasse
+        # (elle serait perdue)
+        unknown_color_from: tuple[Any, int] | None = None
 
         # 6. Helper to convert W → Wh based on interval_length
         def convert_w_to_wh(value_w: int, raw_data: dict | None) -> float:
@@ -3775,8 +3912,11 @@ class HomeAssistantExporter(BaseExporter):
                     else:
                         tempo_date = record.date
 
-                date_str = tempo_date.strftime("%Y-%m-%d")
-                color = tempo_colors.get(date_str, TempoColor.BLUE)
+                color = tempo_color(tempo_date)
+                if color is None:
+                    if unknown_color_from is None or (record.date, hour) < unknown_color_from:
+                        unknown_color_from = (record.date, hour)
+                    continue
                 color_name = color.value.lower() if hasattr(color, 'value') else str(color).lower()
                 tariff_tag = f"{color_name}_{period}"
 
@@ -3811,8 +3951,11 @@ class HomeAssistantExporter(BaseExporter):
                                 h_tempo_date = record.date - timedelta(days=1)
                             else:
                                 h_tempo_date = record.date
-                        h_date_str = h_tempo_date.strftime("%Y-%m-%d")
-                        h_color = tempo_colors.get(h_date_str, TempoColor.BLUE)
+                        h_color = tempo_color(h_tempo_date)
+                        if h_color is None:
+                            if unknown_color_from is None or (record.date, h) < unknown_color_from:
+                                unknown_color_from = (record.date, h)
+                            continue
                         h_color_name = h_color.value.lower() if hasattr(h_color, 'value') else str(h_color).lower()
                         h_tariff_tag = f"{h_color_name}_{h_period}"
                     elif profile.family == "HC_HP":
@@ -3826,6 +3969,12 @@ class HomeAssistantExporter(BaseExporter):
         # 7. Build final statistics from hourly aggregation
         # Sort by (date, hour) to maintain chronological order
         sorted_keys = sorted(hourly_aggregation.keys(), key=lambda k: (k[1], k[2]))
+        if unknown_color_from is not None:
+            logger.warning(
+                f"[HA-WS] {pdl}: couleur Tempo inconnue le {unknown_color_from[0]} à {unknown_color_from[1]}h, "
+                "export arrêté avant cette heure (reprise au prochain import)"
+            )
+            sorted_keys = [k for k in sorted_keys if (k[1], k[2]) < unknown_color_from]
 
         for tariff_tag, record_date, hour in sorted_keys:
             value_kwh = hourly_aggregation[(tariff_tag, record_date, hour)]
@@ -3834,16 +3983,10 @@ class HomeAssistantExporter(BaseExporter):
             start_dt = datetime.combine(record_date, datetime.min.time().replace(hour=hour, minute=0, second=0))
             start_dt = start_dt.replace(tzinfo=tz_paris)
 
-            # Skip hours already exported to HA for THIS tariff: since_date is the oldest last
-            # date across all tariffs, so the SQL fetch also returns hours of up-to-date tariffs
-            tariff_last_date = last_dates_by_tariff.get(tariff_tag)
-            if tariff_last_date is not None and start_dt <= tariff_last_date:
-                continue
-
             # Ensure bucket exists (safety)
             if tariff_tag not in stats_by_tariff:
                 stats_by_tariff[tariff_tag] = []
-                cumulative_by_tariff[tariff_tag] = initial_sums.get(tariff_tag, 0.0)
+                cumulative_by_tariff[tariff_tag] = 0.0
 
             # Update cumulative and add stat
             cumulative_by_tariff[tariff_tag] += value_kwh
@@ -3859,6 +4002,13 @@ class HomeAssistantExporter(BaseExporter):
             if stats:
                 logger.debug(f"[HA-WS] {pdl} {tag}: {len(stats)} records, total={cumulative_by_tariff[tag]:.2f} kWh")
 
+        # Incremental mode: each series continues from its own resume point (hours already in HA
+        # skipped, sum continuing HA's): since_date is the oldest point of all series of the PDL
+        if initial_sums or last_dates_by_tariff:
+            return {
+                tag: self._continue_series(stats, last_dates_by_tariff.get(tag), initial_sums.get(tag, 0.0))
+                for tag, stats in stats_by_tariff.items()
+            }
         return stats_by_tariff
 
     async def _get_cost_statistics_by_tariff(
@@ -3867,6 +4017,7 @@ class HomeAssistantExporter(BaseExporter):
         pdl: str,
         consumption_by_tariff: dict[str, list[dict[str, Any]]],
         initial_sums: dict[str, float] | None = None,
+        last_dates_by_tariff: dict[str, datetime] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         """Calculate cost statistics from consumption data and energy offer prices
 
@@ -3876,15 +4027,19 @@ class HomeAssistantExporter(BaseExporter):
         Args:
             db: Database session
             pdl: Usage point ID
-            consumption_by_tariff: Consumption stats from _get_consumption_statistics_by_tariff()
-                (already filtered of the hours exported in incremental mode)
-            initial_sums: Per-tariff starting sums (EUR) already in HA, for incremental mode
+            consumption_by_tariff: Consumption stats from _get_consumption_statistics_by_tariff(),
+                NOT filtered: the cost series has its own resume point
+            initial_sums: Per-tariff cost sums (EUR) already in HA at the resume point
+            last_dates_by_tariff: Per-tariff resume point of the COST series (incremental mode): it
+                may differ from the consumption one (interrupted import, Zen Flex day caught up later,
+                offer selected afterwards)
 
         Returns:
             Dict of tariff_tag -> list of cost statistics in EUR
             Example: {"blue_hc": [{start, state, sum}, ...], ...}
         """
         initial_sums = initial_sums or {}
+        last_dates_by_tariff = last_dates_by_tariff or {}
 
         from ...models.energy_provider import EnergyOffer
         from ...models.pdl import PDL
@@ -3929,7 +4084,9 @@ class HomeAssistantExporter(BaseExporter):
             if _is_zen_flex(offer):
                 stat_days = [date.fromisoformat(stat["start"][:10]) for stats in consumption_by_tariff.values() for stat in stats]
                 if stat_days:
-                    zen_flex_days = await self._get_zen_flex_days(db, min(stat_days), max(stat_days))
+                    # Tout le calendrier jusqu'au dernier jour : son PREMIER jour sépare l'avant-lancement
+                    # de l'offre (sans coût) d'un jour manquant en cours de rattrapage (le coût s'y arrête)
+                    zen_flex_days = await self._get_zen_flex_days(db, date(2000, 1, 1), max(stat_days))
 
             def price_of(tariff_tag: str, day: date) -> float | None:
                 if tariff_tag not in tags:
@@ -3947,16 +4104,23 @@ class HomeAssistantExporter(BaseExporter):
             # crée alors la statistique dans HA
             days = [date.fromisoformat(stat["start"][:10]) for stat in consumption_stats]
             if zen_flex_priced and tariff_tag in tags:
-                # Zen Flex : seules les heures d'un jour absent du calendrier (avant le lancement de l'offre,
-                # rattrapage en cours) restent sans coût ; les autres jours gardent le leur
+                # Zen Flex : les jours d'avant le début du calendrier (avant le lancement de l'offre) restent
+                # sans coût. Un jour absent APRÈS son début est en cours de rattrapage : le coût s'arrête à ce
+                # jour, sinon la série le dépasserait et il ne serait jamais chiffré
                 day_prices = [price_of(tariff_tag, day) for day in days]
+                first_known = min(zen_flex_days) if zen_flex_days else None
                 missing = sorted({day for day, price in zip(days, day_prices) if price is None})
+                pending = [day for day in missing if first_known is not None and day > first_known]
                 if missing:
                     logger.warning(
                         f"[HA-WS] {pdl} {tariff_tag} : {len(missing)} jours absents du calendrier Zen Flex "
                         f"({missing[0]} → {missing[-1]}), sans coût"
+                        + (f", coût arrêté au {pending[0]} (rattrapage)" if pending else "")
                     )
-                    kept = [(stat, price) for stat, price in zip(consumption_stats, day_prices) if price is not None]
+                    kept = [
+                        (stat, price) for stat, price, day in zip(consumption_stats, day_prices, days)
+                        if price is not None and (not pending or day < pending[0])
+                    ]
                     consumption_stats = [stat for stat, _ in kept]
                     day_prices = [price for _, price in kept]
             else:
@@ -3966,7 +4130,7 @@ class HomeAssistantExporter(BaseExporter):
                     continue
 
             cost_stats = []
-            cumulative_cost = initial_sums.get(tariff_tag, 0.0)
+            cumulative_cost = 0.0
 
             for stat, price_per_kwh in zip(consumption_stats, day_prices):
                 # stat has: start, state (kWh for this period), sum (cumulative kWh)
@@ -3980,6 +4144,10 @@ class HomeAssistantExporter(BaseExporter):
                     "sum": round(cumulative_cost, 4),  # Cumulative cost
                 })
 
+            if initial_sums or last_dates_by_tariff:
+                cost_stats = self._continue_series(
+                    cost_stats, last_dates_by_tariff.get(tariff_tag), initial_sums.get(tariff_tag, 0.0), digits=4
+                )
             cost_by_tariff[tariff_tag] = cost_stats
             logger.debug(f"[HA-WS] {pdl} cost {tariff_tag}: {len(cost_stats)} records, total={cumulative_cost:.2f} EUR")
 
@@ -4118,17 +4286,13 @@ class HomeAssistantExporter(BaseExporter):
 
         # Build final statistics sorted by time
         stats = []
-        cumulative_kwh = initial_sum
+        cumulative_kwh = 0.0
         sorted_keys = sorted(hourly_aggregation.keys(), key=lambda k: (k[0], k[1]))
 
         for record_date, hour in sorted_keys:
             # Build datetime at the start of the hour
             start_dt = datetime.combine(record_date, datetime.min.time().replace(hour=hour, minute=0, second=0))
             start_dt = start_dt.replace(tzinfo=tz_paris)
-
-            # Skip hours already exported to HA (same anti double-counting rule as consumption)
-            if last_date is not None and start_dt <= last_date:
-                continue
 
             value_kwh = hourly_aggregation[(record_date, hour)]
             cumulative_kwh += value_kwh
@@ -4139,4 +4303,7 @@ class HomeAssistantExporter(BaseExporter):
                 "sum": round(cumulative_kwh, 3),
             })
 
+        # Incremental mode: hours already in HA skipped, sum continuing HA's (same rule as consumption)
+        if initial_sum or last_date is not None:
+            return self._continue_series(stats, last_date, initial_sum)
         return stats

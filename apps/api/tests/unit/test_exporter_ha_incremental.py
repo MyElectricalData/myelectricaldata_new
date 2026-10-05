@@ -356,6 +356,18 @@ async def test_tempo_export_stops_at_the_first_unknown_color() -> None:
     assert by_tag(stats) == {"red_hp": [("2026-11-03T10", 1.0)], "red_hc": [("2026-11-04T02", 1.0)]}
 
 
+async def test_tempo_history_before_the_calendar_stays_blue() -> None:
+    """Garde-fou : une conso antérieure au premier jour du calendrier Tempo connu reste en bleu, comme
+    avant ; seul un jour manquant APRÈS son début arrête l'export (sinon un historique plus ancien que
+    le calendrier n'exporterait plus rien)"""
+    exporter = consumption_exporter(TariffProfile("TEMPO"))
+    oct_1 = date(2026, 10, 1)
+    stats = await exporter._get_consumption_statistics_by_tariff(
+        fake_db([slot(oct_1, 10, 1000), slot(NOV_3, 10, 1000)], [SimpleNamespace(date=NOV_3, color=TempoColor.RED)]), PDL
+    )
+    assert by_tag(stats) == {"blue_hp": [("2026-10-01T10", 1.0)], "red_hp": [("2026-11-03T10", 1.0)]}
+
+
 async def test_resume_points_parsed_from_ha_compare_in_utc() -> None:
     """En production les points de reprise viennent de fromisoformat (offset fixe, comparaison en UTC) et
     non d'un ZoneInfo : même résultat, y compris à l'heure du changement d'heure d'octobre"""
@@ -470,8 +482,9 @@ async def test_incremental_production_continues_and_skips_exported_hours() -> No
 OTHER_PDL = "99999999999999"
 
 
-def base_hour(day: date, hour: int) -> dict[str, Any]:
-    return {"start": paris(day, hour).isoformat(), "state": 1.0, "sum": 0.0}
+def base_hours(*slots: tuple[date, int]) -> list[dict[str, Any]]:
+    """Série de conso telle que la rend le builder sans filtre : 1 kWh par heure, somme cumulée depuis 0"""
+    return [{"start": paris(day, hour).isoformat(), "state": 1.0, "sum": float(i)} for i, (day, hour) in enumerate(slots, 1)]
 
 
 def import_exporter(state: dict[str, Any]) -> tuple[HomeAssistantExporter, dict[str, list[dict[str, Any]]]]:
@@ -483,8 +496,8 @@ def import_exporter(state: dict[str, Any]) -> tuple[HomeAssistantExporter, dict[
     exporter.clear_statistics = AsyncMock(return_value={"success": True})  # type: ignore[method-assign]
     exporter._get_pdl_contract_info = AsyncMock(return_value=(TariffProfile("BASE"), None, None))  # type: ignore[method-assign]
     hours_by_pdl = {
-        PDL: {"base": [base_hour(OCT_4, 9), base_hour(OCT_5, 9), base_hour(OCT_5, 10)]},
-        OTHER_PDL: {"base": [base_hour(OCT_5, 10)]},
+        PDL: {"base": base_hours((OCT_4, 9), (OCT_5, 9), (OCT_5, 10))},
+        OTHER_PDL: {"base": base_hours((OCT_5, 10))},
     }
     exporter._get_consumption_statistics_by_tariff = AsyncMock(  # type: ignore[method-assign]
         side_effect=lambda db, pdl, since=None, **kwargs: hours_by_pdl[pdl]
