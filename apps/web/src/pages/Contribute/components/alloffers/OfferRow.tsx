@@ -11,9 +11,11 @@ interface OfferRowProps {
   groupName: string
   offersInGroup: EnergyOffer[]
   state: AllOffersState
+  // Offres expirées : édition des prix seulement, ni suppression ni duplication
+  hideActions?: boolean
 }
 
-export default function OfferRow({ offer, groupName, offersInGroup, state }: OfferRowProps) {
+export default function OfferRow({ offer, groupName, offersInGroup, state, hideActions = false }: OfferRowProps) {
   const {
     isEditMode,
     editedOffers,
@@ -30,7 +32,8 @@ export default function OfferRow({ offer, groupName, offersInGroup, state }: Off
   const isMarkedForRemoval = powerNum !== null && powersToRemove.some(p => p.power === powerNum && p.groupName === groupName)
   const cols = getTariffColumns(offer.offer_type)
   const isCompact = cols >= 4
-  const gridCols = `70px 1fr ${Array(cols).fill('1fr').join(' ')} ${isEditMode ? '70px' : ''}`
+  const showActions = isEditMode && !hideActions
+  const gridCols = `70px 1fr ${Array(cols).fill('1fr').join(' ')} ${showActions ? '70px' : ''}`
 
   // Récupérer la config des champs pour ce type d'offre
   const priceFields = OFFER_TYPE_PRICE_FIELDS[offer.offer_type] || []
@@ -152,7 +155,7 @@ export default function OfferRow({ offer, groupName, offersInGroup, state }: Off
         )}
 
         {/* Actions (mode édition) */}
-        {isEditMode && powerNum !== null && (
+        {showActions && powerNum !== null && (
           <div className="flex items-center gap-0.5 justify-center">
             {isMarkedForRemoval ? (
               <button

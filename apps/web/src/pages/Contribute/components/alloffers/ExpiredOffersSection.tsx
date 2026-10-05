@@ -215,6 +215,7 @@ function ExpiredGroupRow({ gName, offers, state, onReactivate, onDeleteRequest }
               groupName={gName}
               offersInGroup={offers}
               state={state}
+              hideActions
             />
           )
         })}
