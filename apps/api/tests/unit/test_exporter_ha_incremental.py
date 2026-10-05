@@ -200,56 +200,14 @@ async def test_lookup_limited_to_the_imported_pdls() -> None:
     assert datetime.fromisoformat(result["oldest_date"]) == paris(OCT_5, 9)
 
 
-# =============================================================================
-# Rejeu des derniers jours (I3) : les corrections Enedis J-1 / J-2 sont réimportées
-# =============================================================================
-
-
-def hours(day: date, first: int, last: int, start_sum: float, kwh: float = 1.0) -> list[dict[str, Any]]:
-    return [hour_row(paris(day, h), start_sum + kwh * (h - first + 1)) for h in range(first, last + 1)]
-
-
-async def test_rewind_resumes_from_the_sum_before_the_replay_window() -> None:
-    """Point de reprise = dernière ligne HA au plus tard 3 jours avant la dernière heure, avec SA somme :
-    les 3 derniers jours sont réécrits avec les valeurs corrigées, la série reste continue"""
+async def test_resume_point_without_sum_is_a_read_failure() -> None:
+    """M3 : une ligne HA sans somme ferait repartir la série de 0 : la lecture échoue plutôt"""
     stat_id = f"{PREFIX}:consumption_{PDL}_base"
-    rows = hours(date(2026, 10, 1), 0, 23, 0.0) + hours(date(2026, 10, 2), 0, 23, 24.0) \
-        + hours(date(2026, 10, 3), 0, 23, 48.0) + hours(date(2026, 10, 4), 0, 23, 72.0) + hours(OCT_5, 0, 23, 96.0)
-    exporter, _ = ha_exporter([stat_id], {stat_id: rows})
-    result = await exporter.get_last_statistic_dates(rewind_days=3)
-    assert datetime.fromisoformat(result["last_dates"][stat_id]) == paris(date(2026, 10, 2), 23)
-    assert result["last_sums"][stat_id] == 48.0
-
-
-async def test_rewind_of_a_series_younger_than_the_window_restarts_it() -> None:
-    """Série créée il y a moins de 3 jours : réécrite depuis sa première heure, en partant de 0"""
-    stat_id = f"{PREFIX}:consumption_{PDL}_base"
-    rows = hours(OCT_4, 10, 23, 0.0) + hours(OCT_5, 0, 23, 14.0)
-    exporter, _ = ha_exporter(
-        [stat_id], {stat_id: rows},
-        monthly={stat_id: [{"start": ms(datetime(2026, 10, 1, tzinfo=PARIS)), "end": 0, "sum": 38.0}]},
-    )
-    result = await exporter.get_last_statistic_dates(rewind_days=3)
-    assert datetime.fromisoformat(result["last_dates"][stat_id]) == paris(OCT_4, 9)
-    assert result["last_sums"][stat_id] == 0.0
-
-
-async def test_rewind_of_a_series_beyond_the_window() -> None:
-    """Série rouge arrêtée fin mars : rejeu depuis 3 jours avant sa dernière heure (heures lues à partir du
-    mois de départ moins quelques jours)"""
-    blue, red = f"{PREFIX}:consumption_{PDL}_blue_hp", f"{PREFIX}:consumption_{PDL}_red_hp"
-    march_27, march_31 = date(2026, 3, 27), date(2026, 3, 31)
-    exporter, _ = ha_exporter(
-        [blue, red],
-        hourly={
-            blue: hours(date(2026, 10, 1), 6, 21, 900.0) + hours(OCT_5, 6, 21, 1000.0),
-            red: hours(march_27, 6, 21, 400.0) + hours(march_31, 6, 21, 484.0),
-        },
-        monthly={red: [{"start": ms(datetime(2026, 3, 1, tzinfo=PARIS)), "end": 0, "sum": 500.0}]},
-    )
-    result = await exporter.get_last_statistic_dates(rewind_days=3)
-    assert datetime.fromisoformat(result["last_dates"][red]) == paris(march_27, 21)
-    assert result["last_sums"][red] == 416.0
+    row = hour_row(paris(OCT_5, 9), 100.0)
+    row["sum"] = None
+    exporter, _ = ha_exporter([stat_id], {stat_id: [row]})
+    result = await exporter.get_last_statistic_dates()
+    assert result["success"] is False
 
 
 # =============================================================================
@@ -343,17 +301,31 @@ async def test_tempo_red_resumes_from_its_last_winter_sum() -> None:
     assert by_tag(stats) == {"red_hp": [("2026-11-03T10", 503.0)]}
 
 
-async def test_tempo_export_stops_at_the_first_unknown_color() -> None:
-    """M1 : un jour dont la couleur n'est pas encore connue partait en bleu, puis était recompté dans
-    sa vraie couleur une fois connue. L'export s'arrête à sa première heure : aucune série n'avance
-    au-delà, la couleur connue au prochain import le range au bon endroit"""
+async def test_tempo_export_stops_after_the_last_known_color() -> None:
+    """M1 : un jour postérieur au dernier jour connu du calendrier (couleur pas encore publiée) partait en
+    bleu, puis était recompté dans sa vraie couleur. L'export s'arrête à sa première heure : aucune série
+    ne le dépasse, sa couleur connue au prochain import le range au bon endroit"""
     exporter = consumption_exporter(TariffProfile("TEMPO"))
     nov_4, nov_5 = date(2026, 11, 4), date(2026, 11, 5)
-    tempo_days = [SimpleNamespace(date=NOV_3, color=TempoColor.RED), SimpleNamespace(date=nov_5, color=TempoColor.WHITE)]
+    tempo_days = [SimpleNamespace(date=NOV_3, color=TempoColor.RED)]
     records = [slot(NOV_3, 10, 1000), slot(nov_4, 2, 1000), slot(nov_4, 10, 1000), slot(nov_5, 10, 1000)]
     stats = await exporter._get_consumption_statistics_by_tariff(fake_db(records, tempo_days), PDL)
-    # 4 nov 2h : heure creuse rattachée au 3 (rouge), connue ; 4 nov 10h : couleur inconnue, arrêt
+    # 4 nov 2h : heure creuse rattachée au 3 (rouge), connue ; 4 nov 10h : pas encore publiée, arrêt
     assert by_tag(stats) == {"red_hp": [("2026-11-03T10", 1.0)], "red_hc": [("2026-11-04T02", 1.0)]}
+
+
+async def test_tempo_hole_inside_the_calendar_is_blue_with_a_warning() -> None:
+    """I3 (2e revue) : un jour manquant AU MILIEU du calendrier (client éteint, la synchro ne rattrape que
+    la saison courante) ne sera jamais comblé : s'y arrêter gèlerait tout l'export. Il passe en bleu,
+    avec un avertissement remonté dans le résultat de l'import"""
+    exporter = consumption_exporter(TariffProfile("TEMPO"))
+    exporter._export_warnings = []
+    nov_4, nov_5 = date(2026, 11, 4), date(2026, 11, 5)
+    tempo_days = [SimpleNamespace(date=NOV_3, color=TempoColor.RED), SimpleNamespace(date=nov_5, color=TempoColor.WHITE)]
+    records = [slot(nov_4, 10, 1000), slot(nov_5, 10, 1000)]
+    stats = await exporter._get_consumption_statistics_by_tariff(fake_db(records, tempo_days), PDL)
+    assert by_tag(stats) == {"blue_hp": [("2026-11-04T10", 1.0)], "white_hp": [("2026-11-05T10", 1.0)]}
+    assert any("2026-11-04" in warning for warning in exporter._export_warnings)
 
 
 async def test_tempo_history_before_the_calendar_stays_blue() -> None:
@@ -524,11 +496,11 @@ def import_exporter(state: dict[str, Any]) -> tuple[HomeAssistantExporter, dict[
     return exporter, imported
 
 
-async def run_import(exporter: HomeAssistantExporter, with_progress: bool) -> dict[str, Any]:
+async def run_import(exporter: HomeAssistantExporter, with_progress: bool, clear_first: bool = False) -> dict[str, Any]:
     db = MagicMock()
     if with_progress:
-        return await exporter.import_statistics_with_progress(db, [PDL, OTHER_PDL], clear_first=False, incremental=True)
-    return await exporter.import_statistics(db, [PDL, OTHER_PDL], clear_first=False, incremental=True)
+        return await exporter.import_statistics_with_progress(db, [PDL, OTHER_PDL], clear_first=clear_first, incremental=True)
+    return await exporter.import_statistics(db, [PDL, OTHER_PDL], clear_first=clear_first, incremental=True)
 
 
 INCREMENTAL_STATE = {
@@ -559,8 +531,8 @@ async def test_incremental_import_wiring(with_progress: bool) -> None:
     result = await run_import(exporter, with_progress)
     assert result["success"] is True
 
-    # Lecture HA limitée aux PDL importés, avec rejeu des derniers jours
-    exporter.get_last_statistic_dates.assert_awaited_once_with(usage_point_ids=[PDL, OTHER_PDL], rewind_days=3)  # type: ignore[attr-defined]
+    # Lecture HA limitée aux PDL importés
+    exporter.get_last_statistic_dates.assert_awaited_once_with(usage_point_ids=[PDL, OTHER_PDL])  # type: ignore[attr-defined]
 
     # since par PDL : le plus ancien point de reprise de SES séries du profil actuel (coût du 4 à 9h),
     # sans l'ancienne série hc de 2024 ni les séries de l'autre PDL
@@ -600,7 +572,9 @@ async def test_incremental_import_stops_when_ha_state_is_unreadable(with_progres
 async def test_incremental_without_any_statistic_falls_back_to_full_import(with_progress: bool) -> None:
     exporter, imported = import_exporter({"success": True, "message": "", "last_dates": {}, "last_sums": {},
                                           "oldest_date": None})
-    await run_import(exporter, with_progress)
+    # clear_first vaut True par défaut dans l'API : le repli ne doit rien supprimer (séries d'autres PDL)
+    await run_import(exporter, with_progress, clear_first=True)
+    exporter.clear_statistics.assert_not_awaited()  # type: ignore[attr-defined]
     since_by_pdl = {c.args[1]: c.args[2] for c in exporter._get_consumption_statistics_by_tariff.await_args_list}  # type: ignore[attr-defined]
     assert since_by_pdl == {PDL: None, OTHER_PDL: None}
     assert [s["sum"] for s in imported[f"{PREFIX}:consumption_{PDL}_base"]] == [1.0, 2.0, 3.0]
