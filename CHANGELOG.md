@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.1.0...2.1.1) (2026-10-05)
+
+### Bug Fixes
+
+* **api:** MED-19 / corrections de la revue (production plafonnée, cache des jours sans mesure) ([91617f6](https://github.com/MyElectricalData/myelectricaldata_new/commit/91617f62de493f5e69320c30ddd84abc93b11b8c))
+* **api:** MED-19 / fin de période exclue et cache jour par jour de la puissance max ([4cd0b4d](https://github.com/MyElectricalData/myelectricaldata_new/commit/4cd0b4d7436317b63c510c21c07cf19da2f723b5))
+* **web:** MED-19 / fin de période exclue envoyée à l'API ([e2ef631](https://github.com/MyElectricalData/myelectricaldata_new/commit/e2ef6313d689b9f5eccc85df6fb25ba705f048d9))
+
 ## [2.1.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.0.2...2.1.0) (2026-10-05)
 
 ### Features
