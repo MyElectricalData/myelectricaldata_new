@@ -128,6 +128,11 @@ export const SEO_CONFIG: Record<string, SEOProps> = {
     description: "Gérez les paramètres de votre compte et vos clés API.",
     noIndex: true,
   },
+  '/preferences': {
+    title: "Préférences",
+    description: "Préférences d'affichage du client local.",
+    noIndex: true,
+  },
 };
 
 export default SEO;

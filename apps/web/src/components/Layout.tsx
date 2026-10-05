@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Home, LogOut, Moon, Sun, Heart, Shield, BookOpen, Calculator, Users, Menu, X, Calendar, ChevronLeft, ChevronRight, HelpCircle, UserCircle, Zap, TrendingUp, Trash2, Scale, ChevronDown, Euro, Activity, Database, Radio, ExternalLink } from 'lucide-react'
+import { Home, LogOut, Moon, Sun, Heart, Shield, BookOpen, Calculator, Users, Menu, X, Calendar, ChevronLeft, ChevronRight, HelpCircle, UserCircle, Zap, TrendingUp, Trash2, Scale, ChevronDown, Euro, Activity, Database, Radio, ExternalLink, SlidersHorizontal } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useAppMode } from '@/hooks/useAppMode'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -569,6 +569,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </Link>
             )}
 
+            {/* Preferences link - Client mode only */}
+            {!isServerMode && (
+              <Link
+                to="/preferences"
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
+                  location.pathname === '/preferences'
+                    ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+                title={sidebarCollapsed ? 'Préférences' : ''}
+              >
+                <SlidersHorizontal size={20} className="flex-shrink-0" />
+                {!sidebarCollapsed && <span className="font-medium">Préférences</span>}
+              </Link>
+            )}
+
             {/* Logout button - Server mode only */}
             {isServerMode && user && (
               <button
@@ -864,6 +880,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             >
               <UserCircle size={20} />
               <span className="font-medium">Mon compte</span>
+            </Link>
+          )}
+
+          {/* Preferences link - Client mode only */}
+          {!isServerMode && (
+            <Link
+              to="/preferences"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
+                location.pathname === '/preferences'
+                  ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
+                  : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <SlidersHorizontal size={20} />
+              <span className="font-medium">Préférences</span>
             </Link>
           )}
 

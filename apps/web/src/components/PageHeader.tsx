@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
-import { TrendingUp, Sun, Calculator, Download, Lock, LayoutDashboard, Calendar, Zap, Users, AlertCircle, BookOpen, Settings as SettingsIcon, Key, Shield, FileText, Activity, Euro, Scale, UserCheck, Radio, Home, Database } from 'lucide-react'
+import { TrendingUp, Sun, Calculator, Download, Lock, LayoutDashboard, Calendar, Zap, Users, AlertCircle, BookOpen, Settings as SettingsIcon, Key, Shield, FileText, Activity, Euro, Scale, UserCheck, Radio, Home, Database, SlidersHorizontal } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
 import { adminApi } from '@/api/admin'
@@ -48,6 +48,7 @@ const PAGE_CONFIG: Record<string, { title: string; icon: typeof TrendingUp; subt
   '/api-docs': { title: 'Documentation API', icon: BookOpen, subtitle: 'Explorez et testez les endpoints de l\'API MyElectricalData' },
   '/api-docs/auth': { title: 'Authentification OAuth 2.0', icon: Key, subtitle: 'Guide complet pour intégrer l\'API MyElectricalData dans vos applications' },
   '/settings': { title: 'Mon compte', icon: SettingsIcon, subtitle: 'Gérez votre compte et vos préférences' },
+  '/preferences': { title: 'Préférences', icon: SlidersHorizontal, subtitle: "Personnalisez l'affichage de vos données" },
   // Admin pages
   '/admin': { title: 'Administration', icon: Shield, subtitle: 'Vue d\'ensemble et statistiques de la plateforme' },
   '/admin/users': { title: 'Gestion des utilisateurs', icon: Users, subtitle: 'Gérez les comptes utilisateurs de la plateforme' },
