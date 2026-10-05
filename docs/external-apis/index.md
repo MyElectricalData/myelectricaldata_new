@@ -132,6 +132,13 @@ Prévisions de production par filière renouvelable.
 
 ---
 
+## API EDF Zen Flex
+
+Calendrier des jours Éco, Sobriété et Bonus de l'offre EDF Zen Week-End Option Flex, lu dans une API
+non documentée du site EDF, sans authentification. Voir [API EDF Zen Flex](./edf-zen-flex.md).
+
+---
+
 ## Obtenir les credentials
 
 ### Enedis DataHub

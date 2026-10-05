@@ -308,11 +308,12 @@ Le mode client utilise une stratégie **local-first** pour minimiser les appels 
 │  APScheduler:                                                               │
 │    • Sync données : toutes les 30 min                                       │
 │    • Sync Tempo : toutes les 15 min (6h-23h) si J+1 inconnu                 │
+│    • Sync Zen Flex : toutes les 15 min (6h-23h) si J+1 inconnu ou trou      │
 │    • Sync EcoWatt : 17h (quotidien), 12h15 (vendredi), fallback horaire     │
 │    • Exports : selon configuration utilisateur                              │
 │                                                                             │
 │  IMPORTANT : En mode client, le scheduler utilise SyncService               │
-│  pour récupérer Tempo/EcoWatt depuis la gateway (pas d'appel RTE direct)    │
+│  pour récupérer Tempo/EcoWatt/Zen Flex depuis la gateway (ni RTE ni EDF)    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```

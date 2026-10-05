@@ -416,6 +416,10 @@ def start_background_tasks():
         trigger=CronTrigger(day_of_week="fri", hour=12, minute=15),
     )
 
+    # Calendrier EDF Zen Flex (services/edf_zen_flex.py)
+    # - Toutes les 10 min : J et J+1, puis rattrapage de l'historique par lots de 30 jours
+    asyncio.create_task(refresh_zen_flex_cache_task())
+
     # Nettoyage cache expiré
     scheduler.add_job(
         cleanup_expired_cache,

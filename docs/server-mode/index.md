@@ -104,6 +104,7 @@ Le **mode serveur** de MyElectricalData est la version complète de l'applicatio
 | **Enedis DataHub** | Oui | [Portail Enedis](https://datahub-enedis.fr) (compte pro requis) |
 | **RTE Tempo** | Optionnel | [API RTE](https://data.rte-france.com) |
 | **RTE EcoWatt** | Optionnel | [API RTE](https://data.rte-france.com) |
+| **EDF Zen Flex** | Non (sans authentification) | [API EDF Zen Flex](../external-apis/edf-zen-flex.md) |
 
 ---
 
