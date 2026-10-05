@@ -137,7 +137,7 @@ docs/specs/pages/<page>/
 - Page avec plusieurs onglets/sous-pages
 - Un fichier `.md` par onglet, prefixe numerique pour l'ordre
 - Chaque fichier a un frontmatter YAML (voir ci-dessous)
-- Exemple : `docs/specs/pages/contributes/` avec `01-offers.md`, `02-new-offers.md`, `03-my-offers.md`
+- Exemple : `docs/specs/pages/contributes/` avec `01-offers.md`, `03-my-offers.md`
 
 ### Frontmatter YAML
 
