@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.1.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.0.2...2.1.0) (2026-10-05)
+
+### Features
+
+* **export:** MED-10 / export home assistant compatible content-card-linky ([1eb9017](https://github.com/MyElectricalData/myelectricaldata_new/commit/1eb90173a14952c2225f8395feb8269a47739ef9))
+* **export:** MED-10 / module tariff partagé pour la ventilation hp/hc ([cd20d27](https://github.com/MyElectricalData/myelectricaldata_new/commit/cd20d2714600d842c113daeabdfa34fa9dbadd18)), closes [#113](https://github.com/MyElectricalData/myelectricaldata_new/issues/113)
+
+### Bug Fixes
+
+* **export:** MED-10 / correctifs de revue de l'export hp/hc ([e86212f](https://github.com/MyElectricalData/myelectricaldata_new/commit/e86212f5fa549e9c5181e823467742424d99328d)), closes [#113](https://github.com/MyElectricalData/myelectricaldata_new/issues/113)
+* **export:** MED-10 / export hp/hc vers home assistant et mqtt ([24beece](https://github.com/MyElectricalData/myelectricaldata_new/commit/24beecefa2b81dc0a699e5bc74118247c22954c6)), closes [#113](https://github.com/MyElectricalData/myelectricaldata_new/issues/113)
+* **export:** MED-10 / pas des relevés au format Data Connect 2026 dans la ventilation hp/hc ([2ec9ba6](https://github.com/MyElectricalData/myelectricaldata_new/commit/2ec9ba6373a4be4fd40ab8f8087ffc594400c65b)), closes [#113](https://github.com/MyElectricalData/myelectricaldata_new/issues/113)
+* **helm:** MED-14 / ENEDIS_API_MODE et ENEDIS_AUTHORIZE_VERSION transmis au backend ([f91cab6](https://github.com/MyElectricalData/myelectricaldata_new/commit/f91cab696cca787f39b7ab5d1253e53bc6426647))
+* **scheduler:** MED-10 / typage du résultat de l'export home assistant ([f3ce8ad](https://github.com/MyElectricalData/myelectricaldata_new/commit/f3ce8ad3e4473f540215ff28a291bab26498c0dc))
+
 ## [2.0.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.0.1...2.0.2) (2026-10-04)
 
 ### Bug Fixes
