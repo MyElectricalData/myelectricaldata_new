@@ -36,8 +36,15 @@ export function useUnifiedDataFetch({
     resetLoadingStatus()
 
     // Calculate dates using LOCAL time for user's perspective (France timezone)
-    // The API end date is EXCLUSIVE (date < end): end = today to include yesterday (J-1)
+    // This ensures that at 0h30 local time, "yesterday" is still the previous calendar day
     const now = new Date()
+    const yesterday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 1,
+      12, 0, 0, 0  // Use noon to avoid DST edge cases
+    )
+
     const today = new Date(
       now.getFullYear(),
       now.getMonth(),
@@ -46,9 +53,9 @@ export function useUnifiedDataFetch({
     )
 
     const threeYearsAgo = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate() - 1095,
+      yesterday.getFullYear(),
+      yesterday.getMonth(),
+      yesterday.getDate() - 1095,
       12, 0, 0, 0
     )
 
@@ -65,7 +72,7 @@ export function useUnifiedDataFetch({
              String(date.getDate()).padStart(2, '0')
     }
 
-    const endDate = formatDate(today)
+    const endDate = formatDate(yesterday)
     const startDate3y = formatDate(threeYearsAgo)
     const startDate2y = formatDate(twoYearsAgo)
 

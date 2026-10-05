@@ -96,27 +96,26 @@ export default function Production() {
     if (!dateRange) return null
 
     const now = new Date()
-    // Use today as exclusive end (backend: date < end_date) so yesterday is included
-    const today = new Date(
+    const yesterday = new Date(
       now.getFullYear(),
       now.getMonth(),
-      now.getDate(),
+      now.getDate() - 1,
       12, 0, 0, 0  // Use noon to avoid DST edge cases
     )
 
     const startDate_obj = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate() - 7,
+      yesterday.getFullYear(),
+      yesterday.getMonth(),
+      yesterday.getDate() - 6,
       12, 0, 0, 0
     )
 
     const startDate = startDate_obj.getFullYear() + '-' +
                       String(startDate_obj.getMonth() + 1).padStart(2, '0') + '-' +
                       String(startDate_obj.getDate()).padStart(2, '0')
-    const endDate = today.getFullYear() + '-' +
-                    String(today.getMonth() + 1).padStart(2, '0') + '-' +
-                    String(today.getDate()).padStart(2, '0')
+    const endDate = yesterday.getFullYear() + '-' +
+                    String(yesterday.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(yesterday.getDate()).padStart(2, '0')
 
     return { start: startDate, end: endDate }
   }, [dateRange])
@@ -422,11 +421,9 @@ export default function Production() {
       const startDate = startDate_obj.getFullYear() + '-' +
                         String(startDate_obj.getMonth() + 1).padStart(2, '0') + '-' +
                         String(startDate_obj.getDate()).padStart(2, '0')
-      // Use today (not yesterday) because backend uses exclusive end: date < end_date
-      const today_obj = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0)
-      const endDate = today_obj.getFullYear() + '-' +
-                      String(today_obj.getMonth() + 1).padStart(2, '0') + '-' +
-                      String(today_obj.getDate()).padStart(2, '0')
+      const endDate = yesterday.getFullYear() + '-' +
+                      String(yesterday.getMonth() + 1).padStart(2, '0') + '-' +
+                      String(yesterday.getDate()).padStart(2, '0')
 
       logger.log('[Auto-load] Setting date range:', startDate, 'to', endDate)
 

@@ -979,7 +979,7 @@ export function DetailedCurve({
                 {detailDateRange && (
                   <>
                     <p className="text-xs text-gray-500 dark:text-gray-500">
-                      Période demandée : du {new Date(detailDateRange.start).toLocaleDateString('fr-FR')} au {new Date(new Date(detailDateRange.end).getTime() - 86400000).toLocaleDateString('fr-FR')}
+                      Période demandée : du {new Date(detailDateRange.start).toLocaleDateString('fr-FR')} au {new Date(detailDateRange.end).toLocaleDateString('fr-FR')}
                     </p>
                     {(() => {
                       if (!detailDateRange) return null
@@ -1028,7 +1028,7 @@ export function DetailedCurve({
               </p>
               {detailDateRange && (
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Du {new Date(detailDateRange.start).toLocaleDateString('fr-FR')} au {new Date(new Date(detailDateRange.end).getTime() - 86400000).toLocaleDateString('fr-FR')}
+                  Du {new Date(detailDateRange.start).toLocaleDateString('fr-FR')} au {new Date(detailDateRange.end).toLocaleDateString('fr-FR')}
                 </p>
               )}
             </div>

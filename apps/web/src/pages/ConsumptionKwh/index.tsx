@@ -121,31 +121,30 @@ export default function ConsumptionKwh() {
     if (!dateRange) return null
 
     const now = new Date()
-    const today = new Date(
+    const yesterday = new Date(
       now.getFullYear(),
       now.getMonth(),
-      now.getDate(),
+      now.getDate() - 1,
       12, 0, 0, 0  // Use noon to avoid DST edge cases
     )
 
     const offsetDays = detailWeekOffset * 7
 
-    // endDate_obj = today - offset (backend uses exclusive end: date < end_date)
     let endDate_obj = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate() - offsetDays,
+      yesterday.getFullYear(),
+      yesterday.getMonth(),
+      yesterday.getDate() - offsetDays,
       12, 0, 0, 0
     )
 
-    if (endDate_obj > today) {
-      endDate_obj = new Date(today)
+    if (endDate_obj > yesterday) {
+      endDate_obj = new Date(yesterday)
     }
 
     const startDate_obj = new Date(
       endDate_obj.getFullYear(),
       endDate_obj.getMonth(),
-      endDate_obj.getDate() - 7,
+      endDate_obj.getDate() - 6,
       12, 0, 0, 0
     )
 
@@ -401,13 +400,11 @@ export default function ConsumptionKwh() {
       const startDate = startDate_obj.getFullYear() + '-' +
                         String(startDate_obj.getMonth() + 1).padStart(2, '0') + '-' +
                         String(startDate_obj.getDate()).padStart(2, '0')
-      // Backend uses exclusive end_date (date < end), so use today to include yesterday
-      const today_obj = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0)
-      const endDate = today_obj.getFullYear() + '-' +
-                      String(today_obj.getMonth() + 1).padStart(2, '0') + '-' +
-                      String(today_obj.getDate()).padStart(2, '0')
+      const endDate = yesterday.getFullYear() + '-' +
+                      String(yesterday.getMonth() + 1).padStart(2, '0') + '-' +
+                      String(yesterday.getDate()).padStart(2, '0')
 
-      logger.log('[Auto-load] Setting date range:', startDate, 'to', endDate, '(end exclusive)')
+      logger.log('[Auto-load] Setting date range:', startDate, 'to', endDate)
 
       setDateRange({ start: startDate, end: endDate })
 

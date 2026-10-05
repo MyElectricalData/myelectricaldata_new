@@ -55,15 +55,15 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
         })
       }
 
-      // Split into chunks [start, end[ of at most 365 days: the API end date is exclusive,
-      // each chunk starts where the previous one ends (no day lost between chunks)
+      // Split into yearly chunks (max 365 days per call)
       const yearlyChunks: { start: string; end: string }[] = []
       let currentStart = new Date(startDate)
 
-      while (currentStart < endDate) {
+      while (currentStart <= endDate) {
         // Calculate end of this chunk (1 year or less)
         let currentEnd = new Date(currentStart)
-        currentEnd.setUTCDate(currentEnd.getUTCDate() + 365)
+        currentEnd.setUTCFullYear(currentEnd.getUTCFullYear() + 1)
+        currentEnd.setUTCDate(currentEnd.getUTCDate() - 1) // 365 days max
 
         // Cap to overall end date if needed
         if (currentEnd > endDate) {
@@ -78,7 +78,10 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
                         String(currentEnd.getUTCDate()).padStart(2, '0')
 
         yearlyChunks.push({ start: chunkStart, end: chunkEnd })
+
+        // Move to next chunk (day after current end)
         currentStart = new Date(currentEnd)
+        currentStart.setUTCDate(currentStart.getUTCDate() + 1)
       }
 
       // Fetch all chunks in parallel
@@ -150,15 +153,15 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
         })
       }
 
-      // Split into chunks [start, end[ of at most 365 days: the API end date is exclusive,
-      // each chunk starts where the previous one ends (no day lost between chunks)
+      // Split into yearly chunks (max 365 days per call)
       const yearlyChunks: { start: string; end: string }[] = []
       let currentStart = new Date(startDate)
 
-      while (currentStart < endDate) {
+      while (currentStart <= endDate) {
         // Calculate end of this chunk (1 year or less)
         let currentEnd = new Date(currentStart)
-        currentEnd.setUTCDate(currentEnd.getUTCDate() + 365)
+        currentEnd.setUTCFullYear(currentEnd.getUTCFullYear() + 1)
+        currentEnd.setUTCDate(currentEnd.getUTCDate() - 1) // 365 days max
 
         // Cap to overall end date if needed
         if (currentEnd > endDate) {
@@ -173,7 +176,10 @@ export function useConsumptionData(selectedPDL: string, dateRange: DateRange | n
                         String(currentEnd.getUTCDate()).padStart(2, '0')
 
         yearlyChunks.push({ start: chunkStart, end: chunkEnd })
+
+        // Move to next chunk (day after current end)
         currentStart = new Date(currentEnd)
+        currentStart.setUTCDate(currentStart.getUTCDate() + 1)
       }
 
       // Fetch all chunks in parallel

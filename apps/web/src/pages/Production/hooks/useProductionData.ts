@@ -52,14 +52,14 @@ export function useProductionData(selectedPDL: string, dateRange: DateRange | nu
         })
       }
 
-      // Split into chunks [start, end[ of at most 365 days: the API end date is exclusive,
-      // each chunk starts where the previous one ends (no day lost between chunks)
+      // Split into yearly chunks (max 365 days per call)
       const yearlyChunks: { start: string; end: string }[] = []
       let currentStart = new Date(startDate)
 
-      while (currentStart < endDate) {
+      while (currentStart <= endDate) {
         let currentEnd = new Date(currentStart)
-        currentEnd.setUTCDate(currentEnd.getUTCDate() + 365)
+        currentEnd.setUTCFullYear(currentEnd.getUTCFullYear() + 1)
+        currentEnd.setUTCDate(currentEnd.getUTCDate() - 1)
 
         if (currentEnd > endDate) {
           currentEnd = new Date(endDate)
@@ -75,6 +75,7 @@ export function useProductionData(selectedPDL: string, dateRange: DateRange | nu
         yearlyChunks.push({ start: chunkStart, end: chunkEnd })
 
         currentStart = new Date(currentEnd)
+        currentStart.setUTCDate(currentStart.getUTCDate() + 1)
       }
 
       // Fetch all chunks in parallel
