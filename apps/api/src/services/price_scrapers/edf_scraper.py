@@ -477,6 +477,8 @@ class EDFPriceScraper(BasePriceScraper):
             # Create offers for Option Flex (ZEN_FLEX type)
             # ZEN_FLEX has 345 "Eco" days and 20 "Sobriété" days (coldest weekdays)
             # Weekends are always Eco days
+            # Convention des offres de la passerelle (MED-27) : Sobriété dans *_winter (jours de la
+            # saison froide), Éco dans *_summer ; le coût de l'export la reconnaît au HP le plus cher
             for power, prices in flex_prices.items():
                 offers.append(
                     OfferData(
@@ -484,10 +486,10 @@ class EDFPriceScraper(BasePriceScraper):
                         offer_type="ZEN_FLEX",
                         description=f"EDF Zen Week-End - 345 jours Éco + 20 jours Sobriété (les plus froids) - {power} kVA",
                         subscription_price=prices["subscription"],
-                        hc_price_winter=prices["hc_eco"],
-                        hp_price_winter=prices["hp_eco"],
-                        hc_price_summer=prices["hc_sobriete"],
-                        hp_price_summer=prices["hp_sobriete"],
+                        hc_price_winter=prices["hc_sobriete"],
+                        hp_price_winter=prices["hp_sobriete"],
+                        hc_price_summer=prices["hc_eco"],
+                        hp_price_summer=prices["hp_eco"],
                         power_kva=power,
                         valid_from=valid_from,
                     )
