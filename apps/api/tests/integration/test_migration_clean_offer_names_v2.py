@@ -100,6 +100,10 @@ CAS = [
     ("Zen Week-End - Option Week-End 6 kVA", "BASE_WEEKEND", "Zen Week-End"),
     ("Zen Week-End - HC/HP + WE 6 kVA", "HC_WEEKEND", "Zen Week-End"),
     ("Zen Week-End - Option Flex 6 kVA", "ZEN_FLEX", "Zen Week-End - Option Flex"),
+    # clé de groupe du front (nom##période) envoyée comme nom, vue en prod le 2026-10-05
+    ("Tarif Bleu##2026-02-06##active - 3 kVA", "HC_HP", "Tarif Bleu"),
+    ("Tempo##2026-02-06##active - 24 kVA", "TEMPO", "Tempo"),
+    ("Zen Fixe##2025-02-01##2025-12-31 - Option Base - 6 kVA", "BASE", "Zen Fixe"),
     # déjà propres : inchangés
     ("Tarif Bleu", "TEMPO", "Tarif Bleu"),
     ("Tempo", "TEMPO", "Tempo"),

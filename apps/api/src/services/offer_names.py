@@ -11,6 +11,9 @@ import re
 # Puissance en fin de nom, avec ou sans tiret : "Classique - 6 kVA", "Tarif Bleu - BASE 6 kVA"
 POWER_SUFFIX = re.compile(r'\s*-?\s*\d+\s*kVA\s*$', re.IGNORECASE)
 
+# Clé de groupe du front ("nom##période") envoyée par erreur comme nom d'offre
+GROUP_KEY_SUFFIX = re.compile(r'\s*##.*$')
+
 # Types et options qui doublonnent offer_type, du plus long au plus court.
 # "Option Flex" n'en fait pas partie : l'export Home Assistant (MED-21) reconnaît Zen Flex servie
 # en SEASONAL à ce nom, y compris chez les clients déjà déployés.
@@ -37,12 +40,12 @@ TYPE_SUFFIX = re.compile(r'\s*-\s*(' + '|'.join(TYPE_SUFFIXES) + r')\s*$', re.IG
 
 
 def clean_offer_name(name: str | None) -> str | None:
-    """Retire la puissance puis le type ou l'option en fin de nom.
+    """Retire la puissance, une clé de groupe du front ("##période"), puis le type ou l'option en fin de nom.
 
     Les marqueurs de contribution ("[SUPPRESSION] ...", "[RENOMMAGE] ...") sont laissés tels
     quels : ce ne sont pas des noms d'offre et leur contenu est relu ailleurs.
     """
     if not name or name.startswith("["):
         return name
-    cleaned = TYPE_SUFFIX.sub("", POWER_SUFFIX.sub("", name)).strip()
+    cleaned = TYPE_SUFFIX.sub("", GROUP_KEY_SUFFIX.sub("", POWER_SUFFIX.sub("", name))).strip()
     return cleaned or name

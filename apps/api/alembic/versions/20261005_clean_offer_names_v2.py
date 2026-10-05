@@ -5,7 +5,8 @@ puissance et l'option dans leur nom (ex: "Classique - 6 kVA", "Zen Fixe - Option
 alors que ces informations sont déjà dans power_kva et offer_type. Cette migration :
   1. retire la puissance en fin de nom ("- 6 kVA", " 6 kVA"), après l'avoir recopiée dans
      power_kva quand celui-ci est vide ;
-  2. retire le suffixe de type ou d'option restant ("- BASE", "- Option Heures Creuses + WE"...) ;
+  2. retire une clé de groupe du front ("Tarif Bleu##2026-02-06##active", envoyée par erreur comme nom),
+     puis le suffixe de type ou d'option restant ("- BASE", "- Option Heures Creuses + WE"...) ;
   3. désactive les offres actives devenues doublons (même provider, name, offer_type, power_kva).
 
 Revision ID: c3d4e5f6g7h8
@@ -28,6 +29,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 # Puissance en fin de nom, avec ou sans tiret : "Classique - 6 kVA", "Tarif Bleu - BASE 6 kVA"
 POWER_SUFFIX = r'\s*-?\s*\d+\s*kVA\s*$'
+
+# Clé de groupe du front ("nom##période") envoyée par erreur comme nom d'offre (2 offres en prod)
+GROUP_KEY_SUFFIX = r'\s*##.*$'
 
 # Types et options qui doublonnent offer_type, du plus long au plus court.
 # "Option Flex" n'en fait pas partie : l'export Home Assistant (MED-21) reconnaît Zen Flex servie
@@ -77,6 +81,7 @@ def upgrade() -> None:
         {"pattern": POWER_SUFFIX},
     )
     _strip_suffix(POWER_SUFFIX)
+    _strip_suffix(GROUP_KEY_SUFFIX)
     _strip_suffix(TYPE_SUFFIX)
 
     # Doublons actifs : on garde l'offre au valid_from le plus récent, les autres sont désactivées

@@ -123,7 +123,9 @@ export function useOfferSubmission(state: AllOffersState) {
       }
 
       // Suppressions de puissances
-      for (const { power, groupName } of powersToRemove) {
+      for (const { power, groupName: groupKey } of powersToRemove) {
+        // groupKey vaut "nom##periode" : comparer et afficher le seul nom
+        const groupName = getCleanOfferName(groupKey)
         const groupOffer = providerOffers.find(o => getCleanOfferName(o.name) === groupName)
         const offerType = groupOffer?.offer_type || filterOfferType
         allContributions.push({
@@ -162,7 +164,8 @@ export function useOfferSubmission(state: AllOffersState) {
         if (recapExcludedPowers.has(`newpower-${npIdx}`)) continue
         const newPower = newPowersData[npIdx]
         const effectiveType = newPower.offer_type || filterOfferType
-        const effectiveName = newPower.offer_name || existingBaseOfferName
+        // offer_name porte la cle du groupe ("nom##periode") : n'en envoyer que le nom
+        const effectiveName = (newPower.offer_name && getCleanOfferName(newPower.offer_name)) || existingBaseOfferName
         const pricingData: Record<string, number | string | undefined> = {}
         for (const [key, value] of Object.entries(newPower.fields)) {
           if (key !== 'subscription_price' && value) {

@@ -43,6 +43,9 @@ describe('offerPricing', () => {
       ['Tempo', 'Tempo'],
       ['Octopus Go', 'Octopus Go'],
       ['Classique [01/2025 -> 12/2025]', 'Classique'],
+      // cle de groupe du front (nom##periode) envoyee comme nom
+      ['Tarif Bleu##2026-02-06##active - 3 kVA', 'Tarif Bleu'],
+      ['Tarif Bleu##2026-02-06##active', 'Tarif Bleu'],
     ])('%s -> %s', (brut, attendu) => {
       expect(getCleanOfferName(brut)).toBe(attendu)
     })

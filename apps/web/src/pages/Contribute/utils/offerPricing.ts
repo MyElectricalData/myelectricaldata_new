@@ -178,7 +178,7 @@ const TYPE_SUFFIX = new RegExp(`\\s*-\\s*(${TYPE_SUFFIXES.join('|')})\\s*$`, 'i'
 
 /**
  * Nom commercial d'une offre : retire le suffixe de periode "[date -> date]", puis la
- * puissance, puis le type ou l'option en fin de nom.
+ * puissance, une cle de groupe "##periode", puis le type ou l'option en fin de nom.
  * Memes regles que le backend (apps/api/src/services/offer_names.py, MED-22) : le nom de
  * groupe affiche ici est celui que le serveur stocke.
  */
@@ -186,6 +186,7 @@ export function getCleanOfferName(name: string): string {
   const cleaned = name
     .replace(/\s*\[.*?\]\s*$/, '')
     .replace(POWER_SUFFIX, '')
+    .replace(/\s*##.*$/, '') // cle de groupe (nom##periode) envoyee par erreur comme nom
     .replace(TYPE_SUFFIX, '')
     .trim()
   return cleaned || name
