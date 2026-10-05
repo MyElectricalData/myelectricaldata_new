@@ -66,7 +66,7 @@ class DemoAdapter:
         interval_reading = []
         current_date = start_date
 
-        while current_date <= end_date:
+        while current_date < end_date:  # fin exclue, comme dateFin Enedis
             date_str = current_date.strftime("%Y-%m-%d")
             day_of_year = current_date.timetuple().tm_yday
 
@@ -232,7 +232,7 @@ class DemoAdapter:
         interval_reading = []
         current_date = start_date
 
-        while current_date <= end_date:
+        while current_date < end_date:  # fin exclue, comme dateFin Enedis
             date_str = current_date.strftime("%Y-%m-%d")
             day_of_year = current_date.timetuple().tm_yday
 
@@ -377,7 +377,7 @@ class DemoAdapter:
         all_data = cached_data.get("data", [])
         filtered_data = [
             item for item in all_data
-            if start <= item["date"] <= end
+            if start <= item["date"] < end
         ]
 
         # Calculate max power (roughly 1.5-2x average hourly consumption)
