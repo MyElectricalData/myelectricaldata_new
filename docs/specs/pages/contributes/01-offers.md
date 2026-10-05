@@ -164,7 +164,7 @@ const [newGroups, setNewGroups] = useState<
 - Type de contribution : `NEW_OFFER`
 - Une contribution par puissance dans le groupe
 - `existing_provider_id` : ID du fournisseur selectionne
-- `offer_name` : `{nom_groupe} - {puissance} kVA`
+- `offer_name` : `{nom_groupe} - {puissance} kVA` (format d'envoi, inchangé) ; le serveur ne garde que le nom commercial (`clean_offer_name`, MED-22), la puissance étant dans `power_kva`
 - Description : "Creation d'un nouveau groupe d'offres..."
 
 **Recap :**
