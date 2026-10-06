@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.4.2...2.4.3) (2026-10-06)
+
+### Bug Fixes
+
+* **api:** MED-30 / cache jour par jour de /production/daily et /production/detail ([3ad2c63](https://github.com/MyElectricalData/myelectricaldata_new/commit/3ad2c635d18cb60884b3733a31001cc930e3f1b2))
+* **api:** MED-30 / corrections de la revue du cache jour par jour de la production ([a15599b](https://github.com/MyElectricalData/myelectricaldata_new/commit/a15599bd8d1126b519fd9ac4af02bd644b59b290))
+
 ## [2.4.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.4.1...2.4.2) (2026-10-05)
 
 ### Bug Fixes
