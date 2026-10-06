@@ -242,6 +242,16 @@ def enedis_business_error(data: Any) -> str | None:
     return None
 
 
+def range_error_key(key_prefix: str, usage_point_id: str, start: str, end: str) -> str:
+    """Cache négatif d'une plage rejetée par Enedis (ADAM-ERR0123), valable pour cette plage EXACTE.
+
+    Un client qui resynchronise les mêmes fenêtres antérieures à la mise en service ne rappelle
+    Enedis qu'une fois par durée de cache ; une autre plage, qui commencerait après la mise en
+    service, est toujours demandée.
+    """
+    return f"{key_prefix}:{usage_point_id}:error:{start}:{end}"
+
+
 async def cached_daily_points(
     usage_point_id: str,
     requested_dates: list[str],
@@ -272,6 +282,10 @@ async def cached_daily_points(
     api_errors = []
     today = paris_today()
     for api_start, api_end in missing_ranges(missing_dates):
+        error_key = range_error_key(key_prefix, usage_point_id, api_start, api_end)
+        if cached_error := ((await cache_service.get(error_key, encryption_key)) or {}).get("error"):
+            api_errors.append(f"{cached_error} for {api_start} to {api_end}")
+            continue
         try:
             data = await fetch(api_start, api_end)
         except Exception as e:
@@ -281,6 +295,7 @@ async def cached_daily_points(
         if error := enedis_business_error(data):
             log_with_pdl("warning", usage_point_id, f"[ENEDIS ERROR] {key_prefix} {api_start} to {api_end}: {error}")
             api_errors.append(f"{error} for {api_start} to {api_end}")
+            await cache_service.set(error_key, {"error": error}, encryption_key)
             continue
         if measure_unit(data):
             unit = measure_unit(data)
@@ -1693,11 +1708,15 @@ async def get_production_detail(
 
     api_errors = []
     for api_start, api_end in missing_ranges(missing_dates):
-        try:
-            data = await adapter.get_production_detail(usage_point_id, api_start, api_end, secret)
-            error = enedis_business_error(data)
-        except Exception as e:
-            error = str(e)
+        error_key = range_error_key("production:detail:daily", usage_point_id, api_start, api_end)
+        error = ((await cache_service.get(error_key, encryption_key)) or {}).get("error")
+        if not error:
+            try:
+                data = await adapter.get_production_detail(usage_point_id, api_start, api_end, secret)
+                if error := enedis_business_error(data):
+                    await cache_service.set(error_key, {"error": error}, encryption_key)
+            except Exception as e:
+                error = str(e)
         if error:
             log_with_pdl("warning", usage_point_id, f"[API ERROR] Production detail {api_start} to {api_end}: {error}")
             api_errors.append(f"Failed to fetch {api_start} to {api_end}: {error}")

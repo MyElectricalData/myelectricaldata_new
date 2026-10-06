@@ -530,6 +530,17 @@ async def test_production_adam_err0123_ne_marque_pas_les_jours_vides(enedis, cac
     assert served_days(data) == days(j(20), j(16))
 
 
+@PRODUCTION
+async def test_production_adam_err0123_memorise_pour_la_meme_plage(enedis, cache, handler, kind):
+    enedis.activation = j(20)  # le client resynchronise les mêmes fenêtres antérieures à la mise en service
+    first = await raw_call(getattr(router, handler), j(25), j(15), use_cache=True)
+    second = await raw_call(getattr(router, handler), j(25), j(15), use_cache=True)
+
+    assert enedis.calls == [(kind, j(25), j(15))]
+    assert not first.success and not second.success
+    assert "ADAM-ERR0123" in second.error.message
+
+
 async def test_production_detail_jour_recent_partiel_servi_si_enedis_echoue(enedis, cache):
     enedis.partial = {j(1)}
     await call(router.get_production_detail, j(3), j(0), use_cache=True)
