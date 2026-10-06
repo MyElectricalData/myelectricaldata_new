@@ -7,6 +7,7 @@ Le client n'appelle jamais EDF : il lit `GET /zen-flex/days` de la passerelle (e
 from collections.abc import AsyncIterator
 from datetime import date, timedelta
 from unittest.mock import AsyncMock, MagicMock
+import httpx
 
 import pytest
 from sqlalchemy import select
@@ -99,4 +100,18 @@ async def test_sync_zen_flex_reports_gateway_error(db: AsyncSession) -> None:
     service = make_service(db, {"success": False, "error": {"code": "BAD_GATEWAY"}})
     result = await service.sync_zen_flex()
     assert result["errors"]
+    assert await stored(db) == {}
+
+
+async def test_sync_zen_flex_skips_when_gateway_returns_404(db: AsyncSession) -> None:
+    """Passerelle distante sans route /zen-flex/days (404) : pas d'erreur consignée"""
+    req = httpx.Request("GET", "https://example.com/api/zen-flex/days")
+    resp = httpx.Response(404, request=req)
+    err = httpx.HTTPStatusError("Client error '404 Not Found'", request=req, response=resp)
+
+    service = make_service(db, {})
+    service.adapter.get_zen_flex_calendar = AsyncMock(side_effect=err)
+
+    result = await service.sync_zen_flex()
+    assert result["errors"] == []
     assert await stored(db) == {}
