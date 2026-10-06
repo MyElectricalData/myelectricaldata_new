@@ -361,12 +361,13 @@ export function DetailedCurve({
           const unitType = match[2]
           return unitType === 'D' ? value * 24 : unitType === 'H' ? value : value / 60
         }
-        const intervalMultiplier = unit === 'W' ? parseInterval(intervalLength) : 1
 
         mergedData = mergedData.map((current, idx) => {
           const weekAgoReading = readings[idx]
+          const pointInterval = weekAgoReading?.interval_length || intervalLength
+          const pointMultiplier = unit === 'W' ? parseInterval(pointInterval) : 1
           const power = weekAgoReading
-            ? (weekAgoReading.value * intervalMultiplier) / 1000
+            ? (weekAgoReading.value * pointMultiplier) / 1000
             : null
           return {
             ...current,
@@ -426,12 +427,13 @@ export function DetailedCurve({
           const unitType = match[2]
           return unitType === 'D' ? value * 24 : unitType === 'H' ? value : value / 60
         }
-        const intervalMultiplier = unit === 'W' ? parseInterval(intervalLength) : 1
 
         mergedData = mergedData.map((current, idx) => {
           const yearAgoReading = readings[idx]
+          const pointInterval = yearAgoReading?.interval_length || intervalLength
+          const pointMultiplier = unit === 'W' ? parseInterval(pointInterval) : 1
           const power = yearAgoReading
-            ? (yearAgoReading.value * intervalMultiplier) / 1000
+            ? (yearAgoReading.value * pointMultiplier) / 1000
             : null
           return {
             ...current,

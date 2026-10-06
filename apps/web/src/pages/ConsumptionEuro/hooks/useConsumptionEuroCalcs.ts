@@ -183,7 +183,6 @@ export function useConsumptionEuroCalcs({
         }
       }
 
-      const intervalMultiplier = unit === 'W' ? parseIntervalToDurationInHours(intervalLength) : 1
 
       readings.forEach((reading: MeasureReading) => {
         if (!reading.date || Number.isNaN(reading.value)) return
@@ -196,7 +195,9 @@ export function useConsumptionEuroCalcs({
         // Get date key for tempo lookup (YYYY-MM-DD)
         const dateKey = apiDateTime.toISOString().split('T')[0]
 
-        const energyWh = reading.value * intervalMultiplier
+        const pointInterval = reading.interval_length || intervalLength
+        const pointMultiplier = unit === 'W' ? parseIntervalToDurationInHours(pointInterval) : 1
+        const energyWh = reading.value * pointMultiplier
         const energyKwh = energyWh / 1000
 
         const hour = apiDateTime.getHours()

@@ -240,7 +240,6 @@ export function useProductionCalcs({
       return 1
     }
 
-    const intervalMultiplier = getIntervalMultiplier(intervalLength, unit)
     const intervalDurationHours = parseIntervalToDurationInHours(intervalLength)
     const intervalDurationMinutes = intervalDurationHours * 60
 
@@ -274,10 +273,13 @@ export function useProductionCalcs({
         dayMap[dateStr] = []
       }
 
+      const pointInterval = reading.interval_length || intervalLength
+      const pointMultiplier = getIntervalMultiplier(pointInterval, unit)
+      const pointDurationHours = parseIntervalToDurationInHours(pointInterval)
       const rawValue = reading.value
-      const energyWh = rawValue * intervalMultiplier
+      const energyWh = rawValue * pointMultiplier
       const energyKwh = energyWh / 1000
-      const averagePowerW = intervalDurationHours > 0 ? energyWh / intervalDurationHours : rawValue
+      const averagePowerW = pointDurationHours > 0 ? energyWh / pointDurationHours : rawValue
       const averagePowerKw = averagePowerW / 1000
 
       dayMap[dateStr].push({
