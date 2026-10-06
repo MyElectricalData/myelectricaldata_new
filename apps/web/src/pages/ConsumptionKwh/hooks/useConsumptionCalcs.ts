@@ -555,8 +555,6 @@ export function useConsumptionCalcs({
       return 1
     }
 
-    const intervalMultiplier = getIntervalMultiplier(intervalLength, unit)
-    const intervalDurationHours = parseIntervalToDurationInHours(intervalLength)
 
     // Group readings by day
     const dayMap: Record<string, any[]> = {}
@@ -591,9 +589,12 @@ export function useConsumptionCalcs({
       }
 
       const rawValue = parseFloat(reading.value || 0)
-      const energyWh = rawValue * intervalMultiplier
+      const pointInterval = reading.interval_length || intervalLength
+      const pointMultiplier = getIntervalMultiplier(pointInterval, unit)
+      const pointDurationHours = parseIntervalToDurationInHours(pointInterval)
+      const energyWh = rawValue * pointMultiplier
       const energyKwh = energyWh / 1000
-      const averagePowerW = intervalDurationHours > 0 ? energyWh / intervalDurationHours : rawValue
+      const averagePowerW = pointDurationHours > 0 ? energyWh / pointDurationHours : rawValue
       const averagePowerKw = averagePowerW / 1000
 
       dayMap[dateStr].push({
@@ -659,8 +660,6 @@ export function useConsumptionCalcs({
         }
       }
 
-      const intervalMultiplier = unit === 'W' ? parseIntervalToDurationInHours(intervalLength) : 1
-
       readings.forEach((reading: any) => {
         if (!reading.date || Number.isNaN(reading.value)) return
 
@@ -669,7 +668,9 @@ export function useConsumptionCalcs({
           : reading.date.replace(' ', 'T')
         const apiDateTime = new Date(dateTimeStr)
 
-        const energyWh = parseFloat(reading.value) * intervalMultiplier
+        const pointInterval = reading.interval_length || intervalLength
+        const pointMultiplier = unit === 'W' ? parseIntervalToDurationInHours(pointInterval) : 1
+        const energyWh = parseFloat(reading.value) * pointMultiplier
         const energyKwh = energyWh / 1000
 
         const hour = apiDateTime.getHours()
@@ -774,14 +775,14 @@ export function useConsumptionCalcs({
         }
       }
 
-      const intervalMultiplier = unit === 'W' ? parseIntervalToDurationInHours(intervalLength) : 1
-
       readings.forEach((reading: any) => {
         if (!reading.date || Number.isNaN(reading.value)) return
 
         const dateTimeStr = reading.date.includes('T') ? reading.date : reading.date.replace(' ', 'T')
         const apiDateTime = new Date(dateTimeStr)
-        const energyWh = parseFloat(reading.value) * intervalMultiplier
+        const pointInterval = reading.interval_length || intervalLength
+        const pointMultiplier = unit === 'W' ? parseIntervalToDurationInHours(pointInterval) : 1
+        const energyWh = parseFloat(reading.value) * pointMultiplier
         const energyKwh = energyWh / 1000
         const hour = apiDateTime.getHours()
         const minute = apiDateTime.getMinutes()
