@@ -10,14 +10,14 @@ Data is stored permanently in PostgreSQL for local analysis and export.
 
 import asyncio
 import logging
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy import select, and_, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..adapters.myelectricaldata import get_med_adapter
+from ..adapters.myelectricaldata import RateLimitExceededError, get_med_adapter
 from ..models import PDL, EnergyProvider, EnergyOffer
 from ..models.ecowatt import EcoWatt
 from ..models.tempo_day import TempoDay, TempoColor
@@ -56,6 +56,13 @@ def _normalize_utc(ts: datetime | None) -> datetime | None:
     if ts.tzinfo is None:
         return ts.replace(tzinfo=UTC)
     return ts.astimezone(UTC)
+
+
+def _next_midnight_utc() -> datetime:
+    """Retourne la date et l'heure du prochain minuit UTC (remise à zéro des quotas journaliers Enedis)."""
+    now = datetime.now(UTC)
+    return datetime.combine(now.date() + timedelta(days=1), time.min, tzinfo=UTC)
+
 
 
 # Verrous globaux pour éviter les syncs concurrentes
@@ -180,6 +187,14 @@ class SyncService:
                 try:
                     result = await self.sync_pdl(usage_point_id)
                     results["pdls"][usage_point_id] = result
+                    # Vérifier si sync_pdl a rencontré une erreur ou un rate limiting
+                    pdl_errors = [
+                        f"{dtype}: {res}"
+                        for dtype, res in result.items()
+                        if dtype != "usage_point_id" and isinstance(res, str) and (res.startswith("error:") or res.startswith("rate_limited:"))
+                    ]
+                    if pdl_errors:
+                        results["errors"].append({"pdl": usage_point_id, "error": "; ".join(pdl_errors)})
                 except Exception as e:
                     logger.error(f"[SYNC] Error syncing PDL {usage_point_id}: {e}")
                     results["pdls"][usage_point_id] = {"error": str(e)}
@@ -236,6 +251,8 @@ class SyncService:
             "address": None,
         }
 
+        rate_limited = False
+
         # Sync contract and address first (they're small), at most once a day to spare the API quota
         try:
             if await self._should_refresh_metadata(ContractData, usage_point_id):
@@ -243,41 +260,62 @@ class SyncService:
                 result["contract"] = "success"
             else:
                 result["contract"] = "skipped (recent)"
+        except RateLimitExceededError as e:
+            rate_limited = True
+            logger.warning(f"[SYNC] Quota atteint lors de la synchro du contrat pour {usage_point_id}: {e}")
+            result["contract"] = f"rate_limited: {e}"
         except Exception as e:
             logger.warning(f"[SYNC] Failed to sync contract for {usage_point_id}: {e}")
             result["contract"] = f"error: {e}"
 
-        try:
-            if await self._should_refresh_metadata(AddressData, usage_point_id):
-                await self._sync_address(usage_point_id)
-                result["address"] = "success"
-            else:
-                result["address"] = "skipped (recent)"
-        except Exception as e:
-            logger.warning(f"[SYNC] Failed to sync address for {usage_point_id}: {e}")
-            result["address"] = f"error: {e}"
+        if not rate_limited:
+            try:
+                if await self._should_refresh_metadata(AddressData, usage_point_id):
+                    await self._sync_address(usage_point_id)
+                    result["address"] = "success"
+                else:
+                    result["address"] = "skipped (recent)"
+            except RateLimitExceededError as e:
+                rate_limited = True
+                logger.warning(f"[SYNC] Quota atteint lors de la synchro de l'adresse pour {usage_point_id}: {e}")
+                result["address"] = f"rate_limited: {e}"
+            except Exception as e:
+                logger.warning(f"[SYNC] Failed to sync address for {usage_point_id}: {e}")
+                result["address"] = f"error: {e}"
 
         # Sync consumption data
-        try:
-            daily_count = await self._sync_consumption_daily(usage_point_id)
-            result["consumption_daily"] = f"synced {daily_count} days"
-        except Exception as e:
-            logger.warning(f"[SYNC] Failed to sync consumption daily for {usage_point_id}: {e}")
-            result["consumption_daily"] = f"error: {e}"
+        if not rate_limited:
+            try:
+                daily_count = await self._sync_consumption_daily(usage_point_id)
+                result["consumption_daily"] = f"synced {daily_count} days"
+            except RateLimitExceededError as e:
+                rate_limited = True
+                result["consumption_daily"] = f"rate_limited: {e}"
+            except Exception as e:
+                logger.warning(f"[SYNC] Failed to sync consumption daily for {usage_point_id}: {e}")
+                result["consumption_daily"] = f"error: {e}"
 
-        try:
-            detail_count = await self._sync_consumption_detail(usage_point_id)
-            result["consumption_detail"] = f"synced {detail_count} intervals"
-        except Exception as e:
-            logger.warning(f"[SYNC] Failed to sync consumption detail for {usage_point_id}: {e}")
-            result["consumption_detail"] = f"error: {e}"
+        if not rate_limited:
+            try:
+                detail_count = await self._sync_consumption_detail(usage_point_id)
+                result["consumption_detail"] = f"synced {detail_count} intervals"
+            except RateLimitExceededError as e:
+                rate_limited = True
+                result["consumption_detail"] = f"rate_limited: {e}"
+            except Exception as e:
+                logger.warning(f"[SYNC] Failed to sync consumption detail for {usage_point_id}: {e}")
+                result["consumption_detail"] = f"error: {e}"
 
-        try:
-            max_power_count = await self._sync_consumption_max_power(usage_point_id)
-            result["max_power"] = f"synced {max_power_count} days"
-        except Exception as e:
-            logger.warning(f"[SYNC] Failed to sync max power for {usage_point_id}: {e}")
-            result["max_power"] = f"error: {e}"
+        if not rate_limited:
+            try:
+                max_power_count = await self._sync_consumption_max_power(usage_point_id)
+                result["max_power"] = f"synced {max_power_count} days"
+            except RateLimitExceededError as e:
+                rate_limited = True
+                result["max_power"] = f"rate_limited: {e}"
+            except Exception as e:
+                logger.warning(f"[SYNC] Failed to sync max power for {usage_point_id}: {e}")
+                result["max_power"] = f"error: {e}"
 
         # Sync production data only if PDL has production
         pdl_result = await self.db.execute(
@@ -286,23 +324,41 @@ class SyncService:
         pdl = pdl_result.scalar_one_or_none()
 
         if pdl and pdl.has_production:
-            try:
-                daily_count = await self._sync_production_daily(usage_point_id)
-                result["production_daily"] = f"synced {daily_count} days"
-            except Exception as e:
-                logger.warning(f"[SYNC] Failed to sync production daily for {usage_point_id}: {e}")
-                result["production_daily"] = f"error: {e}"
+            if not rate_limited:
+                try:
+                    daily_count = await self._sync_production_daily(usage_point_id)
+                    result["production_daily"] = f"synced {daily_count} days"
+                except RateLimitExceededError as e:
+                    rate_limited = True
+                    result["production_daily"] = f"rate_limited: {e}"
+                except Exception as e:
+                    logger.warning(f"[SYNC] Failed to sync production daily for {usage_point_id}: {e}")
+                    result["production_daily"] = f"error: {e}"
 
-            try:
-                detail_count = await self._sync_production_detail(usage_point_id)
-                result["production_detail"] = f"synced {detail_count} intervals"
-            except Exception as e:
-                logger.warning(f"[SYNC] Failed to sync production detail for {usage_point_id}: {e}")
-                result["production_detail"] = f"error: {e}"
+            if not rate_limited:
+                try:
+                    detail_count = await self._sync_production_detail(usage_point_id)
+                    result["production_detail"] = f"synced {detail_count} intervals"
+                except RateLimitExceededError as e:
+                    rate_limited = True
+                    result["production_detail"] = f"rate_limited: {e}"
+                except Exception as e:
+                    logger.warning(f"[SYNC] Failed to sync production detail for {usage_point_id}: {e}")
+                    result["production_detail"] = f"error: {e}"
+            else:
+                if result["production_daily"] is None:
+                    result["production_daily"] = "skipped (rate limited)"
+                result["production_detail"] = "skipped (rate limited)"
         else:
             logger.debug(f"[SYNC] Skipping production sync for {usage_point_id} (has_production=False)")
             result["production_daily"] = "skipped (no production)"
             result["production_detail"] = "skipped (no production)"
+
+        if rate_limited:
+            # Remplir les champs non exécutés pour clarté
+            for key in ("consumption_daily", "consumption_detail", "max_power", "contract", "address"):
+                if result[key] is None:
+                    result[key] = "skipped (rate limited)"
 
         return result
 
@@ -388,7 +444,10 @@ class SyncService:
         response = await self.adapter.get_address(usage_point_id)
         # Enveloppe {success, data} de la passerelle ; adresse donnees_generales_auto (ou v5 convertie)
         address_data = address_v5_to_2026(_unwrap(response))
-        fields = parse_address(address_data) if "address" in address_data else {}
+        if not isinstance(address_data, dict) or "address" not in address_data:
+            logger.warning(f"[SYNC] Adresse illisible pour {usage_point_id}, valeurs en base conservées")
+            return
+        fields = parse_address(address_data)
 
         # Check if address already exists
         result = await self.db.execute(
@@ -534,9 +593,13 @@ class SyncService:
         await self.db.commit()
 
         total_synced = 0
+        rate_limited = False
+        rate_limit_msg = None
         errors: list[str] = []
 
         for range_start, range_end in missing_ranges:
+            if rate_limited:
+                break
             current_start = range_start
             while current_start < range_end:
                 current_end = min(current_start + timedelta(days=365), range_end)
@@ -548,6 +611,17 @@ class SyncService:
                     if records:
                         await LocalDataService(self.db).save_max_power(records)
                         total_synced += len(records)
+                except RateLimitExceededError as e:
+                    await self.db.rollback()
+                    await self.db.refresh(sync_status)
+                    rate_limited = True
+                    rate_limit_msg = str(e)
+                    logger.warning(
+                        f"[SYNC] Quota Enedis/passerelle atteint pour {usage_point_id} (max_power) : {e}. "
+                        "Reprise programmée après minuit UTC."
+                    )
+                    errors.append(str(e))
+                    break
                 except Exception as e:
                     await self.db.rollback()
                     await self.db.refresh(sync_status)
@@ -558,11 +632,18 @@ class SyncService:
                     errors.append(str(e))
                 current_start = current_end
 
-        sync_status.status = SyncStatusType.PARTIAL if errors else SyncStatusType.SUCCESS
-        sync_status.error_message = "; ".join(errors[:5]) if errors else None
-        sync_status.error_count += len(errors)
+        if rate_limited:
+            sync_status.status = SyncStatusType.FAILED if total_synced == 0 else SyncStatusType.PARTIAL
+            sync_status.error_message = rate_limit_msg or "Quota journalier atteint (HTTP 429), reprise après minuit UTC"
+            sync_status.next_sync_at = _next_midnight_utc()
+        else:
+            sync_status.status = SyncStatusType.PARTIAL if errors else SyncStatusType.SUCCESS
+            sync_status.error_message = "; ".join(errors[:5]) if errors else None
+            sync_status.next_sync_at = datetime.now(UTC) + timedelta(minutes=30)
+
+        sync_status.error_count = (sync_status.error_count or 0) + len(errors)
         sync_status.records_synced_last_run = total_synced
-        sync_status.total_records += total_synced
+        sync_status.total_records = (sync_status.total_records or 0) + total_synced
         if total_synced > 0:
             bounds = await self.db.execute(
                 select(func.min(MaxPowerData.date), func.max(MaxPowerData.date)).where(
@@ -570,7 +651,6 @@ class SyncService:
                 )
             )
             sync_status.oldest_data_date, sync_status.newest_data_date = bounds.one()
-        sync_status.next_sync_at = datetime.now(UTC) + timedelta(minutes=30)
         await self.db.commit()
 
         logger.info(f"[SYNC] max_power pour {usage_point_id}: {total_synced} jours synchronisés")
@@ -639,11 +719,15 @@ class SyncService:
 
         total_synced = 0
         errors = []
+        rate_limited = False
+        rate_limit_msg = None
 
         try:
             chunk_size = 7 if granularity == DataGranularity.DETAILED else 365
 
             for range_start, range_end in missing_ranges:
+                if rate_limited:
+                    break
                 # Découper chaque plage manquante en chunks compatibles API
                 current_start = range_start
                 while current_start < range_end:
@@ -675,6 +759,16 @@ class SyncService:
                             await self._upsert_energy_records(records, model_class)
                             total_synced += len(records)
 
+                    except RateLimitExceededError as e:
+                        await self.db.rollback()
+                        rate_limited = True
+                        rate_limit_msg = str(e)
+                        logger.warning(
+                            f"[SYNC] Quota Enedis/passerelle atteint pour {usage_point_id} "
+                            f"({data_type}/{granularity.value}) : {e}. Reprise programmée après minuit UTC."
+                        )
+                        errors.append(str(e))
+                        break
                     except Exception as e:
                         await self.db.rollback()
                         logger.warning(
@@ -686,16 +780,22 @@ class SyncService:
                     current_start = current_end
 
             # Update sync status
-            if errors:
+            if rate_limited:
+                sync_status.status = SyncStatusType.FAILED if total_synced == 0 else SyncStatusType.PARTIAL
+                sync_status.error_message = rate_limit_msg or "Quota journalier atteint (HTTP 429), reprise après minuit UTC"
+                sync_status.next_sync_at = _next_midnight_utc()
+            elif errors:
                 sync_status.status = SyncStatusType.PARTIAL
                 sync_status.error_message = "; ".join(errors[:5])
-                sync_status.error_count += len(errors)
+                sync_status.next_sync_at = datetime.now(UTC) + timedelta(minutes=30)
             else:
                 sync_status.status = SyncStatusType.SUCCESS
                 sync_status.error_message = None
+                sync_status.next_sync_at = datetime.now(UTC) + timedelta(minutes=30)
 
+            sync_status.error_count = (sync_status.error_count or 0) + len(errors)
             sync_status.records_synced_last_run = total_synced
-            sync_status.total_records += total_synced
+            sync_status.total_records = (sync_status.total_records or 0) + total_synced
 
             if total_synced > 0:
                 # Bornes réelles en base, pas la plage demandée
@@ -709,7 +809,6 @@ class SyncService:
                 )
                 sync_status.oldest_data_date, sync_status.newest_data_date = bounds.one()
 
-            sync_status.next_sync_at = datetime.now(UTC) + timedelta(minutes=30)
             await self.db.commit()
 
             logger.info(
@@ -721,7 +820,7 @@ class SyncService:
             await self.db.rollback()
             sync_status.status = SyncStatusType.FAILED
             sync_status.error_message = str(e)
-            sync_status.error_count += 1
+            sync_status.error_count = (sync_status.error_count or 0) + 1
             sync_status.last_error_at = datetime.now(UTC)
             await self.db.commit()
             raise
