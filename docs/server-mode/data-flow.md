@@ -203,7 +203,9 @@ PRODUCTION (/production/daily, /production/detail), same per-day logic as /power
    J-1 and J-2 cached 3 hours, older days 24 hours, recent missing day never cached,
    older missing day cached as an empty marker
    an Enedis business error returned as a dict (ADAM-ERR0123, before meter activation)
-   is an error for the whole range : its days are never marked empty
+   is an error for the whole range : its days are never marked empty, but the exact
+   range is remembered 24 hours ({prefix}:{pdl}:error:{start}:{end}) so that a client
+   resyncing the same windows does not call Enedis each time
 
 CACHE TTL: 86400 seconds (24 hours)
 ENCRYPTION: user.client_secret
