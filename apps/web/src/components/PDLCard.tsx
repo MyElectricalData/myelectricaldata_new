@@ -1033,25 +1033,41 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                     </div>
 
                     {/* Time range cards */}
-                    <div className="space-y-1.5">
+                    {/* Time range cards */}
+                    <div className="space-y-2">
                       {offpeakRanges.map((range, index) => (
                         <div
                           key={index}
-                          className="flex items-center gap-3 p-2 bg-blue-50/30 dark:bg-blue-900/5 border border-blue-200 dark:border-blue-800/20 rounded-lg"
+                          className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-2.5 bg-blue-50/30 dark:bg-blue-900/5 border border-blue-200 dark:border-blue-800/20 rounded-lg"
                         >
-                          {/* Range number badge */}
-                          <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-blue-500 dark:bg-blue-600 text-white text-xs font-bold rounded-full">
-                            {index + 1}
+                          <div className="flex items-center justify-between sm:justify-start gap-2">
+                            {/* Range number badge */}
+                            <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-blue-500 dark:bg-blue-600 text-white text-xs font-bold rounded-full">
+                              {index + 1}
+                            </div>
+                            <span className="text-xs text-gray-500 dark:text-gray-400 font-medium sm:hidden">
+                              Plage {index + 1}
+                            </span>
+                            {/* Mobile delete button placed at top right */}
+                            {offpeakRanges.length > 1 && (
+                              <button
+                                onClick={() => handleRemoveOffpeakRange(index)}
+                                className="sm:hidden p-1.5 text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 rounded transition-all ml-auto"
+                                title="Supprimer cette plage"
+                              >
+                                <Minus size={14} />
+                              </button>
+                            )}
                           </div>
 
-                          {/* Time inputs - full width */}
-                          <div className="flex-1 flex items-center gap-3">
+                          {/* Time inputs - responsive layout */}
+                          <div className="flex-1 flex flex-col xs:flex-row items-stretch xs:items-center gap-2 sm:gap-3">
                             {/* Start time */}
                             <div className="flex-1 flex items-center gap-1.5">
                               <select
                                 value={range.startHour}
                                 onChange={(e) => handleOffpeakFieldChange(index, 'startHour', e.target.value)}
-                                className="flex-1 px-2 py-1 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded text-sm font-semibold text-center text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                                className="flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded text-sm font-semibold text-center text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 cursor-pointer"
                               >
                                 {Array.from({ length: 24 }, (_, i) => (
                                   <option key={i} value={i.toString().padStart(2, '0')}>
@@ -1064,7 +1080,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                               <select
                                 value={range.startMin}
                                 onChange={(e) => handleOffpeakFieldChange(index, 'startMin', e.target.value)}
-                                className="flex-1 px-2 py-1 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded text-sm font-semibold text-center text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                                className="flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded text-sm font-semibold text-center text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 cursor-pointer"
                               >
                                 {Array.from({ length: 60 }, (_, i) => (
                                   <option key={i} value={i.toString().padStart(2, '0')}>
@@ -1076,14 +1092,14 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                             </div>
 
                             {/* Arrow separator */}
-                            <span className="text-blue-600 dark:text-blue-400 font-bold flex-shrink-0">→</span>
+                            <span className="text-blue-600 dark:text-blue-400 font-bold self-center">→</span>
 
                             {/* End time */}
                             <div className="flex-1 flex items-center gap-1.5">
                               <select
                                 value={range.endHour}
                                 onChange={(e) => handleOffpeakFieldChange(index, 'endHour', e.target.value)}
-                                className="flex-1 px-2 py-1 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded text-sm font-semibold text-center text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                                className="flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded text-sm font-semibold text-center text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 cursor-pointer"
                               >
                                 {Array.from({ length: 24 }, (_, i) => (
                                   <option key={i} value={i.toString().padStart(2, '0')}>
@@ -1096,7 +1112,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                               <select
                                 value={range.endMin}
                                 onChange={(e) => handleOffpeakFieldChange(index, 'endMin', e.target.value)}
-                                className="flex-1 px-2 py-1 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded text-sm font-semibold text-center text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                                className="flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded text-sm font-semibold text-center text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-blue-500 cursor-pointer"
                               >
                                 {Array.from({ length: 60 }, (_, i) => (
                                   <option key={i} value={i.toString().padStart(2, '0')}>
@@ -1108,11 +1124,11 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                             </div>
                           </div>
 
-                          {/* Delete button */}
+                          {/* Desktop delete button */}
                           {offpeakRanges.length > 1 && (
                             <button
                               onClick={() => handleRemoveOffpeakRange(index)}
-                              className="flex-shrink-0 p-1.5 text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 rounded transition-all"
+                              className="hidden sm:block flex-shrink-0 p-1.5 text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 rounded transition-all"
                               title="Supprimer cette plage"
                             >
                               <Minus size={14} />
