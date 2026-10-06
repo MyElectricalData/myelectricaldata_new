@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from datetime import datetime, UTC, timedelta
 from typing import Any, cast, Optional
 from fastapi import APIRouter, Depends, Query, Request, Path
@@ -198,23 +199,106 @@ def missing_ranges(missing_dates: list[str]) -> list[tuple[str, str]]:
     return ranges
 
 
-RECENT_POWER_DAYS = 2  # J-1 et J-2
-RECENT_POWER_TTL_SECONDS = 3 * 3600
+RECENT_DAYS = 2  # J-1 et J-2
+RECENT_TTL_SECONDS = 3 * 3600
 EMPTY_DAY = {"empty": True}  # marqueur de cache : jour ancien sans mesure chez Enedis
+EXPECTED_READINGS = {"PT10M": 144, "PT15M": 96, "PT30M": 48, "PT60M": 24}  # points par jour selon le pas de la courbe
 
 
-def power_cache_ttl(day: str, today: datetime, default_ttl: int) -> int:
-    """Durée de cache (secondes) de la puissance max d'un jour publié par Enedis.
+def is_recent_day(day: str, today: datetime) -> bool:
+    """J-1 ou J-2 (`today` = minuit à Paris) : Enedis peut encore publier ou corriger ce jour."""
+    return (today - datetime.strptime(day, "%Y-%m-%d")).days <= RECENT_DAYS
+
+
+def recent_cache_ttl(day: str, today: datetime, default_ttl: int) -> int:
+    """Durée de cache (secondes) d'un jour publié par Enedis (puissance max, production).
 
     `day` est un jour déjà renvoyé par Enedis (YYYY-MM-DD), `today` minuit à Paris,
     `default_ttl` la durée de cache par défaut du serveur (CACHE_TTL_SECONDS, 24 h).
     """
     # J-1 et J-2 peuvent encore être corrigés par Enedis : cache court, la correction apparaît en 3 h au plus
     # au lieu de 24 h, pour un appel Enedis de 2 jours au plus par fenêtre de 3 h
-    age = (today - datetime.strptime(day, "%Y-%m-%d")).days
-    if age <= RECENT_POWER_DAYS:
-        return min(RECENT_POWER_TTL_SECONDS, default_ttl)
+    if is_recent_day(day, today):
+        return min(RECENT_TTL_SECONDS, default_ttl)
     return default_ttl
+
+
+def curve_day_complete(count: int, expected_count: int, day: str, today: datetime) -> bool:
+    """Un jour de courbe en cache peut être servi sans rappeler Enedis.
+
+    Complet à 90 % des points attendus (règle du batch : un point manquant chez Enedis ne force pas
+    un rappel). Plus vieux que J-2, un jour partiel est gardé tel quel : Enedis ne le complétera plus.
+    """
+    return count >= int(expected_count * 0.9) or not is_recent_day(day, today)
+
+
+def enedis_business_error(data: Any) -> str | None:
+    """Erreur métier rendue en dict par l'adaptateur, sans exception (ADAM-ERR0123 : avant la mise en service).
+
+    Elle porte sur toute la plage demandée : ses jours ne doivent pas être pris pour des jours sans mesure.
+    """
+    if isinstance(data, dict) and data.get("error"):
+        return str(data["error"])
+    return None
+
+
+async def cached_daily_points(
+    usage_point_id: str,
+    requested_dates: list[str],
+    key_prefix: str,
+    unit_cache_key: str,
+    fetch: Callable[[str, str], Awaitable[dict[str, Any]]],
+    encryption_key: str,
+) -> tuple[list[dict[str, Any]], str | None, list[str]]:
+    """Mesures quotidiennes (un point par jour) servies depuis le cache jour par jour `{key_prefix}:{pdl}:{jour}`.
+
+    Seuls les jours absents partent chez Enedis (`fetch(début, fin exclue)`). Un jour récent sans point
+    (pas encore publié) n'est pas mis en cache ; un jour ancien sans point (compteur coupé, trou Enedis)
+    l'est, avec un marqueur vide, pour ne pas le redemander à chaque requête.
+    Renvoie (points non triés, unité reçue d'Enedis ou None, erreurs d'appel).
+    """
+    points: list[dict[str, Any]] = []
+    missing_dates = []
+    for date_str in requested_dates:
+        cached_point = await cache_service.get(f"{key_prefix}:{usage_point_id}:{date_str}", encryption_key)
+        if cached_point == EMPTY_DAY:
+            continue
+        if cached_point:
+            points.append(as_point(cached_point))
+        else:
+            missing_dates.append(date_str)
+
+    unit = None
+    api_errors = []
+    today = paris_today()
+    for api_start, api_end in missing_ranges(missing_dates):
+        try:
+            data = await fetch(api_start, api_end)
+        except Exception as e:
+            log_with_pdl("warning", usage_point_id, f"[API ERROR] {key_prefix} {api_start} to {api_end}: {e}")
+            api_errors.append(f"Failed to fetch {api_start} to {api_end}: {e}")
+            continue
+        if error := enedis_business_error(data):
+            log_with_pdl("warning", usage_point_id, f"[ENEDIS ERROR] {key_prefix} {api_start} to {api_end}: {error}")
+            api_errors.append(f"{error} for {api_start} to {api_end}")
+            continue
+        if measure_unit(data):
+            unit = measure_unit(data)
+            await cache_service.set(unit_cache_key, {"unit": unit}, encryption_key)
+        published = set()
+        for point in extract_points(data):
+            date_str = point.get("d", "")[:10]
+            if date_str not in missing_dates:
+                continue
+            points.append(point)
+            published.add(date_str)
+            ttl = recent_cache_ttl(date_str, today, cache_service.ttl)
+            await cache_service.set(f"{key_prefix}:{usage_point_id}:{date_str}", point, encryption_key, ttl=ttl)
+        for date_str in days_between(api_start, api_end):
+            if date_str not in published and not is_recent_day(date_str, today):
+                await cache_service.set(f"{key_prefix}:{usage_point_id}:{date_str}", EMPTY_DAY, encryption_key)
+
+    return points, unit, api_errors
 
 
 def adjust_date_range(start: str, end: str) -> tuple[str, str]:
@@ -1437,46 +1521,15 @@ async def get_max_power(
         except Exception as e:
             return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message=str(e)))
 
-    # Cache jour par jour (comme la consommation quotidienne) : seuls les jours absents partent chez Enedis.
-    # Un jour récent sans point (pas encore publié) n'est pas mis en cache ; un jour ancien sans point
-    # (compteur coupé, trou Enedis) l'est, avec un marqueur vide, pour ne pas le redemander à chaque requête
-    points: list[dict[str, Any]] = []
-    missing_dates = []
-    for date_str in requested_dates:
-        cached_point = await cache_service.get(f"consumption:max_power:{usage_point_id}:{date_str}", encryption_key)
-        if cached_point == EMPTY_DAY:
-            continue
-        if cached_point:
-            points.append(as_point(cached_point))
-        else:
-            missing_dates.append(date_str)
-
     unit_cache_key = f"consumption:max_power_unit:{usage_point_id}"
-    unit = None
-    api_errors = []
-    today = paris_today()
-    for api_start, api_end in missing_ranges(missing_dates):
-        try:
-            data = await adapter.get_max_power(usage_point_id, api_start, api_end, secret)
-        except Exception as e:
-            log_with_pdl("warning", usage_point_id, f"[API ERROR] Max power {api_start} to {api_end}: {e}")
-            api_errors.append(f"Failed to fetch {api_start} to {api_end}: {e}")
-            continue
-        if measure_unit(data):
-            unit = measure_unit(data)
-            await cache_service.set(unit_cache_key, {"unit": unit}, encryption_key)
-        published = set()
-        for point in extract_points(data):
-            date_str = point.get("d", "")[:10]
-            if date_str not in missing_dates:
-                continue
-            points.append(point)
-            published.add(date_str)
-            ttl = power_cache_ttl(date_str, today, cache_service.ttl)
-            await cache_service.set(f"consumption:max_power:{usage_point_id}:{date_str}", point, encryption_key, ttl=ttl)
-        for date_str in days_between(api_start, api_end):
-            if date_str not in published and (today - datetime.strptime(date_str, "%Y-%m-%d")).days > RECENT_POWER_DAYS:
-                await cache_service.set(f"consumption:max_power:{usage_point_id}:{date_str}", EMPTY_DAY, encryption_key)
+    points, unit, api_errors = await cached_daily_points(
+        usage_point_id,
+        requested_dates,
+        "consumption:max_power",
+        unit_cache_key,
+        lambda api_start, api_end: adapter.get_max_power(usage_point_id, api_start, api_end, secret),
+        encryption_key,
+    )
 
     if api_errors and not points:
         return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message="; ".join(api_errors)))
@@ -1525,28 +1578,46 @@ async def get_production_daily(
         assert error_response is not None
         return error_response
 
-    # Check cache
-    if use_cache:
-        cache_key = cache_service.make_cache_key(usage_point_id, "production_daily", start=start, end=end)
-        cached_data = await cache_service.get(cache_key, encryption_key)
-        if cached_data:
-            return APIResponse(success=True, data=_normalize_cached("production_daily", cached_data))
-
     try:
-        # Use appropriate adapter based on user type
-        adapter, is_demo = await get_adapter_for_user(effective_user)
-        if is_demo:
-            data = await adapter.get_production_daily(usage_point_id, start, end, encryption_key)
-        else:
-            data = await adapter.get_production_daily(usage_point_id, start, end, access_token)
+        requested_dates = days_between(start, end)
+    except ValueError as e:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(code="INVALID_DATE_FORMAT", message=f"Invalid date format. Expected YYYY-MM-DD. Error: {e}"),
+        )
 
-        # Cache result
-        if use_cache:
-            await cache_service.set(cache_key, data, encryption_key)
+    adapter, is_demo = await get_adapter_for_user(effective_user)
+    secret = encryption_key if is_demo else access_token
 
-        return APIResponse(success=True, data=data)
-    except Exception as e:
-        return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message=str(e)))
+    if not use_cache:
+        try:
+            data = await adapter.get_production_daily(usage_point_id, start, end, secret)
+            return APIResponse(success=True, data=data)
+        except Exception as e:
+            return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message=str(e)))
+
+    # Cache jour par jour, comme la puissance max : une fenêtre glissante ne redemande que ses nouveaux jours
+    unit_cache_key = f"production:reading_type:{usage_point_id}"
+    points, unit, api_errors = await cached_daily_points(
+        usage_point_id,
+        requested_dates,
+        "production:daily",
+        unit_cache_key,
+        lambda api_start, api_end: adapter.get_production_daily(usage_point_id, api_start, api_end, secret),
+        encryption_key,
+    )
+
+    if api_errors and not points:
+        return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message="; ".join(api_errors)))
+
+    if unit is None:
+        unit = ((await cache_service.get(unit_cache_key, encryption_key)) or {}).get("unit") or "Wh"
+
+    points.sort(key=lambda p: p.get("d", ""))
+    return APIResponse(
+        success=True,
+        data=build_measure(usage_point_id, start, end, points, grandeur_metier="PROD", grandeur_physique="EA", unite=unit, pas="P1D"),
+    )
 
 
 @router.get("/production/detail/{usage_point_id}", response_model=APIResponse)
@@ -1583,28 +1654,80 @@ async def get_production_detail(
         assert error_response is not None
         return error_response
 
-    # Check cache
-    if use_cache:
-        cache_key = cache_service.make_cache_key(usage_point_id, "production_detail", start=start, end=end)
-        cached_data = await cache_service.get(cache_key, encryption_key)
-        if cached_data:
-            return APIResponse(success=True, data=_normalize_cached("production_detail", cached_data))
-
     try:
-        # Use appropriate adapter based on user type
-        adapter, is_demo = await get_adapter_for_user(effective_user)
-        if is_demo:
-            data = await adapter.get_production_detail(usage_point_id, start, end, encryption_key)
-        else:
-            data = await adapter.get_production_detail(usage_point_id, start, end, access_token)
+        requested_dates = days_between(start, end)
+    except ValueError as e:
+        return APIResponse(
+            success=False,
+            error=ErrorDetail(code="INVALID_DATE_FORMAT", message=f"Invalid date format. Expected YYYY-MM-DD. Error: {e}"),
+        )
 
-        # Cache result
-        if use_cache:
-            await cache_service.set(cache_key, data, encryption_key)
+    adapter, is_demo = await get_adapter_for_user(effective_user)
+    secret = encryption_key if is_demo else access_token
 
-        return APIResponse(success=True, data=data)
-    except Exception as e:
-        return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message=str(e)))
+    if not use_cache:
+        try:
+            data = await adapter.get_production_detail(usage_point_id, start, end, secret)
+            return APIResponse(success=True, data=data)
+        except Exception as e:
+            return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message=str(e)))
+
+    # Cache jour par jour partagé avec /production/detail/batch : production:detail:daily:{pdl}:{jour}
+    # = {readings, expected_count, interval_length, count}. Mêmes règles que la puissance max pour les
+    # jours absents (récent : redemandé, ancien : marqueur vide) et pour la durée de cache de J-1 et J-2
+    today = paris_today()
+    points: list[dict[str, Any]] = []
+    missing_dates = []
+    partial_days: dict[str, list[dict[str, Any]]] = {}  # jours récents incomplets, servis si Enedis échoue
+    for date_str in requested_dates:
+        cached_day = await cache_service.get(f"production:detail:daily:{usage_point_id}:{date_str}", encryption_key)
+        if cached_day == EMPTY_DAY:
+            continue
+        if isinstance(cached_day, dict) and cached_day.get("readings"):
+            readings = [as_point(r) for r in cached_day["readings"]]
+            if curve_day_complete(len(readings), cached_day.get("expected_count", 48), date_str, today):
+                points.extend(readings)
+                continue
+            partial_days[date_str] = readings
+        missing_dates.append(date_str)
+
+    api_errors = []
+    for api_start, api_end in missing_ranges(missing_dates):
+        try:
+            data = await adapter.get_production_detail(usage_point_id, api_start, api_end, secret)
+            error = enedis_business_error(data)
+        except Exception as e:
+            error = str(e)
+        if error:
+            log_with_pdl("warning", usage_point_id, f"[API ERROR] Production detail {api_start} to {api_end}: {error}")
+            api_errors.append(f"Failed to fetch {api_start} to {api_end}: {error}")
+            for date_str in days_between(api_start, api_end):
+                points.extend(partial_days.get(date_str, []))
+            continue
+        readings_by_date: dict[str, list[dict[str, Any]]] = {}
+        for reading in extract_points(data):
+            readings_by_date.setdefault(reading.get("d", "")[:10], []).append(reading)
+        for date_str in days_between(api_start, api_end):
+            day_readings = readings_by_date.get(date_str, [])
+            cache_key = f"production:detail:daily:{usage_point_id}:{date_str}"
+            if day_readings:
+                interval_length = day_readings[0].get("p") or "PT30M"
+                cache_data = {
+                    "readings": day_readings,
+                    "expected_count": EXPECTED_READINGS.get(interval_length, 48),
+                    "interval_length": interval_length,
+                    "count": len(day_readings),
+                }
+                ttl = recent_cache_ttl(date_str, today, cache_service.ttl)
+                await cache_service.set(cache_key, cache_data, encryption_key, ttl=ttl)
+                points.extend(day_readings)
+            elif not is_recent_day(date_str, today):
+                await cache_service.set(cache_key, EMPTY_DAY, encryption_key)
+
+    if api_errors and not points:
+        return APIResponse(success=False, error=ErrorDetail(code="ENEDIS_ERROR", message="; ".join(api_errors)))
+
+    return APIResponse(success=True, data=_load_curve(usage_point_id, start, end, points, "PROD"))
 
 
 @router.get("/production/detail/batch/{usage_point_id}", response_model=APIResponse)
@@ -1740,12 +1863,14 @@ async def get_production_detail_batch(
             daily_cache_key = f"production:detail:daily:{usage_point_id}:{date_str}"
             daily_cached = await cache_service.get(daily_cache_key, encryption_key)
 
-            if daily_cached and isinstance(daily_cached, dict) and "readings" in daily_cached:
+            if daily_cached == EMPTY_DAY:
+                # Jour ancien sans mesure, marqué par /production/detail : rien à redemander
+                cache_hit_count += 1
+            elif daily_cached and isinstance(daily_cached, dict) and "readings" in daily_cached:
                 day_readings = [as_point(r) for r in daily_cached["readings"]]
                 expected_count = daily_cached.get("expected_count", 48)
-                min_required = int(expected_count * 0.9)
 
-                if len(day_readings) >= min_required:
+                if curve_day_complete(len(day_readings), expected_count, date_str, today):
                     cached_readings.extend(day_readings)
                     cache_hit_count += 1
                 elif len(day_readings) > 0:
@@ -2027,7 +2152,8 @@ async def get_production_detail_batch(
                         "interval_length": interval_length,
                         "count": len(day_readings)
                     }
-                    await cache_service.set(daily_cache_key, cache_data, encryption_key)
+                    ttl = recent_cache_ttl(date_str, today, cache_service.ttl)  # J-1 et J-2 : 3 h, comme /production/detail
+                    await cache_service.set(daily_cache_key, cache_data, encryption_key, ttl=ttl)
 
                 log_if_debug(effective_user, "debug", f"[BATCH PRODUCTION CACHE SET] {chunk_start} to {chunk_end} ({len(readings)} readings in {len(readings_by_date)} days)", pdl=usage_point_id)
 

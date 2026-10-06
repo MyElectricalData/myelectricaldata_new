@@ -191,11 +191,13 @@ async def clear_user_cache(
             # Clear ALL cache types for each PDL
             patterns = [
                 f"consumption:detail:{pdl.usage_point_id}:*",
+                f"consumption:detail:daily:{pdl.usage_point_id}:*",
                 f"consumption:daily:{pdl.usage_point_id}:*",
                 f"consumption:reading_type:{pdl.usage_point_id}",
                 f"consumption:max_power:{pdl.usage_point_id}:*",
                 f"consumption:max_power_unit:{pdl.usage_point_id}",
                 f"production:detail:{pdl.usage_point_id}:*",
+                f"production:detail:daily:{pdl.usage_point_id}:*",
                 f"production:daily:{pdl.usage_point_id}:*",
                 f"production:reading_type:{pdl.usage_point_id}",
             ]

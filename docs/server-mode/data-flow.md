@@ -193,6 +193,18 @@ MAX POWER (/power), same per-day logic:
    an older day without a point (meter off) is cached as an empty marker
    unit cached in consumption:max_power_unit:{pdl}
 
+PRODUCTION (/production/daily, /production/detail), same per-day logic as /power:
+   daily:  cache_key = f"production:daily:{pdl}:{date}", unit in production:reading_type:{pdl}
+   detail: cache_key = f"production:detail:daily:{pdl}:{date}", shared with /production/detail/batch
+           = {readings, expected_count, interval_length, count}
+           a day is served from cache at 90 % of expected_count, or as-is when older than J-2
+           (same rule and empty marker honoured by the batch) ; a recent incomplete day is
+           refetched, and served as cached if Enedis fails
+   J-1 and J-2 cached 3 hours, older days 24 hours, recent missing day never cached,
+   older missing day cached as an empty marker
+   an Enedis business error returned as a dict (ADAM-ERR0123, before meter activation)
+   is an error for the whole range : its days are never marked empty
+
 CACHE TTL: 86400 seconds (24 hours)
 ENCRYPTION: user.client_secret
 ```
