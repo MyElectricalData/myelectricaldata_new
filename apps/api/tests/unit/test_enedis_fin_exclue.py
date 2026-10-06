@@ -48,9 +48,13 @@ class FakeEnedis:
         self.production_unit = "Wh"
         self.holes: set[str] = set()  # jours sans mesure (compteur coupé)
         self.partial: set[str] = set()  # jours dont la courbe de production n'a que 30 points sur 48
+        self.activation: str | None = None  # mise en service : avant, ADAM-ERR0123 rendu en dict (sans exception)
+        self.failing = False  # Enedis indisponible : chaque appel lève une exception
 
     def _days(self, kind: str, start: str, end: str) -> list[str]:
         self.calls.append((kind, start, end))
+        if self.failing:
+            raise RuntimeError("503 Service Unavailable")
         if start >= end:
             raise RuntimeError(f"ADAM-ERR0069 dateDebut {start} >= dateFin {end}")
         last = date.fromisoformat(j(self.published_until))
@@ -73,13 +77,23 @@ class FakeEnedis:
         points = [{"v": self.pma, "d": f"{d} 12:00:00"} for d in self._days("power", start, end)]
         return build_measure(pdl, start, end, points, grandeur_metier="CONS", grandeur_physique="PMA", unite=self.power_unit, pas="P1D")
 
+    def _before_activation(self, kind: str, start: str, end: str) -> bool:
+        if self.activation and start < self.activation:
+            self.calls.append((kind, start, end))
+            return True
+        return False
+
     async def get_production_daily(self, pdl: str, start: str, end: str, token: str) -> dict[str, Any]:
+        if self._before_activation("prod_daily", start, end):
+            return {"error": "ADAM-ERR0123", "error_description": "anterior to meter activation"}
         points = [{"v": "800", "d": d, "p": "P1D"} for d in self._days("prod_daily", start, end)]
         return build_measure(
             pdl, start, end, points, grandeur_metier="PROD", grandeur_physique="EA", unite=self.production_unit, pas="P1D"
         )
 
     async def get_production_detail(self, pdl: str, start: str, end: str, token: str) -> dict[str, Any]:
+        if self._before_activation("prod_detail", start, end):
+            return {"error": "ADAM-ERR0123", "error_description": "anterior to meter activation"}
         points = [
             {"v": "200", "d": f"{d} {h:02d}:{m:02d}:00", "p": "PT30M"}
             for d in self._days("prod_detail", start, end)
@@ -503,6 +517,46 @@ async def test_production_detail_jour_recent_partiel_redemande(enedis, cache):
 
     assert enedis.calls[-1] == ("prod_detail", j(1), j(0))
     assert len(points_of(data)) == 3 * 48
+
+
+@PRODUCTION
+async def test_production_adam_err0123_ne_marque_pas_les_jours_vides(enedis, cache, handler, kind):
+    enedis.activation = j(20)  # Enedis rejette toute plage qui commence avant la mise en service
+    await raw_call(getattr(router, handler), j(25), j(15), use_cache=True)
+
+    data = await call(getattr(router, handler), j(20), j(16), use_cache=True)
+
+    assert router.EMPTY_DAY not in cache.store.values()
+    assert served_days(data) == days(j(20), j(16))
+
+
+async def test_production_detail_jour_recent_partiel_servi_si_enedis_echoue(enedis, cache):
+    enedis.partial = {j(1)}
+    await call(router.get_production_detail, j(3), j(0), use_cache=True)
+
+    enedis.failing = True
+    data = await call(router.get_production_detail, j(3), j(0), use_cache=True)
+
+    assert len(points_of(data)) == 2 * 48 + 30
+
+
+async def test_production_batch_ne_redemande_pas_un_jour_vide(enedis, cache):
+    enedis.holes = {j(10)}
+    await call(router.get_production_detail, j(12), j(8), use_cache=True)
+
+    await call(router.get_production_detail_batch, j(12), j(8), use_cache=True)
+
+    assert len(enedis.calls) == 1
+
+
+async def test_production_batch_jour_ancien_partiel_ni_redemande_ni_double(enedis, cache):
+    enedis.partial = {j(10)}
+    await call(router.get_production_detail, j(12), j(8), use_cache=True)
+
+    data = await call(router.get_production_detail_batch, j(11), j(9), use_cache=True)
+
+    assert len(enedis.calls) == 1
+    assert len(points_of(data)) == 48 + 30
 
 
 # --- compte de démo -------------------------------------------------------------------------

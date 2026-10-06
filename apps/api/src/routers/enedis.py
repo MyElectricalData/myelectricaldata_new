@@ -232,6 +232,16 @@ def curve_day_complete(count: int, expected_count: int, day: str, today: datetim
     return count >= int(expected_count * 0.9) or not is_recent_day(day, today)
 
 
+def enedis_business_error(data: Any) -> str | None:
+    """Erreur métier rendue en dict par l'adaptateur, sans exception (ADAM-ERR0123 : avant la mise en service).
+
+    Elle porte sur toute la plage demandée : ses jours ne doivent pas être pris pour des jours sans mesure.
+    """
+    if isinstance(data, dict) and data.get("error"):
+        return str(data["error"])
+    return None
+
+
 async def cached_daily_points(
     usage_point_id: str,
     requested_dates: list[str],
@@ -267,6 +277,10 @@ async def cached_daily_points(
         except Exception as e:
             log_with_pdl("warning", usage_point_id, f"[API ERROR] {key_prefix} {api_start} to {api_end}: {e}")
             api_errors.append(f"Failed to fetch {api_start} to {api_end}: {e}")
+            continue
+        if error := enedis_business_error(data):
+            log_with_pdl("warning", usage_point_id, f"[ENEDIS ERROR] {key_prefix} {api_start} to {api_end}: {error}")
+            api_errors.append(f"{error} for {api_start} to {api_end}")
             continue
         if measure_unit(data):
             unit = measure_unit(data)
@@ -1664,6 +1678,7 @@ async def get_production_detail(
     today = paris_today()
     points: list[dict[str, Any]] = []
     missing_dates = []
+    partial_days: dict[str, list[dict[str, Any]]] = {}  # jours récents incomplets, servis si Enedis échoue
     for date_str in requested_dates:
         cached_day = await cache_service.get(f"production:detail:daily:{usage_point_id}:{date_str}", encryption_key)
         if cached_day == EMPTY_DAY:
@@ -1673,15 +1688,21 @@ async def get_production_detail(
             if curve_day_complete(len(readings), cached_day.get("expected_count", 48), date_str, today):
                 points.extend(readings)
                 continue
+            partial_days[date_str] = readings
         missing_dates.append(date_str)
 
     api_errors = []
     for api_start, api_end in missing_ranges(missing_dates):
         try:
             data = await adapter.get_production_detail(usage_point_id, api_start, api_end, secret)
+            error = enedis_business_error(data)
         except Exception as e:
-            log_with_pdl("warning", usage_point_id, f"[API ERROR] Production detail {api_start} to {api_end}: {e}")
-            api_errors.append(f"Failed to fetch {api_start} to {api_end}: {e}")
+            error = str(e)
+        if error:
+            log_with_pdl("warning", usage_point_id, f"[API ERROR] Production detail {api_start} to {api_end}: {error}")
+            api_errors.append(f"Failed to fetch {api_start} to {api_end}: {error}")
+            for date_str in days_between(api_start, api_end):
+                points.extend(partial_days.get(date_str, []))
             continue
         readings_by_date: dict[str, list[dict[str, Any]]] = {}
         for reading in extract_points(data):
@@ -1842,12 +1863,14 @@ async def get_production_detail_batch(
             daily_cache_key = f"production:detail:daily:{usage_point_id}:{date_str}"
             daily_cached = await cache_service.get(daily_cache_key, encryption_key)
 
-            if daily_cached and isinstance(daily_cached, dict) and "readings" in daily_cached:
+            if daily_cached == EMPTY_DAY:
+                # Jour ancien sans mesure, marqué par /production/detail : rien à redemander
+                cache_hit_count += 1
+            elif daily_cached and isinstance(daily_cached, dict) and "readings" in daily_cached:
                 day_readings = [as_point(r) for r in daily_cached["readings"]]
                 expected_count = daily_cached.get("expected_count", 48)
-                min_required = int(expected_count * 0.9)
 
-                if len(day_readings) >= min_required:
+                if curve_day_complete(len(day_readings), expected_count, date_str, today):
                     cached_readings.extend(day_readings)
                     cache_hit_count += 1
                 elif len(day_readings) > 0:
