@@ -10,6 +10,7 @@ Data is stored permanently in PostgreSQL for local analysis and export.
 
 import asyncio
 import logging
+import httpx
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -1590,6 +1591,12 @@ class SyncService:
             await self.db.commit()
             logger.info(f"[SYNC] Zen Flex sync complete: {result['created']} created, {result['updated']} updated")
 
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.info("[SYNC] Zen Flex calendar not available on remote gateway (404 Not Found), skipping")
+            else:
+                logger.error(f"[SYNC] Failed to sync Zen Flex: {e}")
+                result["errors"].append(str(e))
         except Exception as e:
             logger.error(f"[SYNC] Failed to sync Zen Flex: {e}")
             result["errors"].append(str(e))
