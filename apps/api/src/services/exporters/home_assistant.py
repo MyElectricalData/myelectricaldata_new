@@ -1946,10 +1946,11 @@ class HomeAssistantExporter(BaseExporter):
                     "subscribed_power_kva": subscribed_power_kva,
                     "load_ratio_percent": ratio_percent,
                     "last_updated": datetime.now().isoformat(),
+                    "icon": "mdi:flash-alert" if is_over else "mdi:flash-outline",
                 },
                 device=device,
                 device_class="problem",
-                icon="mdi:flash-alert" if is_over else "mdi:flash-check",
+                icon="mdi:flash-alert" if is_over else "mdi:flash-outline",
             )
             count += 1
 
