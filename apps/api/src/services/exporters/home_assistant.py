@@ -163,6 +163,33 @@ TEMPO_PRICE_NAMES = {
 SOFTWARE_VERSION = "1.8.0"
 
 
+def _ha_version_at_least(version: str | None, major: int, minor: int) -> bool:
+    """Vrai si la version de Home Assistant est >= major.minor (version inconnue : vrai)."""
+    parts = str(version or "").split(".")
+    try:
+        return (int(parts[0]), int(parts[1])) >= (major, minor)
+    except (IndexError, ValueError):
+        return True
+
+
+def _with_statistics_metadata(metadata: dict[str, Any], ha_version: str | None) -> dict[str, Any]:
+    """Complète les métadonnées envoyées à recorder/import_statistics.
+
+    Home Assistant 2025.11 a ajouté mean_type et unit_class : leur absence est
+    dépréciée et sera refusée à partir de 2026.11. Les versions antérieures
+    rejettent ces clés, elles ne sont donc ajoutées qu'à partir de 2025.11.
+    """
+    if not _ha_version_at_least(ha_version, 2025, 11):
+        return metadata
+    md = dict(metadata)
+    # StatisticMeanType : 0 = aucune moyenne, 1 = moyenne arithmétique
+    md.setdefault("mean_type", 1 if md.get("has_mean") else 0)
+    if "unit_class" not in md:
+        unit = md.get("unit_of_measurement")
+        md["unit_class"] = "energy" if unit in ("Wh", "kWh", "MWh") else None
+    return md
+
+
 class HomeAssistantExporter(BaseExporter):
     """Home Assistant exporter using MQTT Discovery
 
@@ -2588,6 +2615,7 @@ class HomeAssistantExporter(BaseExporter):
         total_imported = 0
         errors: list[str] = []
         msg_id = msg_id_start
+        metadata = _with_statistics_metadata(metadata, getattr(self, "_ha_version", None))
 
         # Si stats est vide, envoyer quand même pour créer l'entité dans HA
         if not stats:
@@ -2681,6 +2709,7 @@ class HomeAssistantExporter(BaseExporter):
                 await ws.send(json.dumps({"type": "auth", "access_token": token}))
                 auth_result = json.loads(await ws.recv())
 
+                self._ha_version = auth_result.get("ha_version") or getattr(self, "_ha_version", None)
                 if auth_result.get("type") != "auth_ok":
                     return {
                         "success": False,
@@ -2805,6 +2834,7 @@ class HomeAssistantExporter(BaseExporter):
                 await ws.send(json.dumps({"type": "auth", "access_token": token}))
                 auth_result = json.loads(await ws.recv())
 
+                self._ha_version = auth_result.get("ha_version") or getattr(self, "_ha_version", None)
                 if auth_result.get("type") != "auth_ok":
                     return failure(f"Authentification échouée: {auth_result.get('message', 'Unknown error')}")
 
@@ -3128,6 +3158,7 @@ class HomeAssistantExporter(BaseExporter):
                 await ws.send(json.dumps({"type": "auth", "access_token": token}))
                 auth_result = json.loads(await ws.recv())
 
+                self._ha_version = auth_result.get("ha_version") or getattr(self, "_ha_version", None)
                 if auth_result.get("type") != "auth_ok":
                     return {
                         "success": False,
@@ -3264,6 +3295,7 @@ class HomeAssistantExporter(BaseExporter):
                 await ws.send(json.dumps({"type": "auth", "access_token": token}))
                 auth_result = json.loads(await ws.recv())
 
+                self._ha_version = auth_result.get("ha_version") or getattr(self, "_ha_version", None)
                 if auth_result.get("type") != "auth_ok":
                     return {
                         "success": False,
@@ -3520,6 +3552,7 @@ class HomeAssistantExporter(BaseExporter):
                 await ws.send(json.dumps({"type": "auth", "access_token": token}))
                 auth_result = json.loads(await ws.recv())
 
+                self._ha_version = auth_result.get("ha_version") or getattr(self, "_ha_version", None)
                 if auth_result.get("type") != "auth_ok":
                     return {
                         "success": False,
