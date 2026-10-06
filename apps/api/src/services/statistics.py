@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..adapters.enedis_format import iso_duration_to_minutes
-from ..models.client_mode import ConsumptionData, DataGranularity, ProductionData
+from ..models.client_mode import ConsumptionData, DataGranularity, MaxPowerData, ProductionData
 from ..models.tempo_day import TempoDay
 from .exporters.tariff import is_offpeak_slot
 from .local_data import _interval_of
@@ -791,14 +791,26 @@ class StatisticsService:
         target_date: date,
         direction: str = "consumption",
     ) -> tuple[float, str | None]:
-        """Puissance max pour un jour (données DETAILED requises)
+        """Puissance max pour un jour.
 
-        Chaque intervalle de 30min contient des Wh.
-        Puissance = value_Wh * 2 / 1000 (conversion en kW).
+        Vérifie d'abord MaxPowerData (valeur Enedis réelle en VA).
+        Si absent, calcule à partir des données DETAILED (30min).
+        Puissance = value_Wh * 2 / 1000 (conversion en kW / kVA).
 
         Returns:
-            Tuple (max_power_kW, heure_du_max). Retourne (0.0, None) si pas de données.
+            Tuple (max_power_kVA, heure_du_max). Retourne (0.0, None) si pas de données.
         """
+        if direction == "consumption":
+            mp_result = await self.db.execute(
+                select(MaxPowerData.value, MaxPowerData.interval_start)
+                .where(MaxPowerData.usage_point_id == usage_point_id)
+                .where(MaxPowerData.date == target_date)
+            )
+            mp_row = mp_result.first()
+            if mp_row and mp_row[0] is not None:
+                power_kva = round(mp_row[0] / 1000, 2)
+                return power_kva, mp_row[1]
+
         model = self._get_model(direction)
 
         result = await self.db.execute(
@@ -818,3 +830,32 @@ class StatisticsService:
                 max_time = row.interval_start
 
         return round(max_power, 2), max_time
+
+    async def get_max_power_history(
+        self,
+        usage_point_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> dict[date, dict[str, Any]]:
+        """Get daily max power history between start_date and end_date.
+
+        Returns:
+            Dict mapping date -> {"va": int, "kva": float, "time": str | None}
+        """
+        result = await self.db.execute(
+            select(MaxPowerData)
+            .where(
+                MaxPowerData.usage_point_id == usage_point_id,
+                MaxPowerData.date >= start_date,
+                MaxPowerData.date <= end_date,
+            )
+            .order_by(MaxPowerData.date)
+        )
+        return {
+            row.date: {
+                "va": row.value,
+                "kva": round(row.value / 1000, 2),
+                "time": row.interval_start,
+            }
+            for row in result.scalars().all()
+        }

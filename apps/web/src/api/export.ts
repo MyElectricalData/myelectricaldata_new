@@ -227,6 +227,8 @@ export interface ExportRunCompleteEvent {
   message: string
   consumption: number
   production: number
+  cost?: number
+  max_power?: number
   tempo: number
   ecowatt: number
   linky_card: number

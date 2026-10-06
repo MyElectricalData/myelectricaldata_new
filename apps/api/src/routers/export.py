@@ -767,6 +767,8 @@ async def _run_home_assistant_full_export(
                 "details": {
                     "consumption_sensors": export_results.get("consumption", 0),
                     "production_sensors": export_results.get("production", 0),
+                    "cost_sensors": export_results.get("cost", 0),
+                    "max_power_sensors": export_results.get("max_power", 0),
                     "tempo_sensors": export_results.get("tempo", 0),
                     "ecowatt_sensors": export_results.get("ecowatt", 0),
                     "energy_dashboard": export_results.get("energy_dashboard"),

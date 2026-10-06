@@ -1530,8 +1530,8 @@ export default function HomeAssistant() {
           </div>
 
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
-            L'import supprime automatiquement les anciennes statistiques avant de réinjecter les nouvelles.
-            Les statistiques apparaîtront dans : Paramètres → Tableaux de bord → Énergie
+            L'import injecte les statistiques de consommation et les entités de coût associées (<code>sensor.linky_xxx_cost</code>) calculées selon votre contrat.
+            Dans le tableau de bord Énergie (<strong>Paramètres → Tableaux de bord → Énergie</strong>), sélectionnez cette entité sous <em>« Utiliser une entité suivant les coûts totaux »</em> pour afficher vos coûts historiques exacts sans template.
           </p>
         </div>
       )}
@@ -1646,6 +1646,18 @@ export default function HomeAssistant() {
                     <span className="text-gray-500 dark:text-gray-400">Production</span>
                     <p className="font-medium text-gray-900 dark:text-white">{runComplete.production} sensors</p>
                   </div>
+                  {runComplete.cost !== undefined && runComplete.cost > 0 && (
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Coût</span>
+                      <p className="font-medium text-gray-900 dark:text-white">{runComplete.cost} sensors</p>
+                    </div>
+                  )}
+                  {runComplete.max_power !== undefined && runComplete.max_power > 0 && (
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Puissance Max</span>
+                      <p className="font-medium text-gray-900 dark:text-white">{runComplete.max_power} sensors</p>
+                    </div>
+                  )}
                 </div>
                 {runComplete.energy_dashboard && (
                   <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm">
