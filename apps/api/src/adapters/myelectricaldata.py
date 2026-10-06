@@ -24,6 +24,16 @@ from ..config import APP_VERSION, settings
 logger = logging.getLogger(__name__)
 
 
+class RateLimitExceededError(Exception):
+    """Exception levée lorsque le quota journalier d'appels API est atteint (HTTP 429)."""
+
+    def __init__(self, message: str = "Rate limit exceeded (HTTP 429)", retry_after: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.retry_after = retry_after
+
+
+
 class MyElectricalDataAdapter:
     """Adapter for MyElectricalData API (v2.myelectricaldata.fr)
 
@@ -110,6 +120,17 @@ class MyElectricalDataAdapter:
             return cast(dict[str, Any], response.json())
 
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                logger.warning(f"[MED] Quota journalier d'appels API atteint (HTTP 429) : {e.response.text}")
+                retry_after_header = e.response.headers.get("Retry-After")
+                retry_after = int(retry_after_header) if retry_after_header and retry_after_header.isdigit() else None
+                try:
+                    error_data = e.response.json()
+                    msg = error_data.get("detail") or error_data.get("message") or error_data.get("error_description") or e.response.text
+                except Exception:
+                    msg = e.response.text
+                raise RateLimitExceededError(message=f"Rate limit exceeded (HTTP 429): {msg}", retry_after=retry_after) from e
+
             logger.error(f"[MED] API error: {e.response.status_code}")
             logger.error(f"[MED] Response: {e.response.text}")
 
