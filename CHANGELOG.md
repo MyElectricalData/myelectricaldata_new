@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.4.4](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.4.3...2.4.4) (2026-10-06)
+
+### Bug Fixes
+
+* **api:** MED-30 / plage rejetée par ADAM-ERR0123 mémorisée 24 h ([a9fae8a](https://github.com/MyElectricalData/myelectricaldata_new/commit/a9fae8acbc83aaf52317f09cc2fe19a4794a5d91))
+
 ## [2.4.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.4.2...2.4.3) (2026-10-06)
 
 ### Bug Fixes
