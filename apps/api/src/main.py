@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator, Callable
 
 from fastapi import FastAPI, Request, status
@@ -144,7 +145,7 @@ app = FastAPI(
 )
 
 # Mount static files for custom Swagger CSS
-app.mount("/static", StaticFiles(directory="/app/static"), name="static")
+app.mount("/static", StaticFiles(directory=Path(__file__).resolve().parent.parent / "static"), name="static")
 
 # Trusted Host middleware to handle proxy headers (ALLOWED_HOSTS, every host by default in client mode)
 app.add_middleware(TrustedHostExceptHealthMiddleware, allowed_hosts=settings.allowed_hosts)

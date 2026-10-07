@@ -15,8 +15,7 @@ def get_version() -> str:
     try:
         # Try multiple possible locations for pyproject.toml
         possible_paths = [
-            Path(__file__).parent.parent.parent.parent / "pyproject.toml",  # apps/api/pyproject.toml
-            Path("/app/pyproject.toml"),  # Docker container path
+            Path(__file__).resolve().parents[2] / "pyproject.toml",  # apps/api/ (/app/ in Docker)
         ]
 
         for pyproject_path in possible_paths:
