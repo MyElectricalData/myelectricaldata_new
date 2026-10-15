@@ -51,6 +51,8 @@ Ce document définit l'ordre d'affichage des éléments dans le menu de navigati
 | -   | -           | Faire un don      | `Heart` (rose)   | Serveur |
 | -   | `/faq`      | FAQ Enedis        | `HelpCircle`     | Tous    |
 | -   | `/api-docs` | Documentation API | `BookOpen`       | Tous    |
+| -   | -           | Docs Client / Docs Serveur (lien externe) | `ExternalLink` | Tous |
+| -   | -           | Passerelle (lien externe vers `www.v2.myelectricaldata.fr/dashboard`) | `ExternalLink` | Client |
 | -   | -           | Mode clair/sombre | `Sun`/`Moon`     | Tous    |
 | -   | `/settings` | Mon compte        | `UserCircle`     | Serveur |
 | -   | `/preferences` | Préférences    | `SlidersHorizontal` | Client |

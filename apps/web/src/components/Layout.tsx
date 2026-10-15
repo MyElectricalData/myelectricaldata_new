@@ -539,6 +539,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </span>
               )}
             </a>
+
+            {/* Lien vers la passerelle (simulateur, contributions, compte) - mode client */}
+            {isClientMode && (
+              <a
+                href="https://www.v2.myelectricaldata.fr/dashboard"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
+                title={sidebarCollapsed ? 'Passerelle' : ''}
+              >
+                <ExternalLink size={20} className="flex-shrink-0" />
+                {!sidebarCollapsed && <span className="font-medium">Passerelle</span>}
+              </a>
+            )}
           </div>
 
           {/* User Actions with separator */}
@@ -953,6 +967,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 {isClientMode ? 'Docs Client' : 'Docs Serveur'}
               </span>
             </a>
+
+            {/* Lien vers la passerelle (simulateur, contributions, compte) - mode client */}
+            {isClientMode && (
+              <a
+                href="https://www.v2.myelectricaldata.fr/dashboard"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <ExternalLink size={20} />
+                <span className="font-medium">Passerelle</span>
+              </a>
+            )}
           </div>
 
           {/* Logout button - Server mode only */}
