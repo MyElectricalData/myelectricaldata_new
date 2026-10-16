@@ -1,0 +1,1549 @@
+{
+  "provider_name": "Enercoop",
+  "data_source": "Annexe tarifaire officielle Enercoop particuliers (PDF), tarifs applicables à partir du 1er août 2026 : https://www.faq.enercoop.fr/hc/fr/article_attachments/37607556170770",
+  "extraction_date": "2026-10-15",
+  "offers": [
+    {
+      "offer_name": "BasicWatt",
+      "offer_type": "BASE",
+      "valid_from": "2026-08-01",
+      "valid_until": null,
+      "special_conditions": "Prix du kWh par palier : 0.25406 de 1 à 6 kVA, 0.25714 de 7 à 36 kVA",
+      "warning": "Nom sur la grille : « Basic Watt - base ». Remplace les grilles BasicWatt du 2026-02-05 et du 2026-10-08, toutes deux encore ouvertes en base.",
+      "deprecated": false,
+      "power_variants": [
+        {
+          "power_kva": 1,
+          "subscription_price": 6.31,
+          "base_price": 0.25406
+        },
+        {
+          "power_kva": 2,
+          "subscription_price": 8.04,
+          "base_price": 0.25406
+        },
+        {
+          "power_kva": 3,
+          "subscription_price": 9.77,
+          "base_price": 0.25406
+        },
+        {
+          "power_kva": 4,
+          "subscription_price": 11.63,
+          "base_price": 0.25406
+        },
+        {
+          "power_kva": 5,
+          "subscription_price": 13.39,
+          "base_price": 0.25406
+        },
+        {
+          "power_kva": 6,
+          "subscription_price": 15.16,
+          "base_price": 0.25406
+        },
+        {
+          "power_kva": 7,
+          "subscription_price": 17.07,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 8,
+          "subscription_price": 18.85,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 9,
+          "subscription_price": 20.63,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 10,
+          "subscription_price": 22.42,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 11,
+          "subscription_price": 24.2,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 12,
+          "subscription_price": 25.99,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 13,
+          "subscription_price": 27.65,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 14,
+          "subscription_price": 29.43,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 15,
+          "subscription_price": 31.21,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 16,
+          "subscription_price": 32.98,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 17,
+          "subscription_price": 34.76,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 18,
+          "subscription_price": 36.53,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 19,
+          "subscription_price": 38.31,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 20,
+          "subscription_price": 40.08,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 21,
+          "subscription_price": 41.86,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 22,
+          "subscription_price": 43.63,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 23,
+          "subscription_price": 45.41,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 24,
+          "subscription_price": 47.23,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 25,
+          "subscription_price": 49.01,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 26,
+          "subscription_price": 50.79,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 27,
+          "subscription_price": 52.56,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 28,
+          "subscription_price": 54.34,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 29,
+          "subscription_price": 56.12,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 30,
+          "subscription_price": 57.89,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 31,
+          "subscription_price": 59.67,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 32,
+          "subscription_price": 61.45,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 33,
+          "subscription_price": 63.23,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 34,
+          "subscription_price": 65.0,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 35,
+          "subscription_price": 66.78,
+          "base_price": 0.25714
+        },
+        {
+          "power_kva": 36,
+          "subscription_price": 68.56,
+          "base_price": 0.25714
+        }
+      ]
+    },
+    {
+      "offer_name": "FlexiWatt",
+      "offer_type": "HC_HP",
+      "valid_from": "2026-08-01",
+      "valid_until": null,
+      "special_conditions": "Heures creuses définies par Enedis",
+      "warning": "Nom sur la grille : « Flexi Watt - heures creuses ». La grille FlexiWatt du 2026-02-05 en base contient les prix de l'offre Nuit & Week-end (0.1729 / 0.30638) : à corriger.",
+      "deprecated": false,
+      "power_variants": [
+        {
+          "power_kva": 1,
+          "subscription_price": 6.74,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 2,
+          "subscription_price": 8.9,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 3,
+          "subscription_price": 11.06,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 4,
+          "subscription_price": 13.6,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 5,
+          "subscription_price": 15.85,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 6,
+          "subscription_price": 18.11,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 7,
+          "subscription_price": 19.94,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 8,
+          "subscription_price": 22.14,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 9,
+          "subscription_price": 24.33,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 10,
+          "subscription_price": 26.53,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 11,
+          "subscription_price": 28.72,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 12,
+          "subscription_price": 30.92,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 13,
+          "subscription_price": 31.26,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 14,
+          "subscription_price": 33.31,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 15,
+          "subscription_price": 35.36,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 16,
+          "subscription_price": 37.41,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 17,
+          "subscription_price": 39.46,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 18,
+          "subscription_price": 41.52,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 19,
+          "subscription_price": 43.57,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 20,
+          "subscription_price": 45.62,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 21,
+          "subscription_price": 47.67,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 22,
+          "subscription_price": 49.73,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 23,
+          "subscription_price": 51.78,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 24,
+          "subscription_price": 52.7,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 25,
+          "subscription_price": 54.71,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 26,
+          "subscription_price": 56.71,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 27,
+          "subscription_price": 58.72,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 28,
+          "subscription_price": 60.72,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 29,
+          "subscription_price": 62.73,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 30,
+          "subscription_price": 64.73,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 31,
+          "subscription_price": 66.74,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 32,
+          "subscription_price": 68.75,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 33,
+          "subscription_price": 70.75,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 34,
+          "subscription_price": 72.76,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 35,
+          "subscription_price": 74.76,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        },
+        {
+          "power_kva": 36,
+          "subscription_price": 76.77,
+          "hc_price": 0.18983,
+          "hp_price": 0.27764
+        }
+      ]
+    },
+    {
+      "offer_name": "FlexiWatt Nuit & Week-end",
+      "offer_type": "HC_HP",
+      "valid_from": "2026-08-01",
+      "valid_until": null,
+      "special_conditions": "HC de 23h à 6h en semaine, tout le week-end et les jours fériés",
+      "warning": "Type conservé en HC_HP comme en base (un seul prix HC et un seul prix HP) ; HC_NUIT_WEEKEND serait plus descriptif.",
+      "deprecated": false,
+      "power_variants": [
+        {
+          "power_kva": 1,
+          "subscription_price": 6.28,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 2,
+          "subscription_price": 7.98,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 3,
+          "subscription_price": 9.68,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 4,
+          "subscription_price": 11.64,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 5,
+          "subscription_price": 13.41,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 6,
+          "subscription_price": 15.17,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 7,
+          "subscription_price": 16.96,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 8,
+          "subscription_price": 18.72,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 9,
+          "subscription_price": 20.49,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 10,
+          "subscription_price": 22.26,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 11,
+          "subscription_price": 24.03,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 12,
+          "subscription_price": 25.8,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 13,
+          "subscription_price": 27.5,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 14,
+          "subscription_price": 29.26,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 15,
+          "subscription_price": 31.03,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 16,
+          "subscription_price": 32.79,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 17,
+          "subscription_price": 34.56,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 18,
+          "subscription_price": 36.32,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 19,
+          "subscription_price": 38.08,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 20,
+          "subscription_price": 39.85,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 21,
+          "subscription_price": 41.61,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 22,
+          "subscription_price": 43.37,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 23,
+          "subscription_price": 45.14,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 24,
+          "subscription_price": 47.69,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 25,
+          "subscription_price": 49.49,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 26,
+          "subscription_price": 51.28,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 27,
+          "subscription_price": 53.08,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 28,
+          "subscription_price": 54.88,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 29,
+          "subscription_price": 56.67,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 30,
+          "subscription_price": 58.47,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 31,
+          "subscription_price": 60.27,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 32,
+          "subscription_price": 62.06,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 33,
+          "subscription_price": 63.86,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 34,
+          "subscription_price": 65.66,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 35,
+          "subscription_price": 67.45,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        },
+        {
+          "power_kva": 36,
+          "subscription_price": 69.25,
+          "hc_price": 0.1729,
+          "hp_price": 0.30638
+        }
+      ]
+    },
+    {
+      "offer_name": "FlexiWatt 2 saisons",
+      "offer_type": "SEASONAL",
+      "valid_from": "2026-08-01",
+      "valid_until": null,
+      "special_conditions": "Hiver (novembre-mars) : HC 0h-7h et 13h-16h en semaine ; été (avril-octobre) : HC 11h-17h en semaine ; week-ends et jours fériés en HC",
+      "warning": "Nom sur la grille : « Offre Flexibilité - 2 saisons ». En base, la ligne 9 kVA du 2026-02-05 porte les prix de l'option Pointe Mobile.",
+      "deprecated": false,
+      "power_variants": [
+        {
+          "power_kva": 1,
+          "subscription_price": 6.4,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 2,
+          "subscription_price": 8.23,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 3,
+          "subscription_price": 10.05,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 4,
+          "subscription_price": 12.07,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 5,
+          "subscription_price": 13.94,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 6,
+          "subscription_price": 15.82,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 7,
+          "subscription_price": 17.43,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 8,
+          "subscription_price": 19.26,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 9,
+          "subscription_price": 21.1,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 10,
+          "subscription_price": 22.93,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 11,
+          "subscription_price": 24.77,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 12,
+          "subscription_price": 26.6,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 13,
+          "subscription_price": 28.36,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 14,
+          "subscription_price": 30.19,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 15,
+          "subscription_price": 32.02,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 16,
+          "subscription_price": 33.85,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 17,
+          "subscription_price": 35.68,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 18,
+          "subscription_price": 37.51,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 19,
+          "subscription_price": 39.34,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 20,
+          "subscription_price": 41.17,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 21,
+          "subscription_price": 43.0,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 22,
+          "subscription_price": 44.83,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 23,
+          "subscription_price": 46.66,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 24,
+          "subscription_price": 48.22,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 25,
+          "subscription_price": 50.04,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 26,
+          "subscription_price": 51.86,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 27,
+          "subscription_price": 53.68,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 28,
+          "subscription_price": 55.5,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 29,
+          "subscription_price": 57.32,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 30,
+          "subscription_price": 59.14,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 31,
+          "subscription_price": 60.95,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 32,
+          "subscription_price": 62.77,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 33,
+          "subscription_price": 64.59,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 34,
+          "subscription_price": 66.41,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 35,
+          "subscription_price": 68.23,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        },
+        {
+          "power_kva": 36,
+          "subscription_price": 70.05,
+          "hc_price_summer": 0.13831,
+          "hp_price_summer": 0.19567,
+          "hc_price_winter": 0.22356,
+          "hp_price_winter": 0.31601
+        }
+      ]
+    },
+    {
+      "offer_name": "FlexiWatt 2 saisons + Pointe Mobile",
+      "offer_type": "SEASONAL",
+      "valid_from": "2026-08-01",
+      "valid_until": null,
+      "special_conditions": "Option « Jours de pointe » : jusqu'à 15 jours/an, HP de ces jours à 0.53744 €/kWh TTC. Compteur Linky uniquement.",
+      "warning": "Le prix des HP des jours de pointe (0.53744 €/kWh TTC) n'est pas modélisable dans SEASONAL : aucun des 8 types ne couvre saisons + jours de pointe, contacter un administrateur. En base, la ligne 9 kVA du 2026-02-05 porte les prix de FlexiWatt 2 saisons.",
+      "deprecated": false,
+      "power_variants": [
+        {
+          "power_kva": 1,
+          "subscription_price": 6.29,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 2,
+          "subscription_price": 8.01,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 3,
+          "subscription_price": 9.73,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 4,
+          "subscription_price": 11.47,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 5,
+          "subscription_price": 13.19,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 6,
+          "subscription_price": 14.91,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 7,
+          "subscription_price": 16.58,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 8,
+          "subscription_price": 18.3,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 9,
+          "subscription_price": 20.01,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 10,
+          "subscription_price": 21.73,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 11,
+          "subscription_price": 23.44,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 12,
+          "subscription_price": 25.16,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 13,
+          "subscription_price": 26.85,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 14,
+          "subscription_price": 28.56,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 15,
+          "subscription_price": 30.28,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 16,
+          "subscription_price": 31.99,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 17,
+          "subscription_price": 33.7,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 18,
+          "subscription_price": 35.42,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 19,
+          "subscription_price": 37.13,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 20,
+          "subscription_price": 38.84,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 21,
+          "subscription_price": 40.56,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 22,
+          "subscription_price": 42.27,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 23,
+          "subscription_price": 43.98,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 24,
+          "subscription_price": 45.74,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 25,
+          "subscription_price": 47.46,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 26,
+          "subscription_price": 49.17,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 27,
+          "subscription_price": 50.89,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 28,
+          "subscription_price": 52.61,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 29,
+          "subscription_price": 54.32,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 30,
+          "subscription_price": 56.04,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 31,
+          "subscription_price": 57.75,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 32,
+          "subscription_price": 59.47,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 33,
+          "subscription_price": 61.18,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 34,
+          "subscription_price": 62.9,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 35,
+          "subscription_price": 64.61,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        },
+        {
+          "power_kva": 36,
+          "subscription_price": 66.33,
+          "hc_price_summer": 0.13764,
+          "hp_price_summer": 0.19576,
+          "hc_price_winter": 0.21613,
+          "hp_price_winter": 0.29011
+        }
+      ]
+    },
+    {
+      "offer_name": "2 saisons HP/HC",
+      "offer_type": "SEASONAL",
+      "valid_from": "2026-08-01",
+      "valid_until": null,
+      "special_conditions": "Réservée aux clients déjà titulaires",
+      "warning": "Offre fermée à la souscription depuis le 04/06/2025 mais toujours tarifée pour les clients existants. Absente de la base.",
+      "deprecated": true,
+      "power_variants": [
+        {
+          "power_kva": 1,
+          "subscription_price": 6.39,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 2,
+          "subscription_price": 8.2,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 3,
+          "subscription_price": 10.01,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 4,
+          "subscription_price": 11.85,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 5,
+          "subscription_price": 13.67,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 6,
+          "subscription_price": 15.48,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 7,
+          "subscription_price": 17.27,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 8,
+          "subscription_price": 19.09,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 9,
+          "subscription_price": 20.9,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 10,
+          "subscription_price": 22.72,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 11,
+          "subscription_price": 24.53,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 12,
+          "subscription_price": 26.34,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 13,
+          "subscription_price": 28.26,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 14,
+          "subscription_price": 30.08,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 15,
+          "subscription_price": 31.91,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 16,
+          "subscription_price": 33.73,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 17,
+          "subscription_price": 35.55,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 18,
+          "subscription_price": 37.37,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 19,
+          "subscription_price": 39.19,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 20,
+          "subscription_price": 41.02,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 21,
+          "subscription_price": 42.84,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 22,
+          "subscription_price": 44.66,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 23,
+          "subscription_price": 46.48,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 24,
+          "subscription_price": 48.74,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 25,
+          "subscription_price": 50.58,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 26,
+          "subscription_price": 52.42,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 27,
+          "subscription_price": 54.26,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 28,
+          "subscription_price": 56.1,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 29,
+          "subscription_price": 57.94,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 30,
+          "subscription_price": 59.78,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 31,
+          "subscription_price": 61.62,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 32,
+          "subscription_price": 63.46,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 33,
+          "subscription_price": 65.3,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 34,
+          "subscription_price": 67.14,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 35,
+          "subscription_price": 68.98,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        },
+        {
+          "power_kva": 36,
+          "subscription_price": 70.82,
+          "hc_price_summer": 0.14143,
+          "hp_price_summer": 0.20486,
+          "hc_price_winter": 0.20759,
+          "hp_price_winter": 0.30664
+        }
+      ]
+    }
+  ]
+}

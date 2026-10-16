@@ -67,7 +67,8 @@ export function useOfferSubmission(state: AllOffersState) {
         const powerKva = offer.power_kva || 6
 
         const hasNewValidTo = edited.valid_to !== undefined && edited.valid_to !== '' && edited.valid_to !== (offer.valid_to || '')
-        const hasNewValidFrom = edited.valid_from && edited.valid_from !== (offer.valid_from || '')
+        // au jour pres : un import ecrit '2026-02-05', la base renvoie '2026-02-05T00:00:00+00:00'
+        const hasNewValidFrom = edited.valid_from && edited.valid_from.slice(0, 10) !== (offer.valid_from || '').slice(0, 10)
         const isHistoricalAdd = hasNewValidTo && hasNewValidFrom && !offer.valid_to
 
         const pricingData: Record<string, unknown> = {

@@ -4,6 +4,10 @@
 import { energyApi, type EnergyOffer } from '@/api/energy'
 import { toast } from '@/stores/notificationStore'
 import { getFieldKeysForOfferType, getCleanOfferName } from '../utils/offerPricing'
+import { dayBefore, findLaterOpenGrid, findOpenGridToClose } from '../utils/gridReplacement'
+
+// Jour calendaire d'une date ('YYYY-MM-DD' ou ISO) en JJ/MM/AAAA, sans passer par le fuseau
+const frDay = (date: string) => date.slice(0, 10).split('-').reverse().join('/')
 import type { AllOffersState } from './useAllOffersState'
 
 // Types supportés par le simulateur et le backend
@@ -256,6 +260,9 @@ export function useAIImport(state: AllOffersState) {
 
       for (const offer of deduplicatedOffers) {
         let isHistoricalImport = false
+        let periodWarning: string | undefined
+        // Grille ouverte remplacee : close seulement si la nouvelle grille est retenue
+        let gridToClose: EnergyOffer[] = []
 
         // Offre deprecated
         if (offer.deprecated === true) {
@@ -317,19 +324,22 @@ export function useAIImport(state: AllOffersState) {
           // Filtrer par periode pour matcher la bonne offre
           if (existingFiltered.length > 0 && !offer.valid_until) {
             if (offer.valid_from) {
-              // Import avec valid_from : chercher les offres avec le meme valid_from
-              const importDate = new Date(offer.valid_from).toLocaleDateString('sv-SE')
-              const periodMatch = existingFiltered.filter(o => {
-                if (o.valid_to) return false
-                const existDate = o.valid_from ? new Date(o.valid_from).toLocaleDateString('sv-SE') : ''
-                return existDate === importDate
-              })
-              if (periodMatch.length > 0) {
-                existingFiltered = periodMatch
-              } else {
-                // Nouvelle periode : traiter comme ajout
-                existingFiltered = []
+              // Import avec valid_from : chercher les offres avec le meme valid_from, en jour
+              // calendaire comme findOpenGridToClose et findLaterOpenGrid (avant / meme jour / apres)
+              const importDay = offer.valid_from.slice(0, 10)
+              const periodMatch = existingFiltered.filter(o =>
+                !o.valid_to && (o.valid_from || '').slice(0, 10) === importDay
+              )
+              // La grille importee remplace les grilles ouvertes du meme nom qui debutent avant elle,
+              // closes a la veille dans la meme contribution (issue #145). Aussi quand une grille a
+              // la meme date existe deja : ses puissances se mettent a jour, les autres s'ajoutent
+              gridToClose = findOpenGridToClose(existingForType, offer.offer_name, offer.valid_from)
+              // Une grille ouverte qui debute APRES ne se clot pas : doublon, et message qui la cite
+              const laterGrid = findLaterOpenGrid(existingForType, offer.offer_name, offer.valid_from)
+              if (laterGrid?.valid_from) {
+                periodWarning = `Une grille ouverte depuis le ${frDay(laterGrid.valid_from)} existe déjà pour « ${offer.offer_name} » : si elle est en vigueur depuis le ${frDay(offer.valid_from)}, corrigez d'abord sa date de début ; une grille plus ancienne s'importe comme historique (avec "valid_until").`
               }
+              existingFiltered = periodMatch.length > 0 ? periodMatch : []
             } else {
               // Import sans valid_from : preferer les offres sans valid_from
               const noFromMatch = existingFiltered.filter(o => !o.valid_from && !o.valid_to)
@@ -503,12 +513,20 @@ export function useAIImport(state: AllOffersState) {
           }
         }
 
+        // Grille retenue (prix valides, au moins une puissance) : clore celle qu'elle remplace
+        if (added + matched + unchanged > 0 && offer.valid_from) {
+          const closeDate = dayBefore(offer.valid_from)
+          for (const o of gridToClose) {
+            updatedOffers[o.id] = { ...(updatedOffers[o.id] || {}), valid_to: closeDate }
+          }
+        }
+
         details.push({
           offer_type: offer.offer_type,
           offer_name: offer.offer_name || offer.offer_type,
           matched, added, unchanged,
           deprecated: isHistoricalImport || undefined,
-          warning: offer.warning,
+          warning: [offer.warning, periodWarning].filter(Boolean).join(' ') || undefined,
         })
       }
 

@@ -21,6 +21,7 @@ import type {
 import {
   getFieldKeysForOfferType,
   getCleanOfferName,
+  isGroupPowerInDb,
   periodsOverlap,
   getGroupPeriodLabel,
   detectDynamicPriceFields,
@@ -226,18 +227,22 @@ export function useAllOffersState() {
 
   const visibleGroupNames = useMemo(() => activeGroupNames, [activeGroupNames])
 
-  // Puissances existantes pour le fournisseur/type
+  // Puissances existantes pour le fournisseur/type, sur leur periode effective : une date de fin
+  // en cours d'edition (cloture d'une grille remplacee, issue #145) compte deja pour les doublons
   const existingPowers = useMemo(() => {
     return providerOffers
-      .map(offer => ({
-        power: offer.power_kva || 0,
-        offer_type: offer.offer_type,
-        offer_name: getCleanOfferName(offer.name),
-        valid_from: offer.valid_from,
-        valid_to: offer.valid_to,
-      }))
+      .map(offer => {
+        const editedValidTo = editedOffers[offer.id]?.valid_to
+        return {
+          power: offer.power_kva || 0,
+          offer_type: offer.offer_type,
+          offer_name: getCleanOfferName(offer.name),
+          valid_from: offer.valid_from,
+          valid_to: editedValidTo !== undefined ? (editedValidTo || undefined) : offer.valid_to,
+        }
+      })
       .filter(p => p.power > 0)
-  }, [providerOffers])
+  }, [providerOffers, editedOffers])
 
   // Détection dynamique des champs de prix pour les types non standard
   const dynamicPriceFields = useMemo(() => {
@@ -287,13 +292,13 @@ export function useAllOffersState() {
     const newGroupsWithNewPowers = newGroups.filter(group => {
       if (group.alreadyInDb) return false
       const groupType = group.offer_type || filterOfferType
-      return group.powers.some(p => {
-        if (p.power <= 0) return true
-        return !provOffers.some(o =>
-          (o.power_kva || 0) === p.power && o.offer_type === groupType &&
-          periodsOverlap(group.validFrom || undefined, group.validTo || undefined, o.valid_from, o.valid_to)
-        )
-      })
+      const provPowers = provOffers.map(o => ({
+        power: o.power_kva || 0, offer_type: o.offer_type, offer_name: getCleanOfferName(o.name),
+        valid_from: o.valid_from, valid_to: o.valid_to,
+      }))
+      return group.powers.some(p =>
+        p.power <= 0 || !isGroupPowerInDb(provPowers, group.name, groupType, p.power, group.validFrom, group.validTo)
+      )
     }).length
     return modifiedOffersCount + newPowersData.length + powersToRemove.length + providersToRemove.length + newGroupsWithNewPowers + renamedGroupsCount + deprecatedCount
   }, [offersArray, editedOffers, editedOfferNames, newPowersData, powersToRemove, providersToRemove, newGroups, deprecatedOffers, filterOfferType, filterProvider])
@@ -447,13 +452,9 @@ export function useAllOffersState() {
       const powers = includedPowers.map(p => p.power).filter(p => p > 0)
       if (powers.length !== new Set(powers).size) return true
       const groupType = group.offer_type || filterOfferType
-      return includedPowers.some(p => {
-        if (!p.power || p.power <= 0) return false
-        return existingPowers.some(ep =>
-          ep.power === p.power && ep.offer_type === groupType &&
-          periodsOverlap(group.validFrom || undefined, group.validTo || undefined, ep.valid_from, ep.valid_to)
-        )
-      })
+      return includedPowers.some(p =>
+        p.power > 0 && isGroupPowerInDb(existingPowers, group.name, groupType, p.power, group.validFrom, group.validTo)
+      )
     })
   }, [newGroups, existingPowers, filterOfferType, recapExcludedPowers])
 
@@ -463,10 +464,7 @@ export function useAllOffersState() {
     newGroups.forEach((group, groupIdx) => {
       const groupType = group.offer_type || filterOfferType
       group.powers.forEach((power, powerIdx) => {
-        if (power.power > 0 && existingPowers.some(ep =>
-          ep.power === power.power && ep.offer_type === groupType &&
-          periodsOverlap(group.validFrom || undefined, group.validTo || undefined, ep.valid_from, ep.valid_to)
-        )) {
+        if (power.power > 0 && isGroupPowerInDb(existingPowers, group.name, groupType, power.power, group.validFrom, group.validTo)) {
           initialExclusions.add(`group-${groupIdx}-${powerIdx}`)
         }
       })

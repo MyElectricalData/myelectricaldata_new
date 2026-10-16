@@ -43,6 +43,7 @@ Contribute/
 ├── utils/              # Fonctions utilitaires
 │   ├── contribute.utils.ts          # Fonctions helpers
 │   ├── offerPricing.ts              # Champs de prix par type, nom commercial, périodes
+│   ├── gridReplacement.ts           # Clôture de la grille ouverte remplacée par un import plus récent
 │   ├── aiPrompt.ts                  # Prompt de l'import IA
 │   └── index.ts        # Barrel export
 ├── index.tsx           # Composant principal

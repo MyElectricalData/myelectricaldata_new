@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getCleanOfferName, getGroupPeriodLabel, periodsOverlap } from '../utils/offerPricing'
+import { getCleanOfferName, getGroupPeriodLabel, isGroupPowerInDb, periodsOverlap } from '../utils/offerPricing'
 
 describe('offerPricing', () => {
   describe('periodsOverlap', () => {
@@ -52,6 +52,32 @@ describe('offerPricing', () => {
       ['Classique - 9 KVA', 'Classique'],
     ])('%s -> %s', (brut, attendu) => {
       expect(getCleanOfferName(brut)).toBe(attendu)
+    })
+  })
+
+  // Revue de la PR #158 : un nouveau groupe se compare à la base avec son nom, comme
+  // isPowerAlreadyUsed, sinon « 2 saisons HP/HC » doublonne avec FlexiWatt 2 saisons
+  describe('isGroupPowerInDb', () => {
+    const existantes = [
+      { power: 6, offer_type: 'SEASONAL', offer_name: 'FlexiWatt 2 saisons', valid_from: '2026-02-05T00:00:00+00:00' },
+    ]
+
+    it('signale une puissance de la même offre sur une période qui chevauche', () => {
+      expect(isGroupPowerInDb(existantes, 'FlexiWatt 2 saisons', 'SEASONAL', 6, '2026-08-01')).toBe(true)
+    })
+
+    it('compare le nom nettoyé, sans la casse', () => {
+      expect(isGroupPowerInDb(existantes, 'flexiwatt 2 saisons - 6 kVA', 'SEASONAL', 6, '2026-08-01')).toBe(true)
+    })
+
+    it("ne confond pas deux offres de même type et même puissance", () => {
+      expect(isGroupPowerInDb(existantes, '2 saisons HP/HC', 'SEASONAL', 6, '2026-08-01')).toBe(false)
+    })
+
+    it('ne signale ni une autre puissance, ni un autre type, ni une période disjointe', () => {
+      expect(isGroupPowerInDb(existantes, 'FlexiWatt 2 saisons', 'SEASONAL', 9, '2026-08-01')).toBe(false)
+      expect(isGroupPowerInDb(existantes, 'FlexiWatt 2 saisons', 'HC_HP', 6, '2026-08-01')).toBe(false)
+      expect(isGroupPowerInDb(existantes, 'FlexiWatt 2 saisons', 'SEASONAL', 6, '2025-01-01', '2025-12-31')).toBe(false)
     })
   })
 

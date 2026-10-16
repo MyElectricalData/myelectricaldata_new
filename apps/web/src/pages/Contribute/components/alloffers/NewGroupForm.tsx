@@ -5,7 +5,7 @@
 import { Plus, Trash2, X, AlertCircle, Package } from 'lucide-react'
 import { SingleDatePicker } from '@/components/SingleDatePicker'
 import PriceFieldsEditor from './PriceFieldsEditor'
-import { getFieldKeysForOfferType, isNewPowerComplete, periodsOverlap } from '../../utils/offerPricing'
+import { getFieldKeysForOfferType, isGroupPowerInDb, isNewPowerComplete } from '../../utils/offerPricing'
 import type { AllOffersState } from '../../hooks/useAllOffersState'
 
 interface NewGroupFormProps {
@@ -137,6 +137,7 @@ export default function NewGroupForm({ state, groupIndex }: NewGroupFormProps) {
           power={power}
           powerIndex={powerIndex}
           offerType={effectiveOfferType}
+          groupName={group.name}
           groupValidFrom={group.validFrom}
           groupValidTo={group.validTo}
           existingPowers={existingPowers}
@@ -170,9 +171,10 @@ interface NewGroupPowerRowProps {
   power: { power: number; fields: Record<string, string> }
   powerIndex: number
   offerType: string
+  groupName: string
   groupValidFrom: string
   groupValidTo: string
-  existingPowers: { power: number; offer_type: string; valid_from?: string; valid_to?: string }[]
+  existingPowers: { power: number; offer_type: string; offer_name?: string; valid_from?: string; valid_to?: string }[]
   dynamicPriceFields: { key: string; label: string; color?: string }[]
   onUpdateField: (key: string, value: string) => void
   onUpdatePower: (kva: number) => void
@@ -182,6 +184,7 @@ interface NewGroupPowerRowProps {
 function NewGroupPowerRow({
   power,
   offerType,
+  groupName,
   groupValidFrom,
   groupValidTo,
   existingPowers,
@@ -191,11 +194,8 @@ function NewGroupPowerRow({
   onRemove,
 }: NewGroupPowerRowProps) {
   const isIncomplete = !power.power || power.power <= 0 || !power.fields.subscription_price
-  const isDuplicateInDb = power.power > 0 && existingPowers.some(ep =>
-    ep.power === power.power &&
-    ep.offer_type === offerType &&
-    periodsOverlap(groupValidFrom || undefined, groupValidTo || undefined, ep.valid_from, ep.valid_to)
-  )
+  const isDuplicateInDb = power.power > 0 &&
+    isGroupPowerInDb(existingPowers, groupName, offerType, power.power, groupValidFrom, groupValidTo)
 
   return (
     <div

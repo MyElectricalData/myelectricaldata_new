@@ -476,17 +476,18 @@ Chaque groupe d'offres (meme nom commercial) possede une date de validite qui pe
 
 | Regle            | Description                                                                  |
 | ---------------- | ---------------------------------------------------------------------------- |
-| Identite d'offre | `provider_id` + `offer_type` (meme fournisseur + type = meme offre)          |
-| Desactivation    | Automatique a l'approbation d'une nouvelle contribution                      |
+| Identite d'offre | `provider_id` + `offer_type` + nom + puissance (une grille = un nom commercial, toutes ses puissances) |
+| Desactivation    | Automatique a l'approbation d'une nouvelle contribution, a la veille de sa `valid_from` |
 | Historique       | Les anciennes offres sont desactivees (`valid_to` defini), jamais supprimees |
 | Niveau de date   | Par groupe d'offres (nom commercial), pas par puissance                      |
 
 ### Fonctionnement
 
 1. **Formulaire de contribution** : Champ "Date de mise en service" (DatePicker) avec date du jour par defaut
-2. **Approbation** : Quand une contribution est approuvee, les offres existantes du meme fournisseur/type sont automatiquement desactivees (`valid_to` = date de la nouvelle offre)
-3. **Affichage** : Badge avec la date de validite dans l'en-tete du groupe d'offres (a cote du compteur de puissances)
-4. **Toggle historique** : Checkbox pour afficher les tarifs expires dans la liste
+2. **Approbation** : Quand une contribution `NEW_OFFER` est approuvee, l'offre ouverte (sans `valid_to`) de **meme fournisseur, meme type, meme nom et meme puissance**, dont la `valid_from` est anterieure, est desactivee avec `valid_to` = **veille** de la `valid_from` de la nouvelle (les periodes se comparent bornes incluses). Les autres puissances et les autres offres du fournisseur ne sont pas touchees. Une contribution portant deja un `valid_to` (ajout d'une periode historique) ne ferme rien. L'approbation unitaire et l'approbation en lot (dont « Appliquer directement ») donnent le meme resultat.
+3. **Import IA d'une nouvelle grille** (MED-53, issue #145) : quand le JSON importe une `valid_from` posterieure a la grille ouverte du meme nom, la grille importee remplace l'ancienne **en entier** : toutes les puissances de l'ancienne grille, meme absentes de l'import, sont cloturees a la veille (`UPDATE_OFFER` avec `pricing_data.valid_to`) dans la meme contribution que les `NEW_OFFER`. Le recapitulatif affiche « grille du X cloturee au Y, remplacee par la grille du Z » et ne signale plus de doublon. A date egale, l'import met a jour la grille existante, et clot quand meme les grilles ouvertes plus anciennes du meme nom. Une grille ouverte du meme nom qui debute **apres** la grille importee ne se clot pas : l'import reste bloque en doublon, avec un message qui cite sa date (la corriger d'abord si elle est en vigueur depuis la date importee, ou importer la grille plus ancienne comme historique avec `valid_until`). Les dates se comparent en jour calendaire. Un nouveau groupe se compare a la base avec son nom (meme offre, meme type, meme puissance, periode qui chevauche) : deux offres differentes du meme type ne sont pas des doublons.
+4. **Affichage** : Badge avec la date de validite dans l'en-tete du groupe d'offres (a cote du compteur de puissances)
+5. **Toggle historique** : Checkbox pour afficher les tarifs expires dans la liste
 
 ### UI
 

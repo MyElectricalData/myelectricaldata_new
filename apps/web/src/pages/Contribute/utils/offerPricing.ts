@@ -213,6 +213,28 @@ export function getGroupNameWithoutPeriod(groupName: string): string {
 }
 
 /**
+ * Une puissance d'un nouveau groupe existe-t-elle deja en base, pour la meme offre (nom nettoye,
+ * sans la casse), le meme type et une periode qui chevauche ? Le nom compte, comme dans
+ * isPowerAlreadyUsed : deux offres differentes du meme type ne sont pas des doublons (PR #158).
+ */
+export function isGroupPowerInDb(
+  existingPowers: Array<{ power: number; offer_type: string; offer_name?: string; valid_from?: string; valid_to?: string }>,
+  groupName: string,
+  offerType: string,
+  power: number,
+  validFrom?: string,
+  validTo?: string
+): boolean {
+  const name = getCleanOfferName(groupName).toLowerCase()
+  return existingPowers.some(ep =>
+    ep.power === power &&
+    ep.offer_type === offerType &&
+    (ep.offer_name || '').toLowerCase() === name &&
+    periodsOverlap(validFrom || undefined, validTo || undefined, ep.valid_from, ep.valid_to)
+  )
+}
+
+/**
  * Verifie si deux periodes se chevauchent
  * Une date de fin vide signifie "pas de borne" (offre active) ; une date de debut vide
  * d'un seul cote designe une offre legacy, distincte d'une grille datee
