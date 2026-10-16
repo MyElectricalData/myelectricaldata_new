@@ -32,7 +32,7 @@ API Gateway (FastAPI)
         ├─ GET /enedis/customer/{pdl}
         └─ GET /enedis/contact/{pdl}
 
-Database (SQLite/PostgreSQL)
+Database (PostgreSQL)
 ├─ Users (with client_id, client_secret)
 ├─ PDLs (Points de Livraison)
 ├─ Tokens (Enedis OAuth tokens)
@@ -366,7 +366,7 @@ async cache_service.delete(key) -> None
 ## Environment Variables (Key)
 
 ```
-DATABASE_URL=sqlite+aiosqlite:///./data/myelectricaldata.db
+DATABASE_URL=postgresql+asyncpg://myelectricaldata:<password>@<host>:5432/myelectricaldata
 REDIS_URL=redis://localhost:6379/0
 CACHE_TTL_SECONDS=86400
 

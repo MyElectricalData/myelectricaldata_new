@@ -103,8 +103,7 @@ def generate_client_secret() -> str  # Returns random_urlsafe_string (64 chars)
 
 - **Location**: `apps/api/src/models/database.py`
 - **Settings**: `apps/api/src/config/settings.py`
-- **Default**: SQLite at `./data/myelectricaldata.db`
-- **Supported**: PostgreSQL (via DATABASE_URL setting)
+- **Engine**: PostgreSQL (via the `DATABASE_URL` setting, `postgresql+asyncpg://`)
 - **ORM**: SQLAlchemy with async support (asyncio)
 
 ### Related Models

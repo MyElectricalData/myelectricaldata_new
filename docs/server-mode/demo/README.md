@@ -93,8 +93,7 @@ Contents:
 - Two auth methods: JWT token or client_secret as bearer token
 
 ### Database
-- Default: SQLite (`./data/myelectricaldata.db`)
-- Supports: PostgreSQL
+- Engine: PostgreSQL (`DATABASE_URL`, `postgresql+asyncpg://`)
 - Models: User, PDL, Token, Role, Permissions
 
 ### Demo Account

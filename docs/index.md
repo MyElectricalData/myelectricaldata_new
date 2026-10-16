@@ -121,7 +121,7 @@ helm install myelectricaldata ./helm/myelectricaldata-server \
 
 - **Frontend** : React 18 + TypeScript + Vite + TailwindCSS
 - **Backend** : FastAPI + SQLAlchemy + Pydantic
-- **Base de données** : PostgreSQL ou SQLite
+- **Base de données** : PostgreSQL pour la passerelle ; SQLite (recommandé) ou PostgreSQL pour le [client local](./local-client/installation/docker.md)
 - **Cache** : Redis avec chiffrement Fernet
 
 ## 🔐 Sécurité

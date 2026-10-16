@@ -1,147 +1,87 @@
-# Feature: Support multi-database
+# Feature: Base de données PostgreSQL
 
 ## Contexte
 
-MyElectricalData doit pouvoir fonctionner avec différents types de bases de données selon les besoins de déploiement :
-- **SQLite** pour le développement et les petites installations
-- **PostgreSQL** pour la production et les installations à grande échelle
+La passerelle (mode serveur) est multi-utilisateurs : comptes, PDL, jetons Enedis, rôles et permissions, offres des fournisseurs et contributions vivent dans une base partagée par toutes les requêtes. Elle tourne sur **PostgreSQL**, en production comme en développement.
+
+:::info Client local
+SQLite n'est pris en charge que par le **client local** (mode client), où il est recommandé pour une nouvelle installation : voir [Installation Docker du client local](../../local-client/installation/docker.md). Sans `DATABASE_URL`, le code retombe sur un fichier SQLite, valeur prévue pour ce client : une passerelle sur SQLite n'est ni testée ni prise en charge, renseignez toujours une URL PostgreSQL.
+:::
 
 ## Objectifs
 
-- Supporter SQLite et PostgreSQL de manière transparente
-- Détecter automatiquement le type de base de données depuis l'URI de connexion
-- Permettre un changement facile entre les deux bases
-- Utiliser les mêmes modèles SQLAlchemy pour les deux
+- Une seule base PostgreSQL pour toutes les instances du backend de la passerelle
+- Une URL de connexion unique, `DATABASE_URL`, au format `postgresql+asyncpg://`
+- Un schéma tenu par les migrations Alembic, appliquées à chaque démarrage
+- Les mêmes modèles SQLAlchemy que le client local
 
 ## Principes de fonctionnement
 
-### Auto-détection
+### Connexion
 
-Le type de base de données est automatiquement détecté depuis `DATABASE_URL` :
-- Si l'URI contient `postgresql` → PostgreSQL
-- Sinon → SQLite (défaut)
+Le backend lit `DATABASE_URL` et se connecte avec le pilote asynchrone `asyncpg` :
 
-Pas besoin de variable `DATABASE_TYPE` séparée.
-
-### Configuration SQLite
-
-```bash
-DATABASE_URL=sqlite+aiosqlite:///./data/myelectricaldata.db
-```
-
-**Avantages** :
-- Simple, pas de serveur supplémentaire
-- Fichier unique dans `apps/api/data/`
-- Parfait pour développement et petites installations
-- Démarre immédiatement
-
-**Commandes** :
-```bash
-docker compose up -d
-```
-
-### Configuration PostgreSQL
-
-1. **Modifier `.env.api`** :
 ```bash
 DATABASE_URL=postgresql+asyncpg://myelectricaldata:VOTRE_MOT_DE_PASSE@postgres:5432/myelectricaldata
 ```
 
-2. **Modifier `docker-compose.yml`** :
-```yaml
-postgres:
-  environment:
-    POSTGRES_PASSWORD: VOTRE_MOT_DE_PASSE
-```
+PostgreSQL n'est pas démarré par `docker-compose.server.yml` : il est fourni à part (serveur existant, service managé, ou PostgreSQL du chart Helm).
 
-**Important** : Le mot de passe dans `DATABASE_URL` et `docker-compose.yml` doivent correspondre.
+### Initialisation du schéma
 
-**Avantages** :
-- Meilleur pour la production
-- Performances accrues avec beaucoup d'utilisateurs
-- Fonctionnalités avancées (JSONB, full-text search, etc.)
-- Backups plus faciles
-- Isolation des données dans un volume Docker dédié
+Au démarrage du conteneur, `entrypoint.sh` exécute `alembic upgrade head`, puis l'application crée les tables manquantes et les données initiales (rôles et permissions, offres par défaut, droits des comptes listés dans `ADMIN_EMAILS`). Aucune commande n'est nécessaire sur une base vide.
 
-**Commandes** :
-```bash
-# Démarrer avec PostgreSQL
-docker compose --profile postgres up -d
+### Déploiement
 
-# Reconstruire si nécessaire
-docker compose --profile postgres up -d --build
-```
+| Méthode | Base PostgreSQL | Où régler la connexion |
+|---------|-----------------|------------------------|
+| Docker Compose (`docker-compose.server.yml`) | À fournir | `DATABASE_URL` dans `apps/api/.env.docker` |
+| Helm, `postgres.enabled: true` (défaut) | PostgreSQL 16 déployé par le chart | `postgres.auth.*` |
+| Helm, `postgres.enabled: false` | Serveur externe | `externalDatabase.*` |
+
+Avec Helm, le chart construit lui-même `DATABASE_URL` au format `postgresql+asyncpg://` dans les deux cas.
 
 ## Critères d'acceptation
 
-- ✅ Le type de base est détecté automatiquement depuis `DATABASE_URL`
-- ✅ SQLite fonctionne par défaut sans configuration supplémentaire
-- ✅ PostgreSQL se lance via le profil Docker `--profile postgres`
-- ✅ Les mêmes modèles SQLAlchemy fonctionnent avec les deux bases
-- ✅ Les migrations Alembic sont compatibles avec les deux
-- ✅ Le changement de base nécessite seulement la modification de `DATABASE_URL`
-
-## Migration SQLite → PostgreSQL
-
-1. **Optionnel** : Exporter les données de SQLite si vous voulez les conserver
-2. Modifier `.env.api` avec l'URL PostgreSQL
-3. Modifier `docker-compose.yml` avec le mot de passe
-4. Si changement de mot de passe, supprimer le volume :
-   ```bash
-   docker compose --profile postgres down -v
-   ```
-5. Redémarrer :
-   ```bash
-   docker compose --profile postgres up -d
-   ```
-6. Les tables sont créées automatiquement au démarrage
+- ✅ Le backend de la passerelle se connecte à PostgreSQL via `DATABASE_URL` (`postgresql+asyncpg://`)
+- ✅ Les migrations Alembic s'appliquent seules au démarrage du conteneur
+- ✅ Le compose serveur et le chart Helm ne proposent que PostgreSQL
 
 ## Notes importantes
 
-- **Driver SQLite** : `aiosqlite` (déjà inclus)
-- **Driver PostgreSQL** : `asyncpg` (déjà inclus)
-- **Volume SQLite** : `./apps/api/data/myelectricaldata.db` (bind mount)
-- **Volume PostgreSQL** : `postgres_data` (volume Docker)
-- **Changement de mot de passe** : Nécessite `docker compose --profile postgres down -v` pour supprimer l'ancien volume
+- **Driver PostgreSQL** : `asyncpg` (inclus dans l'image)
+- **`DATABASE_URL` obligatoire** : sa valeur par défaut dans `settings.py` vise le client local, pas la passerelle
+- **Mot de passe** : avec l'image officielle `postgres`, le mot de passe n'est appliqué qu'à la première initialisation du volume. Le changer ensuite se fait dans PostgreSQL (`ALTER USER`), puis dans `DATABASE_URL`.
 
 ## Implémentation technique
 
 ### Backend
 
-**Fichier** : `apps/api/src/config/settings.py`
+**Fichier** : `apps/api/src/models/database.py`
 
 ```python
-class Settings(BaseSettings):
-    DATABASE_URL: str = "sqlite+aiosqlite:///./data/myelectricaldata.db"
-
-    @property
-    def database_type(self) -> str:
-        """Auto-detect database type from DATABASE_URL"""
-        if "postgresql" in self.DATABASE_URL:
-            return "postgresql"
-        return "sqlite"
+engine = make_engine(settings.DATABASE_URL)
+async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 ```
 
-### Docker
+`make_engine` crée un moteur SQLAlchemy asynchrone ; le pilote est choisi d'après l'URL.
 
-**Fichier** : `docker-compose.yml`
+### Chart Helm
 
-Le service PostgreSQL utilise un profil optionnel :
-```yaml
-postgres:
-  profiles:
-    - postgres
+**Fichier** : `helm/myelectricaldata-server/templates/_helpers.tpl` (`myelectricaldata.databaseUrl`)
+
+```
+postgresql+asyncpg://<utilisateur>:$(POSTGRES_PASSWORD)@<hôte>:<port>/<base>
 ```
 
-Cela permet de ne pas démarrer PostgreSQL par défaut et de l'activer seulement quand nécessaire.
+L'hôte est le service PostgreSQL du chart, ou `externalDatabase.host` quand `postgres.enabled` vaut `false`. Le mot de passe vient d'un secret, injecté par la variable `POSTGRES_PASSWORD`.
 
 ### Dépendances
 
-**Fichier** : `apps/api/pyproject.toml`
+**Fichier** : `apps/api/pyproject.toml` (extrait)
 
 ```toml
 dependencies = [
-    "aiosqlite>=0.20.0",    # SQLite async driver
     "asyncpg>=0.29.0",      # PostgreSQL async driver
     "sqlalchemy[asyncio]>=2.0.36",
 ]
@@ -152,10 +92,9 @@ dependencies = [
 ### Erreur d'authentification PostgreSQL
 
 Si vous obtenez `password authentication failed` :
-1. Vérifiez que le mot de passe dans `DATABASE_URL` correspond à celui dans `docker-compose.yml`
-2. Supprimez le volume PostgreSQL : `docker compose --profile postgres down -v`
-3. Redémarrez : `docker compose --profile postgres up -d`
+1. Vérifiez l'utilisateur et le mot de passe de `DATABASE_URL` (ou de `postgres.auth` / `externalDatabase` avec Helm)
+2. Avec un PostgreSQL embarqué dont le volume existe déjà, le mot de passe d'origine reste en vigueur : alignez `DATABASE_URL` dessus, ou changez-le dans PostgreSQL
 
-### PostgreSQL n'utilise pas le bon mot de passe
+### Le backend ne démarre pas
 
-Le mot de passe PostgreSQL est défini **seulement à la première initialisation**. Si vous changez le mot de passe après, vous devez supprimer le volume `postgres_data` pour réinitialiser.
+Les logs du backend montrent l'étape `Applying database migrations...` : une erreur à ce moment vient de la connexion à PostgreSQL ou d'une migration. Vérifiez que la base est joignable depuis le conteneur, puis consultez [Administration › Base de Données](../administration/database.md).
