@@ -322,7 +322,7 @@ export default function Balance() {
 
       {/* Year filter */}
       {chartData.years.length > 1 && (
-        <div className="flex gap-4">
+        <div className="flex gap-2.5 sm:gap-4 overflow-x-auto pb-2 -mx-1 px-1 sm:overflow-visible sm:pb-0 sm:mx-0 sm:px-0">
           {[...chartData.years].reverse().map((year, index) => {
             const isSelected = selectedYears.includes(year)
             const yearData = chartData.byYear.find(y => y.year === year)
@@ -344,19 +344,19 @@ export default function Balance() {
                     setSelectedYears([...selectedYears, year])
                   }
                 }}
-                className={`relative flex-1 px-5 py-4 rounded-xl transition-all text-left border-2 ${
+                className={`relative flex-1 min-w-[130px] sm:min-w-0 px-3.5 py-3 sm:px-5 sm:py-4 rounded-xl transition-all text-left border-2 flex-shrink-0 sm:flex-shrink ${
                   isSelected
                     ? style.text
                     : 'border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:border-gray-400 dark:hover:border-gray-600'
                 }`}
                 style={isSelected ? { backgroundColor: style.bg, borderColor: style.border } : undefined}
               >
-                <div className="text-xl font-bold">{year}</div>
-                <div className={`text-sm font-medium ${isSelected ? 'opacity-80' : 'opacity-60'}`}>
-                  Production : {productionKwh} kWh
+                <div className="text-lg sm:text-xl font-bold">{year}</div>
+                <div className={`text-xs sm:text-sm font-medium ${isSelected ? 'opacity-80' : 'opacity-60'} whitespace-nowrap`}>
+                  Prod : {productionKwh} kWh
                 </div>
                 {/* Indicateur de sélection */}
-                <span className={`absolute top-3 right-3 w-3 h-3 rounded-full transition-all ${
+                <span className={`absolute top-2.5 right-2.5 sm:top-3 sm:right-3 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full transition-all ${
                   isSelected
                     ? style.dot
                     : 'bg-gray-400 dark:bg-gray-600'

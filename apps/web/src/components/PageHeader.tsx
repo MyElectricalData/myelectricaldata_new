@@ -203,10 +203,10 @@ export default function PageHeader({ actions }: PageHeaderProps = {}) {
       <div className="container mx-auto px-3 sm:px-4 lg:px-6 max-w-[1920px]">
         <div className="flex flex-col gap-3 py-4 lg:flex-row lg:items-center lg:justify-between">
           {/* Titre avec icône et sous-titre */}
-          <div className="flex items-center justify-center lg:justify-start gap-3 w-full lg:w-auto">
+          <div className="flex items-center justify-center lg:justify-start gap-3 w-full lg:w-auto pl-12 md:pl-0">
             <Icon className="text-primary-600 dark:text-primary-400 flex-shrink-0" size={32} />
-            <div className="text-center lg:text-left">
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+            <div className="text-center lg:text-left min-w-0">
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-white truncate sm:overflow-visible">
                 {config.title}
               </h1>
               {config.subtitle && (

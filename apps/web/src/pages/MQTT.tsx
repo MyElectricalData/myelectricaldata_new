@@ -261,11 +261,11 @@ export default function MQTT() {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 p-6">
         {/* Status Header */}
         {existingConfig && !isEditing && (
-          <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
               <button
                 onClick={() => toggleMutation.mutate({ id: existingConfig.id, enabled: !existingConfig.is_enabled })}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base transition-colors ${
                   existingConfig.is_enabled
                     ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
                     : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
@@ -283,7 +283,7 @@ export default function MQTT() {
               </button>
 
               {existingConfig.last_export_at && (
-                <span className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
+                <span className="flex items-center gap-1 text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                   <Clock size={14} />
                   Dernier export: {new Date(existingConfig.last_export_at).toLocaleString('fr-FR')}
                   {existingConfig.last_export_status === 'success' && (
@@ -296,14 +296,14 @@ export default function MQTT() {
               )}
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => {
                   setTestingConfig(true)
                   testMutation.mutate(existingConfig.id)
                 }}
                 disabled={testingConfig}
-                className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-50"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs sm:text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-50"
               >
                 {testingConfig ? (
                   <RefreshCw size={16} className="animate-spin" />
@@ -315,13 +315,13 @@ export default function MQTT() {
               <button
                 onClick={() => runMutation.mutate(existingConfig.id)}
                 disabled={!existingConfig.is_enabled}
-                className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs sm:text-sm bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Play size={16} /> Executer
               </button>
               <button
                 onClick={() => setIsEditing(true)}
-                className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs sm:text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
               >
                 <Settings size={16} /> Configurer
               </button>
