@@ -7,6 +7,7 @@ import { oauthApi } from '@/api/oauth'
 import { syncApi } from '@/api/sync'
 import type { PDL } from '@/types/api'
 import OfferSelector from './OfferSelector'
+import CustomOfferForm from './CustomOfferForm'
 
 interface PDLCardProps {
   pdl: PDL
@@ -924,6 +925,14 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                       showExpired={showExpiredOffers}
                       onHasExpiredOffersChange={setHasExpiredOffers}
                     />
+                    {isClientMode && !isDemo && (
+                      <CustomOfferForm
+                        selectedOfferId={pdl.selected_offer_id}
+                        subscribedPower={pdl.subscribed_power}
+                        onSelect={(offerId) => updateSelectedOfferMutation.mutate(offerId)}
+                        disabled={updateSelectedOfferMutation.isPending}
+                      />
+                    )}
                   </div>
 
                   {/* Offpeak Hours */}

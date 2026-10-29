@@ -95,6 +95,8 @@ charge), pour combler les trous récents.
 
 **Mode client** : Les offres tarifaires sont configurées localement ou récupérées depuis l'API.
 
+Si votre contrat n'est pas dans la liste (grille tarifaire souscrite avant la grille actuelle, offre locale…), utilisez, sur la carte du PDL du tableau de bord, le lien **« Mon offre n'est pas dans la liste : saisir mes prix »** : option Base ou Heures Creuses / Pleines, puissance, abonnement en €/mois et prix du kWh TTC, tels qu'ils figurent sur votre facture. L'offre est enregistrée localement, sélectionnée sur le PDL et conservée lors des synchronisations avec la passerelle. Elle sert à la page Consommation (€), au simulateur et aux exports (dont les coûts envoyés à Home Assistant).
+
 ### Production
 
 Comportement identique à la consommation, avec stockage local indéfini.

@@ -25,6 +25,7 @@ Tableau de bord principal pour gérer les Points De Livraison (PDL) et accéder 
 | Activation/désactivation des PDL     | FAIT   | Serveur+Client |
 | Liaison PDL consommation-production  | FAIT   | Serveur+Client |
 | Sélection offre tarifaire par PDL    | FAIT   | Serveur+Client |
+| Offre aux prix saisis à la main      | FAIT   | Client         |
 | Configuration heures creuses         | FAIT   | Serveur+Client |
 | Mode démo avec données fictives      | FAIT   | Serveur        |
 | Onboarding tour guidé                | FAIT   | Serveur        |
@@ -91,6 +92,30 @@ Content-Type: application/json
 { "selected_offer_id": "uuid" | null }
 ```
 
+### Offre aux prix saisis (mode client)
+
+```http
+POST   /api/energy/custom-offers
+PUT    /api/energy/custom-offers/{offer_id}
+DELETE /api/energy/custom-offers/{offer_id}
+Content-Type: application/json
+
+{
+  "name": "Mon offre",
+  "offer_type": "BASE" | "HC_HP",
+  "power_kva": 6 | null,
+  "subscription_price": 18.36,
+  "base_price": 0.2082,
+  "hc_price": 0.1493,
+  "hp_price": 0.1885
+}
+```
+
+- Mode client uniquement (404 en mode serveur), refusé en mode démo.
+- `base_price` est requis pour `BASE`, `hc_price` et `hp_price` pour `HC_HP` ; les prix sans objet pour le type choisi sont effacés.
+- Les offres sont rangées sous le fournisseur réservé `custom-offers` (« Mes prix (saisie manuelle) »), créé au premier enregistrement. La synchronisation avec la passerelle, qui supprime les offres absentes à distance, ignore ce fournisseur et ses offres.
+- `PUT` et `DELETE` ne touchent que ces offres (`NOT_FOUND` pour une offre de la passerelle). `DELETE` retire l'offre des PDL qui l'avaient sélectionnée.
+
 ### Réorganisation PDL
 
 ```http
@@ -141,6 +166,15 @@ Chaque PDL affiche :
 | EJP      | Jours normaux, Jours de pointe       |
 | WEEKEND  | Semaine HP/HC, Week-end HP/HC        |
 | SEASONAL | Hiver HP/HC, Été HP/HC, Pointe       |
+
+### Saisie de ses propres prix (mode client)
+
+Sous le sélecteur, le lien **« Mon offre n'est pas dans la liste : saisir mes prix »** (composant `CustomOfferForm`) ouvre un formulaire pour un contrat absent de la base des offres (grille souscrite avant la grille actuelle, offre locale…) :
+
+- nom de l'offre, option tarifaire (Base ou Heures Creuses / Pleines), puissance souscrite (celle du PDL par défaut) ;
+- abonnement en €/mois et prix du kWh TTC ; la virgule décimale est acceptée.
+
+À l'enregistrement, l'offre est créée puis sélectionnée sur le PDL : la page Consommation (€), le simulateur et les exports l'utilisent comme les autres offres. Quand l'offre sélectionnée est une offre saisie, le lien devient **« Modifier mes prix »** et le formulaire propose aussi **« Supprimer cette offre »**. Masqué en mode serveur et en mode démo.
 
 ### Liaison Consommation-Production
 
