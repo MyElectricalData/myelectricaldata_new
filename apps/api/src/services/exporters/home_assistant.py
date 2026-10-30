@@ -1970,10 +1970,11 @@ class HomeAssistantExporter(BaseExporter):
                 "tomorrow": tomorrow_color,
                 "season_start": season_start_str,
                 "season_end": season_end_str,
-                # Jours restants pour content-card-linky (getTempoRemainingDays) : quota - passés - déjà connus
-                "days_blue": days_data.get("blue", {}).get("remaining", 0),
-                "days_white": days_data.get("white", {}).get("remaining", 0),
-                "days_red": days_data.get("red", {}).get("remaining", 0),
+                # content-card-linky affiche ces attributs tels quels : format V1 « restants / quota »
+                # (restants = quota - passés - déjà connus)
+                "days_blue": self._tempo_days_text(days_data.get("blue", {})),
+                "days_white": self._tempo_days_text(days_data.get("white", {})),
+                "days_red": self._tempo_days_text(days_data.get("red", {})),
                 # Détails complets pour usage avancé
                 "days_blue_detail": days_data.get("blue", {}),
                 "days_white_detail": days_data.get("white", {}),
@@ -2102,6 +2103,11 @@ class HomeAssistantExporter(BaseExporter):
 
         return count
 
+    @staticmethod
+    def _tempo_days_text(days: dict[str, int]) -> str:
+        """Jours Tempo restants au format V1 de content-card-linky : « 288 / 300 »."""
+        return f"{days.get('remaining', 0)} / {days.get('quota', 0)}"
+
     async def _export_ecowatt(self, client: aiomqtt.Client, db: AsyncSession) -> int:
         """Export EcoWatt information via MQTT Discovery (old MyElectricalData format)
 
@@ -2148,10 +2154,11 @@ class HomeAssistantExporter(BaseExporter):
                     current_hour_value = hour_values[current_hour]
 
                 # Build forecast dict for content-card-linky
-                # Format attendu : {"0h 00min": 1, "1h 00min": 0, ..., "23h 00min": 1}
+                # Format V1 attendu : {"00 h": 1, "01 h": 1, ..., "23 h": 1}. La carte en tire les
+                # classes CSS `ecowatt-00` à `ecowatt-23` qui donnent la largeur de chaque case.
                 forecast = {}
                 for i, val in enumerate(hour_values):
-                    forecast[f"{i}h 00min"] = val if val is not None else "Pas de valeur"
+                    forecast[f"{i:02d} h"] = val if val is not None else "Pas de valeur"
 
                 # Build attributes with hourly breakdown
                 attributes = {
