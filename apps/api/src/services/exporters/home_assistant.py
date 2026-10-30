@@ -47,7 +47,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...models.zen_flex_day import ZenFlexDayType
 from .base import BaseExporter
-from .tariff import DEFAULT_OFFPEAK_RANGES, is_offpeak, is_offpeak_slot, is_zen_flex_offer, tariff_profile
+from .tariff import (
+    DEFAULT_OFFPEAK_RANGES,
+    infer_interval_minutes,
+    interval_minutes,
+    is_offpeak,
+    is_zen_flex_offer,
+    offpeak_fraction,
+    offpeak_slot_fraction,
+    tariff_profile,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1448,6 +1457,7 @@ class HomeAssistantExporter(BaseExporter):
         for day_date, intervals in detailed_by_day.items():
             hp_wh = 0
             hc_wh = 0
+            slot_minutes = infer_interval_minutes(start for start, _ in intervals)
             max_power_kw = 0.0
             max_time: str | None = None
 
@@ -1456,11 +1466,14 @@ class HomeAssistantExporter(BaseExporter):
                 # Énergie sur 30min = W / 2 pour obtenir des Wh
                 wh = value / 2
 
-                # HP/HC
-                if has_offpeak and is_offpeak_slot(day_date, interval_start, offpeak_ranges, weekend_offpeak):
-                    hc_wh += wh
-                else:
-                    hp_wh += wh
+                # HP/HC, au prorata des minutes si une plage HC commence ou finit dans le créneau
+                fraction = (
+                    offpeak_slot_fraction(day_date, interval_start, offpeak_ranges, weekend_offpeak, slot_minutes) or 0.0
+                    if has_offpeak
+                    else 0.0
+                )
+                hc_wh += wh * fraction
+                hp_wh += wh * (1 - fraction)
 
                 # Puissance max (W → kW)
                 power_kw = value / 1000
@@ -4072,11 +4085,17 @@ class HomeAssistantExporter(BaseExporter):
                 tariff_tag = f"{color_name}_{period}"
 
             elif profile.family == "HC_HP":
-                # HC/HP: use off-peak hours from contract (weekend fully off-peak for weekend offers)
-                if is_offpeak(record.date, hour, minute, parsed_offpeak, profile.weekend_offpeak):
-                    tariff_tag = "hc"
-                else:
-                    tariff_tag = "hp"
+                # HC/HP : plages du contrat (week-end entier en HC pour les offres week-end).
+                # Créneau détaillé : réparti au prorata des minutes (plage 23h32-5h32 sur un pas de 30 min)
+                if use_detailed:
+                    minutes = interval_minutes(record.raw_data)
+                    fraction = offpeak_fraction(record.date, hour * 60 + minute, minutes, parsed_offpeak, profile.weekend_offpeak)
+                    for part_tag, part in (("hc", fraction), ("hp", 1 - fraction)):
+                        if part > 0:
+                            key = (part_tag, record.date, hour)
+                            hourly_aggregation[key] = hourly_aggregation.get(key, 0) + value_kwh * part
+                    continue
+                tariff_tag = "hc" if is_offpeak(record.date, hour, minute, parsed_offpeak, profile.weekend_offpeak) else "hp"
             else:
                 # BASE
                 tariff_tag = "base"

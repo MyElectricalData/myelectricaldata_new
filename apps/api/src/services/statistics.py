@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..adapters.enedis_format import iso_duration_to_minutes
 from ..models.client_mode import ConsumptionData, DataGranularity, ProductionData
 from ..models.tempo_day import TempoDay
-from .exporters.tariff import is_offpeak_slot
+from .exporters.tariff import infer_interval_minutes, offpeak_slot_fraction
 from .local_data import _interval_of
 
 logger = logging.getLogger(__name__)
@@ -281,22 +281,26 @@ class StatisticsService:
     # HP/HC STATISTICS (Peak/Off-peak based on detailed data)
     # =========================================================================
 
-    def _is_offpeak_hour(
-        self,
-        day: date,
-        interval_start: str | None,
+    @staticmethod
+    def _split_hp_hc(
+        rows: Any,
         offpeak_ranges: list[tuple[int, int]],
         weekend_offpeak: bool = False,
-    ) -> bool:
-        """Check if a detailed interval is during off-peak hours
+    ) -> tuple[int, int]:
+        """Ventile des relevés détaillés (date, interval_start, value) en (HP, HC)
 
-        Args:
-            day: Date of the interval
-            interval_start: Time string like "00:00", "00:30", etc.
-            offpeak_ranges: Off-peak ranges in minutes (cf. exporters.tariff.parse_offpeak_ranges)
-            weekend_offpeak: Saturday and Sunday fully off-peak (HC_WEEKEND offers)
+        Créneau à cheval sur une limite de plage (23h32-5h32 sur une courbe à 30 min) :
+        réparti au prorata des minutes.
         """
-        return bool(is_offpeak_slot(day, interval_start, offpeak_ranges, weekend_offpeak))
+        rows = list(rows)
+        minutes = infer_interval_minutes(row.interval_start for row in rows)
+        hp_total = 0.0
+        hc_total = 0.0
+        for row in rows:
+            fraction = offpeak_slot_fraction(row.date, row.interval_start, offpeak_ranges, weekend_offpeak, minutes) or 0.0
+            hc_total += row.value * fraction
+            hp_total += row.value * (1 - fraction)
+        return round(hp_total), round(hc_total)
 
     async def get_hp_hc_year_total(
         self,
@@ -330,16 +334,7 @@ class StatisticsService:
             .where(model.date <= end_date)
         )
 
-        hp_total = 0
-        hc_total = 0
-
-        for row in result.all():
-            if self._is_offpeak_hour(row.date, row.interval_start, offpeak_ranges, weekend_offpeak):
-                hc_total += row.value
-            else:
-                hp_total += row.value
-
-        return hp_total, hc_total
+        return self._split_hp_hc(result.all(), offpeak_ranges, weekend_offpeak)
 
     async def get_hp_hc_month_total(
         self,
@@ -379,16 +374,7 @@ class StatisticsService:
             .where(model.date <= end_date)
         )
 
-        hp_total = 0
-        hc_total = 0
-
-        for row in result.all():
-            if self._is_offpeak_hour(row.date, row.interval_start, offpeak_ranges, weekend_offpeak):
-                hc_total += row.value
-            else:
-                hp_total += row.value
-
-        return hp_total, hc_total
+        return self._split_hp_hc(result.all(), offpeak_ranges, weekend_offpeak)
 
     async def get_hp_hc_week_total(
         self,
@@ -419,16 +405,7 @@ class StatisticsService:
             .where(model.date <= end_date)
         )
 
-        hp_total = 0
-        hc_total = 0
-
-        for row in result.all():
-            if self._is_offpeak_hour(row.date, row.interval_start, offpeak_ranges, weekend_offpeak):
-                hc_total += row.value
-            else:
-                hp_total += row.value
-
-        return hp_total, hc_total
+        return self._split_hp_hc(result.all(), offpeak_ranges, weekend_offpeak)
 
     async def get_hp_hc_current_week_by_day(
         self,
@@ -457,16 +434,7 @@ class StatisticsService:
                 .where(model.date == day_date)
             )
 
-            hp_total = 0
-            hc_total = 0
-
-            for row in query_result.all():
-                if self._is_offpeak_hour(row.date, row.interval_start, offpeak_ranges, weekend_offpeak):
-                    hc_total += row.value
-                else:
-                    hp_total += row.value
-
-            result[day_name] = (hp_total, hc_total)
+            result[day_name] = self._split_hp_hc(query_result.all(), offpeak_ranges, weekend_offpeak)
 
         return result
 
@@ -774,16 +742,7 @@ class StatisticsService:
             .where(model.date == target_date)
         )
 
-        hp_total = 0
-        hc_total = 0
-
-        for row in result.all():
-            if self._is_offpeak_hour(row.date, row.interval_start, offpeak_ranges, weekend_offpeak):
-                hc_total += row.value
-            else:
-                hp_total += row.value
-
-        return hp_total, hc_total
+        return self._split_hp_hc(result.all(), offpeak_ranges, weekend_offpeak)
 
     async def get_max_power_day(
         self,

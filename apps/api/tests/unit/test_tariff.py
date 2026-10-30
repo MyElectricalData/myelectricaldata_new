@@ -13,6 +13,9 @@ from src.services.exporters.tariff import (
     is_offpeak_slot,
     parse_offpeak_ranges,
     hp_hc_window_start,
+    infer_interval_minutes,
+    offpeak_fraction,
+    offpeak_slot_fraction,
     split_hp_hc_wh,
     summarize_hp_hc_kwh,
     tariff_profile,
@@ -267,3 +270,75 @@ def test_tariff_profile_base_does_not_warn(caplog: pytest.LogCaptureFixture) -> 
         tariff_profile("BASE")
         tariff_profile(None)
     assert caplog.text == ""
+
+
+# =============================================================================
+# Plages HC hors demi-heure : ventilation au prorata des minutes (23h32-5h32, 14h32-16h32)
+# =============================================================================
+
+# Plages relevées sur un contrat réel (forum HACF) : bascules à :32, au milieu d'un créneau de 30 min
+ODD = [(23 * 60 + 32, 5 * 60 + 32), (14 * 60 + 32, 16 * 60 + 32)]
+
+
+@pytest.mark.parametrize(
+    ("start", "duration", "expected"),
+    [
+        (23 * 60 + 30, 30, 28 / 30),  # 23h30-0h00 : 28 min HC
+        (5 * 60 + 30, 30, 2 / 30),  # 5h30-6h00 : 2 min HC
+        (14 * 60 + 30, 30, 28 / 30),  # 14h30-15h00
+        (16 * 60 + 30, 30, 2 / 30),  # 16h30-17h00
+        (2 * 60, 30, 1.0),  # en pleine nuit
+        (12 * 60, 30, 0.0),  # en journée
+        (23 * 60 + 30, 60, 58 / 60),  # créneau qui passe minuit
+    ],
+)
+def test_offpeak_fraction_odd_ranges(start: int, duration: int, expected: float) -> None:
+    assert offpeak_fraction(MONDAY, start, duration, ODD) == pytest.approx(expected)
+
+
+def test_offpeak_fraction_whole_slots_unchanged() -> None:
+    # plages sur la demi-heure : chaque créneau reste entièrement HC ou HP, comme avant
+    assert offpeak_fraction(MONDAY, 22 * 60, 30, NIGHT) == 1.0
+    assert offpeak_fraction(MONDAY, 21 * 60 + 30, 30, NIGHT) == 0.0
+    assert offpeak_fraction(MONDAY, 6 * 60, 30, NIGHT_HALF) == 1.0
+    assert offpeak_fraction(MONDAY, 6 * 60 + 30, 30, NIGHT_HALF) == 0.0
+
+
+def test_offpeak_fraction_weekend_offer() -> None:
+    assert offpeak_fraction(SATURDAY, 12 * 60, 30, ODD, weekend_offpeak=True) == 1.0
+
+
+def test_offpeak_slot_fraction() -> None:
+    assert offpeak_slot_fraction(MONDAY, "23:30", ODD) == pytest.approx(28 / 30)
+    assert offpeak_slot_fraction(MONDAY, "23:30", ODD, minutes=10) == pytest.approx(8 / 10)
+    assert offpeak_slot_fraction(MONDAY, None, ODD) is None
+
+
+def test_split_hp_hc_wh_odd_ranges() -> None:
+    # 1 000 W sur chaque créneau limite : 500 Wh répartis au prorata
+    records = [rec(MONDAY, start, 1000) for start in ("23:30", "05:30", "14:30", "16:30")]
+    totals = split_hp_hc_wh(records, ODD)
+    assert totals["hc"] == pytest.approx(500 * (28 + 2 + 28 + 2) / 30)
+    assert totals["hp"] == pytest.approx(500 * (2 + 28 + 2 + 28) / 30)
+    assert totals["hc"] + totals["hp"] == pytest.approx(2000)
+
+
+def test_summarize_hp_hc_kwh_odd_ranges() -> None:
+    today = date(2026, 10, 29)
+    yesterday = date(2026, 10, 28)
+    result = summarize_hp_hc_kwh([rec(yesterday, "23:30", 1200)], today, ODD)
+    assert result["yesterday_hc_kwh"] == pytest.approx(0.56)  # 600 Wh x 28/30
+    assert result["yesterday_hp_kwh"] == pytest.approx(0.04)
+
+
+@pytest.mark.parametrize(
+    ("starts", "expected"),
+    [
+        (["00:00", "00:30", "01:00"], 30),
+        (["00:00", "00:10", "00:20"], 10),
+        (["01:00"], 30),
+        ([None, "bad"], 30),
+    ],
+)
+def test_infer_interval_minutes(starts: list, expected: int) -> None:
+    assert infer_interval_minutes(starts) == expected
