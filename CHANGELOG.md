@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.13.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.13.0...2.13.1) (2026-10-31)
+
+### Bug Fixes
+
+* **api:** MED-81 / l'option tarifaire suit l'offre aux prix saisis ([df794f2](https://github.com/MyElectricalData/myelectricaldata_new/commit/df794f23536a5eac678350dabc03f845702e9b87)), closes [#179](https://github.com/MyElectricalData/myelectricaldata_new/issues/179)
+
 ## [2.13.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.12.5...2.13.0) (2026-10-31)
 
 ### Features
