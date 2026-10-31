@@ -321,6 +321,10 @@ await cache_service.get_raw(key)
 await cache_service.set_raw(key, value)
 ```
 
+### Logs applicatifs
+
+Valkey garde aussi les logs INFO et plus pour la page d'administration `/admin/logs`, en clair (aucune donnée Enedis chiffrée dedans) : une liste par niveau (`logs:<niveau>`), plafonnée (1000 lignes en info, 5000 en warning et error) et expirant 24 heures après la dernière ligne. Un seul thread écrit, sur une connexion réutilisée ; la page lit les listes sans balayer le keyspace. Détail : [Logs](./administration/logs.md).
+
 ---
 
 ## Flux d'authentification
