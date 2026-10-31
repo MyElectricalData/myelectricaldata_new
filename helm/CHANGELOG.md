@@ -1,5 +1,54 @@
 # Helm Charts Changelog
 
+## [2.3.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/2.2.0...helm/2.3.0) (2026-10-31)
+
+### Features
+
+* **docker:** MED-75 / docker-compose.client.yml a un seul service ([614d760](https://github.com/MyElectricalData/myelectricaldata_new/commit/614d760d39892cc2a9cc9f3d17d0ae74ea4319dc))
+* **docker:** MED-75 / image client unique, front et API dans un conteneur ([a38bd67](https://github.com/MyElectricalData/myelectricaldata_new/commit/a38bd67e21a0c7ac915e2dfc874a70e67eb362c4))
+* **export:** attribut last_year de l'export content-card-linky ([621dbd0](https://github.com/MyElectricalData/myelectricaldata_new/commit/621dbd0b465e2d42fb905e3915291d986fa4de5e)), closes [Marlboro62/content-card-linky-new#2](https://github.com/Marlboro62/content-card-linky-new/issues/2)
+* **export:** noms des entités Home Assistant en français, option entity_language ([2de1c75](https://github.com/MyElectricalData/myelectricaldata_new/commit/2de1c75a545659b60c8d14ff48edb1a287296480))
+* **web:** détail des taxes comprises dans le coût (accise, TVA) ([de6e43a](https://github.com/MyElectricalData/myelectricaldata_new/commit/de6e43a0fc65bad9f322f0d743d8cdf82e46563f))
+* **web:** lien « Passerelle » dans le menu en mode client ([01cd966](https://github.com/MyElectricalData/myelectricaldata_new/commit/01cd966118b8bbb81b9a5c29ce0bc0fdbef775c5)), closes [#142](https://github.com/MyElectricalData/myelectricaldata_new/issues/142)
+* **web:** MED-67 / lien « changer d'offre » dans le badge d'offre close ([f3b5b64](https://github.com/MyElectricalData/myelectricaldata_new/commit/f3b5b647b84da3cb50ea0ba4d1a8cb1c953c4070))
+
+### Bug Fixes
+
+* **api:** compter et expliquer l'import Energy Dashboard planifié ([8322f4b](https://github.com/MyElectricalData/myelectricaldata_new/commit/8322f4b37c35d397bfa94dc2c3d63b49409fcf62)), closes [#177](https://github.com/MyElectricalData/myelectricaldata_new/issues/177)
+* **api:** MED-53 / approbation d'une nouvelle grille identique en unitaire et en lot ([2e9e319](https://github.com/MyElectricalData/myelectricaldata_new/commit/2e9e3193f7d92d2981778045c970b37fffdfc17c)), closes [#145](https://github.com/MyElectricalData/myelectricaldata_new/issues/145)
+* **api:** MED-64 / l import V1 elargit les bornes des statuts de synchro ([b16fd0a](https://github.com/MyElectricalData/myelectricaldata_new/commit/b16fd0a5a3fbf123b5d350569b35f63de3454d10))
+* **api:** MED-64 / ne combler via la passerelle que les trous de sa fenetre ([b041085](https://github.com/MyElectricalData/myelectricaldata_new/commit/b041085c9a954854232488b7f119dc28cbc47467))
+* **api:** MED-79 / import V1 controle les colonnes lues au lieu de la revision Alembic ([2db43a8](https://github.com/MyElectricalData/myelectricaldata_new/commit/2db43a81ee823c0f007fec32b93eedbc0280faa1)), closes [#164](https://github.com/MyElectricalData/myelectricaldata_new/issues/164) [#164](https://github.com/MyElectricalData/myelectricaldata_new/issues/164)
+* **api:** synchroniser et accepter les offres obsolètes en mode client ([6433bf7](https://github.com/MyElectricalData/myelectricaldata_new/commit/6433bf7b43368da99a4c256513de10684a024239)), closes [#173](https://github.com/MyElectricalData/myelectricaldata_new/issues/173)
+* **contribute:** MED-53 / revue Codex, lot sans clôture orpheline et réimport sans clôture périmée ([37f938a](https://github.com/MyElectricalData/myelectricaldata_new/commit/37f938a959a8604aecc0404da4b24e7b9cf66b11))
+* **contribute:** MED-53 / veille couverte jusqu'a minuit heure de Paris et grille sans valid_from close ([b89dd0e](https://github.com/MyElectricalData/myelectricaldata_new/commit/b89dd0efedf5efd28d9d20e8af10eb773c4322e3)), closes [#158](https://github.com/MyElectricalData/myelectricaldata_new/issues/158)
+* **contribute:** MED-80 / bascule en proposition apres un 403 sur la creation directe ([2e70b7e](https://github.com/MyElectricalData/myelectricaldata_new/commit/2e70b7ec10dda06b2a089b6679b8137f0e1b4ab8))
+* **contribute:** MED-80 / contribution fournisseur seul et approbations alignees ([328927b](https://github.com/MyElectricalData/myelectricaldata_new/commit/328927bcb124a37a1b750d34a6349b8a605e802a))
+* **contribute:** MED-80 / proposer un fournisseur par contribution ([0eb8489](https://github.com/MyElectricalData/myelectricaldata_new/commit/0eb84899340ab7fa12716e0b2811ae5b1633554c))
+* **docker:** MED-75 / sonde de l'image client insensible a ALLOWED_HOSTS ([ef054e3](https://github.com/MyElectricalData/myelectricaldata_new/commit/ef054e3649c5d1100bd41e71189ebd4598279a57))
+* **export:** année précédente à date jusqu'au même jour, pas au 28 ([f6c7cd6](https://github.com/MyElectricalData/myelectricaldata_new/commit/f6c7cd636c797c1e14fcae5116ef23b759fad1fa))
+* **export:** MED-83 / declarer entity_language dans le schema Home Assistant ([b64c4be](https://github.com/MyElectricalData/myelectricaldata_new/commit/b64c4be7bac17fd775c113d6269ef179643010b9)), closes [#172](https://github.com/MyElectricalData/myelectricaldata_new/issues/172)
+* **helm:** MED-88 / maxMemory valkey pris en compte et limite 512Mi ([b18aba0](https://github.com/MyElectricalData/myelectricaldata_new/commit/b18aba0b8658ce2c1bfdccdf7f651cc506067554))
+* **web:** MED-53 / grilles ouvertes multiples et groupes compares avec leur nom ([d512d40](https://github.com/MyElectricalData/myelectricaldata_new/commit/d512d402e22fb6bd4c4a75fb9714fff2ebd85ff7)), closes [#158](https://github.com/MyElectricalData/myelectricaldata_new/issues/158)
+* **web:** MED-53 / import IA, une nouvelle grille clot l'ancienne a la veille ([ac093cd](https://github.com/MyElectricalData/myelectricaldata_new/commit/ac093cd6c618562a6c0b448b11559369f8cf2616)), closes [#145](https://github.com/MyElectricalData/myelectricaldata_new/issues/145)
+* **web:** MED-53 / revue, cloture apres validation et debuts compares au jour ([7cab82b](https://github.com/MyElectricalData/myelectricaldata_new/commit/7cab82b3bacd515b0ef72fd3963cb1df774cc218))
+* **web:** MED-64 / afficher toutes les annees disponibles dans les agregats ([af18400](https://github.com/MyElectricalData/myelectricaldata_new/commit/af18400bfc78ad972098ef64b59a289058b977e0))
+* **web:** MED-64 / demander tout l historique local au lieu de 3 ans ([d4df0d2](https://github.com/MyElectricalData/myelectricaldata_new/commit/d4df0d2fc2e02fdf7f5e7137d65afccc7694f2af))
+* **web:** MED-64 / libelles de profondeur selon la plage chargee ([7a13b61](https://github.com/MyElectricalData/myelectricaldata_new/commit/7a13b615cd92cf42261bd7cf3ad6d8edecba3d4e))
+* **web:** MED-64 / morceaux journaliers a fin incluse, sans chevauchement ([154cd11](https://github.com/MyElectricalData/myelectricaldata_new/commit/154cd112b6ef8342892dc1d1aa990ff3a90b33f5))
+* **web:** MED-64 / morceaux journaliers contigus, calendrier de la courbe et periodes en UTC ([183cba4](https://github.com/MyElectricalData/myelectricaldata_new/commit/183cba42e65f6083337225d35481dd7682170761))
+* **web:** MED-67 / Consommation € retrouve l'offre du PDL même close ([f2dc283](https://github.com/MyElectricalData/myelectricaldata_new/commit/f2dc28343ee2a11e9e57679266f9137b6573c71e))
+* **web:** MED-67 / une seule définition de la requête des fournisseurs ([e75db23](https://github.com/MyElectricalData/myelectricaldata_new/commit/e75db235308c7170e2d05083ad4964dd99020632))
+* **web:** MED-67 / une seule définition de la requête des offres avec historique ([c28544b](https://github.com/MyElectricalData/myelectricaldata_new/commit/c28544b479cbfd1172a8185cc63b46affad53849))
+* **web:** MED-68 / corrections de revue du rafraichissement automatique ([2dac887](https://github.com/MyElectricalData/myelectricaldata_new/commit/2dac887c05512735a526f7bdd9cda3efee97f9b6))
+* **web:** MED-68 / recuperation automatique des donnees en mode client ([4e91fb2](https://github.com/MyElectricalData/myelectricaldata_new/commit/4e91fb22d25f4581f8c8509653512f14353f01d2))
+* **web:** MED-82 / taux de taxes à la date du prix de l'offre ([23495dd](https://github.com/MyElectricalData/myelectricaldata_new/commit/23495ddf63d2e5a112415c5ef38e8129ef1dbfbd)), closes [#176](https://github.com/MyElectricalData/myelectricaldata_new/issues/176)
+* **web:** texte d'exemple clair pour le jeton Home Assistant ([428de28](https://github.com/MyElectricalData/myelectricaldata_new/commit/428de2857d97d4084663923194cf3772741dedad)), closes [#177](https://github.com/MyElectricalData/myelectricaldata_new/issues/177)
+
+### Refactoring
+
+* **web:** MED-75 / env.js et proxy /api dans un script partage runtime-config.sh ([c6eedfa](https://github.com/MyElectricalData/myelectricaldata_new/commit/c6eedfa0dabede3d1b56869af2003c4a8ebc295c))
+
 ## [2.2.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/helm/2.1.0...helm/2.2.0) (2026-10-16)
 
 ### Features
