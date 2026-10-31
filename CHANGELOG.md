@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.12.5](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.12.4...2.12.5) (2026-10-31)
+
+### Bug Fixes
+
+* **api:** borner aussi les lectures de l'interface à la mise en service du contrat ([b965342](https://github.com/MyElectricalData/myelectricaldata_new/commit/b965342027bc2402ad613a4b27557dfef9e62bf7)), closes [#188](https://github.com/MyElectricalData/myelectricaldata_new/issues/188)
+* **api:** ne pas synchroniser avant la mise en service du contrat ([7660691](https://github.com/MyElectricalData/myelectricaldata_new/commit/7660691fc2e91c837ee7aec653202a77c1bbf64b)), closes [#188](https://github.com/MyElectricalData/myelectricaldata_new/issues/188)
+* **api:** répartir les créneaux HC/HP au prorata des minutes ([b0192f7](https://github.com/MyElectricalData/myelectricaldata_new/commit/b0192f7a7ba4d6184b8d469aa9c060783f7d2679))
+
 ## [2.12.4](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.12.3...2.12.4) (2026-10-31)
 
 ### Bug Fixes
