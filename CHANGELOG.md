@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.12.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.12.2...2.12.3) (2026-10-31)
+
+### Bug Fixes
+
+* **api:** MED-86 / la liste pending renvoie power_variants ([9b2ecf4](https://github.com/MyElectricalData/myelectricaldata_new/commit/9b2ecf45304d76cb10b39c58e662f41b907478e7))
+
 ## [2.12.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.12.1...2.12.2) (2026-10-31)
 
 ### Bug Fixes
