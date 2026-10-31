@@ -88,6 +88,23 @@ async def test_modification_et_changement_de_type(db):
     assert response.data["hc_price"] is None and response.data["hp_price"] is None
 
 
+async def test_changement_de_type_recale_l_option_des_pdl(db):
+    """L'export HA choisit ses séries (base ou hc/hp) d'après PDL.pricing_option : il doit suivre l'offre."""
+    created = (await create_custom_offer(CustomOfferRequest(**ZEN_FIXE_JANVIER), current_user=USER, db=db)).data
+    db.add(PDL(id=str(uuid.uuid4()), usage_point_id="12345678901234", user_id="user-1",
+               selected_offer_id=created["id"], pricing_option="HC_HP"))
+    db.add(PDL(id=str(uuid.uuid4()), usage_point_id="98765432109876", user_id="user-1", pricing_option="HC_HP"))
+    await db.commit()
+
+    request = CustomOfferRequest(name="Mon offre Base", offer_type="BASE", power_kva=6,
+                                 subscription_price=Decimal("12.50"), base_price=Decimal("0.2082"))
+    assert (await update_custom_offer(request, offer_id=created["id"], current_user=USER, db=db)).success
+
+    options = {p.usage_point_id: p.pricing_option for p in (await db.execute(select(PDL))).scalars()}
+    # Seul le PDL qui a choisi l'offre change
+    assert options == {"12345678901234": "BASE", "98765432109876": "HC_HP"}
+
+
 async def test_une_offre_de_la_passerelle_n_est_pas_modifiable(db):
     db.add(EnergyProvider(id="edf", name="EDF"))
     db.add(EnergyOffer(id="zen-fixe", provider_id="edf", name="Zen Fixe", offer_type="HC_HP",
@@ -159,3 +176,36 @@ async def test_la_synchro_garde_les_offres_saisies(db):
     assert await db.get(EnergyOffer, custom["id"]) is not None
     assert await db.get(EnergyOffer, "ancienne") is None
     assert await db.get(EnergyProvider, "disparu") is None
+
+
+async def test_la_synchro_des_pdl_garde_l_option_d_une_offre_saisie(db):
+    """On saisit ses prix parce que le contrat diffère de la passerelle : son option ne doit pas
+    être réécrite à chaque démarrage, sinon l'export HA ne trouve plus ses séries."""
+    custom = (await create_custom_offer(
+        CustomOfferRequest(name="Mon offre Base", offer_type="BASE", power_kva=6,
+                           subscription_price=Decimal("12.50"), base_price=Decimal("0.2082")),
+        current_user=USER, db=db)).data
+    db.add(EnergyProvider(id="edf", name="EDF"))
+    db.add(EnergyOffer(id="zen-fixe", provider_id="edf", name="Zen Fixe", offer_type="BASE",
+                       subscription_price=Decimal("15.86"), base_price=Decimal("0.1952")))
+    db.add(PDL(id=str(uuid.uuid4()), usage_point_id="11111111111111", user_id="user-1",
+               selected_offer_id=custom["id"], pricing_option="BASE"))
+    db.add(PDL(id=str(uuid.uuid4()), usage_point_id="22222222222222", user_id="user-1",
+               selected_offer_id=custom["id"], pricing_option="BASE"))
+    # Témoin : offre de la passerelle, la passerelle reste maîtresse de l'option (comportement inchangé)
+    db.add(PDL(id=str(uuid.uuid4()), usage_point_id="33333333333333", user_id="user-1",
+               selected_offer_id="zen-fixe", pricing_option="BASE"))
+    await db.commit()
+
+    service = SyncService.__new__(SyncService)
+    service.db = db
+    service.adapter = SimpleNamespace(get_usage_points=AsyncMock(return_value={"usage_points": [
+        {"usage_point_id": "11111111111111", "pricing_option": "HC_HP"},
+        {"usage_point_id": "22222222222222"},  # passerelle sans option
+        {"usage_point_id": "33333333333333", "pricing_option": "HC_HP"},
+    ]}))
+
+    await service.sync_pdl_list("user-1")
+
+    options = {p.usage_point_id: p.pricing_option for p in (await db.execute(select(PDL))).scalars()}
+    assert options == {"11111111111111": "BASE", "22222222222222": "BASE", "33333333333333": "HC_HP"}
