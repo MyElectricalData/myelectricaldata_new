@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..adapters.enedis_format import iso_duration_to_minutes
 from ..models.client_mode import ConsumptionData, DataGranularity, ProductionData
 from ..models.tempo_day import TempoDay
-from .exporters.tariff import infer_interval_minutes, offpeak_slot_fraction
+from .exporters.tariff import interval_minutes, offpeak_slot_fraction
 from .local_data import _interval_of
 
 logger = logging.getLogger(__name__)
@@ -287,20 +287,21 @@ class StatisticsService:
         offpeak_ranges: list[tuple[int, int]],
         weekend_offpeak: bool = False,
     ) -> tuple[int, int]:
-        """Ventile des relevés détaillés (date, interval_start, value) en (HP, HC)
+        """Ventile des relevés détaillés (date, interval_start, value, raw_data) en (HP, HC)
 
         Créneau à cheval sur une limite de plage (23h32-5h32 sur une courbe à 30 min) :
-        réparti au prorata des minutes.
+        réparti au prorata des minutes, sur le pas du relevé (raw_data), une courbe pouvant
+        mélanger les pas (PT30M puis PT10M). HP est déduit du total arrondi : HP + HC = total.
         """
-        rows = list(rows)
-        minutes = infer_interval_minutes(row.interval_start for row in rows)
-        hp_total = 0.0
+        total = 0.0
         hc_total = 0.0
         for row in rows:
+            minutes = interval_minutes(row.raw_data)
             fraction = offpeak_slot_fraction(row.date, row.interval_start, offpeak_ranges, weekend_offpeak, minutes) or 0.0
+            total += row.value
             hc_total += row.value * fraction
-            hp_total += row.value * (1 - fraction)
-        return round(hp_total), round(hc_total)
+        hc = round(hc_total)
+        return round(total) - hc, hc
 
     async def get_hp_hc_year_total(
         self,
@@ -327,7 +328,7 @@ class StatisticsService:
         end_date = date(year, 12, 31)
 
         result = await self.db.execute(
-            select(model.date, model.interval_start, model.value)
+            select(model.date, model.interval_start, model.value, model.raw_data)
             .where(model.usage_point_id == usage_point_id)
             .where(model.granularity == DataGranularity.DETAILED)
             .where(model.date >= start_date)
@@ -367,7 +368,7 @@ class StatisticsService:
             end_date = date(year, month + 1, 1) - timedelta(days=1)
 
         result = await self.db.execute(
-            select(model.date, model.interval_start, model.value)
+            select(model.date, model.interval_start, model.value, model.raw_data)
             .where(model.usage_point_id == usage_point_id)
             .where(model.granularity == DataGranularity.DETAILED)
             .where(model.date >= start_date)
@@ -398,7 +399,7 @@ class StatisticsService:
         end_date = start_date + timedelta(days=6)
 
         result = await self.db.execute(
-            select(model.date, model.interval_start, model.value)
+            select(model.date, model.interval_start, model.value, model.raw_data)
             .where(model.usage_point_id == usage_point_id)
             .where(model.granularity == DataGranularity.DETAILED)
             .where(model.date >= start_date)
@@ -428,7 +429,7 @@ class StatisticsService:
             day_date = monday + timedelta(days=i)
 
             query_result = await self.db.execute(
-                select(model.date, model.interval_start, model.value)
+                select(model.date, model.interval_start, model.value, model.raw_data)
                 .where(model.usage_point_id == usage_point_id)
                 .where(model.granularity == DataGranularity.DETAILED)
                 .where(model.date == day_date)
@@ -736,7 +737,7 @@ class StatisticsService:
         model = self._get_model(direction)
 
         result = await self.db.execute(
-            select(model.date, model.interval_start, model.value)
+            select(model.date, model.interval_start, model.value, model.raw_data)
             .where(model.usage_point_id == usage_point_id)
             .where(model.granularity == DataGranularity.DETAILED)
             .where(model.date == target_date)
