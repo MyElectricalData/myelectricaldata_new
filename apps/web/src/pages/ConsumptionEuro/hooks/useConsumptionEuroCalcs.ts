@@ -1,11 +1,11 @@
 import { useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { parseOffpeakHours, isOffpeakTime } from '@/utils/offpeakHours'
+import { parseOffpeakHours, offpeakFraction } from '@/utils/offpeakHours'
 import { tempoApi, type TempoDay } from '@/api/tempo'
 import type { EnergyOffer } from '@/api/energy'
 import type { YearlyCost, MonthlyCost, SelectedOfferWithProvider } from '../types/euro.types'
 import type { APIResponse, EnedisMeasure, MeasureReading, PDL } from '@/types/api'
-import { getIntervalLength, getReadings, getUnit, hasReadings, readingEnergyWh } from '@/utils/enedisMeasure'
+import { getIntervalLength, getReadings, getUnit, hasReadings, readingEnergyWh, readingHours } from '@/utils/enedisMeasure'
 
 interface UseConsumptionEuroCalcsProps {
   selectedPDL: string | null
@@ -157,7 +157,7 @@ export function useConsumptionEuroCalcs({
       date: Date
       dateKey: string // YYYY-MM-DD for tempo lookup
       energyKwh: number
-      isHC: boolean
+      hcShare: number // part du relevé en heures creuses (0 à 1, au prorata des minutes)
     }> = []
 
     allDetailQueries.forEach((query) => {
@@ -187,13 +187,13 @@ export function useConsumptionEuroCalcs({
 
         const hour = apiDateTime.getHours()
         const minute = apiDateTime.getMinutes()
-        const isHC = isOffpeakTime(hour, minute, offpeakRanges)
+        const hcShare = offpeakFraction(hour, minute, readingHours(reading, intervalLength) * 60, offpeakRanges)
 
         allReadings.push({
           date: apiDateTime,
           dateKey,
           energyKwh,
-          isHC
+          hcShare
         })
       })
     })
@@ -201,7 +201,7 @@ export function useConsumptionEuroCalcs({
     if (allReadings.length === 0) return []
 
     // Remove duplicates
-    const uniqueReadingsMap = new Map<string, { date: Date; dateKey: string; energyKwh: number; isHC: boolean }>()
+    const uniqueReadingsMap = new Map<string, { date: Date; dateKey: string; energyKwh: number; hcShare: number }>()
     allReadings.forEach(reading => {
       const key = reading.date.toISOString()
       if (!uniqueReadingsMap.has(key)) {
@@ -299,13 +299,12 @@ export function useConsumptionEuroCalcs({
           }
         }
 
-        if (reading.isHC) {
-          monthlyData[monthKey].hcKwh += reading.energyKwh
-          monthlyData[monthKey].hcCost += reading.energyKwh * hcPrice
-        } else {
-          monthlyData[monthKey].hpKwh += reading.energyKwh
-          monthlyData[monthKey].hpCost += reading.energyKwh * hpPrice
-        }
+        const hcKwh = reading.energyKwh * reading.hcShare
+        const hpKwh = reading.energyKwh - hcKwh
+        monthlyData[monthKey].hcKwh += hcKwh
+        monthlyData[monthKey].hcCost += hcKwh * hcPrice
+        monthlyData[monthKey].hpKwh += hpKwh
+        monthlyData[monthKey].hpCost += hpKwh * hpPrice
         monthlyData[monthKey].daysWithData.add(dayKey)
       })
 

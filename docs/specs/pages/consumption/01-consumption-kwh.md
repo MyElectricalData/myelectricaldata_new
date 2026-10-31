@@ -153,7 +153,7 @@ Page permettant aux utilisateurs de **visualiser et analyser leur consommation �
 - ✅ **Camemberts** du ratio HC/HP par année glissante via des onglets (ex. : 2025, 2024, ...)
 - ✅ Affichage des **totaux HC/HP** et pourcentages
 - ✅ Message d'information complet :
-  > _Le total HC/HP peut différer légèrement de la "Consommation par année". Cette différence provient d'une simulation basée sur les plages horaires HC/HP, car Enedis ne fournit pas ces données détaillées. De plus, Enedis transmet les données par paliers de 30 minutes : si le passage heures creuses/heures pleines intervient au milieu d'un intervalle de 30 minutes, la répartition HC/HP reste approximative à 30 minutes près. La section "Consommation par année" est la plus précise et correspond à la base de facturation de votre fournisseur._
+  > _Le total HC/HP peut différer légèrement de la "Consommation par année". Cette différence provient d'une simulation basée sur les plages horaires HC/HP, car Enedis ne fournit pas ces données détaillées. Enedis transmet les données par paliers de 30 minutes : quand le passage heures creuses/heures pleines intervient au milieu d'un intervalle (plages en 23h32-5h32 par exemple), l'intervalle est réparti au prorata des minutes passées en heures creuses, comme dans les exports Home Assistant. La section "Consommation par année" est la plus précise et correspond à la base de facturation de votre fournisseur._
 - ✅ Export JSON disponible
 
 ### 3. Courbe annuelle ✅

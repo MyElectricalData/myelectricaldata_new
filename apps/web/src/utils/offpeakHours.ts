@@ -79,6 +79,25 @@ export function isOffpeakTime(hour: number, minute: number, ranges: OffpeakRange
 }
 
 /**
+ * Part du créneau [hour:minute, +durationMinutes[ passée en heures creuses, entre 0 et 1.
+ *
+ * Une plage HC peut commencer ou finir au milieu d'un créneau de la courbe de charge (contrat en
+ * 23h32-5h32 par exemple) : classer tout le créneau d'après son heure de début décale la répartition
+ * HC / HP par rapport au compteur. Le créneau est donc réparti au prorata de ses minutes, comme dans
+ * les exports (backend). Une plage calée sur le pas donne 0 ou 1, comme isOffpeakTime.
+ */
+export function offpeakFraction(hour: number, minute: number, durationMinutes: number, ranges: OffpeakRange[]): number {
+  const duration = Math.max(1, Math.round(durationMinutes))
+  const start = hour * 60 + minute
+  let offpeakMinutes = 0
+  for (let i = 0; i < duration; i++) {
+    const t = (start + i) % 1440
+    if (isOffpeakTime(Math.floor(t / 60), t % 60, ranges)) offpeakMinutes++
+  }
+  return offpeakMinutes / duration
+}
+
+/**
  * Check if a given hour is in off-peak (simplified version for hour-only checks)
  */
 export function isOffpeakHour(hour: number, offpeakConfig?: string[] | Record<string, string> | Record<string, any>): boolean {
