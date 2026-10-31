@@ -629,6 +629,8 @@ async def update_custom_offer(
     if offer is None:
         return APIResponse(success=False, error=ErrorDetail(code="NOT_FOUND", message="Offre aux prix saisis introuvable"))
     apply_custom_prices(offer, **request.model_dump())
+    # Comme au choix de l'offre (PUT /pdl/{id}/offer) : l'export HA choisit ses séries d'après l'option
+    await db.execute(update(PDL).where(PDL.selected_offer_id == offer_id).values(pricing_option=offer.offer_type))
     await db.commit()
     await db.refresh(offer)
     return APIResponse(success=True, data=_offer_to_dict(offer))

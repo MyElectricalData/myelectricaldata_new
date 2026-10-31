@@ -127,6 +127,15 @@ class SyncService:
         self.db = db
         self.adapter = get_med_adapter()
 
+    async def _custom_offer_type(self, offer_id: str | None) -> str | None:
+        """Type de l'offre choisie si c'est une offre aux prix saisis, sinon None"""
+        if not offer_id:
+            return None
+        offer = await self.db.get(EnergyOffer, offer_id)
+        if offer is None or not is_custom_provider(offer.provider_id):
+            return None
+        return str(offer.offer_type)
+
     async def sync_pdl_list(self, user_id: str) -> list[dict[str, Any]]:
         """Sync PDL list from remote API to local database
 
@@ -164,7 +173,12 @@ class SyncService:
                     # Update existing PDL with remote data
                     existing_pdl.name = remote_pdl.get("name", existing_pdl.name)
                     existing_pdl.subscribed_power = remote_pdl.get("subscribed_power")
-                    existing_pdl.pricing_option = remote_pdl.get("pricing_option")
+                    # Une offre aux prix saisis fixe l'option : on la saisit justement quand le contrat
+                    # diffère de la passerelle
+                    existing_pdl.pricing_option = (
+                        await self._custom_offer_type(existing_pdl.selected_offer_id)
+                        or remote_pdl.get("pricing_option")
+                    )
                     existing_pdl.has_consumption = remote_pdl.get("has_consumption", True)
                     existing_pdl.has_production = remote_pdl.get("has_production", False)
                     existing_pdl.is_active = remote_pdl.get("is_active", True)
