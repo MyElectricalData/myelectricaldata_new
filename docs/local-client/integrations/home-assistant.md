@@ -148,6 +148,11 @@ Enedis. Si l'offre définit ses propres plages (`hc_schedules`), ce sont elles q
 | `sensor.myelectricaldata_tempo_info` | | Synthèse de la saison en attributs |
 | `sensor.myelectricaldata_tempo_price_{couleur}_{hc,hp}` | EUR/kWh | Prix Tempo (ex. `price_red_hp`) |
 
+Les attributs `days_blue`, `days_white` et `days_red` de `tempo_info` suivent le format de la carte
+content-card-linky : jours restants sur le quota de la saison, en texte (`288 / 300`). Les
+attributs `days_{couleur}_detail` donnent les valeurs numériques (`used`, `remaining`,
+`reserved_known_days`, `quota`).
+
 ### Zen Flex (appareil « EDF Zen Flex »)
 
 Calendrier de l'offre EDF Zen Week-End Option Flex, publié pour tous (comme Tempo), que le PDL ait
@@ -167,6 +172,9 @@ cette offre ou non.
 | `sensor.myelectricaldata_ecowatt_j0` | 1 / 2 / 3 | Signal du jour, valeurs horaires en attributs |
 | `sensor.myelectricaldata_ecowatt_j1` | 1 / 2 / 3 | Signal du lendemain |
 | `sensor.myelectricaldata_ecowatt_j2` | 1 / 2 / 3 | Signal du surlendemain |
+
+L'attribut `forecast` suit le format de la carte content-card-linky : une clé par heure, de `00 h`
+à `23 h`. L'attribut `hourly_values` donne les mêmes valeurs sous forme de liste de 24 éléments.
 
 ---
 

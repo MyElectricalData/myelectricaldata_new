@@ -548,7 +548,9 @@ async def test_tempo_jours_restants_par_quota():
     assert bleu["attributes"]["reserved_known_days"] == 2
     assert published["myelectricaldata_edf/tempo_days_white"]["attributes"]["remaining"] == 0
     info = published["myelectricaldata_edf/tempo_info"]["attributes"]
-    assert (info["days_blue"], info["days_white"], info["days_red"]) == (288, 0, 22)
+    # Format V1 « restants / quota » attendu par content-card-linky (#190)
+    assert (info["days_blue"], info["days_white"], info["days_red"]) == ("288 / 300", "0 / 43", "22 / 22")
+    assert info["days_blue_detail"]["remaining"] == 288
 
 
 async def test_tempo_prix_de_l_offre_selectionnee():
