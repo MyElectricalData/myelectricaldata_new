@@ -28,6 +28,8 @@ def service(monkeypatch):
     monkeypatch.setattr(enedis_client, "LocalDataService", lambda db: service)
     monkeypatch.setattr(enedis_client, "verify_pdl_ownership", AsyncMock(return_value=True))
     monkeypatch.setattr(enedis_client, "_detail_chunk_backoff", {})
+    # Mise en service inconnue : seule la fenêtre de la passerelle borne les plages (borne de la PR #189)
+    monkeypatch.setattr(enedis_client, "get_activation_date", AsyncMock(return_value=None))
     return service
 
 

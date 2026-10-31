@@ -55,6 +55,8 @@ def sync_service(db):
     service = SyncService.__new__(SyncService)
     service.db = db
     service.adapter = MagicMock()
+    # Mise en service inconnue : fenêtre Enedis complète (borne testée dans test_sync_debut_contrat.py)
+    service._activation_date = AsyncMock(return_value=None)
     return service
 
 
@@ -274,6 +276,7 @@ async def test_max_power_complete_les_jours_manquants_puis_relit_la_base(monkeyp
     monkeypatch.setattr(enedis_client, "LocalDataService", lambda db: service)
     monkeypatch.setattr(enedis_client, "get_med_adapter", lambda: adapter)
 
+    monkeypatch.setattr(enedis_client, "get_activation_date", AsyncMock(return_value=None))
     data = await enedis_client._max_power_data(MagicMock(), PRM, "2026-09-29", "2026-10-01", use_cache=True)
 
     adapter.get_consumption_max_power.assert_awaited_once_with(PRM, "2026-09-29", "2026-10-01")

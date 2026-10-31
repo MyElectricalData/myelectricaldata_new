@@ -30,7 +30,7 @@ from ..services.local_data import (
     format_detail_response,
     parse_max_power_points,
 )
-from ..services.sync import MAX_DAILY_DAYS, MAX_DETAILED_DAYS
+from ..services.sync import MAX_DAILY_DAYS, MAX_DETAILED_DAYS, get_activation_date
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,22 @@ def _within_gateway_window(ranges: list[tuple[date, date]], max_days: int) -> li
     """
     window_start = date.today() - timedelta(days=max_days)
     return [(max(start, window_start), end) for start, end in ranges if end > window_start]
+
+async def _after_activation(
+    db: AsyncSession, usage_point_id: str, data_type: str, ranges: list[tuple[date, date]]
+) -> list[tuple[date, date]]:
+    """Plages manquantes coupées à la mise en service du contrat (fin exclue) : Enedis n'a rien avant (#188).
+
+    Sans cette borne, ouvrir la page Consommation redemande à la passerelle chaque semaine antérieure
+    au contrat (réponses NO_DATA, quota consommé pour rien), comme la synchro avant la même correction.
+    """
+    if not ranges:
+        return ranges
+    activation = await get_activation_date(db, usage_point_id, data_type)
+    if activation is None:
+        return ranges
+    return [(max(start, activation), end) for start, end in ranges if end > activation]
+
 
 router = APIRouter(
     prefix="/enedis",
@@ -269,6 +285,7 @@ async def get_consumption_daily(
             usage_point_id, start_date, end_date
         )
         missing_ranges = _within_gateway_window(missing_ranges, MAX_DAILY_DAYS)
+        missing_ranges = await _after_activation(db, usage_point_id, "consumption", missing_ranges)
         all_readings.extend(local_data)
 
         # If no missing ranges, return local data only
@@ -370,6 +387,7 @@ async def get_consumption_detail(
             usage_point_id, start_date, end_date
         )
         missing_ranges = _within_gateway_window(missing_ranges, MAX_DETAILED_DAYS)
+        missing_ranges = await _after_activation(db, usage_point_id, "consumption", missing_ranges)
         all_readings.extend(local_data)
 
         # If no missing ranges, return local data only
@@ -440,6 +458,7 @@ async def _max_power_data(
     local_service = LocalDataService(db)
     points, missing_ranges = await local_service.get_max_power(usage_point_id, start_date, end_date)
     missing_ranges = _within_gateway_window(missing_ranges, MAX_DAILY_DAYS)
+    missing_ranges = await _after_activation(db, usage_point_id, "consumption", missing_ranges)
 
     if missing_ranges:
         for range_start, range_end in missing_ranges:
@@ -544,6 +563,7 @@ async def get_production_daily(
             usage_point_id, start_date, end_date
         )
         missing_ranges = _within_gateway_window(missing_ranges, MAX_DAILY_DAYS)
+        missing_ranges = await _after_activation(db, usage_point_id, "production", missing_ranges)
         all_readings.extend(local_data)
 
         # If no missing ranges, return local data only
@@ -645,6 +665,7 @@ async def get_production_detail(
             usage_point_id, start_date, end_date
         )
         missing_ranges = _within_gateway_window(missing_ranges, MAX_DETAILED_DAYS)
+        missing_ranges = await _after_activation(db, usage_point_id, "production", missing_ranges)
         all_readings.extend(local_data)
 
         # If no missing ranges, return local data only
@@ -792,6 +813,7 @@ async def get_consumption_detail_batch(
                 usage_point_id, start_date, end_date
             )
             missing_ranges = _within_gateway_window(missing_ranges, MAX_DETAILED_DAYS)
+            missing_ranges = await _after_activation(db, usage_point_id, "consumption", missing_ranges)
             all_readings.extend(local_data)
 
             if not missing_ranges:
@@ -916,6 +938,7 @@ async def get_production_detail_batch(
                 usage_point_id, start_date, end_date
             )
             missing_ranges = _within_gateway_window(missing_ranges, MAX_DETAILED_DAYS)
+            missing_ranges = await _after_activation(db, usage_point_id, "production", missing_ranges)
             all_readings.extend(local_data)
 
             if not missing_ranges:
