@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.13.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.13.1...2.13.2) (2026-10-31)
+
+### Bug Fixes
+
+* **web:** répartition HC/HP au prorata des minutes dans les pages Consommation ([8bc9b65](https://github.com/MyElectricalData/myelectricaldata_new/commit/8bc9b65b85774b105152f4cbc71890b202f2db6f)), closes [#193](https://github.com/MyElectricalData/myelectricaldata_new/issues/193)
+
 ## [2.13.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.13.0...2.13.1) (2026-10-31)
 
 ### Bug Fixes
