@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.13.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.12.5...2.13.0) (2026-10-31)
+
+### Features
+
+* **api:** saisir les prix de son offre en mode client ([fdc8a21](https://github.com/MyElectricalData/myelectricaldata_new/commit/fdc8a218e778d12bba1de22d58edc8107fa0b19d))
+
+### Bug Fixes
+
+* **api:** MED-93 / prorata HC/HP des stats sur le pas de chaque releve, HP + HC = total ([e35a8d9](https://github.com/MyElectricalData/myelectricaldata_new/commit/e35a8d9323fda16bfb882fe939a9159f148cdab6))
+* **web:** montants de l'offre saisie affichés au format français ([bce3741](https://github.com/MyElectricalData/myelectricaldata_new/commit/bce37414936224502857c052ae861538ad2a87c4))
+
 ## [2.12.5](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.12.4...2.12.5) (2026-10-31)
 
 ### Bug Fixes
