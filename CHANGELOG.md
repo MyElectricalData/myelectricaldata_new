@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.12.4](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.12.3...2.12.4) (2026-10-31)
+
+### Bug Fixes
+
+* **api:** retablir le format v1 d'ecowatt et tempo pour content-card-linky ([60720e2](https://github.com/MyElectricalData/myelectricaldata_new/commit/60720e2c9eff2cf202b67fdaa1c5101872a69072)), closes [#190](https://github.com/MyElectricalData/myelectricaldata_new/issues/190)
+
 ## [2.12.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.12.2...2.12.3) (2026-10-31)
 
 ### Bug Fixes
