@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.12.1...2.12.2) (2026-10-31)
+
+### Bug Fixes
+
+* **api:** MED-89 / logs Valkey en listes plafonnees par niveau ([ccf6c07](https://github.com/MyElectricalData/myelectricaldata_new/commit/ccf6c076f43914597cd8bcc27882d4508a197106))
+* **helm:** MED-88 / maxMemory valkey pris en compte et limite 512Mi ([b18aba0](https://github.com/MyElectricalData/myelectricaldata_new/commit/b18aba0b8658ce2c1bfdccdf7f651cc506067554))
+
 ## [2.12.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.12.0...2.12.1) (2026-10-28)
 
 ### Bug Fixes
