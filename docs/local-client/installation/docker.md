@@ -1,24 +1,15 @@
 # Installation Docker
 
-Installation du mode client via Docker Compose.
-
-Trois fichiers compose sont fournis :
-
-| Fichier | Base | Services | Pour qui |
-|---------|------|----------|----------|
-| `docker-compose.client.yml` | SQLite (un fichier dans le volume `myelectricaldata_data`), ou PostgreSQL externe via `DATABASE_URL` | `client` (un seul conteneur : interface et API) | **Recommandé pour une nouvelle installation** : un service, un port, un volume |
-| `docker-compose.sqlite.yml` | SQLite (même volume `myelectricaldata_data`) | `backend`, `frontend` | Installations existantes en deux conteneurs (voir [Passer à un seul conteneur](#passer-de-deux-conteneurs-à-un-seul)) |
-| `docker-compose.yml` | PostgreSQL 16 embarqué (volume `postgres_data`) | `postgres`, `backend`, `frontend` | Installations existantes, ou besoin d'un serveur PostgreSQL embarqué |
-
-Tous donnent le même client (mêmes pages, mêmes exports). L'image `client` réunit le front (nginx) et l'API (FastAPI) : nginx sert l'interface sur le port 80 du conteneur et transmet `/api` à l'API, qui n'écoute qu'à l'intérieur du conteneur. Changer de base (SQLite, PostgreSQL) ne déplace pas les données : la nouvelle base repart vide et se resynchronise depuis la passerelle (3 ans de journalier, 2 ans de courbe de charge).
+Installez le client local en **un seul conteneur** : l'interface et l'API sont réunies dans une même image, avec une seule adresse et un seul volume.
 
 ## Prérequis
 
 - Docker 24+ et Docker Compose v2
+- Vos identifiants MyElectricalData (`client_id` et `client_secret`), visibles dans **Paramètres > API** de [www.v2.myelectricaldata.fr](https://www.v2.myelectricaldata.fr)
 - Accès réseau vers `www.v2.myelectricaldata.fr`
 - Une machine **amd64** (x86_64) ou **arm64** (Raspberry Pi 4 ou 5 avec un système 64 bits, voir [Raspberry Pi](#installation-sur-raspberry-pi))
 
-Les images `ghcr.io/myelectricaldata/myelectricaldata_new/client`, `.../backend` et `.../frontend` sont publiques : aucun compte GitHub ni `docker login` n'est nécessaire.
+L'image `ghcr.io/myelectricaldata/myelectricaldata_new/client` est publique : aucun compte GitHub ni `docker login` n'est nécessaire.
 
 ```bash
 # Vérifier les versions
@@ -28,30 +19,22 @@ docker compose version
 
 ## Installation
 
-### Étape 1 : Cloner le dépôt
+### Étape 1 : Récupérer le fichier compose
+
+Un seul fichier suffit, inutile de cloner le dépôt :
 
 ```bash
-git clone https://github.com/MyElectricalData/myelectricaldata_new.git
-cd myelectricaldata_new
+mkdir myelectricaldata && cd myelectricaldata
+curl -O https://raw.githubusercontent.com/MyElectricalData/myelectricaldata_new/main/docker-compose.client.yml
 ```
 
-### Étape 2 : Configurer
+### Étape 2 : Renseigner vos identifiants
 
-```bash
-# Copier le template
-cp .env.local-client.example .env
-
-# Éditer avec vos credentials
-nano .env
-```
-
-Docker Compose lit automatiquement le fichier `.env` du dossier courant.
-
-**Contenu minimum de `.env`** :
+Créez un fichier `.env` à côté du compose (Docker Compose le lit automatiquement) :
 
 ```bash
 # === OBLIGATOIRE ===
-# Credentials API MyElectricalData (depuis votre compte)
+# Identifiants API MyElectricalData (depuis votre compte)
 MED_CLIENT_ID=cli_xxxxxxxxxxxxxxxxxxxxxxxxx
 MED_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
@@ -63,42 +46,21 @@ SECRET_KEY=
 
 # === OPTIONNEL ===
 TZ=Europe/Paris
-# Port de l'interface (docker-compose.client.yml)
+# Port de l'interface sur votre machine (défaut 8100)
 CLIENT_PORT=8100
-# Ports en deux conteneurs (docker-compose.client.yml, docker-compose.yml)
-CLIENT_FRONTEND_PORT=8100
-CLIENT_BACKEND_PORT=8181
-
-# === POSTGRESQL SEULEMENT (docker-compose.yml) ===
-# Mot de passe de la base PostgreSQL embarquée : lettres, chiffres, - _ . ~ seulement
-# (il est repris tel quel dans l'URL de connexion, un @ / : # ? la casserait)
-POSTGRES_PASSWORD=un-mot-de-passe-solide
 ```
 
-Seule l'adresse http://localhost:8100 est à ouvrir : l'API répond sous http://localhost:8100/api.
-
-:::tip PostgreSQL existant
-Pour utiliser votre propre serveur PostgreSQL, renseignez `DATABASE_URL` dans `.env` (format `postgresql+asyncpg://utilisateur:motdepasse@hote:5432/base`) : `docker-compose.client.yml` l'utilise à la place de SQLite. L'hôte doit être joignable depuis le conteneur (`postgres`, le nom du service de `docker-compose.yml`, n'existe pas dans `docker-compose.client.yml`).
-:::
-
-:::info Portainer
-Chaque fichier compose (de préférence `docker-compose.client.yml`) peut être déployé tel quel comme stack Portainer : renseignez `MED_CLIENT_ID` et `MED_CLIENT_SECRET` (plus `POSTGRES_PASSWORD` avec `docker-compose.yml`) dans les variables d'environnement de la stack. Aucun autre fichier n'est nécessaire.
-:::
+Le modèle complet et commenté est `.env.local-client.example` dans le [dépôt](https://github.com/MyElectricalData/myelectricaldata_new/blob/main/.env.local-client.example).
 
 ### Étape 3 : Démarrer
 
 ```bash
-# Un seul conteneur (recommandé)
 docker compose -f docker-compose.client.yml up -d
 ```
 
-Au premier démarrage, l'API crée la base (fichier `/app/data/myelectricaldata.db` en SQLite) et son schéma. Le conteneur passe `healthy` quand l'interface et l'API répondent (`docker compose -f docker-compose.client.yml ps`).
+Au premier démarrage, l'API crée la base (fichier `/app/data/myelectricaldata.db`, dans le volume `myelectricaldata_data`) et son schéma. Le conteneur passe `healthy` quand l'interface et l'API répondent (`docker compose -f docker-compose.client.yml ps`).
 
-:::note Commandes de cette page
-Les exemples suivants visent `docker-compose.client.yml` et son service `client`. En deux conteneurs, remplacez-le par `docker-compose.sqlite.yml` (ou `docker-compose.yml`) et le service par `backend`.
-:::
-
-### Étape 4 : Vérifier
+### Étape 4 : Ouvrir l'interface
 
 ```bash
 # Logs
@@ -107,6 +69,16 @@ docker compose -f docker-compose.client.yml logs -f
 # Accéder à l'interface
 open http://localhost:8100
 ```
+
+Seule l'adresse http://localhost:8100 est à ouvrir : l'API répond sous http://localhost:8100/api.
+
+:::tip PostgreSQL existant
+Pour utiliser votre propre serveur PostgreSQL plutôt que SQLite, renseignez `DATABASE_URL` dans `.env` (format `postgresql+asyncpg://utilisateur:motdepasse@hote:5432/base`). L'hôte doit être joignable depuis le conteneur.
+:::
+
+:::info Portainer
+`docker-compose.client.yml` peut être déployé tel quel comme stack Portainer : renseignez `MED_CLIENT_ID` et `MED_CLIENT_SECRET` dans les variables d'environnement de la stack. Aucun autre fichier n'est nécessaire.
+:::
 
 ---
 
@@ -164,10 +136,7 @@ docker compose -f docker-compose.client.yml up -d
 ## Mise à jour
 
 ```bash
-# Mettre à jour le compose et la doc
-git pull
-
-# Télécharger les nouvelles images et recréer les conteneurs
+# Télécharger la nouvelle image et recréer le conteneur
 docker compose -f docker-compose.client.yml pull
 docker compose -f docker-compose.client.yml up -d
 ```
@@ -178,20 +147,46 @@ L'API applique les migrations de la base au démarrage.
 
 ## Passer de deux conteneurs à un seul
 
-Depuis `docker-compose.sqlite.yml` (services `backend` et `frontend`), dans le **même dossier** : le nom du projet compose (celui du dossier) ne change pas, donc le volume `myelectricaldata_data` et sa base SQLite sont repris tels quels.
+Cette section concerne les installations existantes faites avec `docker-compose.sqlite.yml` (services `backend` et `frontend`). Dans le **même dossier** : le nom du projet compose (celui du dossier) ne change pas, donc le volume `myelectricaldata_data` et sa base SQLite sont repris tels quels.
 
 ```bash
-git pull
+# Récupérer le nouveau fichier compose (ou git pull si vous aviez cloné le dépôt)
+curl -O https://raw.githubusercontent.com/MyElectricalData/myelectricaldata_new/main/docker-compose.client.yml
 docker compose -f docker-compose.client.yml pull
 # Crée le conteneur client et retire les anciens conteneurs backend et frontend
 docker compose -f docker-compose.client.yml up -d --remove-orphans
 ```
 
-- Le port de l'interface reste **8100** (`CLIENT_PORT`, défaut 8100 ; reportez la valeur de `CLIENT_FRONTEND_PORT` si vous l'aviez changée).
+- Le port de l'interface reste **8100** par défaut. Le nouveau compose lit `CLIENT_PORT` (et non plus `CLIENT_FRONTEND_PORT`) : si vous aviez changé `CLIENT_FRONTEND_PORT`, reportez sa valeur dans `CLIENT_PORT`.
 - Le port **8181** de l'API disparaît : un script, Home Assistant ou un autre outil qui appelait `http://<hôte>:8181/api/...` doit passer par `http://<hôte>:8100/api/...` (même chemin).
 - Retour arrière : `docker compose -f docker-compose.sqlite.yml up -d --remove-orphans` (même volume).
 
 Depuis `docker-compose.yml` (PostgreSQL embarqué) : la base PostgreSQL n'est pas reprise par l'image client seule. Gardez `docker-compose.yml`, ou repartez sur SQLite avec `docker-compose.client.yml` (resynchronisation depuis la passerelle), après une [sauvegarde](#postgresql).
+
+---
+
+## Options avancées, installations en deux conteneurs
+
+Ces fichiers restent fournis pour les installations existantes. Pour une nouvelle installation, préférez `docker-compose.client.yml` ci-dessus.
+
+| Fichier | Base | Services | Pour qui |
+|---------|------|----------|----------|
+| `docker-compose.sqlite.yml` | SQLite (même volume `myelectricaldata_data`) | `backend`, `frontend` | Installation existante en deux conteneurs |
+| `docker-compose.yml` | PostgreSQL 16 embarqué (volume `postgres_data`) | `postgres`, `backend`, `frontend` | Installation existante, ou besoin d'un PostgreSQL embarqué |
+
+Variables propres à ces fichiers, à ajouter dans `.env` au besoin :
+
+```bash
+# Ports en deux conteneurs (docker-compose.sqlite.yml et docker-compose.yml)
+CLIENT_FRONTEND_PORT=8100
+CLIENT_BACKEND_PORT=8181
+
+# docker-compose.yml seulement : mot de passe de la base PostgreSQL embarquée
+# (lettres, chiffres, - _ . ~ seulement : il est repris tel quel dans l'URL de connexion)
+POSTGRES_PASSWORD=un-mot-de-passe-solide
+```
+
+Dans les commandes de cette page, remplacez `docker-compose.client.yml` par `docker-compose.sqlite.yml` (ou `docker-compose.yml`) et le service `client` par `backend`. Ces compose nécessitent le dépôt cloné (`git clone https://github.com/MyElectricalData/myelectricaldata_new.git`) et `cp .env.local-client.example .env`.
 
 ---
 

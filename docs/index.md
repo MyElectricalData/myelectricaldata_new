@@ -8,157 +8,77 @@ title: Accueil
 
 **Accédez à vos données Linky en toute simplicité**
 
-MyElectricalData est une passerelle API sécurisée qui permet aux particuliers français d'accéder à leurs données de consommation et de production électrique via les API professionnelles Enedis.
+MyElectricalData vous permet de consulter votre consommation et votre production électrique, de comparer les offres des fournisseurs et d'alimenter votre domotique (Home Assistant, MQTT, Grafana), à partir de vos données Enedis.
 
-## 🚀 Démarrage rapide
+Le moyen le plus simple de l'utiliser : installer le **client local** chez vous. Un seul conteneur Docker, une seule adresse, vos données restent sur votre machine.
 
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
+## 🚀 Installer le client local
 
-<Tabs>
-  <TabItem value="client" label="Mode Client (recommandé)" default>
+Il vous faut [Docker](https://docs.docker.com/get-docker/) et vos identifiants MyElectricalData (`client_id` et `client_secret`), visibles dans **Paramètres > API** de [www.v2.myelectricaldata.fr](https://www.v2.myelectricaldata.fr).
 
 ```bash
-# Cloner le repository
-git clone https://github.com/MyElectricalData/myelectricaldata_new.git
-cd myelectricaldata_new
+# 1. Récupérer le fichier de déploiement (pas besoin de cloner le dépôt)
+curl -O https://raw.githubusercontent.com/MyElectricalData/myelectricaldata_new/main/docker-compose.client.yml
 
-# Configurer les identifiants MyElectricalData API
-cp .env.local-client.example .env
-nano .env
+# 2. Renseigner vos identifiants
+cat > .env <<'EOF'
+MED_CLIENT_ID=votre_client_id
+MED_CLIENT_SECRET=votre_client_secret
+EOF
 
-# Démarrer les services
-docker compose up -d
-
-# Accéder à l'application
-open http://localhost:8100
+# 3. Démarrer
+docker compose -f docker-compose.client.yml up -d
 ```
 
-  </TabItem>
-  <TabItem value="server" label="Mode Serveur">
+Ouvrez ensuite **http://localhost:8100** : créez votre compte, lancez la synchronisation, et vos données arrivent.
 
-```bash
-# Cloner le repository
-git clone https://github.com/MyElectricalData/myelectricaldata_new.git
-cd myelectricaldata_new
+- **Une seule image** : `ghcr.io/myelectricaldata/myelectricaldata_new/client` (amd64 et arm64, Raspberry Pi compris).
+- **Un seul volume** : vos données sont dans une base SQLite, rien d'autre à installer.
+- **Mise à jour** : `docker compose -f docker-compose.client.yml pull && docker compose -f docker-compose.client.yml up -d`.
 
-# Configurer les identifiants Enedis/RTE
-cp apps/api/.env.example apps/api/.env.docker
-nano apps/api/.env.docker
+➡️ [Guide d'installation complet](./local-client/installation/docker.md) · [Configuration](./local-client/configuration.md) · [Migrer depuis deux conteneurs ou depuis la V1](./local-client/installation/docker.md#passer-de-deux-conteneurs-à-un-seul)
 
-# Démarrer les services (PostgreSQL et Valkey à fournir)
-docker compose -f docker-compose.server.yml --env-file apps/api/.env.docker up -d
-
-# Accéder à l'application
-open http://localhost:8000
-```
-
-  </TabItem>
-  <TabItem value="helm" label="Kubernetes (Helm)">
-
-```bash
-# Mode Client
-helm install myelectricaldata ./helm/myelectricaldata-client \
-  --set secrets.med.clientId.value=xxx \
-  --set secrets.med.clientSecret.value=xxx
-
-# Mode Serveur
-helm install myelectricaldata ./helm/myelectricaldata-server \
-  --set secrets.enedis.clientId.value=xxx \
-  --set secrets.enedis.clientSecret.value=xxx
-```
-
-  </TabItem>
-</Tabs>
-
-## 📚 Documentation
-
-### Guides par mode
-
-| Mode | Description | Documentation |
-|------|-------------|---------------|
-| **Mode Client** | Installation locale mono-utilisateur | [Documentation Client](/local-client) |
-| **Mode Serveur** | Gateway multi-utilisateurs avec API Enedis | [Documentation Serveur](/server-mode) |
-
-### Ressources générales
-
-| Section | Description |
-|---------|-------------|
-| [**APIs Externes**](/external-apis) | Documentation des API Enedis DataHub et RTE |
-| [**Design System**](/specs/design) | Règles de design et composants UI |
-| [**Pages**](/pages/dashboard) | Guide de conception des pages de l'application |
-
-## ✨ Fonctionnalités principales
+## ✨ Ce que vous obtenez
 
 ### 📊 Consultation des données
-- **Consommation** : Visualisez votre consommation quotidienne, mensuelle et annuelle
-- **Production** : Suivez votre production solaire (si applicable)
-- **Puissance max** : Analysez vos pics de puissance
+- **Consommation** : quotidienne, mensuelle et annuelle, courbe de charge
+- **Production** : suivi de votre production solaire (si applicable)
+- **Puissance max** : analyse de vos pics de puissance
 
 ### 💰 Simulateur de tarifs
 - Comparez les offres **BASE**, **HC/HP** et **TEMPO**
 - Calcul basé sur votre consommation réelle
-- Support de 130+ offres de 4 fournisseurs
+- Plus de 130 offres de 4 fournisseurs
 
-### 📅 Données TEMPO & Ecowatt
+### 📅 TEMPO et Ecowatt
 - Couleurs des jours TEMPO (bleu, blanc, rouge)
-- Alertes Ecowatt pour les tensions réseau
+- Alertes Ecowatt sur les tensions du réseau
 - Historique et prévisions
 
-## 🏗️ Architecture
+### 🏠 Domotique
+- **Home Assistant** : Energy Dashboard, entités créées automatiquement
+- **MQTT** : compatible avec tout broker
+- **VictoriaMetrics** : métriques pour Grafana
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Frontend  │────▶│   Backend   │────▶│  Enedis API │
-│  React/Vite │     │   FastAPI   │     │  DataHub    │
-└─────────────┘     └─────────────┘     └─────────────┘
-                           │
-                    ┌──────┴──────┐
-                    │    Cache    │
-                    │   (Redis)   │
-                    └─────────────┘
-```
+## 📖 Pour aller plus loin
 
-- **Frontend** : React 18 + TypeScript + Vite + TailwindCSS
-- **Backend** : FastAPI + SQLAlchemy + Pydantic
-- **Base de données** : PostgreSQL pour la passerelle ; SQLite (recommandé) ou PostgreSQL pour le [client local](./local-client/installation/docker.md)
-- **Cache** : Redis avec chiffrement Fernet
+| Je veux... | Documentation |
+|------------|---------------|
+| Installer et utiliser le client local | [Client Local](/local-client) |
+| Régler l'application et les exports | [Configuration](./local-client/configuration.md) |
+| Brancher Home Assistant, MQTT, Grafana | [Exporteurs](./local-client/exporters.md) |
 
-## 🔐 Sécurité
+## 🧰 Autres modes d'installation
 
-- **Isolation des données** : Chaque utilisateur n'accède qu'à ses propres PDL
-- **[Chiffrement Fernet](/server-mode/encryption)** : Données en cache chiffrées avec la clé secrète de l'utilisateur
-- **OAuth2** : Flux de consentement Enedis sécurisé
-- **Rate limiting** : Protection contre les abus
+Ces modes s'adressent à des besoins particuliers. Si vous voulez simplement voir vos données chez vous, le client local ci-dessus suffit.
 
-## 🏠 Client Local (domotique)
+- **Kubernetes (Helm)** : le client local sur un cluster, voir [Installation Helm](./local-client/installation/helm.md).
+- **Mode Serveur (gateway)** : héberger une passerelle multi-utilisateurs avec accès direct aux API Enedis et RTE, voir [Mode Serveur](/server-mode). Réservé à qui opère un service pour d'autres utilisateurs (compte professionnel Enedis requis).
 
-Installez le **Client Local** chez vous pour intégrer vos données Linky dans votre système domotique :
+## 🛠️ Pour les développeurs
 
-- **Home Assistant** : Energy Dashboard, entités automatiques
-- **MQTT** : Compatible avec tout broker MQTT
-- **VictoriaMetrics** : Métriques Prometheus pour Grafana
-
-➡️ [Documentation du Client Local](/local-client)
-
-## 🖥️ Mode Serveur (Gateway)
-
-Déployez votre propre gateway multi-utilisateurs avec accès direct aux API Enedis :
-
-- **Multi-utilisateurs** : Gestion complète des comptes et rôles
-- **OAuth2 Enedis** : Consentement et tokens automatiques
-- **Administration** : Interface complète (users, offres, logs)
-- **Simulateur** : Comparaison de 130+ offres tarifaires
-
-➡️ [Documentation du Mode Serveur](/server-mode)
-
-## 📖 Ressources
-
-- [Client Local domotique](/local-client)
-- [Mode Serveur (Gateway)](/server-mode)
-- [APIs Externes](/external-apis)
-- [Design System](/specs/design)
-
-## 🤝 Contribution
+- [APIs Externes](/external-apis) : Enedis DataHub et RTE
+- [Architecture du client local](./local-client/architecture.md)
+- [Design System](/specs/design) et [Pages](/specs/pages/dashboard) : règles de conception de l'interface
 
 Le projet est open-source. Les contributions sont les bienvenues sur [GitHub](https://github.com/MyElectricalData/myelectricaldata_new).

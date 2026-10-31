@@ -77,26 +77,24 @@ const config: Config = {
           label: "Client Local",
         },
         {
-          type: "docSidebar",
-          sidebarId: "serverModeSidebar",
-          position: "left",
-          label: "Mode Serveur",
-        },
-        {
-          type: "docSidebar",
-          sidebarId: "externalApisSidebar",
-          position: "left",
-          label: "APIs Externes",
-        },
-        {
           type: "dropdown",
-          label: "Specs",
+          label: "Avancé",
           position: "left",
           items: [
             {
               type: "docSidebar",
+              sidebarId: "serverModeSidebar",
+              label: "Mode Serveur",
+            },
+            {
+              type: "docSidebar",
+              sidebarId: "externalApisSidebar",
+              label: "APIs Externes",
+            },
+            {
+              type: "docSidebar",
               sidebarId: "pagesSidebar",
-              label: "Pages",
+              label: "Pages (specs)",
             },
             {
               type: "docSidebar",
@@ -119,9 +117,26 @@ const config: Config = {
           title: "Documentation",
           items: [
             {
-              label: "Client Local",
-              to: "/local-client",
+              label: "Installer le client local",
+              to: "/local-client/installation/docker",
             },
+            {
+              label: "Configuration",
+              to: "/local-client/configuration",
+            },
+            {
+              label: "Dépannage",
+              to: "/troubleshooting",
+            },
+            {
+              label: "FAQ",
+              to: "/specs/pages/faq",
+            },
+          ],
+        },
+        {
+          title: "Avancé",
+          items: [
             {
               label: "Mode Serveur",
               to: "/server-mode",
@@ -134,22 +149,9 @@ const config: Config = {
               label: "Architecture",
               to: "/server-mode/data-flow",
             },
-          ],
-        },
-        {
-          title: "Ressources",
-          items: [
             {
               label: "Simulateur",
               to: "/server-mode/features/simulator",
-            },
-            {
-              label: "Troubleshooting",
-              to: "/troubleshooting",
-            },
-            {
-              label: "FAQ",
-              to: "/specs/pages/faq",
             },
           ],
         },

@@ -30,22 +30,27 @@ myelectricaldata_new/
 └── docker-compose.yml
 ```
 
-## Local client in one container
+## Local client in one container (recommended for end users)
 
 The local client (client mode) ships as a single image, `ghcr.io/myelectricaldata/myelectricaldata_new/client`:
 nginx serves the web UI and forwards `/api` to the API inside the same container. One service, one port, one volume.
+No need to clone the repository:
 
 ```bash
-cp .env.local-client.example .env   # set MED_CLIENT_ID and MED_CLIENT_SECRET
+curl -O https://raw.githubusercontent.com/MyElectricalData/myelectricaldata_new/main/docker-compose.client.yml
+printf 'MED_CLIENT_ID=your_client_id\nMED_CLIENT_SECRET=your_client_secret\n' > .env
 docker compose -f docker-compose.client.yml up -d
 open http://localhost:8100
 ```
 
 Coming from the two-container setup (`docker-compose.sqlite.yml`), run
 `docker compose -f docker-compose.client.yml up -d --remove-orphans` from the same folder: the
-`myelectricaldata_data` volume is kept. Full guide: `docs/local-client/installation/docker.md`.
+`myelectricaldata_data` volume is kept. Full guide: <https://myelectricaldata.github.io/myelectricaldata_new/local-client/installation/docker>.
 
-## Running with Docker
+## Running with Docker (server mode and development)
+
+The sections below are for running the full gateway (server mode) or developing the project. For a home
+install, use the single-image local client above.
 
 The easiest way to run the entire application is using Docker Compose.
 

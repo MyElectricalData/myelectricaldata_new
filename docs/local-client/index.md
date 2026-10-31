@@ -9,49 +9,7 @@ Le **mode client** de MyElectricalData est une version allégée de l'applicatio
 - **Ne nécessite pas de compte Enedis professionnel**
 - **Propose des exports vers Home Assistant, MQTT, VictoriaMetrics, Jeedom**
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           ARCHITECTURE COMPARÉE                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  MODE SERVEUR (Gateway)                 MODE CLIENT (Local)                 │
-│  ━━━━━━━━━━━━━━━━━━━━━━                 ━━━━━━━━━━━━━━━━━━━━                │
-│                                                                             │
-│  ┌─────────────┐                        ┌─────────────┐                     │
-│  │   Frontend  │                        │   Frontend  │                     │
-│  │   (React)   │                        │   (React)   │                     │
-│  └──────┬──────┘                        └──────┬──────┘                     │
-│         │                                      │                            │
-│         ▼                                      ▼                            │
-│  ┌─────────────┐                        ┌─────────────┐                     │
-│  │   Backend   │                        │   Backend   │                     │
-│  │  (FastAPI)  │                        │  (FastAPI)  │                     │
-│  └──────┬──────┘                        └──────┬──────┘                     │
-│         │                                      │                            │
-│         ▼                                      ▼                            │
-│  ┌─────────────┐                        ┌─────────────────────┐             │
-│  │  Enedis API │                        │ API MyElectricalData│             │
-│  │  (direct)   │                        │ v2.myelectricaldata │             │
-│  └─────────────┘                        └─────────────────────┘             │
-│                                                │                            │
-│  Cache : Valkey (24h)                          ▼                            │
-│  Admin : Oui                           ┌─────────────┐                      │
-│  Page accueil : Oui                    │SQLite ou PG │                      │
-│                                        │  (indéfini) │                      │
-│                                        └──────┬──────┘                      │
-│                                               │                             │
-│                                               ▼                             │
-│                                        ┌─────────────┐                      │
-│                                        │  Exporters  │                      │
-│                                        │ HA/MQTT/VM  │                      │
-│                                        └─────────────┘                      │
-│                                                                             │
-│                                        Cache : Non                          │
-│                                        Admin : Non                          │
-│                                        Page accueil : Non                   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+➡️ **Pour l'installer : [Installation avec Docker](./installation/docker.md)**, un seul conteneur et quelques minutes.
 
 ---
 
@@ -101,39 +59,22 @@ Le **mode client** de MyElectricalData est une version allégée de l'applicatio
 ## Installation rapide
 
 ```bash
-# Cloner le dépôt
-git clone https://github.com/MyElectricalData/myelectricaldata_new.git
-cd myelectricaldata_new
+# Récupérer le fichier compose (pas besoin de cloner le dépôt)
+curl -O https://raw.githubusercontent.com/MyElectricalData/myelectricaldata_new/main/docker-compose.client.yml
 
-# Configurer les variables d'environnement
-cp .env.local-client.example .env
+# Renseigner vos identifiants API
+cat > .env <<'EOF'
+MED_CLIENT_ID=votre_client_id
+MED_CLIENT_SECRET=votre_client_secret
+EOF
 
-# Éditer .env avec vos credentials API
-vim .env
-
-# Démarrer le mode client (un seul conteneur, base SQLite)
+# Démarrer (un seul conteneur, base SQLite)
 docker compose -f docker-compose.client.yml up -d
 ```
 
-**Accès** : http://localhost:8100 (port différent du mode serveur)
+**Accès** : http://localhost:8100
 
----
-
-## Coexistence avec le mode serveur
-
-Les deux modes peuvent tourner en parallèle sur la même machine :
-
-| Mode | Frontend | Backend | Base de données |
-|------|----------|---------|-----------------|
-| Serveur | :8000 | :8081 | PostgreSQL :5432 (interne) |
-| Client (un conteneur) | :8100 | :8100/api | SQLite (fichier), ou PostgreSQL externe |
-| Client (deux conteneurs) | :8100 | :8181 | SQLite (fichier), ou PostgreSQL :5433 (interne) |
-
-```bash
-# Démarrer les deux modes simultanément
-docker compose -f docker-compose.server.yml up -d    # Mode serveur
-docker compose -f docker-compose.client.yml up -d    # Mode client
-```
+Autres méthodes (Kubernetes, Proxmox, installations en deux conteneurs) : [Installation](./installation/).
 
 ---
 
@@ -149,7 +90,7 @@ Détail du format : [Data Connect 2026](../external-apis/enedis-api/data-connect
 
 ## Documentation
 
-- [Installation](./installation/) (Docker, Helm)
+- [Installation](./installation/) (Docker en priorité ; Helm et autres méthodes)
 - [Architecture technique](./architecture.md)
 - [Configuration](./configuration.md)
 - [Page Exporter](./exporters.md)
@@ -161,3 +102,26 @@ Détail du format : [Data Connect 2026](../external-apis/enedis-api/data-connect
 - [MQTT](./integrations/mqtt.md)
 - [VictoriaMetrics](./integrations/victoriametrics.md)
 - [Autres intégrations planifiées](./integrations/autres.md) (Jeedom, InfluxDB...)
+
+---
+
+## Pour aller plus loin : client et mode serveur
+
+Le client local se connecte à la passerelle MyElectricalData, qui parle à Enedis à sa place. Le [mode serveur](../server-mode/index.md) est cette passerelle : il s'adresse à qui héberge un service pour d'autres utilisateurs, pas à un usage domestique.
+
+```
+Client local ──▶ API MyElectricalData (passerelle) ──▶ API Enedis
+(chez vous)      (www.v2.myelectricaldata.fr)
+```
+
+Les deux modes peuvent tourner sur la même machine, sur des ports différents :
+
+| Mode | Interface | Base de données |
+|------|-----------|-----------------|
+| Client (un conteneur) | :8100 (API sous `/api`) | SQLite (fichier), ou PostgreSQL externe |
+| Serveur | :8000 | PostgreSQL |
+
+```bash
+docker compose -f docker-compose.server.yml up -d    # Mode serveur
+docker compose -f docker-compose.client.yml up -d    # Mode client
+```

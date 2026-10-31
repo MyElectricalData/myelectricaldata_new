@@ -13,9 +13,21 @@ const sidebars: SidebarsConfig = {
       label: "Installation",
       collapsed: false,
       items: [
-        "local-client/installation/index",
-        "local-client/installation/docker",
-        "local-client/installation/helm",
+        {
+          type: "doc",
+          id: "local-client/installation/docker",
+          label: "Installer avec Docker",
+        },
+        {
+          type: "doc",
+          id: "local-client/installation/index",
+          label: "Vue d'ensemble",
+        },
+        {
+          type: "doc",
+          id: "local-client/installation/helm",
+          label: "Kubernetes (Helm), avancé",
+        },
       ],
     },
     {
