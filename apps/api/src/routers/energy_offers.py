@@ -1229,6 +1229,7 @@ async def list_pending_contributions(current_user: User = Depends(require_permis
                 "pricing_data": c.pricing_data,
                 "hc_schedules": c.hc_schedules,
                 "power_kva": c.power_kva,
+                "power_variants": c.power_variants,
                 "price_sheet_url": c.price_sheet_url,
                 "screenshot_url": c.screenshot_url,
                 "valid_from": c.valid_from.isoformat() if c.valid_from else None,
