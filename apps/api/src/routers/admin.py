@@ -14,6 +14,7 @@ from ..schemas import APIResponse, ErrorDetail
 from ..services import rate_limiter, cache_service
 from ..services.price_update_service import PriceUpdateService
 from ..config import settings
+from ..logging_config import LOG_LEVELS, log_list_key
 from ..adapters.enedis_format import as_point, contract_v5_to_2026, extract_points
 import redis.asyncio as redis
 
@@ -812,49 +813,38 @@ async def get_logs(
         )
 
     try:
-        logs = []
+        levels = [level.lower()] if level else list(LOG_LEVELS)
 
-        # Determine patterns to search based on level filter
-        if level:
-            patterns = [f"logs:{level.lower()}:*"]
-        else:
-            # Search all log levels
-            patterns = [
-                "logs:debug:*",
-                "logs:info:*",
-                "logs:warning:*",
-                "logs:error:*",
-                "logs:critical:*"
-            ]
+        # One capped list per level, newest first: the top offset+limit of the merge
+        # can only come from the top offset+limit of each list (no SCAN of the keyspace)
+        pipe = cache_service.redis_client.pipeline(transaction=False)
+        for lvl in levels:
+            pipe.lrange(log_list_key(lvl), 0, offset + limit - 1)
+            pipe.llen(log_list_key(lvl))
+        results = await pipe.execute()
 
-        # Collect all matching keys
-        all_keys = []
-        for pattern in patterns:
-            async for key in cache_service.redis_client.scan_iter(match=pattern):
-                all_keys.append(key)
-
-        # Sort keys by timestamp (descending - newest first)
-        # Keys format: logs:level:timestamp_ms
-        all_keys.sort(reverse=True, key=lambda k: int(k.decode('utf-8').split(':')[-1]))
-
-        # Apply offset and limit
-        selected_keys = all_keys[offset:offset + limit]
-
-        # Retrieve log entries
-        for key in selected_keys:
-            value = await cache_service.redis_client.get(key)
-            if value:
+        entries: list[tuple[datetime, dict]] = []
+        total = 0
+        for i, lvl in enumerate(levels):
+            raw_entries, length = results[2 * i], results[2 * i + 1]
+            total += int(length or 0)
+            for raw in raw_entries:
                 try:
-                    log_entry = json.loads(value)
-                    logs.append(log_entry)
-                except json.JSONDecodeError:
-                    logger.warning(f"Failed to decode log entry: {key}")
+                    log_entry = json.loads(raw)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    logger.warning(f"Failed to decode log entry of level {lvl}")
+                    continue
+                entries.append((_log_sort_key(log_entry), log_entry))
+
+        # Merge levels by timestamp, newest first (stable: same-instant lines keep their list order)
+        entries.sort(key=lambda item: item[0], reverse=True)
+        logs = [log_entry for _, log_entry in entries[offset:offset + limit]]
 
         return APIResponse(
             success=True,
             data={
                 "logs": logs,
-                "total": len(all_keys),
+                "total": total,
                 "count": len(logs),
                 "offset": offset,
                 "limit": limit
@@ -867,6 +857,15 @@ async def get_logs(
             success=False,
             error=ErrorDetail(code="LOG_RETRIEVAL_ERROR", message=str(e))
         )
+
+
+def _log_sort_key(log_entry: dict) -> datetime:
+    """Timestamp of a log entry (offsets differ across DST changes, so compare datetimes, not strings)."""
+    try:
+        dt = datetime.fromisoformat(log_entry["timestamp"])
+        return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+    except (KeyError, TypeError, ValueError):
+        return datetime.min.replace(tzinfo=UTC)
 
 
 @router.delete("/logs/clear", response_model=APIResponse)
@@ -883,25 +882,15 @@ async def clear_logs(
         )
 
     try:
-        deleted_count = 0
+        levels = [level.lower()] if level else list(LOG_LEVELS)
 
-        # Determine patterns to delete based on level filter
-        if level:
-            patterns = [f"logs:{level.lower()}:*"]
-        else:
-            # Delete all log levels
-            patterns = [
-                "logs:debug:*",
-                "logs:info:*",
-                "logs:warning:*",
-                "logs:error:*",
-                "logs:critical:*"
-            ]
+        # Level lists, plus the one-key-per-line entries written before MED-89 (expire within 24h)
+        keys = [log_list_key(lvl) for lvl in levels]
+        for lvl in levels:
+            async for key in cache_service.redis_client.scan_iter(match=f"{log_list_key(lvl)}:*"):
+                keys.append(key.decode("utf-8") if isinstance(key, bytes) else key)
 
-        # Delete all matching keys
-        for pattern in patterns:
-            count = await cache_service.delete_pattern(pattern)
-            deleted_count += count
+        deleted_count = int(await cache_service.redis_client.delete(*keys))
 
         return APIResponse(
             success=True,

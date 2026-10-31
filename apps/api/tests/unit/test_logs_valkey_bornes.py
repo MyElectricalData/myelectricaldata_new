@@ -226,6 +226,41 @@ def test_plafond_par_defaut_reglable_par_environnement(monkeypatch: pytest.Monke
         importlib.reload(logging_config)
 
 
+def test_plafond_par_niveau_garde_plus_de_warning_et_d_error(valkey: FakeValkey) -> None:
+    """Décision MED-89 : info 1000, warning et error 5000 (~2 h d'historique), sans max_entries explicite."""
+    from src.logging_config import max_entries_for, store_log_entry
+
+    assert max_entries_for("INFO") == 1000
+    assert max_entries_for("warning") == 5000
+    assert max_entries_for("ERROR") == 5000
+    assert max_entries_for("CRITICAL") == 5000
+
+    for i in range(1200):
+        store_log_entry(valkey, "INFO", _entry("info", i, f"i{i}"))
+        store_log_entry(valkey, "ERROR", _entry("error", i, f"e{i}"))
+
+    assert valkey.llen("logs:info") == 1000
+    assert valkey.llen("logs:error") == 1200
+
+
+def test_plafonds_warning_et_error_reglables_par_environnement(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib
+
+    from src import logging_config
+
+    monkeypatch.setenv("LOG_MAX_ENTRIES_WARNING", "300")
+    monkeypatch.setenv("LOG_MAX_ENTRIES_ERROR", "400")
+    try:
+        reloaded = importlib.reload(logging_config)
+        assert reloaded.max_entries_for("WARNING") == 300
+        assert reloaded.max_entries_for("ERROR") == 400
+        assert reloaded.max_entries_for("INFO") == 1000
+    finally:
+        monkeypatch.delenv("LOG_MAX_ENTRIES_WARNING")
+        monkeypatch.delenv("LOG_MAX_ENTRIES_ERROR")
+        importlib.reload(logging_config)
+
+
 # --- Handler : plus de clé par ligne, une connexion réutilisée ---------------------------------
 
 

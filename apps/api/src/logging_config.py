@@ -1,28 +1,76 @@
 """Logging configuration for FastAPI application."""
 
-# Store in Redis with 24h TTL (non-encrypted, for admin viewing)
-import asyncio
+# Logs INFO+ also kept in Valkey for the admin page: one capped list per level (MED-89)
 import json
 import logging
+import os
+import queue
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
-from concurrent.futures import ThreadPoolExecutor
 
 if TYPE_CHECKING:
     from .services.cache import CacheService
-
-# Thread pool for async Redis operations
-_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="redis_log")
 
 # Log directory and file
 LOG_DIR = Path("/logs")
 LOG_FILE = LOG_DIR / "app.log"
 
-# Redis TTL for logs: 24 hours
+# Redis TTL for logs: 24 hours (renewed on each new line of the level)
 LOG_RETENTION_SECONDS = 24 * 60 * 60
+
+# Redis key of the capped list of a level: logs:<level>
+LOG_KEY_PREFIX = "logs:"
+LOG_LEVELS = ("debug", "info", "warning", "error", "critical")
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.environ.get(name, default)))
+    except ValueError:
+        return default
+
+
+# Max entries kept per level: info is chatty, warning/error are rare and worth a longer history
+LOG_MAX_ENTRIES_PER_LEVEL = _env_int("LOG_MAX_ENTRIES_PER_LEVEL", 1000)
+LOG_MAX_ENTRIES_BY_LEVEL = {
+    "warning": _env_int("LOG_MAX_ENTRIES_WARNING", 5000),
+    "error": _env_int("LOG_MAX_ENTRIES_ERROR", 5000),
+    "critical": _env_int("LOG_MAX_ENTRIES_ERROR", 5000),
+}
+
+# Pending lines waiting for the writer thread; beyond, new lines are dropped (Valkey slow or down)
+LOG_QUEUE_SIZE = 10000
+
+
+def log_list_key(level: str) -> str:
+    """Valkey key of the list holding the logs of a level."""
+    return f"{LOG_KEY_PREFIX}{level.strip().lower()}"
+
+
+def max_entries_for(level: str) -> int:
+    """Cap of the list of a level."""
+    return LOG_MAX_ENTRIES_BY_LEVEL.get(level.strip().lower(), LOG_MAX_ENTRIES_PER_LEVEL)
+
+
+def store_log_entry(
+    client: Any,
+    level: str,
+    entry_json: str,
+    max_entries: int | None = None,
+    ttl: int = LOG_RETENTION_SECONDS,
+) -> None:
+    """Push a log entry at the head of its level list, capped and with a TTL, in one round trip."""
+    key = log_list_key(level)
+    cap = max_entries if max_entries is not None else max_entries_for(level)
+    pipe = client.pipeline(transaction=False)
+    pipe.lpush(key, entry_json)
+    pipe.ltrim(key, 0, cap - 1)
+    pipe.expire(key, ttl)
+    pipe.execute()
 
 
 class LocalTimeFormatter(logging.Formatter):
@@ -75,15 +123,46 @@ class SQLAlchemyFilter(logging.Filter):
 
 
 class RedisLogHandler(logging.Handler):
-    """Handler that stores logs in Redis with 24-hour retention."""
+    """Handler that stores logs in Valkey, one capped list per level, through a single writer thread."""
 
     def __init__(self, cache_service: "CacheService", redis_url: str) -> None:
         super().__init__()
         self.cache_service = cache_service
         self.redis_url = redis_url
+        self._queue: queue.Queue[tuple[str, str] | None] = queue.Queue(maxsize=LOG_QUEUE_SIZE)
+        self._client: Any = None
+        self._writer = threading.Thread(target=self._write_loop, name="redis_log", daemon=True)
+        self._writer.start()
+
+    def _connect(self) -> Any:
+        """Open the Valkey connection once, reused for every line (sync client: no event loop per line)."""
+        if self._client is None:
+            import redis
+
+            self._client = redis.Redis.from_url(
+                self.redis_url,
+                decode_responses=False,
+                socket_connect_timeout=1,  # Fast timeout
+                socket_timeout=1,
+            )
+        return self._client
+
+    def _write_loop(self) -> None:
+        while True:
+            item = self._queue.get()
+            try:
+                if item is None:
+                    return
+                level, entry_json = item
+                store_log_entry(self._connect(), level, entry_json)
+            except Exception:
+                # Silently ignore errors (Valkey down): the line stays in stdout and the log file
+                pass
+            finally:
+                self._queue.task_done()
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Send log record to Redis."""
+        """Queue the log record for the writer thread (never blocks the caller)."""
         if not self.cache_service.redis_client:
             return
 
@@ -120,40 +199,29 @@ class RedisLogHandler(logging.Handler):
             if record.exc_info:
                 log_entry["exception"] = logging.Formatter().formatException(record.exc_info)
 
-            # Create Redis key with timestamp (milliseconds precision for uniqueness)
-            timestamp_ms = int(record.created * 1000)
-            redis_key = f"logs:{original_levelname.lower()}:{timestamp_ms}"
-
-            # Use thread pool to run the async operation
-            def _store_log() -> None:
-                try:
-                    # Create a new Redis client for this thread's event loop
-                    import redis.asyncio as redis
-
-                    async def store() -> None:
-                        client = await redis.from_url(
-                            self.redis_url,
-                            encoding="utf-8",
-                            decode_responses=False,
-                            socket_connect_timeout=1,  # Fast timeout
-                            socket_timeout=1
-                        )
-                        try:
-                            await client.setex(redis_key, LOG_RETENTION_SECONDS, json.dumps(log_entry))
-                        finally:
-                            await client.aclose()  # Use aclose() instead of close()
-
-                    asyncio.run(store())
-                except Exception:
-                    # Silently ignore errors
-                    pass
-
-            # Submit to thread pool (non-blocking)
-            _executor.submit(_store_log)
+            self._queue.put_nowait((original_levelname, json.dumps(log_entry)))
 
         except Exception:
-            # Silently ignore errors to avoid breaking the application
+            # Silently ignore errors (queue full included) to avoid breaking the application
             pass
+
+    def flush(self) -> None:
+        """Wait until every queued line has been written (or dropped)."""
+        if self._writer.is_alive():
+            self._queue.join()
+
+    def close(self) -> None:
+        """Stop the writer thread after the pending lines, then close the connection."""
+        try:
+            if self._writer.is_alive():
+                self._queue.put(None, timeout=1)
+                self._writer.join(timeout=2)
+            if self._client is not None:
+                self._client.close()
+        except Exception:
+            pass
+        finally:
+            super().close()
 
 
 def setup_logging(debug_sql: bool = False, cache_service: "CacheService | None" = None, redis_url: str | None = None) -> None:
