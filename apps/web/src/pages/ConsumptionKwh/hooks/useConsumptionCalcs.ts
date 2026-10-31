@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { parseOffpeakHours, isOffpeakTime } from '@/utils/offpeakHours'
+import { parseOffpeakHours, offpeakFraction } from '@/utils/offpeakHours'
 import { useDatePreferencesStore } from '@/stores/datePreferencesStore'
 import { getIntervalLength, getReadings, getUnit, hasReadings, readingEnergyWh, readingHours } from '@/utils/enedisMeasure'
 import type { MeasureReading } from '@/types/api'
@@ -563,7 +563,7 @@ export function useConsumptionCalcs({
       exact: false,
     })
 
-    const allReadings: Array<{ date: Date; energyKwh: number; isHC: boolean }> = []
+    const allReadings: Array<{ date: Date; energyKwh: number; hcShare: number }> = []
 
     allDetailQueries.forEach((query) => {
       const response = query.state.data as any
@@ -588,12 +588,13 @@ export function useConsumptionCalcs({
 
         const hour = apiDateTime.getHours()
         const minute = apiDateTime.getMinutes()
-        const isHC = isOffpeakTime(hour, minute, offpeakRanges)
+        // Part HC au prorata des minutes du créneau (plage HC qui commence ou finit dans le créneau)
+        const hcShare = offpeakFraction(hour, minute, readingHours(reading, intervalLength) * 60, offpeakRanges)
 
         allReadings.push({
           date: apiDateTime,
           energyKwh,
-          isHC
+          hcShare
         })
       })
     })
@@ -601,7 +602,7 @@ export function useConsumptionCalcs({
     if (allReadings.length === 0) return []
 
     // Remove duplicates by keeping only unique date/time combinations
-    const uniqueReadingsMap = new Map<string, { date: Date; energyKwh: number; isHC: boolean }>()
+    const uniqueReadingsMap = new Map<string, { date: Date; energyKwh: number; hcShare: number }>()
     allReadings.forEach(reading => {
       const key = reading.date.toISOString()
       if (!uniqueReadingsMap.has(key)) {
@@ -624,8 +625,8 @@ export function useConsumptionCalcs({
     const result = periods.map(period => {
       const periodReadings = uniqueReadings.filter(r => r.date >= period.start && r.date <= period.end)
 
-      const hcKwh = periodReadings.filter(r => r.isHC).reduce((sum, r) => sum + r.energyKwh, 0)
-      const hpKwh = periodReadings.filter(r => !r.isHC).reduce((sum, r) => sum + r.energyKwh, 0)
+      const hcKwh = periodReadings.reduce((sum, r) => sum + r.energyKwh * r.hcShare, 0)
+      const hpKwh = periodReadings.reduce((sum, r) => sum + r.energyKwh * (1 - r.hcShare), 0)
       const totalKwh = hcKwh + hpKwh
 
       return {
@@ -657,7 +658,7 @@ export function useConsumptionCalcs({
     if (allDetailQueries.length === 0) return []
 
 
-    const allReadings: Array<{ date: Date; energyKwh: number; isHC: boolean }> = []
+    const allReadings: Array<{ date: Date; energyKwh: number; hcShare: number }> = []
 
     allDetailQueries.forEach((query) => {
       const response = query.state.data as any
@@ -678,16 +679,17 @@ export function useConsumptionCalcs({
         const energyKwh = energyWh / 1000
         const hour = apiDateTime.getHours()
         const minute = apiDateTime.getMinutes()
-        const isHC = isOffpeakTime(hour, minute, offpeakRanges)
+        // Part HC au prorata des minutes du créneau (plage HC qui commence ou finit dans le créneau)
+        const hcShare = offpeakFraction(hour, minute, readingHours(reading, intervalLength) * 60, offpeakRanges)
 
-        allReadings.push({ date: apiDateTime, energyKwh, isHC })
+        allReadings.push({ date: apiDateTime, energyKwh, hcShare })
       })
     })
 
     if (allReadings.length === 0) return []
 
     // Remove duplicates by keeping only unique date/time combinations
-    const uniqueReadingsMap = new Map<string, { date: Date; energyKwh: number; isHC: boolean }>()
+    const uniqueReadingsMap = new Map<string, { date: Date; energyKwh: number; hcShare: number }>()
     allReadings.forEach(reading => {
       const key = reading.date.toISOString()
       if (!uniqueReadingsMap.has(key)) {
@@ -727,11 +729,8 @@ export function useConsumptionCalcs({
           }
         }
 
-        if (reading.isHC) {
-          monthlyData[monthKey].hcKwh += reading.energyKwh
-        } else {
-          monthlyData[monthKey].hpKwh += reading.energyKwh
-        }
+        monthlyData[monthKey].hcKwh += reading.energyKwh * reading.hcShare
+        monthlyData[monthKey].hpKwh += reading.energyKwh * (1 - reading.hcShare)
       })
 
       const months = Object.keys(monthlyData).sort().map(key => ({

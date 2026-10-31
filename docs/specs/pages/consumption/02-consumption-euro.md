@@ -121,7 +121,7 @@ apps/web/src/pages/ConsumptionEuro/
 1. **Consommation détaillée** (depuis cache React Query)
    - Clé : `['consumptionDetail', pdl]`
    - Données demi-horaires ou horaires
-   - Séparation HC/HP via les plages horaires du PDL
+   - Séparation HC/HP via les plages horaires du PDL, au prorata des minutes quand une plage commence ou finit dans un créneau de 30 min
 
 2. **Offres tarifaires** (depuis API, historique compris)
    - Clé : `['energy-offers', 'with-history']`, définie une seule fois dans `apps/web/src/api/energyQueries.ts` (`offersWithHistoryQueryOptions`)

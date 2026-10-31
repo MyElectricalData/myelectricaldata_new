@@ -228,8 +228,8 @@ export function HcHpDistribution({ hcHpByYear, selectedPDLDetails }: HcHpDistrib
                   Le total HC/HP peut différer légèrement de la "Consommation par années".
                   Cette différence est due à une simulation basée sur les plages horaires HC/HP,
                   car Enedis ne fournit pas ces données détaillées.
-                  De plus, Enedis transmet les données par paliers de 30 minutes : si le changement d'heure creuse/pleine
-                  intervient au milieu d'un intervalle de 30 minutes, la répartition HC/HP sera approximative à 30 minutes près.
+                  Enedis transmet les données par paliers de 30 minutes : quand le changement d'heure creuse/pleine
+                  intervient au milieu d'un intervalle, celui-ci est réparti au prorata des minutes passées en heures creuses.
                   C'est la <strong>Consommation par années</strong> qui est la plus précise et qui sera facturée par votre fournisseur.
                 </p>
               </div>
