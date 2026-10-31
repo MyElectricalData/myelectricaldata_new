@@ -51,6 +51,18 @@ DAILY_REFRESH_WINDOW_DAYS = 2
 DAILY_REFRESH_INTERVAL = timedelta(hours=6)
 
 
+def _parse_iso_date(value: Any) -> date | None:
+    """Date ISO de la passerelle ("2026-01-10" ou "2026-01-10T00:00:00+01:00"), None si illisible"""
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str) or len(value) < 10:
+        return None
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
 def _normalize_utc(ts: datetime | None) -> datetime | None:
     if ts is None:
         return None
@@ -86,6 +98,25 @@ _energy_sync_lock = asyncio.Lock()
 # Contrainte quotidienne en NULLS NOT DISTINCT (migration c3d4e5f6g7h8, ignorée sous PostgreSQL < 15),
 # lue une fois par process
 _daily_upsert_effective: bool | None = None
+
+
+async def get_activation_date(db: AsyncSession, usage_point_id: str, data_type: str) -> date | None:
+    """Date de mise en service (consommation ou production) : Enedis n'a aucune donnée avant (#188).
+
+    Lue dans le contrat déjà synchronisé (synthese_contrat), sinon dans le PDL pour la consommation.
+    Sert à la synchro et aux lectures de l'interface (routers/enedis_client.py).
+    """
+    result = await db.execute(select(ContractData.raw_data).where(ContractData.usage_point_id == usage_point_id))
+    raw = result.scalar_one_or_none()
+    if isinstance(raw, dict):
+        key = "production_activation_date" if data_type == "production" else "activation_date"
+        activation = _parse_iso_date(parse_contract(raw).get(key))
+        if activation is not None:
+            return activation
+    if data_type == "production":
+        return None
+    result = await db.execute(select(PDL.activation_date).where(PDL.usage_point_id == usage_point_id))
+    return _parse_iso_date(result.scalar_one_or_none())
 
 
 class SyncService:
@@ -136,6 +167,9 @@ class SyncService:
                     existing_pdl.has_consumption = remote_pdl.get("has_consumption", True)
                     existing_pdl.has_production = remote_pdl.get("has_production", False)
                     existing_pdl.is_active = remote_pdl.get("is_active", True)
+                    activation_date = _parse_iso_date(remote_pdl.get("activation_date"))
+                    if activation_date is not None:
+                        existing_pdl.activation_date = activation_date
                     # Parse offpeak_hours
                     offpeak = remote_pdl.get("offpeak_hours")
                     if isinstance(offpeak, dict):
@@ -165,6 +199,7 @@ class SyncService:
                         has_consumption=remote_pdl.get("has_consumption", True),
                         has_production=remote_pdl.get("has_production", False),
                         is_active=remote_pdl.get("is_active", True),
+                        activation_date=_parse_iso_date(remote_pdl.get("activation_date")),
                     )
                     self.db.add(new_pdl)
                     logger.info(f"[SYNC] Created new PDL: {usage_point_id} ({remote_pdl.get('name')})")
@@ -564,6 +599,21 @@ class SyncService:
             model_class=ProductionData,
         )
 
+    async def _activation_date(self, usage_point_id: str, data_type: str) -> date | None:
+        """Date de mise en service (consommation ou production) : Enedis n'a aucune donnée avant (#188)."""
+        return await get_activation_date(self.db, usage_point_id, data_type)
+
+    async def _sync_start(self, usage_point_id: str, data_type: str, window_start: date, end_date: date) -> date:
+        """Début de la plage à synchroniser : la fenêtre Enedis, pas avant la mise en service du contrat.
+
+        Sans cette borne, les semaines antérieures au contrat restent « manquantes » et sont redemandées
+        à chaque synchro (réponses NO_DATA, quota de la passerelle consommé pour rien).
+        """
+        activation = await self._activation_date(usage_point_id, data_type)
+        if activation is None or activation <= window_start:
+            return window_start
+        return min(activation, end_date)
+
     async def _find_missing_ranges(
         self,
         model_class: type[ConsumptionData | ProductionData],
@@ -599,7 +649,9 @@ class SyncService:
 
         # [start_date, end_date[ avec end_date = today : J-1 inclus (Enedis refuse une fin à demain)
         end_date = date.today()
-        start_date = end_date - timedelta(days=MAX_DAILY_DAYS)
+        start_date = await self._sync_start(
+            usage_point_id, "consumption", end_date - timedelta(days=MAX_DAILY_DAYS), end_date
+        )
 
         result = await self.db.execute(
             select(func.distinct(MaxPowerData.date)).where(
@@ -720,7 +772,7 @@ class SyncService:
 
         # Plage totale [start_date, end_date[ avec end_date = today : J-1 inclus
         end_date = date.today()
-        start_date = end_date - timedelta(days=max_days)
+        start_date = await self._sync_start(usage_point_id, data_type, end_date - timedelta(days=max_days), end_date)
 
         # Détecter les trous dans la base locale (et redemander J-2/J-1 en quotidien, corrigés par Enedis)
         force_refresh_from = (
