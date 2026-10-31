@@ -1,14 +1,8 @@
 # Installation
 
-Choisissez la méthode d'installation adaptée à votre environnement.
+Le plus simple : **Docker Compose, en un seul conteneur**. Quelques minutes suffisent, sur un PC, un NAS ou un Raspberry Pi.
 
-## Méthodes disponibles
-
-| Méthode | Description | Recommandé pour |
-|---------|-------------|-----------------|
-| [Docker Compose](./docker.md) | Installation simple et rapide | Usage domestique, Raspberry Pi |
-| [Helm Chart](./helm.md) | Déploiement Kubernetes | Infrastructure existante K8s |
-| [Proxmox LXC](https://github.com/Marlboro62/myelectricaldata-proxmox) | Script communautaire, non officiel : conteneur LXC sans Docker | Serveur Proxmox VE |
+➡️ [Installer avec Docker](./docker.md)
 
 :::tip Vous utilisez déjà l'ancien client (V1) ?
 Installez la V2 à côté, puis importez l'historique de la V1 pour ne rien perdre :
@@ -32,20 +26,15 @@ Installez la V2 à côté, puis importez l'historique de la V1 pour ne rien perd
 
 ## Démarrage rapide
 
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
-<Tabs>
-  <TabItem value="docker" label="Docker Compose" default>
-
 ```bash
-# Cloner le repository
-git clone https://github.com/MyElectricalData/myelectricaldata_new.git
-cd myelectricaldata_new
+# Récupérer le fichier compose (pas besoin de cloner le dépôt)
+curl -O https://raw.githubusercontent.com/MyElectricalData/myelectricaldata_new/main/docker-compose.client.yml
 
-# Configurer
-cp .env.local-client.example .env
-nano .env  # Renseigner MED_CLIENT_ID et MED_CLIENT_SECRET
+# Renseigner vos identifiants
+cat > .env <<'EOF'
+MED_CLIENT_ID=votre_client_id
+MED_CLIENT_SECRET=votre_client_secret
+EOF
 
 # Démarrer (un seul conteneur, base SQLite)
 docker compose -f docker-compose.client.yml up -d
@@ -56,26 +45,15 @@ open http://localhost:8100
 
 ➡️ [Guide complet Docker](./docker.md)
 
-  </TabItem>
-  <TabItem value="helm" label="Helm Chart">
+## Autres méthodes d'installation
 
-```bash
-cd helm
+Ces méthodes répondent à des besoins particuliers. Pour un usage domestique, Docker Compose ci-dessus est le chemin le plus court.
 
-# Télécharger les dépendances
-helm dependency build ./myelectricaldata-client
-
-# Installer
-helm install myelectricaldata ./myelectricaldata-client \
-  --set secrets.med.clientId.value=cli_xxx \
-  --set secrets.med.clientSecret.value=xxx \
-  --set postgres.enabled=false  # base SQLite ; ou --set postgres.auth.password=xxx
-```
-
-➡️ [Guide complet Helm](./helm.md)
-
-  </TabItem>
-</Tabs>
+| Méthode | Description | Recommandé pour |
+|---------|-------------|-----------------|
+| [Helm Chart](./helm.md) | Déploiement Kubernetes | Infrastructure existante K8s |
+| [Proxmox LXC](https://github.com/Marlboro62/myelectricaldata-proxmox) | Script communautaire, non officiel : conteneur LXC sans Docker | Serveur Proxmox VE |
+| [Deux conteneurs](./docker.md#options-avancées-installations-en-deux-conteneurs) | `docker-compose.sqlite.yml` et `docker-compose.yml` | Installations existantes |
 
 ## Ports par défaut
 
