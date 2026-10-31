@@ -101,14 +101,16 @@ Clic pour afficher :
 
 ### Stockage et retention
 
-- **Redis** : TTL de 24 heures
-- **Thread pool** : 8 workers pour ecriture async
-- **Format cle** : `logs:{level}:{timestamp_ms}`
+- **Valkey** : une liste par niveau, `logs:{level}`, ligne la plus recente en tete
+- **Plafond** : LPUSH + LTRIM + EXPIRE en pipeline ; info 1000, warning et error 5000 (`LOG_MAX_ENTRIES_PER_LEVEL`, `LOG_MAX_ENTRIES_WARNING`, `LOG_MAX_ENTRIES_ERROR`)
+- **TTL** : 24 heures, renouvele a chaque ligne du niveau
+- **Ecriture** : un thread ecrivain unique, file bornee, une connexion reutilisee
+- **Lecture** : LRANGE par niveau puis fusion par horodatage (pas de SCAN) ; `total` = somme des LLEN
 
 ### Optimisations
 
 - Timeouts courts (1s)
-- Thread pool dedie
+- Thread ecrivain dedie, `emit` non bloquant (ligne perdue si la file est pleine)
 - Filtrage intelligent logs HTTP
 - Format JSON compact
 - Gestion silencieuse erreurs Redis
@@ -148,7 +150,7 @@ Clic pour afficher :
 
 - Logs critiques pour diagnostics production
 - Logs sensibles (mots de passe, tokens) masques automatiquement
-- Retention : 24 heures dans Redis
+- Retention : plafond par niveau, 24 heures au plus apres la derniere ligne
 - DEBUG genere beaucoup de logs (exclu par defaut)
 - Identification PDL pour faciliter debugging
 - Refresh preserve position scroll

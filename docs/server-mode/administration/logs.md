@@ -108,30 +108,27 @@ Format complet avec tous les champs.
 
 ---
 
-## Rétention des logs
+## Stockage et rétention des logs
 
-| Type | Rétention |
-|------|-----------|
-| Logs d'activité | 90 jours |
-| Logs d'erreur | 365 jours |
-| Logs de debug | 7 jours |
+Les logs applicatifs de niveau INFO et plus sont écrits sur la sortie standard, dans `/logs/app.log`, et dans Valkey pour la page `/admin/logs`.
 
-### Configuration de la rétention
+Dans Valkey, chaque niveau a **une liste** (`logs:info`, `logs:warning`, `logs:error`, `logs:critical`), la ligne la plus récente en tête. Chaque nouvelle ligne est ajoutée puis la liste est rognée à son plafond, et son TTL de 24 heures est renouvelé : la mémoire utilisée par les logs reste bornée quel que soit le débit.
 
-```bash
-# Variables d'environnement
-LOG_RETENTION_ACTIVITY_DAYS=90
-LOG_RETENTION_ERROR_DAYS=365
-LOG_RETENTION_DEBUG_DAYS=7
-```
+| Niveau | Plafond par défaut | Variable d'environnement |
+|--------|--------------------|--------------------------|
+| Info (et Debug) | 1000 lignes | `LOG_MAX_ENTRIES_PER_LEVEL` |
+| Warning | 5000 lignes | `LOG_MAX_ENTRIES_WARNING` |
+| Error et Critical | 5000 lignes | `LOG_MAX_ENTRIES_ERROR` |
+
+Une liste dont le niveau n'a plus rien écrit depuis 24 heures expire. L'historique long terme passe par la sortie standard (Loki, voir plus bas), pas par Valkey.
 
 ### Purge manuelle
 
 ```
-Admin → Logs → Actions → Purger les anciens logs
+Admin → Logs → Vider les logs
 ```
 
-⚠️ Cette action est irréversible.
+`DELETE /api/admin/logs/clear` (option `level`) supprime les listes, et les clés `logs:<niveau>:<horodatage>` d'avant ce format (une clé par ligne). ⚠️ Cette action est irréversible.
 
 ---
 
