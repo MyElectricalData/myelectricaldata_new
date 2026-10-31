@@ -4,7 +4,8 @@ Point unique pour :
 - ramener une option tarifaire (PDL.pricing_option, EnergyOffer.offer_type) à une famille
   d'export : BASE (1 série), HC_HP (2 séries hp/hc) ou TEMPO (6 séries couleur x période) ;
 - lire les plages heures creuses quel que soit leur format de stockage ;
-- ventiler des relevés détaillés (30 min) entre heures pleines et heures creuses.
+- ventiler des relevés détaillés (30 min) entre heures pleines et heures creuses, au prorata des
+  minutes quand une plage commence ou finit en cours de créneau (ex. 23h32-5h32).
 
 Formats de offpeak_hours rencontrés en base :
 - {"ranges": ["22:00-06:00", "12:00-14:00"]}       (routers/pdl.py, services/sync.py)
@@ -167,17 +168,65 @@ def is_offpeak(
     return False
 
 
-def interval_wh(value_w: int | float, raw_data: dict[str, Any] | None) -> float:
-    """Convertit une puissance moyenne (W) en énergie (Wh) selon le pas du relevé (PT30M par défaut)
+def offpeak_fraction(
+    day: date,
+    start_minute: int,
+    duration: int,
+    ranges: list[tuple[int, int]],
+    weekend_offpeak: bool = False,
+) -> float:
+    """Part (0 à 1) du créneau [start_minute, start_minute + duration[ qui tombe en heures creuses
+
+    Une plage HC peut commencer ou finir en cours de créneau (23h32-5h32 sur une courbe à 30 min) :
+    le créneau 23h30-0h00 compte alors pour 28/30 en HC et 2/30 en HP.
+    """
+    if duration <= 0:
+        return 1.0 if is_offpeak(day, start_minute // 60, start_minute % 60, ranges, weekend_offpeak) else 0.0
+    if weekend_offpeak and day.weekday() >= 5:
+        return 1.0
+    end_minute = start_minute + duration
+    covered = 0
+    for start, end in ranges:
+        segments = [(start, 24 * 60), (0, end)] if start > end else [(start, end)]
+        for seg_start, seg_end in segments:
+            # le créneau peut déborder après minuit (23h30 + 60 min) : on compare aussi à la plage du lendemain
+            for shift in (0, 24 * 60):
+                covered += max(0, min(end_minute, seg_end + shift) - max(start_minute, seg_start + shift))
+    return min(1.0, covered / duration)
+
+
+def interval_minutes(raw_data: dict[str, Any] | None) -> int:
+    """Pas du relevé en minutes (PT30M par défaut)
 
     Pas lu dans raw_data["p"] (format Data Connect 2026), sinon raw_data["interval_length"] (v5).
     """
-    minutes = _DEFAULT_INTERVAL_MINUTES
     if raw_data:
         match = _INTERVAL_RE.fullmatch(str(raw_data.get("p") or raw_data.get("interval_length") or ""))
         if match and int(match.group(1)) > 0:
-            minutes = int(match.group(1)) * (60 if match.group(2) == "H" else 1)
-    return value_w * minutes / 60
+            return int(match.group(1)) * (60 if match.group(2) == "H" else 1)
+    return _DEFAULT_INTERVAL_MINUTES
+
+
+def infer_interval_minutes(interval_starts: Iterable[str | None]) -> int:
+    """Pas d'une courbe détaillée déduit de ses horaires ("00:00", "00:30"…) : plus petit écart positif
+
+    Sert quand le pas du relevé (raw_data) n'est pas lu ; 30 minutes par défaut.
+    """
+    minutes = set()
+    for start in interval_starts:
+        try:
+            h, m = (start or "").split(":")[:2]
+            minutes.add(int(h) * 60 + int(m))
+        except ValueError:
+            continue
+    ordered = sorted(minutes)
+    gaps = [b - a for a, b in zip(ordered, ordered[1:]) if b > a]
+    return min(gaps) if gaps else _DEFAULT_INTERVAL_MINUTES
+
+
+def interval_wh(value_w: int | float, raw_data: dict[str, Any] | None) -> float:
+    """Convertit une puissance moyenne (W) en énergie (Wh) selon le pas du relevé (PT30M par défaut)"""
+    return value_w * interval_minutes(raw_data) / 60
 
 
 def is_offpeak_slot(
@@ -197,12 +246,29 @@ def is_offpeak_slot(
     return is_offpeak(day, hour, minute, ranges, weekend_offpeak)
 
 
-def _record_period(record: DetailedRecord, ranges: list[tuple[int, int]], weekend_offpeak: bool) -> str | None:
-    """'hp' ou 'hc' pour un relevé détaillé, None s'il n'est pas ventilable"""
-    offpeak = is_offpeak_slot(record.date, record.interval_start, ranges, weekend_offpeak)
-    if offpeak is None:
+def offpeak_slot_fraction(
+    day: date,
+    interval_start: str | None,
+    ranges: list[tuple[int, int]],
+    weekend_offpeak: bool = False,
+    minutes: int = _DEFAULT_INTERVAL_MINUTES,
+) -> float | None:
+    """offpeak_fraction pour un créneau détaillé "HH:MM" ; None si l'heure est absente ou illisible"""
+    if not interval_start:
         return None
-    return "hc" if offpeak else "hp"
+    parts = interval_start.split(":")
+    try:
+        hour, minute = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+    except ValueError:
+        return None
+    return offpeak_fraction(day, hour * 60 + minute, minutes, ranges, weekend_offpeak)
+
+
+def _record_hc_fraction(record: DetailedRecord, ranges: list[tuple[int, int]], weekend_offpeak: bool) -> float | None:
+    """Part HC d'un relevé détaillé (0 à 1), None s'il n'est pas ventilable"""
+    return offpeak_slot_fraction(
+        record.date, record.interval_start, ranges, weekend_offpeak, interval_minutes(record.raw_data)
+    )
 
 
 def split_hp_hc_wh(
@@ -213,9 +279,11 @@ def split_hp_hc_wh(
     """Ventile des relevés détaillés en {"hp": Wh, "hc": Wh} (relevés sans interval_start ignorés)"""
     totals = {"hp": 0.0, "hc": 0.0}
     for record in records:
-        period = _record_period(record, ranges, weekend_offpeak)
-        if period and record.value:
-            totals[period] += interval_wh(record.value, record.raw_data)
+        fraction = _record_hc_fraction(record, ranges, weekend_offpeak)
+        if fraction is not None and record.value:
+            value = interval_wh(record.value, record.raw_data)
+            totals["hc"] += value * fraction
+            totals["hp"] += value * (1 - fraction)
     return totals
 
 
@@ -246,14 +314,16 @@ def summarize_hp_hc_kwh(
     wh = {f"{p}_{t}": 0.0 for p in ("yesterday", *starts) for t in ("hp", "hc")}
 
     for record in records:
-        period = _record_period(record, ranges, weekend_offpeak)
-        if not period or not record.value or record.date > today:
+        fraction = _record_hc_fraction(record, ranges, weekend_offpeak)
+        if fraction is None or not record.value or record.date > today:
             continue
         value = interval_wh(record.value, record.raw_data)
-        if record.date == yesterday:
-            wh[f"yesterday_{period}"] += value
-        for name, start in starts.items():
-            if record.date >= start:
-                wh[f"{name}_{period}"] += value
+        parts = {"hc": value * fraction, "hp": value * (1 - fraction)}
+        for period, part in parts.items():
+            if record.date == yesterday:
+                wh[f"yesterday_{period}"] += part
+            for name, start in starts.items():
+                if record.date >= start:
+                    wh[f"{name}_{period}"] += part
 
     return {f"{key}_kwh": round(value / 1000, 2) for key, value in wh.items()}

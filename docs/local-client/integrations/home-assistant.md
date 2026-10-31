@@ -129,6 +129,11 @@ dimanche entièrement en heures creuses. `TEMPO` garde ses 6 séries (couleur x 
 seule série. Les plages d'heures creuses sont celles du contrat Enedis. À défaut, le panneau Énergie
 utilise 22h-6h. Aucun capteur HP/HC n'est publié pour une offre BASE.
 
+Quand une plage d'heures creuses commence ou finit au milieu d'un créneau de 30 min (par exemple
+23h32-5h32), ce créneau est réparti au prorata des minutes : 23h30-0h00 compte pour 28/30 en heures
+creuses et 2/30 en heures pleines. Les plages calées sur la demi-heure (22h00-6h00, 22h30-6h30) ne
+changent pas.
+
 Exception : avec l'offre EDF Zen Flex sélectionnée sur le PDL, les heures creuses suivent la grille
 du fournisseur, 17 h par jour, tous les jours (13h-18h et 20h-8h), et non les plages du contrat
 Enedis. Si l'offre définit ses propres plages (`hc_schedules`), ce sont elles qui s'appliquent.

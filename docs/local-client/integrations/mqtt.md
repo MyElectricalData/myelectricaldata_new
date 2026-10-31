@@ -88,6 +88,8 @@ Le topic `{prefix}/{pdl}/consumption/stats` publie les totaux de consommation en
 Pour un contrat à heures creuses disposant de données détaillées (30 min), il contient aussi
 `{periode}_hp_kwh` et `{periode}_hc_kwh`, avec `{periode}` valant `yesterday`, `this_week`,
 `this_month` ou `this_year` (par exemple `this_month_hp_kwh`).
+Un créneau à cheval sur une limite d'heures creuses (plage 23h32-5h32, par exemple) est réparti au
+prorata des minutes.
 
 `{prefix}/{pdl}/production/stats` publie `yesterday_kwh`, `this_month_kwh` et `this_year_kwh` pour la production.
 
