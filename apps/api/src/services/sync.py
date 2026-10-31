@@ -23,6 +23,7 @@ from ..models.ecowatt import EcoWatt
 from ..models.tempo_day import TempoDay, TempoColor
 from ..models.zen_flex_day import ZenFlexDay, ZenFlexDayType
 from .edf_zen_flex import OFFER_START, paris_today
+from .custom_offers import CUSTOM_PROVIDER_ID, is_custom_provider
 from .upsert import ENERGY_KEY, conflict_target, dialect_insert, is_sqlite, sqlite_index_exists
 from ..models.client_mode import (
     AddressData,
@@ -1184,6 +1185,9 @@ class SyncService:
             local_providers = local_providers_result.scalars().all()
 
             for local_provider in local_providers:
+                # Le fournisseur des prix saisis à la main n'existe que localement
+                if is_custom_provider(local_provider.id):
+                    continue
                 if local_provider.name not in synced_provider_names:
                     # Delete associated offers first (cascade)
                     await self.db.execute(
@@ -1257,8 +1261,11 @@ class SyncService:
                     if local_id:
                         remote_to_local_provider[remote_id] = local_id
 
-            # Get ALL existing offer IDs (not just active) to detect deletions
-            existing_result = await self.db.execute(select(EnergyOffer.id))
+            # Get ALL existing offer IDs (not just active) to detect deletions,
+            # sauf les offres aux prix saisis à la main, qui n'existent que localement
+            existing_result = await self.db.execute(
+                select(EnergyOffer.id).where(EnergyOffer.provider_id != CUSTOM_PROVIDER_ID)
+            )
             existing_offer_ids = set(row[0] for row in existing_result.all())
             synced_offer_ids: set[str] = set()
 

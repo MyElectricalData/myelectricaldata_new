@@ -372,4 +372,30 @@ export const energyApi = {
   getSyncStatus: async () => {
     return apiClient.get<SyncStatus>('admin/offers/sync-status')
   },
+
+  // Mode client - Offre aux prix saisis à la main
+  createCustomOffer: async (data: CustomOfferData) => {
+    return apiClient.post<EnergyOffer>('energy/custom-offers', data)
+  },
+
+  updateCustomOffer: async (offerId: string, data: CustomOfferData) => {
+    return apiClient.put<EnergyOffer>(`energy/custom-offers/${offerId}`, data)
+  },
+
+  deleteCustomOffer: async (offerId: string) => {
+    return apiClient.delete(`energy/custom-offers/${offerId}`)
+  },
+}
+
+// Fournisseur réservé aux offres saisies à la main (mode client)
+export const CUSTOM_PROVIDER_ID = 'custom-offers'
+
+export interface CustomOfferData {
+  name: string
+  offer_type: 'BASE' | 'HC_HP'
+  power_kva: number | null
+  subscription_price: number
+  base_price?: number | null
+  hc_price?: number | null
+  hp_price?: number | null
 }

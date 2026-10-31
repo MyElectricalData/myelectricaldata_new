@@ -1,9 +1,13 @@
+from decimal import Decimal
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
-from sqlalchemy import select, func
+from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date, datetime, time, timedelta, UTC
 from zoneinfo import ZoneInfo
-from ..models import User, EnergyProvider, EnergyOffer, OfferContribution, ContributionMessage
+from ..models import PDL, User, EnergyProvider, EnergyOffer, OfferContribution, ContributionMessage
 from ..models.database import get_db
 from ..schemas import APIResponse, ErrorDetail
 from ..middleware import get_current_user, require_permission, require_action, require_not_demo
@@ -11,6 +15,7 @@ from ..services.email import email_service
 from ..services.slack import slack_service
 from ..services.offers import get_all_offer_types
 from ..services.offer_names import clean_offer_name
+from ..services.custom_offers import CUSTOM_PROVIDER_ID, apply_custom_prices, ensure_custom_provider, get_custom_offer
 from ..config import settings
 import logging
 
@@ -492,6 +497,45 @@ async def list_providers(db: AsyncSession = Depends(get_db)) -> APIResponse:
     )
 
 
+def _offer_to_dict(o: EnergyOffer) -> dict:
+    """Offre telle que renvoyée par l'API (liste des offres, offres aux prix saisis)"""
+    return {
+        "id": o.id,
+        "provider_id": o.provider_id,
+        "name": o.name,
+        "offer_type": o.offer_type,
+        "description": o.description,
+        "subscription_price": o.subscription_price,
+        "base_price": o.base_price,
+        "hc_price": o.hc_price,
+        "hp_price": o.hp_price,
+        "base_price_weekend": o.base_price_weekend,
+        "hc_price_weekend": o.hc_price_weekend,
+        "hp_price_weekend": o.hp_price_weekend,
+        "tempo_blue_hc": o.tempo_blue_hc,
+        "tempo_blue_hp": o.tempo_blue_hp,
+        "tempo_white_hc": o.tempo_white_hc,
+        "tempo_white_hp": o.tempo_white_hp,
+        "tempo_red_hc": o.tempo_red_hc,
+        "tempo_red_hp": o.tempo_red_hp,
+        "ejp_normal": o.ejp_normal,
+        "ejp_peak": o.ejp_peak,
+        "hc_price_winter": o.hc_price_winter,
+        "hp_price_winter": o.hp_price_winter,
+        "hc_price_summer": o.hc_price_summer,
+        "hp_price_summer": o.hp_price_summer,
+        "peak_day_price": o.peak_day_price,
+        "hc_schedules": o.hc_schedules,
+        "power_kva": o.power_kva,
+        "price_updated_at": o.price_updated_at.isoformat() if o.price_updated_at else None,
+        "valid_from": o.valid_from.isoformat() if o.valid_from else None,
+        "valid_to": o.valid_to.isoformat() if o.valid_to else None,
+        "offer_url": o.offer_url,
+        "is_active": o.is_active,
+        "created_at": o.created_at.isoformat() if o.created_at else None,
+    }
+
+
 @router.get("/offers", response_model=APIResponse)
 async def list_offers(
     provider_id: str | None = Query(None, description="Filter by provider ID", openapi_examples={"provider_uuid": {"summary": "Provider UUID", "value": "550e8400-e29b-41d4-a716-446655440000"}}),
@@ -522,47 +566,89 @@ async def list_offers(
     result = await db.execute(query)
     offers = result.scalars().all()
 
-    return APIResponse(
-        success=True,
-        data=[
-            {
-                "id": o.id,
-                "provider_id": o.provider_id,
-                "name": o.name,
-                "offer_type": o.offer_type,
-                "description": o.description,
-                "subscription_price": o.subscription_price,
-                "base_price": o.base_price,
-                "hc_price": o.hc_price,
-                "hp_price": o.hp_price,
-                "base_price_weekend": o.base_price_weekend,
-                "hc_price_weekend": o.hc_price_weekend,
-                "hp_price_weekend": o.hp_price_weekend,
-                "tempo_blue_hc": o.tempo_blue_hc,
-                "tempo_blue_hp": o.tempo_blue_hp,
-                "tempo_white_hc": o.tempo_white_hc,
-                "tempo_white_hp": o.tempo_white_hp,
-                "tempo_red_hc": o.tempo_red_hc,
-                "tempo_red_hp": o.tempo_red_hp,
-                "ejp_normal": o.ejp_normal,
-                "ejp_peak": o.ejp_peak,
-                "hc_price_winter": o.hc_price_winter,
-                "hp_price_winter": o.hp_price_winter,
-                "hc_price_summer": o.hc_price_summer,
-                "hp_price_summer": o.hp_price_summer,
-                "peak_day_price": o.peak_day_price,
-                "hc_schedules": o.hc_schedules,
-                "power_kva": o.power_kva,
-                "price_updated_at": o.price_updated_at.isoformat() if o.price_updated_at else None,
-                "valid_from": o.valid_from.isoformat() if o.valid_from else None,
-                "valid_to": o.valid_to.isoformat() if o.valid_to else None,
-                "offer_url": o.offer_url,
-                "is_active": o.is_active,
-                "created_at": o.created_at.isoformat() if o.created_at else None,
-            }
-            for o in offers
-        ],
-    )
+    return APIResponse(success=True, data=[_offer_to_dict(o) for o in offers])
+
+
+# Offres aux prix saisis à la main (mode client)
+
+
+class CustomOfferRequest(BaseModel):
+    """Abonnement et prix du kWh TTC de son contrat, quand ils ne sont pas dans la base des offres"""
+
+    name: str = Field("Mon offre", min_length=1, max_length=255, description="Nom affiché dans le choix de l'offre")
+    offer_type: Literal["BASE", "HC_HP"] = Field(..., description="BASE (prix unique) ou HC_HP (heures creuses / pleines)")
+    power_kva: int | None = Field(None, ge=1, le=36, description="Puissance souscrite (kVA)")
+    subscription_price: Decimal = Field(..., ge=0, le=1000, description="Abonnement mensuel TTC (€/mois)")
+    base_price: Decimal | None = Field(None, gt=0, le=5, description="Prix du kWh TTC, option Base (€/kWh)")
+    hc_price: Decimal | None = Field(None, gt=0, le=5, description="Prix du kWh TTC en heures creuses (€/kWh)")
+    hp_price: Decimal | None = Field(None, gt=0, le=5, description="Prix du kWh TTC en heures pleines (€/kWh)")
+
+    @model_validator(mode="after")
+    def _prices_for_type(self) -> "CustomOfferRequest":
+        if self.offer_type == "BASE" and self.base_price is None:
+            raise ValueError("Le prix du kWh est obligatoire pour une offre Base")
+        if self.offer_type == "HC_HP" and (self.hc_price is None or self.hp_price is None):
+            raise ValueError("Les prix des heures creuses et des heures pleines sont obligatoires")
+        return self
+
+
+def _require_client_mode() -> None:
+    # La passerelle a sa base d'offres modérée : la saisie de ses prix est propre au mode client
+    if not settings.CLIENT_MODE:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+
+@router.post("/custom-offers", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
+async def create_custom_offer(
+    request: CustomOfferRequest,
+    current_user: User = Depends(require_not_demo),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Crée une offre avec ses propres prix (mode client), à choisir ensuite sur le PDL"""
+    _require_client_mode()
+    await ensure_custom_provider(db)
+    offer = EnergyOffer(provider_id=CUSTOM_PROVIDER_ID, valid_from=datetime.now(UTC))
+    apply_custom_prices(offer, **request.model_dump())
+    db.add(offer)
+    await db.commit()
+    await db.refresh(offer)
+    logger.info(f"[CUSTOM OFFER] Created {offer.offer_type} offer '{offer.name}'")
+    return APIResponse(success=True, data=_offer_to_dict(offer))
+
+
+@router.put("/custom-offers/{offer_id}", response_model=APIResponse)
+async def update_custom_offer(
+    request: CustomOfferRequest,
+    offer_id: str = Path(..., description="Identifiant de l'offre aux prix saisis"),
+    current_user: User = Depends(require_not_demo),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Modifie une offre aux prix saisis (les offres de la passerelle ne sont pas modifiables ici)"""
+    _require_client_mode()
+    offer = await get_custom_offer(db, offer_id)
+    if offer is None:
+        return APIResponse(success=False, error=ErrorDetail(code="NOT_FOUND", message="Offre aux prix saisis introuvable"))
+    apply_custom_prices(offer, **request.model_dump())
+    await db.commit()
+    await db.refresh(offer)
+    return APIResponse(success=True, data=_offer_to_dict(offer))
+
+
+@router.delete("/custom-offers/{offer_id}", response_model=APIResponse)
+async def delete_custom_offer(
+    offer_id: str = Path(..., description="Identifiant de l'offre aux prix saisis"),
+    current_user: User = Depends(require_not_demo),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Supprime une offre aux prix saisis ; les PDL qui l'avaient choisie n'ont plus d'offre"""
+    _require_client_mode()
+    offer = await get_custom_offer(db, offer_id)
+    if offer is None:
+        return APIResponse(success=False, error=ErrorDetail(code="NOT_FOUND", message="Offre aux prix saisis introuvable"))
+    await db.execute(update(PDL).where(PDL.selected_offer_id == offer_id).values(selected_offer_id=None))
+    await db.delete(offer)
+    await db.commit()
+    return APIResponse(success=True, data={"message": "Offre supprimée"})
 
 
 # Contribution endpoints
