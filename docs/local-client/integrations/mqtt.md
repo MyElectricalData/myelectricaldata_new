@@ -71,6 +71,7 @@ L'export se lance à la main depuis cette page, ou automatiquement : la section 
 ```
 {prefix}/{pdl}/consumption/stats
 {prefix}/{pdl}/production/stats
+{prefix}/{pdl}/power/stats
 {prefix}/tempo/today
 {prefix}/tempo/tomorrow
 {prefix}/tempo/remaining
@@ -92,6 +93,11 @@ Un créneau à cheval sur une limite d'heures creuses (plage 23h32-5h32, par exe
 prorata des minutes.
 
 `{prefix}/{pdl}/production/stats` publie `yesterday_kwh`, `this_month_kwh` et `this_year_kwh` pour la production.
+
+`{prefix}/{pdl}/power/stats` publie la puissance maximale du jour le plus récent des 31 derniers :
+`date`, `event_time`, `value_va`, `value_kva`, `subscribed_power_kva` (puissance du contrat),
+`is_over_subscribed`, `load_ratio_percent`, ainsi que `history` (VA) et `history_kva` par jour.
+Rien n'est publié sans historique de puissance maximale.
 
 ### Tempo
 
