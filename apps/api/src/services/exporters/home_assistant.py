@@ -1888,18 +1888,13 @@ class HomeAssistantExporter(BaseExporter):
 
         latest_date = yesterday if yesterday in mp_history else (max(mp_history.keys()) if mp_history else None)
 
-        if not latest_date or latest_date not in mp_history:
-            kva, event_time = await stats.get_max_power_day(pdl, yesterday, "consumption")
-            if kva > 0:
-                va = int(round(kva * 1000))
-                latest_date = yesterday
-            else:
-                logger.debug(f"[HA-MQTT] Pas de données de puissance max pour PDL {pdl}")
-                return 0
-        else:
-            va = mp_history[latest_date]["va"]
-            kva = mp_history[latest_date]["kva"]
-            event_time = mp_history[latest_date]["time"]
+        if not latest_date:
+            logger.debug(f"[HA-MQTT] Pas de données de puissance max pour PDL {pdl}")
+            return 0
+
+        va = mp_history[latest_date]["va"]
+        kva = mp_history[latest_date]["kva"]
+        event_time = mp_history[latest_date]["time"]
 
         is_over = (kva > subscribed_power_kva) if subscribed_power_kva else False
         ratio_percent = round((kva / subscribed_power_kva) * 100, 1) if subscribed_power_kva else None
@@ -1963,11 +1958,17 @@ class HomeAssistantExporter(BaseExporter):
 
         return count
 
-    async def _get_pdl_prices(self, db: AsyncSession, pdl: str) -> dict[str, float]:
-        """Récupère les tarifs (en EUR/kWh) pour un PDL selon le contrat et l'offre"""
+    async def _get_pdl_prices(self, db: AsyncSession, pdl: str, day: date | None = None) -> dict[str, float]:
+        """Récupère les tarifs (en EUR/kWh) d'un PDL pour un jour (hier par défaut) selon le contrat et l'offre
+
+        Hors Tempo, le prix suit les règles des statistiques long terme (_day_price) : saison de l'offre
+        SEASONAL, prix week-end, jour Éco / Sobriété de Zen Flex. {} si l'offre Zen Flex choisie n'a pas
+        de prix pour ce jour (calendrier absent) : un prix de repli serait faux.
+        """
         from ...models.energy_provider import EnergyOffer
         from ...models.pdl import PDL
 
+        day = day or date.today() - timedelta(days=1)
         profile, _, subscribed_power_kva = await self._get_pdl_contract_info(db, pdl)
 
         # 1. Vérifier si le PDL a une offre sélectionnée
@@ -2000,14 +2001,17 @@ class HomeAssistantExporter(BaseExporter):
                     prices["red_hc"] = float(offer.tempo_red_hc)
                 if getattr(offer, "tempo_red_hp", None):
                     prices["red_hp"] = float(offer.tempo_red_hp)
-            elif family == "HC_HP":
-                if getattr(offer, "hc_price", None):
-                    prices["hc"] = float(offer.hc_price)
-                if getattr(offer, "hp_price", None):
-                    prices["hp"] = float(offer.hp_price)
             else:
-                if getattr(offer, "base_price", None):
-                    prices["base"] = float(offer.base_price)
+                zen_flex_day = None
+                if _is_zen_flex(offer):
+                    zen_flex_day = (await self._get_zen_flex_days(db, day, day)).get(day)
+                for tag in ("hc", "hp") if family == "HC_HP" else ("base",):
+                    price = _day_price(offer, tag, day, zen_flex_day)
+                    if price:
+                        prices[tag] = price
+                if not prices and _is_zen_flex(offer):
+                    # Jour Zen Flex inconnu : aucun repli, un autre prix serait faux
+                    return {}
 
         # 2. Fallback pour TEMPO
         if not prices and profile.family == "TEMPO":
@@ -2016,14 +2020,7 @@ class HomeAssistantExporter(BaseExporter):
         # 3. Fallback pour HC_HP ou BASE : recherche Tarif Bleu en base
         if not prices:
             pricing_option = (pdl_record and pdl_record.pricing_option) or profile.family
-            fallback_query = (
-                select(EnergyOffer.offer_type, EnergyOffer.base_price, EnergyOffer.hc_price, EnergyOffer.hp_price)
-                .where(EnergyOffer.name == "Tarif Bleu")
-                .where(EnergyOffer.offer_type == pricing_option)
-            )
-            if subscribed_power_kva:
-                fallback_query = fallback_query.where(EnergyOffer.power_kva == subscribed_power_kva)
-            fallback_result = await db.execute(fallback_query.limit(1))
+            fallback_result = await db.execute(tarif_bleu_fallback_query(pricing_option, subscribed_power_kva))
             offer_row = fallback_result.first()
             if offer_row:
                 if profile.family == "HC_HP":
@@ -2057,15 +2054,35 @@ class HomeAssistantExporter(BaseExporter):
 
         return prices
 
+    async def _has_full_detailed_day(self, db: AsyncSession, pdl: str, day: date) -> bool:
+        """Vrai si `day` a ses relevés DETAILED (pas de 30 min) : 46 sur 48 au moins (23 h au changement d'heure)
+
+        Sans relevé détaillé, _get_consumption_statistics_by_tariff répartit le total journalier sur
+        24 heures (value / 24) : le découpage HP/HC, et la couleur Tempo par heure, y sont fictifs.
+        """
+        from ...models.client_mode import ConsumptionData, DataGranularity
+
+        result = await db.execute(
+            select(func.count())
+            .select_from(ConsumptionData)
+            .where(ConsumptionData.usage_point_id == pdl)
+            .where(ConsumptionData.granularity == DataGranularity.DETAILED)
+            .where(ConsumptionData.date == day)
+        )
+        return (result.scalar_one() or 0) >= 46
+
     async def _yesterday_tempo_cost(
         self, db: AsyncSession, pdl: str, prices: dict[str, float], yesterday: date
     ) -> tuple[float, dict[str, float]] | None:
         """Coût Tempo d'hier, heure par heure : couleur du jour Tempo (6h-6h) et période HP/HC.
 
         Réutilise le découpage des statistiques long terme (_get_consumption_statistics_by_tariff).
-        None si la journée n'est pas couverte heure par heure (données journalières seules, couleur
-        pas encore publiée) ou si un tarif n'a pas de prix : un coût moyen serait faux.
+        None si la journée n'a pas tous ses relevés détaillés (données journalières seules : heures
+        fictives), si la couleur n'est pas encore publiée ou si un tarif n'a pas de prix : un coût
+        moyen serait faux.
         """
+        if not await self._has_full_detailed_day(db, pdl, yesterday):
+            return None
         by_tariff = await self._get_consumption_statistics_by_tariff(
             db, pdl, since_date=datetime.combine(yesterday - timedelta(days=1), datetime.min.time())
         )
@@ -2099,10 +2116,12 @@ class HomeAssistantExporter(BaseExporter):
         """
         device = self._get_device_linky(pdl)
         profile, _, _ = await self._get_pdl_contract_info(db, pdl)
-        prices = await self._get_pdl_prices(db, pdl)
-
         today = date.today()
         yesterday = today - timedelta(days=1)
+        prices = await self._get_pdl_prices(db, pdl, yesterday)
+        if not prices:
+            logger.info(f"[HA-MQTT] {pdl}: pas de prix pour le {yesterday} (offre {profile.family}), capteurs de coût non publiés")
+            return 0
 
         yesterday_wh = await stats.get_day_total(pdl, yesterday, "consumption")
         yesterday_kwh = round(yesterday_wh / 1000, 2)
@@ -2112,7 +2131,13 @@ class HomeAssistantExporter(BaseExporter):
         extra_attributes: dict[str, Any] = {}
 
         if profile.family == "HC_HP":
-            hp_hc_summary = await self._get_hp_hc_summary(db, pdl, today)
+            # Ventilation fiable seulement avec tous les relevés détaillés d'hier : sinon les totaux
+            # HP/HC d'hier valent 0 (ou ne couvrent qu'une partie de la journée)
+            hp_hc_summary = (
+                await self._get_hp_hc_summary(db, pdl, today)
+                if await self._has_full_detailed_day(db, pdl, yesterday)
+                else None
+            )
             if hp_hc_summary:
                 yesterday_hp_kwh = hp_hc_summary.get("yesterday_hp_kwh", 0.0)
                 yesterday_hc_kwh = hp_hc_summary.get("yesterday_hc_kwh", 0.0)

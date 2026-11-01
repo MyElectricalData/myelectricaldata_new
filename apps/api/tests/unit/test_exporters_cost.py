@@ -129,6 +129,7 @@ async def test_export_cost_sensors_hp_hc() -> None:
     with (
         patch.object(exporter, "_get_pdl_contract_info", AsyncMock(return_value=(TariffProfile("HC_HP"), [], 9))),
         patch.object(exporter, "_get_pdl_prices", AsyncMock(return_value={"hp": 0.25, "hc": 0.15})),
+        patch.object(exporter, "_has_full_detailed_day", AsyncMock(return_value=True)),
         patch.object(exporter, "_get_hp_hc_summary", AsyncMock(return_value=summary)),
         patch.object(exporter, "_publish_sensor_old_format", AsyncMock()) as publish,
     ):

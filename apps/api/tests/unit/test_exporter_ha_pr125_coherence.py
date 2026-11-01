@@ -94,6 +94,7 @@ async def run_cost_and_max_power(language: str) -> list[dict[str, Any]]:
     with (
         patch.object(exp, "_get_pdl_contract_info", AsyncMock(return_value=(TariffProfile("HC_HP"), [], 6))),
         patch.object(exp, "_get_pdl_prices", AsyncMock(return_value={"hp": 0.25, "hc": 0.15})),
+        patch.object(exp, "_has_full_detailed_day", AsyncMock(return_value=True)),
         patch.object(
             exp, "_get_hp_hc_summary", AsyncMock(return_value={"yesterday_hp_kwh": 8.0, "yesterday_hc_kwh": 2.0})
         ),
@@ -129,6 +130,7 @@ async def test_hp_plus_hc_egale_le_cout_total_sans_donnee_detaillee() -> None:
     with (
         patch.object(exp, "_get_pdl_contract_info", AsyncMock(return_value=(TariffProfile("HC_HP"), [], 6))),
         patch.object(exp, "_get_pdl_prices", AsyncMock(return_value={"hp": 0.25, "hc": 0.15})),
+        patch.object(exp, "_has_full_detailed_day", AsyncMock(return_value=True)),
         patch.object(exp, "_get_hp_hc_summary", AsyncMock(return_value=None)),
         patch.object(exp, "_publish_sensor_old_format", AsyncMock(side_effect=capture)),
     ):
@@ -142,7 +144,7 @@ async def test_hp_plus_hc_egale_le_cout_total_sans_donnee_detaillee() -> None:
     assert (hp is None and hc is None) or round((hp or 0) + (hc or 0), 2) == total
 
 
-async def run_tempo_cost(hours: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+async def run_tempo_cost(hours: dict[str, list[dict[str, Any]]], detailed: bool = True) -> dict[str, Any]:
     exp = exporter("fr")
     published: dict[str, Any] = {}
 
@@ -154,6 +156,7 @@ async def run_tempo_cost(hours: dict[str, list[dict[str, Any]]]) -> dict[str, An
     with (
         patch.object(exp, "_get_pdl_contract_info", AsyncMock(return_value=(TariffProfile("TEMPO"), [], 6))),
         patch.object(exp, "_get_pdl_prices", AsyncMock(return_value=prices)),
+        patch.object(exp, "_has_full_detailed_day", AsyncMock(return_value=detailed)),
         patch.object(exp, "_get_consumption_statistics_by_tariff", AsyncMock(return_value=hours)),
         patch.object(exp, "_publish_sensor_old_format", AsyncMock(side_effect=capture)),
     ):
@@ -209,3 +212,114 @@ def test_serie_cout_total_reprend_les_cumuls_de_ha_et_suit_le_changement_d_heure
         "2026-10-25T03:00:00+01:00",
     ]
     assert [row["sum"] for row in series] == [30.2, 30.4, 31.4]
+
+
+async def test_tempo_avec_total_journalier_seul_ne_publie_pas_de_cout() -> None:
+    """Sans relevés détaillés, le repli journalier répartit value / 24 sur 24 heures : la couleur et la
+    période HP/HC de ces heures sont fictives, le coût aussi"""
+    yesterday = date.today() - timedelta(days=1)
+    hours = {"blue_hp": [
+        {"start": f"{yesterday.isoformat()}T{h:02d}:00:00+01:00", "state": 0.5, "sum": 0.0} for h in range(24)
+    ]}
+    assert await run_tempo_cost(hours, detailed=False) == {}
+    # Même série avec les relevés détaillés d'hier : le coût est publié
+    assert f"myelectricaldata_linky_{PDL}_cost" in await run_tempo_cost(hours, detailed=True)
+
+
+async def test_hc_hp_avec_releves_d_hier_incomplets_publie_un_total_estime_sans_capteurs_par_tarif() -> None:
+    """Sans les relevés détaillés d'hier, le résumé HP/HC vaut 0 : le coût ne doit pas tomber à 0 EUR"""
+    exp = exporter("fr")
+    published: dict[str, Any] = {}
+    attributes: dict[str, Any] = {}
+
+    async def capture(_client: Any, **kwargs: Any) -> None:
+        published[kwargs["unique_id"]] = kwargs["state"]
+        attributes[kwargs["unique_id"]] = kwargs["attributes"]
+
+    zeros = {"yesterday_hp_kwh": 0.0, "yesterday_hc_kwh": 0.0}
+    with (
+        patch.object(exp, "_get_pdl_contract_info", AsyncMock(return_value=(TariffProfile("HC_HP"), [], 6))),
+        patch.object(exp, "_get_pdl_prices", AsyncMock(return_value={"hp": 0.25, "hc": 0.15})),
+        patch.object(exp, "_has_full_detailed_day", AsyncMock(return_value=False)),
+        patch.object(exp, "_get_hp_hc_summary", AsyncMock(return_value=zeros)),
+        patch.object(exp, "_publish_sensor_old_format", AsyncMock(side_effect=capture)),
+    ):
+        await exp._export_cost_sensors(fake_client(), fake_stats(10000), MagicMock(), PDL)
+
+    assert set(published) == {f"myelectricaldata_linky_{PDL}_cost"}
+    assert published[f"myelectricaldata_linky_{PDL}_cost"] == 2.5
+    assert attributes[f"myelectricaldata_linky_{PDL}_cost"]["estimated"] is True
+
+
+async def test_pmax_sans_historique_ne_publie_rien_et_n_interroge_pas_le_repli_sur_la_veille() -> None:
+    """Le repli get_max_power_day relisait les DETAILED en W moyens : pas de VA fiable, rien n'est publié"""
+    exp = exporter("fr")
+    client = fake_client()
+    stats = fake_stats()
+    stats.get_max_power_history = AsyncMock(return_value={})
+    stats.get_max_power_day = AsyncMock(return_value=(7.5, "12:00:00"))
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=6)))
+
+    assert await exp._export_max_power_sensor(client, stats, db, PDL) == 0
+    stats.get_max_power_day.assert_not_called()
+    assert discovery_configs(client) == []
+
+
+def offer_for(offer_type: str, **fields: Any) -> Any:
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id="o1", name="Offre test", offer_type=offer_type, **fields)
+
+
+async def prices_for(offer: Any, family: str, day: date, zen_flex_days: dict[date, Any] | None = None) -> dict[str, float]:
+    from types import SimpleNamespace
+
+    exp = exporter("fr")
+    pdl = SimpleNamespace(usage_point_id=PDL, selected_offer_id="o1", pricing_option=family)
+    offer_result = MagicMock(scalar_one_or_none=MagicMock(return_value=offer))
+    pdl_result = MagicMock(scalar_one_or_none=MagicMock(return_value=pdl))
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=[pdl_result, offer_result])
+    with (
+        patch.object(exp, "_get_pdl_contract_info", AsyncMock(return_value=(TariffProfile(family), [], 6))),
+        patch.object(exp, "_get_zen_flex_days", AsyncMock(return_value=zen_flex_days or {})),
+    ):
+        return await exp._get_pdl_prices(db, PDL, day)
+
+
+async def test_prix_offre_saisonniere_suit_la_saison_du_jour() -> None:
+    offer = offer_for(
+        "SEASONAL", hp_price_winter=0.30, hp_price_summer=0.20, hc_price_winter=0.18, hc_price_summer=0.12
+    )
+    assert await prices_for(offer, "HC_HP", date(2026, 1, 14)) == {"hp": 0.30, "hc": 0.18}
+    assert await prices_for(offer, "HC_HP", date(2026, 7, 14)) == {"hp": 0.20, "hc": 0.12}
+
+
+async def test_prix_offre_week_end_suit_le_jour_de_la_semaine() -> None:
+    offer = offer_for("BASE_WEEKEND", base_price=0.25, base_price_weekend=0.18)
+    assert await prices_for(offer, "BASE", date(2026, 10, 31)) == {"base": 0.18}  # samedi
+    assert await prices_for(offer, "BASE", date(2026, 10, 30)) == {"base": 0.25}  # vendredi
+
+
+async def test_prix_zen_flex_sans_calendrier_pour_le_jour_n_a_pas_de_repli() -> None:
+    from src.models.zen_flex_day import ZenFlexDayType
+
+    offer = offer_for(
+        "ZEN_FLEX", hp_price_winter=0.72, hp_price_summer=0.21, hc_price_winter=0.20, hc_price_summer=0.15
+    )
+    offer.name = "Zen Flex"
+    day = date(2026, 1, 14)
+    # Jour inconnu : {} (et non un Tarif Bleu ou un défaut réglementé)
+    assert await prices_for(offer, "HC_HP", day) == {}
+    # Jour Sobriété : prix Sobriété (hiver ici, HP le plus cher)
+    sobriete = await prices_for(offer, "HC_HP", day, {day: ZenFlexDayType.SOBRIETE})
+    assert sobriete["hp"] == 0.72
+
+
+def test_prix_de_repli_tarif_bleu_ignore_les_grilles_perimees() -> None:
+    """Le repli passe par tarif_bleu_fallback_query : grille active, non expirée, la plus récente"""
+    sql = str(ha_module.tarif_bleu_fallback_query("BASE", 6).compile(compile_kwargs={"literal_binds": False})).lower()
+    assert "is_active" in sql
+    assert "valid_to" in sql
+    assert "order by" in sql and "valid_from" in sql
