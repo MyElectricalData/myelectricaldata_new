@@ -644,7 +644,7 @@ class SyncService:
         Retourne des tuples (start, end) avec end exclusif.
         """
         result = await self.db.execute(
-            select(func.distinct(model_class.date)).where(
+            select(model_class.date).distinct().where(
                 and_(
                     model_class.usage_point_id == usage_point_id,
                     model_class.granularity == granularity,
@@ -669,7 +669,7 @@ class SyncService:
         )
 
         result = await self.db.execute(
-            select(func.distinct(MaxPowerData.date)).where(
+            select(MaxPowerData.date).distinct().where(
                 and_(
                     MaxPowerData.usage_point_id == usage_point_id,
                     MaxPowerData.date >= start_date,

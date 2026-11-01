@@ -16,7 +16,7 @@ import logging
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..adapters.enedis_format import address_v5_to_2026, build_measure, contract_v5_to_2026, extract_points
@@ -323,7 +323,7 @@ class LocalDataService:
         """
         # Get distinct dates that have data
         result = await self.db.execute(
-            select(func.distinct(model.date)).where(
+            select(model.date).distinct().where(
                 and_(
                     model.usage_point_id == usage_point_id,
                     model.granularity == granularity,
