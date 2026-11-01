@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.13.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.13.2...2.13.3) (2026-11-01)
+
+### Bug Fixes
+
+* **web:** make mobile menu scrollable and lock background scroll ([84b458f](https://github.com/MyElectricalData/myelectricaldata_new/commit/84b458ff024030b4e16ba0d632111bfdd5ea3c94))
+
 ## [2.13.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.13.1...2.13.2) (2026-10-31)
 
 ### Bug Fixes
