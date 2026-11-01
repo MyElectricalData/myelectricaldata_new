@@ -83,7 +83,7 @@ class TestHomeAssistantMaxPowerSensor:
             assert count == 2  # 1 sensor + 1 binary sensor
             mock_pub_sensor.assert_called_once()
             call_kwargs = mock_pub_sensor.call_args.kwargs
-            assert call_kwargs["name"] == "max power"
+            assert call_kwargs["name"] == exporter._entity_name("max_power")
             assert call_kwargs["state"] == 6510
             assert call_kwargs["unit"] == "VA"
             assert call_kwargs["device_class"] == "apparent_power"
@@ -92,6 +92,6 @@ class TestHomeAssistantMaxPowerSensor:
 
             mock_pub_binary.assert_called_once()
             bin_call_kwargs = mock_pub_binary.call_args.kwargs
-            assert bin_call_kwargs["name"] == "max power over subscribed"
+            assert bin_call_kwargs["name"] == exporter._entity_name("max_power_over")
             assert bin_call_kwargs["is_on"] is True
             assert bin_call_kwargs["device_class"] == "problem"

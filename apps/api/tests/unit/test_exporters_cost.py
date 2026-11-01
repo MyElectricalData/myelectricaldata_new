@@ -1,10 +1,8 @@
 """Tests de l'export des coûts (€) et des statistiques long-terme pour Home Assistant"""
 
-from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 from src.services.exporters.home_assistant import HomeAssistantExporter, TEMPO_PRICES
 from src.services.exporters.tariff import TariffProfile
@@ -114,7 +112,8 @@ async def test_export_cost_sensors_base() -> None:
     assert count == 1
     call = publish.await_args_list[0]
     assert call.kwargs["unique_id"] == "myelectricaldata_linky_12345678901234_cost"
-    assert call.kwargs["object_id"] == "linky_12345678901234_cost"
+    # entity_id dérivé du unique_id préfixé (cohabitation v1/v2), comme les autres capteurs de main
+    assert "object_id" not in call.kwargs
     assert call.kwargs["state"] == 2.5  # 10 kWh * 0.25 EUR/kWh
     assert call.kwargs["unit"] == "EUR"
     assert call.kwargs["device_class"] == "monetary"
@@ -188,9 +187,9 @@ async def test_import_statistics_injects_both_external_and_entity_cost_stats() -
 
     # Vérifier que les métadonnées contiennent à la fois :
     # 1. La statistique externe myelectricaldata:cost_12345678901234_base (source="myelectricaldata")
-    # 2. La statistique d'entité tarifaire sensor.linky_12345678901234_cost_base (source="recorder")
-    # 3. La statistique d'entité globale sensor.linky_12345678901234_cost (source="recorder")
+    # 2. La statistique d'entité du capteur coût global sensor.myelectricaldata_linky_12345678901234_cost
+    #    (source="recorder"), seule série d'entité : les capteurs par tarif ne sont pas toujours publiés
     stat_ids = {c["statistic_id"]: c["source"] for c in imported_stats_calls}
     assert stat_ids.get("myelectricaldata:cost_12345678901234_base") == "myelectricaldata"
-    assert stat_ids.get("sensor.linky_12345678901234_cost_base") == "recorder"
-    assert stat_ids.get("sensor.linky_12345678901234_cost") == "recorder"
+    assert stat_ids.get("sensor.myelectricaldata_linky_12345678901234_cost") == "recorder"
+    assert not [sid for sid in stat_ids if sid.startswith("sensor.") and "_cost_" in sid]
