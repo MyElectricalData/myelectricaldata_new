@@ -323,7 +323,7 @@ class LocalDataService:
         """
         # Get distinct dates that have data
         result = await self.db.execute(
-            select(func.distinct(model.date)).where(
+            select(model.date).distinct().where(
                 and_(
                     model.usage_point_id == usage_point_id,
                     model.granularity == granularity,

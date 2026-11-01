@@ -19,7 +19,7 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import sqlalchemy as sa
@@ -264,6 +264,107 @@ async def test_upsert_puissance_max(session):
 
     rows = (await session.execute(select(MaxPowerData.interval_start, MaxPowerData.value))).all()
     assert [tuple(r) for r in rows] == [("19:10", 6400)]
+
+
+# --- Détection des jours manquants (#192) -------------------------------------------------------
+# `select(func.distinct(col))` n'est pas typé par SQLAlchemy : sous SQLite la date revenait en chaîne,
+# jamais égale à une `date` (tout redemandé à chaque synchro) et non comparable à `force_refresh_from`
+# (TypeError dès que le dernier passage a plus de 6 h : journalier et Pmax plus synchronisés).
+
+
+async def _seed_days(db: AsyncSession, model: type, days: list[date], granularity=DataGranularity.DAILY) -> None:
+    for day in days:
+        row = {"usage_point_id": PDL, "date": day, "value": 1000, "source": "myelectricaldata", "raw_data": None}
+        if model is MaxPowerData:
+            row["interval_start"] = "18:42"
+        else:
+            row["granularity"] = granularity
+        db.add(model(**row))
+    await db.commit()
+
+
+def _days(first: date, count: int) -> list[date]:
+    return [first + timedelta(days=i) for i in range(count)]
+
+
+async def test_trous_synchro_relit_des_dates(session, monkeypatch):
+    """Les jours déjà en base ne sont pas redemandés : la date relue est une `date`, pas une chaîne."""
+    await _seed_days(session, ConsumptionData, _days(date(2026, 1, 5), 5))  # 5 au 9 janvier
+    service = _sync_service(session, monkeypatch)
+
+    ranges = await service._find_missing_ranges(
+        ConsumptionData, PDL, date(2026, 1, 5), date(2026, 1, 12), DataGranularity.DAILY
+    )
+    assert ranges == [(date(2026, 1, 10), date(2026, 1, 12))]
+
+
+async def test_trous_synchro_rafraichissement_force(session, monkeypatch):
+    """`force_refresh_from` se compare aux dates relues : redemande J-2/J-1, sans TypeError (#192)."""
+    await _seed_days(session, ConsumptionData, _days(date(2026, 1, 5), 7))  # 5 au 11 janvier
+    service = _sync_service(session, monkeypatch)
+
+    ranges = await service._find_missing_ranges(
+        ConsumptionData, PDL, date(2026, 1, 5), date(2026, 1, 12), DataGranularity.DAILY,
+        force_refresh_from=date(2026, 1, 10),
+    )
+    assert ranges == [(date(2026, 1, 10), date(2026, 1, 12))]
+
+
+async def test_trous_lecture_locale_relit_des_dates(session):
+    """Même requête côté lectures de l'interface (LocalDataService) : les jours en base ne sont pas redemandés."""
+    await _seed_days(session, ConsumptionData, _days(date(2026, 1, 5), 5))
+    await _seed_days(session, ConsumptionData, [date(2026, 1, 10)], DataGranularity.DETAILED)
+
+    service = LocalDataService(session)
+    daily = await service._find_missing_ranges(
+        ConsumptionData, PDL, date(2026, 1, 5), date(2026, 1, 12), DataGranularity.DAILY
+    )
+    detailed = await service._find_missing_ranges(
+        ConsumptionData, PDL, date(2026, 1, 5), date(2026, 1, 12), DataGranularity.DETAILED
+    )
+    assert daily == [(date(2026, 1, 10), date(2026, 1, 12))]
+    assert detailed == [(date(2026, 1, 5), date(2026, 1, 10)), (date(2026, 1, 11), date(2026, 1, 12))]
+
+
+async def _vieux_passage(db: AsyncSession, data_type: str) -> None:
+    """Dernier passage vieux de 7 h : la synchro redemande J-2/J-1 (DAILY_REFRESH_INTERVAL = 6 h)."""
+    db.add(SyncStatus(
+        usage_point_id=PDL, data_type=data_type, granularity=DataGranularity.DAILY,
+        last_sync_at=datetime.now(UTC) - timedelta(hours=7),
+    ))
+    await db.commit()
+
+
+async def test_synchro_journaliere_apres_6h_redemande_j2_j1(session, monkeypatch):
+    """Journalier déjà rempli, dernier passage > 6 h : seule la fenêtre J-2/J-1 est redemandée (#192)."""
+    today = date.today()
+    first = today - timedelta(days=sync.MAX_DAILY_DAYS)
+    await _seed_days(session, ConsumptionData, _days(first, sync.MAX_DAILY_DAYS))  # jusqu'à J-1 inclus
+    await _vieux_passage(session, "consumption")
+    service = _sync_service(session, monkeypatch)
+    service.adapter.get_consumption_daily = AsyncMock(return_value={"success": True, "data": None})
+
+    await service._sync_consumption_daily(PDL)
+
+    service.adapter.get_consumption_daily.assert_awaited_once_with(
+        PDL, (today - timedelta(days=2)).isoformat(), today.isoformat()
+    )
+
+
+async def test_synchro_pmax_apres_6h_redemande_j2_j1(session, monkeypatch):
+    """Même cas pour la puissance max, qui lit ses dates par une requête distincte (#192)."""
+    today = date.today()
+    first = today - timedelta(days=sync.MAX_DAILY_DAYS)
+    await _seed_days(session, MaxPowerData, _days(first, sync.MAX_DAILY_DAYS))
+    await _vieux_passage(session, "max_power")
+    service = _sync_service(session, monkeypatch)
+    service.adapter.get_consumption_max_power = AsyncMock(return_value={"success": True, "data": None})
+
+    await service._sync_consumption_max_power(PDL)
+
+    service.adapter.get_consumption_max_power.assert_awaited_once_with(
+        PDL, (today - timedelta(days=2)).isoformat(), today.isoformat()
+    )
 
 
 # --- Dates et identifiants ---------------------------------------------------------------------
