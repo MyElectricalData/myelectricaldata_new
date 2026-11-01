@@ -206,7 +206,7 @@ export default function PageHeader({ actions }: PageHeaderProps = {}) {
           <div className="flex items-center justify-center lg:justify-start gap-3 w-full lg:w-auto pl-12 md:pl-0">
             <Icon className="text-primary-600 dark:text-primary-400 flex-shrink-0" size={32} />
             <div className="text-center lg:text-left min-w-0">
-              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-white truncate sm:overflow-visible">
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-white truncate sm:overflow-visible sm:whitespace-normal">
                 {config.title}
               </h1>
               {config.subtitle && (
