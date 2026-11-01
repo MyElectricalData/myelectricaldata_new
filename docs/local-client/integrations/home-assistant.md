@@ -307,6 +307,10 @@ automation:
           temperature: 18
 ```
 
+### Carte Lovelace communautaire
+
+Pour un affichage plus riche que la carte d'entités, [@Marlboro62](https://github.com/Marlboro62) maintient une carte Lovelace dédiée, [content-card-linky-new](https://github.com/Marlboro62/content-card-linky-new), avec une [démo en ligne](https://marlboro62.github.io/content-card-linky-new/docs/demo.html). Carte et démo sont non officielles, la démo affiche des données fictives : l'installation et la configuration sont décrites dans le dépôt de la carte.
+
 ---
 
 ## Dépannage

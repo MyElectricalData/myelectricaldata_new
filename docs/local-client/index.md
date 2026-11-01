@@ -11,6 +11,10 @@ Le **mode client** de MyElectricalData est une version allégée de l'applicatio
 
 ➡️ **Pour l'installer : [Installation avec Docker](./installation/docker.md)**, un seul conteneur et quelques minutes.
 
+:::tip Essayer sans installer
+Une [démo en ligne de l'interface](https://marlboro62.github.io/hassio-addons/demo/) permet de parcourir les pages du mode client avant toute installation. C'est une démo communautaire, non officielle, à données fictives, maintenue par [@Marlboro62](https://github.com/Marlboro62) : elle suit la version de son add-on Home Assistant et peut ne pas refléter la dernière version du client.
+:::
+
 ---
 
 ## Fonctionnalités
