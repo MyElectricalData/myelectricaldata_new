@@ -326,16 +326,13 @@ class MQTTExporter(BaseExporter):
     async def _get_max_power_stats(self, db: AsyncSession, pdl: str) -> dict[str, Any] | None:
         """Get max power statistics for a PDL"""
         from ...services.statistics import StatisticsService
-        from ...models.pdl import PDL
 
         stats = StatisticsService(db)
         today = date.today()
         yesterday = today - timedelta(days=1)
 
-        pdl_result = await db.execute(
-            select(PDL.subscribed_power).where(PDL.usage_point_id == pdl)
-        )
-        subscribed_power_kva = pdl_result.scalar_one_or_none()
+        # Puissance du contrat Enedis synchronisé (ContractData), sinon celle du PDL
+        _, _, subscribed_power_kva = await self._get_pdl_contract_info(db, pdl)
 
         history = await stats.get_max_power_history(pdl, today - timedelta(days=31), yesterday)
         if not history:

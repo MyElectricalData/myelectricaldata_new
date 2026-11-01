@@ -117,7 +117,9 @@ async def test_export_cost_sensors_base() -> None:
     assert call.kwargs["state"] == 2.5  # 10 kWh * 0.25 EUR/kWh
     assert call.kwargs["unit"] == "EUR"
     assert call.kwargs["device_class"] == "monetary"
-    assert call.kwargs["state_class"] == "total"
+    # Sans state_class : l'état (coût de la veille) monte et descend, le recorder en déduirait une
+    # somme fausse ; le long terme passe par les statistiques externes <prefix>:cost_<pdl> (MED-100)
+    assert call.kwargs.get("state_class") is None
 
 
 async def test_export_cost_sensors_hp_hc() -> None:

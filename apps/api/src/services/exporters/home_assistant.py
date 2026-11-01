@@ -1872,16 +1872,12 @@ class HomeAssistantExporter(BaseExporter):
         pdl: str,
     ) -> int:
         """Publie les capteurs de puissance maximale d'un PDL via MQTT Discovery."""
-        from ...models.pdl import PDL
-
         today = date.today()
         yesterday = today - timedelta(days=1)
         device = self._get_device_linky(pdl)
 
-        pdl_result = await db.execute(
-            select(PDL.subscribed_power).where(PDL.usage_point_id == pdl)
-        )
-        subscribed_power_kva = pdl_result.scalar_one_or_none()
+        # Puissance du contrat Enedis synchronisé (ContractData), sinon celle du PDL
+        _, _, subscribed_power_kva = await self._get_pdl_contract_info(db, pdl)
 
         history_start = today - timedelta(days=31)
         mp_history = await stats.get_max_power_history(pdl, history_start, yesterday)
@@ -2055,21 +2051,23 @@ class HomeAssistantExporter(BaseExporter):
         return prices
 
     async def _has_full_detailed_day(self, db: AsyncSession, pdl: str, day: date) -> bool:
-        """Vrai si `day` a ses relevés DETAILED (pas de 30 min) : 46 sur 48 au moins (23 h au changement d'heure)
+        """Vrai si les relevés DETAILED de `day` couvrent 23 heures au moins (jour court du changement d'heure)
 
-        Sans relevé détaillé, _get_consumption_statistics_by_tariff répartit le total journalier sur
-        24 heures (value / 24) : le découpage HP/HC, et la couleur Tempo par heure, y sont fictifs.
+        Couverture en minutes, selon le pas de chaque relevé (PT10M, PT15M, PT30M…) : un nombre de lignes
+        fixe prendrait une demi-journée en PT15M pour une journée complète. Sans relevé détaillé,
+        _get_consumption_statistics_by_tariff répartit le total journalier sur 24 heures (value / 24) :
+        le découpage HP/HC, et la couleur Tempo par heure, y sont fictifs.
         """
         from ...models.client_mode import ConsumptionData, DataGranularity
 
         result = await db.execute(
-            select(func.count())
-            .select_from(ConsumptionData)
+            select(ConsumptionData.interval_start, ConsumptionData.raw_data)
             .where(ConsumptionData.usage_point_id == pdl)
             .where(ConsumptionData.granularity == DataGranularity.DETAILED)
             .where(ConsumptionData.date == day)
         )
-        return (result.scalar_one() or 0) >= 46
+        covered = {start: interval_minutes(raw_data) for start, raw_data in result.all() if start}
+        return sum(covered.values()) >= 23 * 60
 
     async def _yesterday_tempo_cost(
         self, db: AsyncSession, pdl: str, prices: dict[str, float], yesterday: date
@@ -2181,7 +2179,9 @@ class HomeAssistantExporter(BaseExporter):
             },
             unit="EUR",
             device_class="monetary",
-            state_class="total",
+            # Sans state_class : l'état est le coût de la VEILLE (il monte et descend), le recorder en
+            # déduirait une somme fausse. Le coût long terme est importé en statistiques externes
+            # <prefix>:cost_<pdl>[_<tarif>] (import_statistics)
             icon="mdi:currency-eur",
         )
         count += 1
@@ -2205,7 +2205,6 @@ class HomeAssistantExporter(BaseExporter):
                 },
                 unit="EUR",
                 device_class="monetary",
-                state_class="total",
                 icon="mdi:currency-eur",
             )
             count += 1
@@ -3134,23 +3133,19 @@ class HomeAssistantExporter(BaseExporter):
             return {"success": False, "error": {"message": f"Timeout après {timeout}s"}}
 
     @staticmethod
-    def _total_cost_series(
-        cost_by_tariff: dict[str, list[dict[str, Any]]],
-        initial_sums: dict[str, float] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Série horaire du coût total, tous tarifs confondus
+    def _total_cost_series(cost_by_tariff: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+        """Série horaire du coût total, tous tarifs confondus, cumulée depuis le début de la période lue
 
-        La somme d'une heure est celle des cumuls de chaque tarif à cette heure : le dernier émis, sinon
-        celui de HA au point de reprise (initial_sums). En import différentiel, la série prolonge donc
-        celle déjà écrite au lieu de repartir de 0. Tri chronologique sur la date, pas sur la chaîne :
-        à l'heure d'hiver, 02:00+02:00 précède 02:00+01:00.
+        La somme d'une heure est celle des cumuls de chaque tarif à cette heure (le dernier émis pour un
+        tarif sans ligne à cette heure). Tri chronologique sur la date, pas sur la chaîne : à l'heure
+        d'hiver, 02:00+02:00 précède 02:00+01:00.
         """
         rows_by_start: dict[str, list[tuple[str, dict[str, Any]]]] = {}
         for tariff_tag, cost_stats in cost_by_tariff.items():
             for stat in cost_stats:
                 rows_by_start.setdefault(stat["start"], []).append((tariff_tag, stat))
 
-        sums = dict(initial_sums or {})
+        sums: dict[str, float] = {}
         series: list[dict[str, Any]] = []
         for start in sorted(rows_by_start, key=datetime.fromisoformat):
             rows = rows_by_start[start]
@@ -3163,14 +3158,42 @@ class HomeAssistantExporter(BaseExporter):
             })
         return series
 
+    async def _cost_series_for_import(
+        self,
+        db: AsyncSession,
+        prefix: str,
+        pdl: str,
+        consumption_hours: dict[str, list[dict[str, Any]]],
+        init_cost: dict[str, float],
+        last_cost: dict[str, datetime],
+        last_sums_raw: dict[str, float],
+        last_dates_raw: dict[str, str],
+    ) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
+        """(séries de coût par tarif, série du coût total), chacune prolongeant SON point de reprise
+
+        Le coût total est construit sur les séries complètes de la période relue, avant leur coupe aux
+        points de reprise des tarifs : une série totale absente (première fois) ou en retard (import
+        précédent en échec) rattrape ses heures même quand les tarifs sont à jour.
+        """
+        cost_full = await self._get_cost_statistics_by_tariff(db, pdl, consumption_hours)
+        cost_by_tariff = {
+            tag: self._continue_series(stats, last_cost.get(tag), init_cost.get(tag, 0.0), digits=4)
+            for tag, stats in cost_full.items()
+        }
+        total_cost = self._continue_series(
+            self._total_cost_series(cost_full),
+            self._total_cost_resume(prefix, pdl, last_dates_raw),
+            last_sums_raw.get(f"{prefix}:cost_{pdl}", 0.0),
+            digits=4,
+        )
+        return cost_by_tariff, total_cost
+
     async def _import_total_cost_statistics(
         self,
         ws: websockets.WebSocketClientProtocol,
         prefix: str,
         pdl: str,
-        cost_by_tariff: dict[str, list[dict[str, Any]]],
-        initial_sums: dict[str, float],
-        resume: datetime | None,
+        total_cost_stats: list[dict[str, Any]],
         msg_id: int,
         chunk_size: int,
         sync_delay_ms: int,
@@ -3178,14 +3201,10 @@ class HomeAssistantExporter(BaseExporter):
         """Coût total tous tarifs, statistique externe <prefix>:cost_<pdl> : (msg_id suivant, erreurs)
 
         Statistique externe et non celle du capteur sensor.<prefix>_linky_<pdl>_cost : le recorder
-        compile lui-même la somme d'un capteur state_class total, à partir de son état (le coût de la
-        veille, qui monte et descend), ce qui corromprait la somme importée. Seules les heures
-        postérieures au point de reprise de la série (resume) sont émises.
+        compilerait lui-même la somme d'un capteur à state_class, à partir de son état (le coût de la
+        veille, qui monte et descend). `total_cost_stats` ne porte que les heures postérieures au point
+        de reprise de la série (cf. _cost_series_for_import).
         """
-        total_cost_stats = [
-            stat for stat in self._total_cost_series(cost_by_tariff, initial_sums)
-            if resume is None or datetime.fromisoformat(stat["start"]) > resume
-        ]
         if not total_cost_stats:
             return msg_id, []
         _, msg_id, errors = await self._import_stats_in_chunks(
@@ -3722,19 +3741,26 @@ class HomeAssistantExporter(BaseExporter):
         last_consumption: dict[str, datetime],
         last_cost: dict[str, datetime],
         last_production: datetime | None,
+        last_total_cost: datetime | None = None,
     ) -> datetime | None:
         """Date de relecture de la base pour un PDL : le plus ancien point de reprise de SES séries
 
-        Seules comptent les séries du profil tarifaire actuel et la production : une série d'un ancien
-        profil (hc/hp après un passage en Tempo) ne fait pas relire toute la base à chaque import.
-        None : aucune série, tout l'historique est importé.
+        Seules comptent les séries du profil tarifaire actuel, le coût total et la production : une
+        série d'un ancien profil (hc/hp après un passage en Tempo) ne fait pas relire toute la base à
+        chaque import. Des coûts par tarif sans coût total (séries d'avant ce coût, ou import du total
+        en échec dès le premier) : tout l'historique est relu, pour que le total rattrape le sien.
+        None : tout l'historique est importé.
         """
         if not (last_consumption or last_cost or last_production):
             return None
         profile, _, _ = await self._get_pdl_contract_info(db, pdl)
         tags = self._profile_tariff_tags(profile)
-        points = [d for tag, d in last_consumption.items() if tag in tags]
-        points += [d for tag, d in last_cost.items() if tag in tags]
+        cost_points = [d for tag, d in last_cost.items() if tag in tags]
+        if cost_points and last_total_cost is None:
+            return None
+        points = [d for tag, d in last_consumption.items() if tag in tags] + cost_points
+        if last_total_cost is not None:
+            points.append(last_total_cost)
         if last_production is not None:
             points.append(last_production)
         return min(points) if points else None
@@ -3952,7 +3978,10 @@ class HomeAssistantExporter(BaseExporter):
                         init_consumption, init_cost, init_production, last_consumption, last_cost, last_production
                     ) = self._extract_per_pdl_state(prefix, pdl, last_sums_raw, last_dates_raw)
                     # Each PDL reads the database back from the oldest resume point of ITS series
-                    pdl_since = await self._incremental_since(db, pdl, last_consumption, last_cost, last_production)
+                    pdl_since = await self._incremental_since(
+                        db, pdl, last_consumption, last_cost, last_production,
+                        self._total_cost_resume(prefix, pdl, last_dates_raw),
+                    )
 
                     # Get consumption data by tariff
                     logger.info(f"[HA-WS] Getting consumption data for PDL {pdl}" + (f" (since {pdl_since})" if pdl_since else ""))
@@ -3993,8 +4022,8 @@ class HomeAssistantExporter(BaseExporter):
 
                     # Get cost data from consumption and energy offer prices
                     logger.info(f"[HA-WS] Calculating costs for PDL {pdl}")
-                    cost_by_tariff = await self._get_cost_statistics_by_tariff(
-                        db, pdl, consumption_hours, initial_sums=init_cost, last_dates_by_tariff=last_cost
+                    cost_by_tariff, total_cost = await self._cost_series_for_import(
+                        db, prefix, pdl, consumption_hours, init_cost, last_cost, last_sums_raw, last_dates_raw
                     )
 
                     for tariff_tag, cost_stats in cost_by_tariff.items():
@@ -4025,8 +4054,7 @@ class HomeAssistantExporter(BaseExporter):
                             logger.debug(f"[HA-WS] Imported {imported} cost stats for {pdl} {tariff_tag}")
 
                     msg_id, cost_errors = await self._import_total_cost_statistics(
-                        ws, prefix, pdl, cost_by_tariff, init_cost,
-                        self._total_cost_resume(prefix, pdl, last_dates_raw), msg_id, chunk_size, sync_delay_ms,
+                        ws, prefix, pdl, total_cost, msg_id, chunk_size, sync_delay_ms
                     )
                     results["errors"].extend(cost_errors)
 
@@ -4213,7 +4241,10 @@ class HomeAssistantExporter(BaseExporter):
                         init_consumption, init_cost, init_production, last_consumption, last_cost, last_production
                     ) = self._extract_per_pdl_state(prefix, pdl, last_sums_raw, last_dates_raw)
                     # Each PDL reads the database back from the oldest resume point of ITS series
-                    pdl_since = await self._incremental_since(db, pdl, last_consumption, last_cost, last_production)
+                    pdl_since = await self._incremental_since(
+                        db, pdl, last_consumption, last_cost, last_production,
+                        self._total_cost_resume(prefix, pdl, last_dates_raw),
+                    )
 
                     # Callback de progression par chunk : affiche le nb importé / total en temps réel
                     async def make_chunk_cb(category: str, label: str):
@@ -4287,8 +4318,8 @@ class HomeAssistantExporter(BaseExporter):
                         f"PDL {pdl_idx + 1}/{num_pdls}: Calcul des coûts...",
                         results["consumption"], results["cost"], results["production"]
                     )
-                    cost_by_tariff = await self._get_cost_statistics_by_tariff(
-                        db, pdl, consumption_hours, initial_sums=init_cost, last_dates_by_tariff=last_cost
+                    cost_by_tariff, total_cost = await self._cost_series_for_import(
+                        db, prefix, pdl, consumption_hours, init_cost, last_cost, last_sums_raw, last_dates_raw
                     )
                     current_step += 1
 
@@ -4324,8 +4355,7 @@ class HomeAssistantExporter(BaseExporter):
                         current_step += 1
 
                     msg_id, cost_errors = await self._import_total_cost_statistics(
-                        ws, prefix, pdl, cost_by_tariff, init_cost,
-                        self._total_cost_resume(prefix, pdl, last_dates_raw), msg_id, chunk_size, sync_delay_ms,
+                        ws, prefix, pdl, total_cost, msg_id, chunk_size, sync_delay_ms
                     )
                     results["errors"].extend(cost_errors)
 

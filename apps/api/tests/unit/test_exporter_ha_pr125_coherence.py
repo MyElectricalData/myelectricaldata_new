@@ -9,7 +9,7 @@ import ast
 import inspect
 import json
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -194,9 +194,10 @@ async def test_tempo_sans_detail_horaire_ne_publie_pas_de_cout() -> None:
     assert await run_tempo_cost({}) == {}
 
 
-def test_serie_cout_total_reprend_les_cumuls_de_ha_et_suit_le_changement_d_heure() -> None:
-    """Import différentiel : la série globale prolonge les cumuls déjà dans HA ; au passage à l'heure
-    d'hiver, 02:00+02:00 précède 02:00+01:00 (tri sur la date, pas sur la chaîne)"""
+def test_serie_cout_total_cumule_les_tarifs_et_suit_le_changement_d_heure() -> None:
+    """La série globale additionne les cumuls de chaque tarif sur la période lue ; au passage à l'heure
+    d'hiver, 02:00+02:00 précède 02:00+01:00 (tri sur la date, pas sur la chaîne). La reprise sur les
+    cumuls de HA se fait ensuite sur SON point de reprise (_continue_series), pas ceux des tarifs"""
     cost_by_tariff = {
         "hc": [
             {"start": "2026-10-25T02:00:00+01:00", "state": 0.2, "sum": 10.4},
@@ -204,14 +205,14 @@ def test_serie_cout_total_reprend_les_cumuls_de_ha_et_suit_le_changement_d_heure
         ],
         "hp": [{"start": "2026-10-25T03:00:00+01:00", "state": 1.0, "sum": 21.0}],
     }
-    series = HomeAssistantExporter._total_cost_series(cost_by_tariff, {"hc": 10.0, "hp": 20.0})
+    series = HomeAssistantExporter._total_cost_series(cost_by_tariff)
 
     assert [row["start"] for row in series] == [
         "2026-10-25T02:00:00+02:00",
         "2026-10-25T02:00:00+01:00",
         "2026-10-25T03:00:00+01:00",
     ]
-    assert [row["sum"] for row in series] == [30.2, 30.4, 31.4]
+    assert [row["sum"] for row in series] == [10.2, 10.4, 31.4]
 
 
 @pytest.mark.asyncio
@@ -220,16 +221,22 @@ async def test_cout_total_statistique_externe_reprise_apres_son_point() -> None:
     dont le recorder calcule seul la somme), heures postérieures à SON point de reprise seulement,
     somme continue avec celle de HA (MED-100)"""
     exp = exporter()
-    cost_by_tariff = {
+    # Coût lu en base sur toute la période (cumuls depuis 0), comme le rend _get_cost_statistics_by_tariff
+    cost_full = {
         "hc": [
-            {"start": "2026-10-05T01:00:00+02:00", "state": 0.2, "sum": 10.2},
-            {"start": "2026-10-05T02:00:00+02:00", "state": 0.3, "sum": 10.5},
+            {"start": "2026-10-05T01:00:00+02:00", "state": 0.2, "sum": 0.2},
+            {"start": "2026-10-05T02:00:00+02:00", "state": 0.3, "sum": 0.5},
         ],
-        "hp": [{"start": "2026-10-05T03:00:00+02:00", "state": 1.0, "sum": 21.0}],
+        "hp": [{"start": "2026-10-05T03:00:00+02:00", "state": 1.0, "sum": 1.0}],
     }
-    resume = HomeAssistantExporter._total_cost_resume(
-        "mypfx", PDL, {f"mypfx:cost_{PDL}": "2026-10-05T01:00:00+02:00"}
+    exp._get_cost_statistics_by_tariff = AsyncMock(return_value=cost_full)  # type: ignore[method-assign]
+    # Tarifs en avance sur le total (HC repris à 02:00) : le total ne s'aligne pas sur eux
+    cost_by_tariff, total_cost = await exp._cost_series_for_import(
+        MagicMock(), "mypfx", PDL, {}, {"hc": 10.5, "hp": 20.0}, {"hc": datetime.fromisoformat("2026-10-05T02:00:00+02:00")},
+        {f"mypfx:cost_{PDL}": 30.2}, {f"mypfx:cost_{PDL}": "2026-10-05T01:00:00+02:00"},
     )
+    assert [(row["start"], row["sum"]) for row in cost_by_tariff["hc"]] == []
+    assert [(row["start"], row["sum"]) for row in cost_by_tariff["hp"]] == [("2026-10-05T03:00:00+02:00", 21.0)]
     calls: list[tuple[list[dict[str, Any]], dict[str, Any]]] = []
 
     async def fake_chunks(ws: Any, stats: list[dict[str, Any]], metadata: dict[str, Any], **kwargs: Any):
@@ -238,7 +245,7 @@ async def test_cout_total_statistique_externe_reprise_apres_son_point() -> None:
 
     with patch.object(exp, "_import_stats_in_chunks", side_effect=fake_chunks):
         msg_id, errors = await exp._import_total_cost_statistics(
-            MagicMock(), "mypfx", PDL, cost_by_tariff, {"hc": 10.0, "hp": 20.0}, resume, 7, 2000, 0
+            MagicMock(), "mypfx", PDL, total_cost, 7, 2000, 0
         )
 
     assert (msg_id, errors) == (8, [])
@@ -247,7 +254,7 @@ async def test_cout_total_statistique_externe_reprise_apres_son_point() -> None:
     assert metadata["source"] == "mypfx"
     assert metadata["unit_of_measurement"] == "EUR"
     assert metadata["has_sum"] is True
-    # 01:00 est le point de reprise (somme HA 30.2 = 10.2 + 20.0) : non réémis, la suite le prolonge
+    # 01:00 est le point de reprise du total (somme HA 30.2) : non réémis, la suite le prolonge
     assert [(row["start"], row["sum"]) for row in stats] == [
         ("2026-10-05T02:00:00+02:00", 30.5),
         ("2026-10-05T03:00:00+02:00", 31.5),
@@ -376,3 +383,60 @@ def test_prix_de_repli_tarif_bleu_ignore_les_grilles_perimees() -> None:
     assert "is_active" in sql
     assert "valid_to" in sql
     assert "order by" in sql and "valid_from" in sql
+
+
+@pytest.mark.asyncio
+async def test_import_du_cout_total_vide_n_appelle_pas_home_assistant() -> None:
+    """Rien à émettre pour le total (déjà à jour) : aucun message WebSocket, msg_id inchangé"""
+    exp = exporter()
+    with patch.object(exp, "_import_stats_in_chunks", AsyncMock()) as chunks:
+        assert await exp._import_total_cost_statistics(MagicMock(), "mypfx", PDL, [], 7, 2000, 0) == (7, [])
+    chunks.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_incremental_since_relit_tout_tant_que_le_cout_total_n_a_pas_de_reprise() -> None:
+    """Séries de coût par tarif présentes, total absent : relecture complète (None) pour que le total
+    rattrape l'historique ; total présent : son point de reprise compte comme les autres"""
+    exp = exporter()
+    exp._get_pdl_contract_info = AsyncMock(return_value=(TariffProfile("BASE"), [], 6))  # type: ignore[method-assign]
+    tz = datetime.fromisoformat("2026-10-04T09:00:00+02:00").tzinfo
+    t4 = datetime(2026, 10, 4, 9, tzinfo=tz)
+    t5 = datetime(2026, 10, 5, 9, tzinfo=tz)
+
+    assert await exp._incremental_since(MagicMock(), PDL, {"base": t5}, {"base": t5}, None, None) is None
+    assert await exp._incremental_since(MagicMock(), PDL, {"base": t5}, {"base": t5}, None, t4) == t4
+    # Sans aucune série de coût (pas d'offre ni de prix), le total ne force pas la relecture
+    assert await exp._incremental_since(MagicMock(), PDL, {"base": t5}, {}, None, None) == t5
+
+
+def detailed_rows_db(rows: list[tuple[str, dict[str, Any] | None]]) -> MagicMock:
+    """Fausse session : relevés DETAILED (interval_start, raw_data) d'une journée"""
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=rows)))
+    return db
+
+
+def quarter_hours(count: int, step: int = 15) -> list[tuple[str, dict[str, Any] | None]]:
+    return [(f"{(i * step) // 60:02d}:{(i * step) % 60:02d}", {"p": f"PT{step}M"}) for i in range(count)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("rows", "expected"),
+    [
+        (quarter_hours(48), False),  # PT15M : 48 lignes = 12 heures, pas une journée
+        (quarter_hours(96), True),
+        (quarter_hours(92), True),  # jour court du changement d'heure (23 h)
+        (quarter_hours(46, 30), True),  # PT30M : 46 lignes = 23 heures
+        ([(f"{i // 2:02d}:{(i % 2) * 30:02d}", None) for i in range(46)], True),  # pas absent : PT30M
+        (quarter_hours(45, 30), False),
+    ],
+    ids=["pt15m-demi-journee", "pt15m-complet", "pt15m-23h", "pt30m-23h", "pas-par-defaut", "pt30m-incomplet"],
+)
+async def test_journee_detaillee_complete_selon_le_pas_des_releves(
+    rows: list[tuple[str, dict[str, Any] | None]], expected: bool
+) -> None:
+    """Complétude d'une journée DETAILED mesurée en minutes couvertes, selon le pas de chaque relevé
+    (revue Codex MED-100 : 46 lignes PT15M ne couvrent que 11 h 30)"""
+    assert await exporter()._has_full_detailed_day(detailed_rows_db(rows), PDL, date(2026, 10, 5)) is expected

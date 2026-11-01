@@ -1,12 +1,15 @@
 """Tests unitaires pour l'export de la puissance maximale quotidienne (Pmax) vers Home Assistant."""
 
 from datetime import date, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from src.services.statistics import StatisticsService
 from src.services.exporters.home_assistant import HomeAssistantExporter
+from src.services.exporters.mqtt import MQTTExporter
+from src.services.exporters.tariff import TariffProfile
 
 PRM = "99999999999991"
 
@@ -62,10 +65,6 @@ class TestHomeAssistantMaxPowerSensor:
         stats = AsyncMock()
         db = AsyncMock()
 
-        pdl_result = MagicMock()
-        pdl_result.scalar_one_or_none.return_value = 6
-        db.execute.return_value = pdl_result
-
         yesterday = date.today() - timedelta(days=1)
         stats.get_max_power_history.return_value = {
             yesterday: {"va": 6510, "kva": 6.51, "time": "12:50"}
@@ -75,7 +74,8 @@ class TestHomeAssistantMaxPowerSensor:
             config={"mqtt_enabled": True, "mqtt_broker": "localhost", "prefix": "myelectricaldata"}
         )
 
-        with patch.object(exporter, "_publish_sensor_old_format", new_callable=AsyncMock) as mock_pub_sensor, \
+        with patch.object(exporter, "_get_pdl_contract_info", AsyncMock(return_value=(TariffProfile("BASE"), [], 6))), \
+             patch.object(exporter, "_publish_sensor_old_format", new_callable=AsyncMock) as mock_pub_sensor, \
              patch.object(exporter, "_publish_binary_sensor", new_callable=AsyncMock) as mock_pub_binary:
 
             count = await exporter._export_max_power_sensor(client, stats, db, PRM)
@@ -95,3 +95,59 @@ class TestHomeAssistantMaxPowerSensor:
             assert bin_call_kwargs["name"] == exporter._entity_name("max_power_over")
             assert bin_call_kwargs["is_on"] is True
             assert bin_call_kwargs["device_class"] == "problem"
+
+
+class TestSubscribedPowerFromContract:
+    """La puissance souscrite vient du contrat Enedis synchronisé (ContractData), comme le reste des
+    exporters, et non du champ du PDL qui peut être périmé (revue Codex MED-100)"""
+
+    @staticmethod
+    def contract_db() -> AsyncMock:
+        """Fausse session : 6 kVA au contrat, 9 kVA sur le PDL ; profil du contrat lu par la vraie méthode"""
+        db = AsyncMock()
+
+        async def execute(query):
+            sql = str(query).lower()
+            res = MagicMock()
+            if "contract_data" in sql:
+                res.first.return_value = SimpleNamespace(subscribed_power=6, pricing_option="BASE", offpeak_hours=None)
+            else:
+                res.first.return_value = SimpleNamespace(
+                    subscribed_power=9, pricing_option="BASE", offpeak_hours=None, selected_offer_id=None,
+                )
+            return res
+
+        db.execute = AsyncMock(side_effect=execute)
+        return db
+
+    @staticmethod
+    def history() -> dict:
+        return {date.today() - timedelta(days=1): {"va": 7000, "kva": 7.0, "time": "19:00"}}
+
+    @pytest.mark.asyncio
+    async def test_home_assistant_binary_sensor_on_above_contract_power(self):
+        exporter = HomeAssistantExporter(config={"mqtt_broker": "localhost", "prefix": "myelectricaldata"})
+        stats = AsyncMock()
+        stats.get_max_power_history.return_value = self.history()
+        db = self.contract_db()
+
+        with patch.object(exporter, "_publish_sensor_old_format", new_callable=AsyncMock) as pub, \
+             patch.object(exporter, "_publish_binary_sensor", new_callable=AsyncMock) as pub_bin:
+            await exporter._export_max_power_sensor(AsyncMock(), stats, db, PRM)
+
+        assert (await exporter._get_pdl_contract_info(db, PRM))[2] == 6
+        assert pub.call_args.kwargs["attributes"]["is_over_subscribed"] is True
+        assert pub_bin.call_args.kwargs["is_on"] is True
+
+    @pytest.mark.asyncio
+    async def test_mqtt_max_power_over_contract_power(self):
+        exporter = MQTTExporter({"broker": "localhost"})
+        db = self.contract_db()
+
+        with patch("src.services.statistics.StatisticsService.get_max_power_history", AsyncMock(return_value=self.history())):
+            payload = await exporter._get_max_power_stats(db, PRM)
+
+        assert payload is not None
+        assert payload["subscribed_power_kva"] == 6
+        assert payload["is_over_subscribed"] is True
+        assert payload["load_ratio_percent"] == 116.7
