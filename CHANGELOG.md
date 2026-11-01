@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.14.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.13.4...2.14.0) (2026-11-01)
+
+### Features
+
+* **client, ha:** export des couts, puissance max et capteur de depassement ([9d29446](https://github.com/MyElectricalData/myelectricaldata_new/commit/9d29446dca0355457d3fb29fd7715e2c0dd75a0d))
+
+### Bug Fixes
+
+* **api:** MED-100 / aligne les coûts et la Pmax de la PR [#125](https://github.com/MyElectricalData/myelectricaldata_new/issues/125) sur main 2.13 ([cd0ea71](https://github.com/MyElectricalData/myelectricaldata_new/commit/cd0ea716947d3d8842a37f6dd0b782589866a948))
+* **api:** MED-100 / coût total importé en statistique externe <prefix>:cost_<pdl> ([98b9653](https://github.com/MyElectricalData/myelectricaldata_new/commit/98b9653b5440f915532fbc56e61ef3b876311136))
+* **api:** MED-100 / revue Codex : coût total sur sa propre reprise, complétude PT15M, puissance du contrat, coûts sans state_class ([83f3a8e](https://github.com/MyElectricalData/myelectricaldata_new/commit/83f3a8eed97486ea05ead8dcfd7ba2f320dcf302))
+* **api:** MED-100 / revue Codex, prix du jour, couverture detaillee et Pmax sans repli ([46b825f](https://github.com/MyElectricalData/myelectricaldata_new/commit/46b825f4ad204b5bf8fd175d5b0fac8664cb7fab))
+* **ha:** use valid MDI icon for max power over subscribed binary sensor ([a451268](https://github.com/MyElectricalData/myelectricaldata_new/commit/a45126800d1416f818dbe264f2ce215246adbc82))
+* **web:** MED-100 / entity_id du coût affiché avec le préfixe d'entité configuré ([73b7642](https://github.com/MyElectricalData/myelectricaldata_new/commit/73b7642029e080675e176bf6fdd412e982cf3c64))
+
 ## [2.13.4](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.13.3...2.13.4) (2026-11-01)
 
 ### Bug Fixes
