@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.13.4](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.13.3...2.13.4) (2026-11-01)
+
+### Bug Fixes
+
+* **web:** ajustements responsives sur mobiles et petits écrans ([a3c7810](https://github.com/MyElectricalData/myelectricaldata_new/commit/a3c7810c7318017f83e2c27021fc053bf6e2f5a6))
+* **web:** MED-101 / plages HC de PDLCard en ligne a partir de sm, xs n'existe pas ([35060e5](https://github.com/MyElectricalData/myelectricaldata_new/commit/35060e5093469c169195ea4019ca2685c6d3f453))
+* **web:** MED-101 / titre de PageHeader a la ligne des sm, truncate imposait nowrap ([a4700e6](https://github.com/MyElectricalData/myelectricaldata_new/commit/a4700e66fb4a7992ee988ee168f357b08e457a59))
+
 ## [2.13.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.13.2...2.13.3) (2026-11-01)
 
 ### Bug Fixes
