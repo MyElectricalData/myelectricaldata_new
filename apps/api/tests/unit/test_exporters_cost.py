@@ -188,9 +188,11 @@ async def test_import_statistics_injects_both_external_and_entity_cost_stats() -
 
     # Vérifier que les métadonnées contiennent à la fois :
     # 1. La statistique externe myelectricaldata:cost_12345678901234_base (source="myelectricaldata")
-    # 2. La statistique d'entité du capteur coût global sensor.myelectricaldata_linky_12345678901234_cost
-    #    (source="recorder"), seule série d'entité : les capteurs par tarif ne sont pas toujours publiés
+    # 2. Le coût total myelectricaldata:cost_12345678901234, lui aussi statistique externe : le recorder
+    #    calcule seul la somme d'un capteur state_class total, une série source="recorder" importée sur
+    #    sensor.<prefix>_linky_<pdl>_cost serait corrompue dès que le capteur publie son état (MED-100)
     stat_ids = {c["statistic_id"]: c["source"] for c in imported_stats_calls}
     assert stat_ids.get("myelectricaldata:cost_12345678901234_base") == "myelectricaldata"
-    assert stat_ids.get("sensor.myelectricaldata_linky_12345678901234_cost") == "recorder"
-    assert not [sid for sid in stat_ids if sid.startswith("sensor.") and "_cost_" in sid]
+    assert stat_ids.get("myelectricaldata:cost_12345678901234") == "myelectricaldata"
+    assert not [sid for sid in stat_ids if sid.startswith("sensor.")]
+    assert "recorder" not in stat_ids.values()

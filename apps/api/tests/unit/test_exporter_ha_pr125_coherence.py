@@ -214,6 +214,59 @@ def test_serie_cout_total_reprend_les_cumuls_de_ha_et_suit_le_changement_d_heure
     assert [row["sum"] for row in series] == [30.2, 30.4, 31.4]
 
 
+@pytest.mark.asyncio
+async def test_cout_total_statistique_externe_reprise_apres_son_point() -> None:
+    """Coût total importé en statistique externe <prefix>:cost_<pdl> (jamais sur l'entité du capteur,
+    dont le recorder calcule seul la somme), heures postérieures à SON point de reprise seulement,
+    somme continue avec celle de HA (MED-100)"""
+    exp = exporter()
+    cost_by_tariff = {
+        "hc": [
+            {"start": "2026-10-05T01:00:00+02:00", "state": 0.2, "sum": 10.2},
+            {"start": "2026-10-05T02:00:00+02:00", "state": 0.3, "sum": 10.5},
+        ],
+        "hp": [{"start": "2026-10-05T03:00:00+02:00", "state": 1.0, "sum": 21.0}],
+    }
+    resume = HomeAssistantExporter._total_cost_resume(
+        "mypfx", PDL, {f"mypfx:cost_{PDL}": "2026-10-05T01:00:00+02:00"}
+    )
+    calls: list[tuple[list[dict[str, Any]], dict[str, Any]]] = []
+
+    async def fake_chunks(ws: Any, stats: list[dict[str, Any]], metadata: dict[str, Any], **kwargs: Any):
+        calls.append((stats, metadata))
+        return len(stats), kwargs["msg_id_start"] + 1, []
+
+    with patch.object(exp, "_import_stats_in_chunks", side_effect=fake_chunks):
+        msg_id, errors = await exp._import_total_cost_statistics(
+            MagicMock(), "mypfx", PDL, cost_by_tariff, {"hc": 10.0, "hp": 20.0}, resume, 7, 2000, 0
+        )
+
+    assert (msg_id, errors) == (8, [])
+    [(stats, metadata)] = calls
+    assert metadata["statistic_id"] == f"mypfx:cost_{PDL}"
+    assert metadata["source"] == "mypfx"
+    assert metadata["unit_of_measurement"] == "EUR"
+    assert metadata["has_sum"] is True
+    # 01:00 est le point de reprise (somme HA 30.2 = 10.2 + 20.0) : non réémis, la suite le prolonge
+    assert [(row["start"], row["sum"]) for row in stats] == [
+        ("2026-10-05T02:00:00+02:00", 30.5),
+        ("2026-10-05T03:00:00+02:00", 31.5),
+    ]
+
+
+def test_cout_total_retrouve_par_la_recherche_des_points_de_reprise() -> None:
+    """La série <prefix>:cost_<pdl> appartient à son PDL (point de reprise, import différentiel)
+    sans être prise pour un tarif <prefix>:cost_<pdl>_<tarif>"""
+    other = "98765432109876"
+    assert HomeAssistantExporter._statistic_belongs_to("mypfx", f"mypfx:cost_{PDL}", [PDL])
+    assert not HomeAssistantExporter._statistic_belongs_to("mypfx", f"mypfx:cost_{other}", [PDL])
+    assert HomeAssistantExporter._total_cost_resume("mypfx", PDL, {}) is None
+    state = HomeAssistantExporter._extract_per_pdl_state(
+        "mypfx", PDL, {f"mypfx:cost_{PDL}": 30.2}, {f"mypfx:cost_{PDL}": "2026-10-05T01:00:00+02:00"}
+    )
+    assert state == ({}, {}, 0.0, {}, {}, None)
+
+
 async def test_tempo_avec_total_journalier_seul_ne_publie_pas_de_cout() -> None:
     """Sans relevés détaillés, le repli journalier répartit value / 24 sur 24 heures : la couleur et la
     période HP/HC de ces heures sont fictives, le coût aussi"""

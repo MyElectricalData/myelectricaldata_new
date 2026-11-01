@@ -3163,21 +3163,29 @@ class HomeAssistantExporter(BaseExporter):
             })
         return series
 
-    async def _import_total_cost_entity_statistics(
+    async def _import_total_cost_statistics(
         self,
         ws: websockets.WebSocketClientProtocol,
+        prefix: str,
         pdl: str,
         cost_by_tariff: dict[str, list[dict[str, Any]]],
         initial_sums: dict[str, float],
+        resume: datetime | None,
         msg_id: int,
         chunk_size: int,
         sync_delay_ms: int,
     ) -> tuple[int, list[str]]:
-        """Historique du capteur coût global (sensor.<prefix>_linky_<pdl>_cost) : (msg_id suivant, erreurs)
+        """Coût total tous tarifs, statistique externe <prefix>:cost_<pdl> : (msg_id suivant, erreurs)
 
-        Les séries par tarif restent les statistiques externes <prefix>:cost_<pdl>_<tarif>.
+        Statistique externe et non celle du capteur sensor.<prefix>_linky_<pdl>_cost : le recorder
+        compile lui-même la somme d'un capteur state_class total, à partir de son état (le coût de la
+        veille, qui monte et descend), ce qui corromprait la somme importée. Seules les heures
+        postérieures au point de reprise de la série (resume) sont émises.
         """
-        total_cost_stats = self._total_cost_series(cost_by_tariff, initial_sums)
+        total_cost_stats = [
+            stat for stat in self._total_cost_series(cost_by_tariff, initial_sums)
+            if resume is None or datetime.fromisoformat(stat["start"]) > resume
+        ]
         if not total_cost_stats:
             return msg_id, []
         _, msg_id, errors = await self._import_stats_in_chunks(
@@ -3186,9 +3194,9 @@ class HomeAssistantExporter(BaseExporter):
             {
                 "has_mean": False,
                 "has_sum": True,
-                "statistic_id": f"sensor.{self.prefix}_linky_{pdl}_cost",
+                "statistic_id": f"{prefix}:cost_{pdl}",
                 "name": f"Coût {pdl}",
-                "source": "recorder",
+                "source": prefix,
                 "unit_of_measurement": "EUR",
             },
             msg_id_start=msg_id,
@@ -3196,6 +3204,15 @@ class HomeAssistantExporter(BaseExporter):
             sync_delay_ms=sync_delay_ms,
         )
         return msg_id, errors
+
+    @staticmethod
+    def _total_cost_resume(prefix: str, pdl: str, last_dates_raw: dict[str, str]) -> datetime | None:
+        """Point de reprise de la série du coût total <prefix>:cost_<pdl>, None sans historique"""
+        date_str = last_dates_raw.get(f"{prefix}:cost_{pdl}")
+        try:
+            return datetime.fromisoformat(date_str) if date_str else None
+        except ValueError:
+            return None
 
     async def _import_stats_in_chunks(
         self,
@@ -3504,7 +3521,7 @@ class HomeAssistantExporter(BaseExporter):
     def _statistic_belongs_to(prefix: str, stat_id: str, usage_point_ids: list[str]) -> bool:
         return any(
             stat_id.startswith((f"{prefix}:consumption_{pdl}_", f"{prefix}:cost_{pdl}_"))
-            or stat_id == f"{prefix}:production_{pdl}"
+            or stat_id in (f"{prefix}:cost_{pdl}", f"{prefix}:production_{pdl}")
             for pdl in usage_point_ids
         )
 
@@ -4007,8 +4024,9 @@ class HomeAssistantExporter(BaseExporter):
                         if imported > 0:
                             logger.debug(f"[HA-WS] Imported {imported} cost stats for {pdl} {tariff_tag}")
 
-                    msg_id, cost_errors = await self._import_total_cost_entity_statistics(
-                        ws, pdl, cost_by_tariff, init_cost, msg_id, chunk_size, sync_delay_ms
+                    msg_id, cost_errors = await self._import_total_cost_statistics(
+                        ws, prefix, pdl, cost_by_tariff, init_cost,
+                        self._total_cost_resume(prefix, pdl, last_dates_raw), msg_id, chunk_size, sync_delay_ms,
                     )
                     results["errors"].extend(cost_errors)
 
@@ -4305,8 +4323,9 @@ class HomeAssistantExporter(BaseExporter):
                         results["errors"].extend(chunk_errors)
                         current_step += 1
 
-                    msg_id, cost_errors = await self._import_total_cost_entity_statistics(
-                        ws, pdl, cost_by_tariff, init_cost, msg_id, chunk_size, sync_delay_ms
+                    msg_id, cost_errors = await self._import_total_cost_statistics(
+                        ws, prefix, pdl, cost_by_tariff, init_cost,
+                        self._total_cost_resume(prefix, pdl, last_dates_raw), msg_id, chunk_size, sync_delay_ms,
                     )
                     results["errors"].extend(cost_errors)
 

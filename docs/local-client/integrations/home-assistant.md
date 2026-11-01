@@ -192,6 +192,7 @@ bord > Énergie :
 |-------------|-------------|
 | `<prefix>:consumption_<pdl>_<série>` | Consommation par série (`base`, `hc`/`hp`, ou les 6 séries Tempo) |
 | `<prefix>:cost_<pdl>_<série>` | Coût de la série, en EUR |
+| `<prefix>:cost_<pdl>` | Coût total, toutes séries confondues, en EUR (entité « coûts totaux » du panneau Énergie) |
 | `<prefix>:production_<pdl>` | Production |
 
 Le coût utilise l'offre sélectionnée sur le PDL :

@@ -1550,8 +1550,8 @@ export default function HomeAssistant() {
           </div>
 
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
-            L'import injecte les statistiques de consommation et les entités de coût associées (<code>sensor.{entityPrefix}_linky_&lt;PDL&gt;_cost</code>) calculées selon votre contrat.
-            Dans le tableau de bord Énergie (<strong>Paramètres → Tableaux de bord → Énergie</strong>), sélectionnez cette entité sous <em>« Utiliser une entité suivant les coûts totaux »</em> pour afficher vos coûts historiques exacts sans template.
+            L'import injecte les statistiques de consommation et le coût total associé (<code>{statisticIdPrefix}:cost_&lt;PDL&gt;</code>) calculé selon votre contrat.
+            Dans le tableau de bord Énergie (<strong>Paramètres → Tableaux de bord → Énergie</strong>), sélectionnez cette statistique sous <em>« Utiliser une entité suivant les coûts totaux »</em> pour afficher vos coûts historiques exacts sans template.
           </p>
         </div>
       )}
