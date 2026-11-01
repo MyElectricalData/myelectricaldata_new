@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.14.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.14.0...2.14.1) (2026-11-01)
+
+### Bug Fixes
+
+* **api:** MED-104 / dates typees dans la detection des jours manquants sous SQLite ([addf3e2](https://github.com/MyElectricalData/myelectricaldata_new/commit/addf3e2fa5456089686c4f346e626448bb1e55ab)), closes [#192](https://github.com/MyElectricalData/myelectricaldata_new/issues/192)
+
 ## [2.14.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.13.4...2.14.0) (2026-11-01)
 
 ### Features
