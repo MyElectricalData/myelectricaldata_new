@@ -510,6 +510,7 @@ INCREMENTAL_STATE = {
     "last_dates": {
         f"{PREFIX}:consumption_{PDL}_base": paris(OCT_5, 9).isoformat(),
         f"{PREFIX}:cost_{PDL}_base": paris(OCT_4, 9).isoformat(),
+        f"{PREFIX}:cost_{PDL}": paris(OCT_4, 9).isoformat(),
         f"{PREFIX}:production_{PDL}": paris(OCT_5, 9).isoformat(),
         # ancien profil HC/HP de ce PDL, figé : ne doit pas faire relire la base depuis 2024
         f"{PREFIX}:consumption_{PDL}_hc": datetime(2024, 1, 1, tzinfo=PARIS).isoformat(),
@@ -518,6 +519,7 @@ INCREMENTAL_STATE = {
     "last_sums": {
         f"{PREFIX}:consumption_{PDL}_base": 100.0,
         f"{PREFIX}:cost_{PDL}_base": 20.0,
+        f"{PREFIX}:cost_{PDL}": 20.0,
         f"{PREFIX}:production_{PDL}": 5.0,
         f"{PREFIX}:consumption_{PDL}_hc": 7.0,
         f"{PREFIX}:consumption_{OTHER_PDL}_base": 50.0,
@@ -545,10 +547,11 @@ async def test_incremental_import_wiring(with_progress: bool) -> None:
     assert [(s["start"][:13], s["sum"]) for s in imported[f"{PREFIX}:consumption_{PDL}_base"]] == [("2026-10-05T10", 101.0)]
     assert [(s["start"][:13], s["sum"]) for s in imported[f"{PREFIX}:consumption_{OTHER_PDL}_base"]] == [("2026-10-05T10", 51.0)]
 
-    # Coût : conso non filtrée, et SON point de reprise
+    # Coût : calculé sur la conso non filtrée, sans coupe (chaque série de coût, par tarif ou totale,
+    # est ensuite prolongée depuis SON point de reprise)
     cost_call = next(c for c in exporter._get_cost_statistics_by_tariff.await_args_list if c.args[1] == PDL)  # type: ignore[attr-defined]
     assert len(cost_call.args[2]["base"]) == 3
-    assert cost_call.kwargs == {"initial_sums": {"base": 20.0}, "last_dates_by_tariff": {"base": paris(OCT_4, 9)}}
+    assert cost_call.kwargs == {}
 
     # Production : sa somme et sa date
     production_call = next(c for c in exporter._get_production_statistics.await_args_list if c.args[1] == PDL)  # type: ignore[attr-defined]
@@ -578,3 +581,58 @@ async def test_incremental_without_any_statistic_falls_back_to_full_import(with_
     since_by_pdl = {c.args[1]: c.args[2] for c in exporter._get_consumption_statistics_by_tariff.await_args_list}  # type: ignore[attr-defined]
     assert since_by_pdl == {PDL: None, OTHER_PDL: None}
     assert [s["sum"] for s in imported[f"{PREFIX}:consumption_{PDL}_base"]] == [1.0, 2.0, 3.0]
+
+
+@pytest.mark.parametrize("with_progress", [False, True], ids=["import_statistics", "with_progress"])
+async def test_cout_total_absent_rattrape_l_historique_des_tarifs_a_jour(with_progress: bool) -> None:
+    """Coût par tarif à jour mais coût total <prefix>:cost_<pdl> absent (séries d'avant ce coût, ou
+    premier import du total en échec) : la base est relue en entier et le total rattrape TOUTES ses
+    heures, pas seulement celles d'après les points de reprise des tarifs (revue Codex MED-100)"""
+    state = {
+        **INCREMENTAL_STATE,
+        "last_dates": {k: v for k, v in INCREMENTAL_STATE["last_dates"].items() if k != f"{PREFIX}:cost_{PDL}"},
+        "last_sums": {k: v for k, v in INCREMENTAL_STATE["last_sums"].items() if k != f"{PREFIX}:cost_{PDL}"},
+    }
+    exporter, imported = import_exporter(state)
+    full_cost = {"base": [
+        {"start": paris(OCT_4, 9).isoformat(), "state": 0.25, "sum": 0.25},
+        {"start": paris(OCT_5, 9).isoformat(), "state": 0.25, "sum": 0.5},
+        {"start": paris(OCT_5, 10).isoformat(), "state": 0.25, "sum": 0.75},
+    ]}
+    exporter._get_cost_statistics_by_tariff = AsyncMock(return_value=full_cost)  # type: ignore[method-assign]
+
+    assert (await run_import(exporter, with_progress))["success"] is True
+
+    since_by_pdl = {c.args[1]: c.args[2] for c in exporter._get_consumption_statistics_by_tariff.await_args_list}  # type: ignore[attr-defined]
+    assert since_by_pdl[PDL] is None
+    # Le tarif reprend après SON point (4 à 9h, somme HA 20.0), le total part de 0 sur toute la période
+    assert [(s["start"][:13], s["sum"]) for s in imported[f"{PREFIX}:cost_{PDL}_base"]] == [
+        ("2026-10-05T09", 20.25), ("2026-10-05T10", 20.5),
+    ]
+    assert [(s["start"][:13], s["sum"]) for s in imported[f"{PREFIX}:cost_{PDL}"]] == [
+        ("2026-10-04T09", 0.25), ("2026-10-05T09", 0.5), ("2026-10-05T10", 0.75),
+    ]
+
+
+@pytest.mark.parametrize("with_progress", [False, True], ids=["import_statistics", "with_progress"])
+async def test_cout_total_en_retard_reprend_apres_son_propre_point(with_progress: bool) -> None:
+    """Total en retard sur le tarif (import du total en échec le 4) : il reprend après SON point de
+    reprise, avec SA somme HA, et ne saute pas les heures déjà exportées pour le tarif"""
+    state = {
+        **INCREMENTAL_STATE,
+        "last_dates": {**INCREMENTAL_STATE["last_dates"], f"{PREFIX}:cost_{PDL}_base": paris(OCT_5, 9).isoformat()},
+        "last_sums": {**INCREMENTAL_STATE["last_sums"], f"{PREFIX}:cost_{PDL}_base": 20.25, f"{PREFIX}:cost_{PDL}": 20.0},
+    }
+    exporter, imported = import_exporter(state)
+    exporter._get_cost_statistics_by_tariff = AsyncMock(return_value={"base": [  # type: ignore[method-assign]
+        {"start": paris(OCT_4, 9).isoformat(), "state": 0.25, "sum": 0.25},
+        {"start": paris(OCT_5, 9).isoformat(), "state": 0.25, "sum": 0.5},
+        {"start": paris(OCT_5, 10).isoformat(), "state": 0.25, "sum": 0.75},
+    ]})
+
+    assert (await run_import(exporter, with_progress))["success"] is True
+
+    assert [(s["start"][:13], s["sum"]) for s in imported[f"{PREFIX}:cost_{PDL}_base"]] == [("2026-10-05T10", 20.5)]
+    assert [(s["start"][:13], s["sum"]) for s in imported[f"{PREFIX}:cost_{PDL}"]] == [
+        ("2026-10-05T09", 20.25), ("2026-10-05T10", 20.5),
+    ]

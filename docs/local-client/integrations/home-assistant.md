@@ -105,6 +105,22 @@ L'identifiant suggéré passe par `default_entity_id` (Home Assistant 2025.10 et
 | `sensor.myelectricaldata_linky_{pdl}_consumption_last30day` | kWh | Total des 30 derniers jours |
 | `sensor.myelectricaldata_linky_{pdl}_production` | kWh | Production de la veille, historique en attributs |
 | `sensor.myelectricaldata_linky_{pdl}_production_last{7,14,30}day` | kWh | Totaux de production |
+| `sensor.myelectricaldata_linky_{pdl}_cost` | EUR | Coût de la veille, selon l'offre sélectionnée sur le PDL |
+| `sensor.myelectricaldata_linky_{pdl}_cost_{tarif}` | EUR | Coût de la veille par tarif (`hp`, `hc`), uniquement avec le détail horaire de la veille |
+| `sensor.myelectricaldata_linky_{pdl}_max_power` | VA | Puissance maximale atteinte (jour le plus récent des 31 derniers), historique en attributs |
+| `binary_sensor.myelectricaldata_linky_{pdl}_max_power_over` | - | Allumé quand cette puissance dépasse la puissance souscrite (absent sans puissance souscrite connue) |
+
+Les capteurs de coût n'ont pas de `state_class` : leur état est le coût de la veille, qui monte et
+descend, et le recorder en déduirait une somme fausse. L'historique long terme du coût passe par les
+statistiques du panneau Énergie (voir plus bas), qui portent leur propre somme. Sans offre
+sélectionnée sur le PDL, le capteur utilise les prix de la configuration de l'export, à défaut un
+prix par défaut (0,2516 EUR/kWh en Base, grille par défaut en Tempo) : c'est une estimation, alors
+que l'import des statistiques n'invente aucun prix.
+
+La puissance maximale lit la puissance souscrite du contrat (et non celle du PDL, qui peut être
+périmée). Elle expose en attributs `value_kva`, `subscribed_power_kva`, `is_over_subscribed`,
+`load_ratio_percent`, `history_va` et `history_kva`. Sans historique de puissance maximale, aucun
+capteur n'est créé.
 
 Les attributs annuels du capteur `consumption` suivent le vocabulaire de la carte content-card-linky :
 `current_year` (année civile en cours), `current_year_last_year` (même période l'an dernier),
@@ -192,6 +208,7 @@ bord > Énergie :
 |-------------|-------------|
 | `<prefix>:consumption_<pdl>_<série>` | Consommation par série (`base`, `hc`/`hp`, ou les 6 séries Tempo) |
 | `<prefix>:cost_<pdl>_<série>` | Coût de la série, en EUR |
+| `<prefix>:cost_<pdl>` | Coût total, toutes séries confondues, en EUR (entité « coûts totaux » du panneau Énergie) |
 | `<prefix>:production_<pdl>` | Production |
 
 Le coût utilise l'offre sélectionnée sur le PDL :
