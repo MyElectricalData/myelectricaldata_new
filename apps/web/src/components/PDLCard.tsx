@@ -1033,7 +1033,6 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                     </div>
 
                     {/* Time range cards */}
-                    {/* Time range cards */}
                     <div className="space-y-2">
                       {offpeakRanges.map((range, index) => (
                         <div
@@ -1061,7 +1060,7 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                           </div>
 
                           {/* Time inputs - responsive layout */}
-                          <div className="flex-1 flex flex-col xs:flex-row items-stretch xs:items-center gap-2 sm:gap-3">
+                          <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                             {/* Start time */}
                             <div className="flex-1 flex items-center gap-1.5">
                               <select
