@@ -37,6 +37,10 @@ L'exporteur Home Assistant du mode client fonctionne selon deux modes, utilisabl
   Assistant configurée sur ce broker.
 - **Statistiques** : un token d'accès longue durée et un accès réseau à Home Assistant.
 
+:::tip Home Assistant OS sans Docker
+Le mode client tourne d'ordinaire dans Docker, à côté de Home Assistant. Sur Home Assistant OS, l'[add-on communautaire et non officiel de Marlboro62](https://github.com/Marlboro62/hassio-addons) l'installe depuis la boutique des add-ons, après ajout de son dépôt. Il est maintenu par son auteur, pas par le projet.
+:::
+
 ### Créer un token d'accès
 
 1. Dans Home Assistant, aller dans votre **Profil** (clic sur votre nom en bas à gauche)

@@ -53,6 +53,7 @@ Ces méthodes répondent à des besoins particuliers. Pour un usage domestique, 
 |---------|-------------|-----------------|
 | [Helm Chart](./helm.md) | Déploiement Kubernetes | Infrastructure existante K8s |
 | [Proxmox LXC](https://github.com/Marlboro62/myelectricaldata-proxmox) | Script communautaire, non officiel : conteneur LXC sans Docker | Serveur Proxmox VE |
+| [Add-on Home Assistant](https://github.com/Marlboro62/hassio-addons) | Add-on communautaire, non officiel : mode client en un seul conteneur, PostgreSQL et nginx intégrés, import de l'historique v1 | Home Assistant OS ou Supervised, sans Docker |
 | [Deux conteneurs](./docker.md#options-avancées-installations-en-deux-conteneurs) | `docker-compose.sqlite.yml` et `docker-compose.yml` | Installations existantes |
 
 ## Ports par défaut
