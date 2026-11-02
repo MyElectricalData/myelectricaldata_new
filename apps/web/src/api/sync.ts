@@ -52,7 +52,39 @@ interface SyncDataResult {
 
 // Note: apiClient.post<T> returns APIResponse<T>, so T should be the inner data type
 
+/** PDL partagé avec l'admin à la passerelle, et son état de choix dans le client (MED-112) */
+export interface SharedPdlChoice {
+  usage_point_id: string
+  name?: string | null
+  owner_email?: string | null
+  has_consumption: boolean
+  has_production: boolean
+  is_active: boolean
+  /** synchronisé dans ce client */
+  selected: boolean
+  /** déjà un PDL du compte : rien à choisir */
+  own: boolean
+}
+
 export const syncApi = {
+  /**
+   * PDL partagés avec l'admin à la passerelle (MED-112). 403 si le compte n'est pas admin.
+   */
+  listSharedPdls: () =>
+    apiClient.get<SharedPdlChoice[]>('sync/shared-pdls'),
+
+  /**
+   * Ajoute un PDL partagé à la synchro du client (sa synchro démarre en arrière-plan)
+   */
+  selectSharedPdl: (usagePointId: string) =>
+    apiClient.post<{ usage_point_id: string; selected: boolean }>(`sync/shared-pdls/${usagePointId}`),
+
+  /**
+   * Retire un PDL partagé de la synchro : ses données locales sont supprimées
+   */
+  unselectSharedPdl: (usagePointId: string) =>
+    apiClient.delete<{ usage_point_id: string; selected: boolean }>(`sync/shared-pdls/${usagePointId}`),
+
   /**
    * Sync PDL list from remote gateway
    */

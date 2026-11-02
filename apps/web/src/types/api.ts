@@ -86,6 +86,7 @@ export interface PDL {
   activation_date?: string // ISO date string (YYYY-MM-DD) - Contract activation date (from Enedis)
   linked_production_pdl_id?: string // Link to production PDL for combined graphs
   selected_offer_id?: string // Selected energy offer ID
+  shared_owner_email?: string | null // Client : PDL partagé avec l'admin, e-mail du propriétaire (MED-112)
 }
 
 export interface CacheDeleteResponse {

@@ -154,3 +154,56 @@ async def test_pdl_revenu_dans_le_compte_n_est_plus_partage(db: AsyncSession) ->
     pdl = (await db.execute(select(PDL).where(PDL.usage_point_id == SHARED))).scalar_one()
     assert pdl.shared_owner_id is None
     assert await count(db, ConsumptionData, SHARED) == 1
+
+
+# --- Choix PDL par PDL depuis l'écran du client (étape 7) ---
+
+
+async def test_liste_des_partages_avec_etat_de_choix(db: AsyncSession) -> None:
+    service = make_service(db, [shared(SHARED, "r-1"), shared("99999999999999", "r-9"), shared(OWN, "r-own")])
+
+    choices = {c["usage_point_id"]: c for c in await service.list_shared_choices()}
+
+    assert choices[SHARED]["selected"] is True and choices[SHARED]["own"] is False
+    assert choices["99999999999999"]["selected"] is False and choices["99999999999999"]["own"] is False
+    assert choices[OWN]["own"] is True and choices[OWN]["selected"] is False
+    assert choices[SHARED]["owner_email"] == "beaufils12@example.org"
+
+
+async def test_cocher_cree_le_pdl_partage_et_sa_liaison(db: AsyncSession) -> None:
+    service = make_service(db, [
+        shared(SHARED, "r-1", linked_production_pdl_id="r-2"),
+        shared(SHARED_PROD, "r-2", has_consumption=False, has_production=True),
+    ])
+
+    await service.select_shared_pdl(SHARED_PROD, "local-user")
+
+    prod = (await db.execute(select(PDL).where(PDL.usage_point_id == SHARED_PROD))).scalar_one()
+    conso = (await db.execute(select(PDL).where(PDL.usage_point_id == SHARED))).scalar_one()
+    assert prod.shared_owner_id == OWNER and prod.has_production is True
+    assert conso.linked_production_pdl_id == prod.id
+    service.adapter.set_shared_owners.assert_called_with({SHARED: OWNER, SHARED_PROD: OWNER})
+
+
+async def test_cocher_refuse_un_pdl_du_compte_ou_non_partage(db: AsyncSession) -> None:
+    service = make_service(db, [shared(OWN, "r-own")])
+
+    with pytest.raises(ValueError):
+        await service.select_shared_pdl(OWN, "local-user")
+    with pytest.raises(LookupError):
+        await service.select_shared_pdl("99999999999999", "local-user")
+    own = (await db.execute(select(PDL).where(PDL.usage_point_id == OWN))).scalar_one()
+    assert own.shared_owner_id is None
+
+
+async def test_decocher_purge_mais_jamais_un_pdl_du_compte(db: AsyncSession) -> None:
+    service = make_service(db, [])
+
+    assert await service.unselect_shared_pdl(OWN) is False
+    assert await service.unselect_shared_pdl(SHARED) is True
+
+    assert await count(db, ConsumptionData, OWN) == 1
+    assert await count(db, ConsumptionData, SHARED) == 0
+    assert await count(db, ProductionData, SHARED) == 0
+    assert (await db.execute(select(PDL).where(PDL.usage_point_id == SHARED))).scalar_one_or_none() is None
+    service.adapter.set_shared_owners.assert_called_with({})

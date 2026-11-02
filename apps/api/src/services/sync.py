@@ -335,6 +335,74 @@ class SyncService:
         await self.refresh_shared_owners()
         return {"synced": synced, "purged": purged}
 
+    async def list_shared_choices(self) -> list[dict[str, Any]]:
+        """PDL partagés avec l'admin à la passerelle, avec l'état de choix local de chacun.
+
+        `selected` : synchronisé dans ce client. `own` : déjà un PDL du compte, donc pas à choisir.
+        Lève l'erreur de la passerelle (403 d'un compte non admin) : l'écran l'affiche.
+        """
+        remote = await self.adapter.get_shared_pdls()
+        rows = await self.db.execute(select(PDL.usage_point_id, PDL.shared_owner_id))
+        local = {usage_point_id: owner_id for usage_point_id, owner_id in rows.all()}
+        choices = []
+        for shared in remote:
+            usage_point_id = shared.get("usage_point_id")
+            if not usage_point_id:
+                continue
+            choices.append({
+                "usage_point_id": usage_point_id,
+                "name": shared.get("name"),
+                "owner_email": shared.get("owner_email"),
+                "has_consumption": shared.get("has_consumption", True),
+                "has_production": shared.get("has_production", False),
+                "is_active": shared.get("is_active", True),
+                "selected": usage_point_id in local and local[usage_point_id] is not None,
+                "own": usage_point_id in local and local[usage_point_id] is None,
+            })
+        return choices
+
+    async def select_shared_pdl(self, usage_point_id: str, user_id: str) -> PDL:
+        """Ajoute un PDL partagé à la synchro du client (crée sa ligne locale, sans mesures).
+
+        Lève LookupError si la passerelle ne le partage pas (ou plus), ValueError si c'est déjà
+        un PDL du compte (il ne doit jamais devenir purgeable).
+        """
+        remote = {p["usage_point_id"]: p for p in await self.adapter.get_shared_pdls() if p.get("usage_point_id")}
+        shared = remote.get(usage_point_id)
+        if shared is None or not shared.get("owner_id"):
+            raise LookupError(usage_point_id)
+        pdl = (await self.db.execute(select(PDL).where(PDL.usage_point_id == usage_point_id))).scalar_one_or_none()
+        if pdl is not None and pdl.shared_owner_id is None:
+            raise ValueError(usage_point_id)
+        if pdl is None:
+            pdl = PDL(user_id=user_id, usage_point_id=usage_point_id)
+            self.db.add(pdl)
+        pdl.shared_owner_id = shared["owner_id"]
+        pdl.shared_owner_email = shared.get("owner_email")
+        await self._apply_remote_fields(pdl, shared)
+        if not pdl.name:
+            pdl.name = f"PDL {usage_point_id[-4:]}"
+
+        # Liaisons conso / production entre PDL partagés choisis, ce PDL compris
+        selected = set(await self.refresh_shared_owners()) | {usage_point_id}
+        await self._sync_production_links([remote[u] for u in selected if u in remote])
+        await self.db.commit()
+        await self.refresh_shared_owners()
+        return pdl
+
+    async def unselect_shared_pdl(self, usage_point_id: str) -> bool:
+        """Retire un PDL partagé de la synchro : purge sa ligne et ses mesures locales.
+
+        Renvoie False sans rien toucher si ce n'est pas un PDL partagé choisi (PDL du compte compris).
+        """
+        pdl = (await self.db.execute(select(PDL).where(PDL.usage_point_id == usage_point_id))).scalar_one_or_none()
+        if pdl is None or pdl.shared_owner_id is None:
+            return False
+        await self.purge_pdl(usage_point_id)
+        await self.db.commit()
+        await self.refresh_shared_owners()
+        return True
+
     async def _sync_one(self, usage_point_id: str, results: dict[str, Any]) -> None:
         """Synchronise un PDL dans le bilan de sync_all (erreurs, blocage au quota)."""
         if _quota_blocked():

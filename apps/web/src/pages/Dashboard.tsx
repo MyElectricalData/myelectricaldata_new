@@ -7,6 +7,7 @@ import { logger } from '@/utils/logger'
 import { CheckCircle, XCircle, ArrowUpDown, GripVertical, UserPlus, Search, Keyboard, X as CloseIcon, AlertCircle, ChevronDown, RefreshCw } from 'lucide-react'
 import PDLDetails from '@/components/PDLDetails'
 import PDLCard from '@/components/PDLCard'
+import SharedPdlsPanel from '@/components/SharedPdlsPanel'
 import { PDLCardSkeleton } from '@/components/Skeleton'
 import { WelcomeModal } from '@/components/WelcomeModal'
 import { OnboardingTour, type TourStep } from '@/components/OnboardingTour'
@@ -1153,6 +1154,9 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* PDL partagés avec l'admin, choix PDL par PDL (MED-112) */}
+      {isClientMode && <SharedPdlsPanel />}
 
       {/* PDL Details Modal */}
       {selectedPdl && (
