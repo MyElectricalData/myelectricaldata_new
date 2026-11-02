@@ -9,10 +9,7 @@ import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
 import { AnimatedSection } from '@/components/AnimatedSection'
 import { useIsDemo } from '@/hooks/useIsDemo'
 import { useUnifiedDataFetch } from '@/hooks/useUnifiedDataFetch'
-import { useQuery } from '@tanstack/react-query'
-import { pdlApi } from '@/api/pdl'
 import { useDatePreferencesStore, DATE_PRESET_LABELS, MONTH_LABELS } from '@/stores/datePreferencesStore'
-import type { PDL } from '@/types/api'
 
 // Import custom hooks
 import { useConsumptionData } from './hooks/useConsumptionData'
@@ -28,6 +25,7 @@ import { AnnualCurve } from './components/AnnualCurve'
 import { DetailedCurve } from '@/components/DetailedCurve'
 import { MonthlyHcHp } from './components/MonthlyHcHp'
 import { PowerPeaks } from './components/PowerPeaks'
+import { useAllPdls } from '@/hooks/useAllPdls'
 
 // Renamed from Consumption to ConsumptionKwh
 export default function ConsumptionKwh() {
@@ -39,18 +37,9 @@ export default function ConsumptionKwh() {
   const lastAutoFetchPDL = useRef<string | null>(null)
 
   // Get PDL list for unified fetch - with short staleTime to ensure provider changes are reflected
-  const { data: pdlsResponse } = useQuery({
-    queryKey: ['pdls'],
-    queryFn: async () => {
-      const response = await pdlApi.list()
-      if (response.success && Array.isArray(response.data)) {
-        return response.data as PDL[]
-      }
-      return []
-    },
-    staleTime: 30 * 1000, // 30 seconds - same as Dashboard for consistency
-  })
-  const allPDLs: PDL[] = Array.isArray(pdlsResponse) ? pdlsResponse : []
+  // PDL du compte + PDL partagés (admin, MED-112) : en impersonation, les détails du PDL
+  // partagé (offre, liaison conso/production) doivent être trouvés comme ceux d'un PDL propre
+  const { allPdls: allPDLs } = useAllPdls()
   const selectedPDLForFetch = allPDLs.find(p => p.usage_point_id === selectedPDL)
 
   // States

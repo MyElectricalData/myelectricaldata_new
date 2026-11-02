@@ -7,9 +7,7 @@ import { useBalanceData } from './hooks/useBalanceData'
 import { useBalanceCalcs } from './hooks/useBalanceCalcs'
 import { useIsDemo } from '@/hooks/useIsDemo'
 import { useUnifiedDataFetch } from '@/hooks/useUnifiedDataFetch'
-import { useQuery } from '@tanstack/react-query'
-import { pdlApi } from '@/api/pdl'
-import type { PDL } from '@/types/api'
+import { useAllPdls } from '@/hooks/useAllPdls'
 import { logger } from '@/utils/logger'
 import { BalanceSummaryCards } from './components/BalanceSummaryCards'
 import { MonthlyComparison } from './components/MonthlyComparison'
@@ -69,18 +67,8 @@ export default function Balance() {
     productionDetailData
   )
 
-  // Get PDL list for unified fetch
-  const { data: pdlsResponse } = useQuery({
-    queryKey: ['pdls'],
-    queryFn: async () => {
-      const response = await pdlApi.list()
-      if (response.success && Array.isArray(response.data)) {
-        return response.data as PDL[]
-      }
-      return []
-    },
-  })
-  const allPDLs: PDL[] = Array.isArray(pdlsResponse) ? pdlsResponse : []
+  // PDL du compte + partagés (admin) : la récupération doit retrouver le PDL de production lié (MED-112)
+  const { allPdls: allPDLs } = useAllPdls()
 
   // Hook for demo auto-fetch
   const { fetchAllData } = useUnifiedDataFetch({

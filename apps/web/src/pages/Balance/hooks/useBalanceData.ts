@@ -1,8 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { pdlApi } from '@/api/pdl'
-import type { PDL, APIResponse, EnedisMeasure } from '@/types/api'
+import { useAllPdls } from '@/hooks/useAllPdls'
+import type { APIResponse, EnedisMeasure } from '@/types/api'
 import { hasReadings } from '@/utils/enedisMeasure'
 import type { DateRange } from '../types/balance.types'
 
@@ -11,19 +11,9 @@ type EnedisApiResponse = APIResponse<EnedisMeasure>
 export function useBalanceData(selectedPDL: string, dateRange: DateRange | null) {
   const queryClient = useQueryClient()
 
-  // Fetch PDLs
-  const { data: pdlsData } = useQuery({
-    queryKey: ['pdls'],
-    queryFn: async () => {
-      const response = await pdlApi.list()
-      if (response.success && Array.isArray(response.data)) {
-        return response.data as PDL[]
-      }
-      return []
-    },
-  })
-
-  const pdls = Array.isArray(pdlsData) ? pdlsData : []
+  // PDL du compte + PDL partagés (admin, MED-112) : un admin doit pouvoir ouvrir le Bilan
+  // d'un PDL qu'un utilisateur lui partage, liaison conso/production comprise
+  const { allPdls: pdls } = useAllPdls()
 
   // Filter PDLs that have BOTH consumption and production data
   // A PDL has production if has_production === true OR if it's linked to a production PDL
