@@ -220,6 +220,8 @@ class SyncService:
                     logger.info(f"[SYNC] Created new PDL: {usage_point_id} ({remote_pdl.get('name')})")
                     synced_pdls.append({"usage_point_id": usage_point_id, "action": "created"})
 
+            await self._sync_production_links(remote_pdls)
+
             await self.db.commit()
             logger.info(f"[SYNC] PDL list sync complete: {len(synced_pdls)} PDLs")
             return synced_pdls
@@ -227,6 +229,47 @@ class SyncService:
         except Exception as e:
             logger.error(f"[SYNC] Failed to sync PDL list: {e}")
             raise
+
+    async def _sync_production_links(self, remote_pdls: list[dict[str, Any]]) -> None:
+        """Recopie la liaison consommation / production des PDL distants (MED-112)
+
+        `linked_production_pdl_id` porte l'UUID du PDL de production dans la base DISTANTE : on le
+        traduit en UUID local par `usage_point_id`. Passe faite après la boucle de synchro, pour que
+        la cible soit trouvée quel que soit l'ordre de la liste. Une cible absente de la liste laisse
+        la liaison vide (jamais d'UUID orphelin, `pdls.id` est une clé étrangère). Un PDL distant
+        sans la clé (passerelle plus ancienne) garde sa liaison locale.
+        """
+        usage_point_by_remote_id = {
+            remote_pdl["id"]: remote_pdl["usage_point_id"]
+            for remote_pdl in remote_pdls
+            if remote_pdl.get("id") and remote_pdl.get("usage_point_id")
+        }
+        to_link = [
+            remote_pdl
+            for remote_pdl in remote_pdls
+            if remote_pdl.get("usage_point_id") and "linked_production_pdl_id" in remote_pdl
+        ]
+        if not to_link:
+            return
+
+        # Les PDL créés dans la boucle doivent avoir leur ligne (et leur id) avant la résolution
+        await self.db.flush()
+        usage_point_ids = {remote_pdl["usage_point_id"] for remote_pdl in to_link}
+        usage_point_ids |= set(usage_point_by_remote_id.values())
+        result = await self.db.execute(select(PDL).where(PDL.usage_point_id.in_(usage_point_ids)))
+        local_by_usage_point = {pdl.usage_point_id: pdl for pdl in result.scalars()}
+
+        for remote_pdl in to_link:
+            local_pdl = local_by_usage_point.get(remote_pdl["usage_point_id"])
+            if local_pdl is None:
+                continue
+            target_usage_point = usage_point_by_remote_id.get(remote_pdl.get("linked_production_pdl_id"))
+            target = local_by_usage_point.get(target_usage_point) if target_usage_point else None
+            if remote_pdl.get("linked_production_pdl_id") and target is None:
+                logger.warning(
+                    f"[SYNC] PDL {remote_pdl['usage_point_id']} : production liée absente de la liste, liaison ignorée"
+                )
+            local_pdl.linked_production_pdl_id = target.id if target else None
 
     async def sync_all(self) -> dict[str, Any]:
         """Sync all data for all PDLs
