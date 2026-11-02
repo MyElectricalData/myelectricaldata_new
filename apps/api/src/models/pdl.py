@@ -31,6 +31,10 @@ class PDL(Base, TimestampMixin):
     activation_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # Contract activation date (from Enedis)
     linked_production_pdl_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("pdls.id", ondelete="SET NULL"), nullable=True)  # Link to production PDL for combined graphs
     selected_offer_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("energy_offers.id", ondelete="SET NULL"), nullable=True)  # Selected energy offer
+    # Mode client (MED-112) : PDL qu'un utilisateur partage avec l'admin, synchronisé par choix explicite.
+    # Id de l'utilisateur DISTANT (passerelle), d'où l'absence de clé étrangère ; null = PDL propre.
+    shared_owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    shared_owner_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relations
     user: Mapped["User"] = relationship("User", back_populates="pdls")
