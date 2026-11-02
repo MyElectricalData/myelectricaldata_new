@@ -113,6 +113,8 @@ def make_sync_all_service(usage_point_ids: list[str]) -> SyncService:
     service.adapter.get_usage_points = AsyncMock(
         return_value={"usage_points": [{"usage_point_id": upid} for upid in usage_point_ids]}
     )
+    # base simulée sans méthodes async : le volet PDL partagés (MED-112) est testé à part
+    service._sync_all_shared = AsyncMock()
     return service
 
 

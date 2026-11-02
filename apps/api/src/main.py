@@ -76,6 +76,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 logger.info(f"📥 Client Mode: Synced {len(synced_pdls)} PDLs from remote API")
             except Exception as e:
                 logger.warning(f"⚠️ Client Mode: Failed to sync PDL list at startup: {e}")
+            # PDL partagés choisis (MED-112) : leurs appels à la passerelle partent en impersonation,
+            # y compris les comblements à la demande avant la première synchro
+            try:
+                from .services.sync import SyncService
+                shared_owners = await SyncService(db).refresh_shared_owners()
+                if shared_owners:
+                    logger.info(f"🤝 Client Mode: {len(shared_owners)} PDL partagé(s) synchronisé(s)")
+            except Exception as e:
+                logger.warning(f"⚠️ Client Mode: Failed to load shared PDLs at startup: {e}")
 
         sync_scheduler.start()
         logger.info("🔄 Client Mode: Sync scheduler started (every 30 minutes)")
