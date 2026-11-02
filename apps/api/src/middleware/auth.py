@@ -197,7 +197,7 @@ async def get_impersonation_context(
 
     Returns:
         - The impersonated user (for getting their client_secret) if:
-          1. Current user is admin (is_admin or role admin)
+          1. Current user is admin (is_admin, role admin or ADMIN_EMAILS)
           2. X-Impersonate-User-Id header is present
           3. Target user has enabled admin_data_sharing
         - None otherwise (use current_user's client_secret)
@@ -210,8 +210,14 @@ async def get_impersonation_context(
     if not impersonate_user_id:
         return None
 
-    # Check if current user is admin
-    is_admin = current_user.is_admin or (current_user.role and current_user.role.name == "admin")
+    # Check if current user is admin. ADMIN_EMAILS compte aussi (MED-112) : c'est lui qui ouvre
+    # /admin/shared-pdls, sans quoi la liste serait lisible mais chaque appel au nom d'un
+    # propriétaire retomberait silencieusement sur le compte de l'admin.
+    is_admin = (
+        current_user.is_admin
+        or (current_user.role and current_user.role.name == "admin")
+        or settings.is_admin(current_user.email)
+    )
     if not is_admin:
         logger.warning(f"[IMPERSONATION] Non-admin user {current_user.email} tried to impersonate {impersonate_user_id}")
         return None
