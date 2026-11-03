@@ -324,13 +324,14 @@ def _covered(row: dict[str, Any], days: set[tuple[str, date]]) -> bool:
     return row.get("granularity") == DataGranularity.DETAILED and (row["usage_point_id"], row["date"]) in days
 
 
-async def _insert(db: AsyncSession, model: type, constraint: str, rows: list[dict[str, Any]]) -> int:
+async def _insert(db: AsyncSession, model: type, rows: list[dict[str, Any]]) -> int:
     """INSERT … ON CONFLICT DO NOTHING par lots ; renvoie le nombre de lignes réellement ajoutées."""
     inserted = 0
     for i in range(0, len(rows), BATCH_SIZE):
         stmt = dialect_insert(db, model).values(rows[i:i + BATCH_SIZE])
-        # SQLite : DO NOTHING sans cible couvre toutes les unicités, index partiel des lignes quotidiennes compris
-        stmt = stmt.on_conflict_do_nothing() if is_sqlite(db) else stmt.on_conflict_do_nothing(constraint=constraint)
+        # DO NOTHING sans cible couvre toutes les unicités : contrainte uq_<table>, mais aussi l'index partiel
+        # des lignes quotidiennes (SQLite, ou PostgreSQL migré depuis une version < 15 puis monté en 15+)
+        stmt = stmt.on_conflict_do_nothing()
         result = await db.execute(stmt.returning(model.id))
         inserted += len(result.all())
     return inserted
@@ -390,15 +391,15 @@ async def run_import(
     )
 
     targets = [
-        (ConsumptionData, "uq_consumption_data", records.consumption),
-        (ProductionData, "uq_production_data", records.production),
-        (MaxPowerData, "uq_max_power_data", records.max_power),
+        (ConsumptionData, records.consumption),
+        (ProductionData, records.production),
+        (MaxPowerData, records.max_power),
     ]
     try:
-        for model, constraint, rows in targets:
+        for model, rows in targets:
             rows = [r for r in rows if r["usage_point_id"] in known]
             days = await _detail_days(db, model, known) if model is not MaxPowerData else set()
-            inserted = await _insert(db, model, constraint, [r for r in rows if not _covered(r, days)])
+            inserted = await _insert(db, model, [r for r in rows if not _covered(r, days)])
             report.inserted[model.__tablename__] = inserted
             report.present[model.__tablename__] = len(rows) - inserted
         if not dry_run and known:

@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from src.models import Base
 from src.models.client_mode import ConsumptionData, DataGranularity, ProductionData
 from src.services import sync
+from src.services.import_v1 import _insert
 from src.services.local_data import LocalDataService
 from src.services.sync import SyncService
 
@@ -41,6 +42,24 @@ def db_url(request, tmp_path) -> str:
     return url
 
 
+def _create_schema(sync_conn) -> None:
+    """create_all, avec NULLS NOT DISTINCT retiré des modèles sur un PostgreSQL < 15 (syntaxe absente)."""
+    legacy = sync_conn.dialect.name == "postgresql" and sync_conn.dialect.server_version_info < (15,)
+    flipped = []
+    if legacy:
+        for model in ENERGY_MODELS:
+            for constraint in model.__table__.constraints:
+                options = getattr(constraint, "dialect_options", {}).get("postgresql")
+                if options is not None and options.get("nulls_not_distinct"):
+                    options["nulls_not_distinct"] = None  # False émettrait « NULLS DISTINCT », absent aussi en PG < 15
+                    flipped.append(options)
+    try:
+        Base.metadata.create_all(sync_conn)
+    finally:
+        for options in flipped:
+            options["nulls_not_distinct"] = True
+
+
 @pytest.fixture
 async def session(db_url: str) -> AsyncIterator[AsyncSession]:
     """Schéma complet, un utilisateur et son PDL, sur une base dédiée au test."""
@@ -48,7 +67,7 @@ async def session(db_url: str) -> AsyncIterator[AsyncSession]:
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(_create_schema)
             user_id = str(uuid.uuid4())
             await conn.execute(
                 text(
@@ -212,6 +231,27 @@ async def test_upserts_quotidiens_postgresql_successifs_actualisent_sans_doublon
         await session.execute(select(ConsumptionData.date, ConsumptionData.value).order_by(ConsumptionData.date))
     ).all()
     assert [tuple(row) for row in rows] == [(START + timedelta(days=i), 12500 + i) for i in range(5)]
+
+
+@pytest.mark.parametrize("db_url", ["postgresql"], indirect=True)
+async def test_import_v1_postgresql_migre_ignore_une_journee_deja_presente(session):
+    """Contrainte simple + index partiel (base migrée depuis PG < 15) : DO NOTHING absorbe l'index partiel."""
+    await _use_postgres_plain_unique(session)
+    await session.execute(
+        text(
+            "CREATE UNIQUE INDEX uq_consumption_data_daily "
+            "ON consumption_data (usage_point_id, date, granularity) WHERE interval_start IS NULL"
+        )
+    )
+    await session.commit()
+    rows = [{**_energy(START + timedelta(days=i), 12000 + i), "id": str(uuid.uuid4())} for i in range(3)]
+    assert await _insert(session, ConsumptionData, rows) == 3
+    again = [{**row, "id": str(uuid.uuid4()), "value": 99999} for row in rows]
+    assert await _insert(session, ConsumptionData, again) == 0
+    await session.commit()
+
+    values = (await session.execute(select(ConsumptionData.value).order_by(ConsumptionData.date))).scalars().all()
+    assert values == [12000, 12001, 12002]
 
 
 @pytest.mark.parametrize("db_url", ["sqlite"], indirect=True)
