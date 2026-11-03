@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.15.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.15.0...2.15.1) (2026-11-03)
+
+### Bug Fixes
+
+* **api:** MED-103 / lecture quotidienne : une ligne par jour, la plus récente ([b11164e](https://github.com/MyElectricalData/myelectricaldata_new/commit/b11164e0b9693f06fc59a6ae5db13b2ba5353fbb))
+* **api:** MED-103 / migration : purge des doublons quotidiens et index partiel sous PostgreSQL < 15 ([255d49f](https://github.com/MyElectricalData/myelectricaldata_new/commit/255d49f53ae00bdb89ac08ac556b9c4f82bc2508))
+* **api:** MED-103 / revue : import V1 sans cible nommee, tests doublons compatibles PG 14 ([de0ef55](https://github.com/MyElectricalData/myelectricaldata_new/commit/de0ef55d7e82d28bf9378c97e9af192b620f382f))
+* **api:** MED-103 / upsert quotidien sans doublon sous PostgreSQL < 15 ([2b2848b](https://github.com/MyElectricalData/myelectricaldata_new/commit/2b2848ba7c2de131b0aaf0a5ed9b7a7d2205a3e8))
+
 ## [2.15.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.14.2...2.15.0) (2026-11-03)
 
 ### Features
