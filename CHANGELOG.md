@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.15.0](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.14.2...2.15.0) (2026-11-03)
+
+### Features
+
+* **client:** MED-112 / adaptateur passerelle en impersonation pour les PDL partagés ([ab07571](https://github.com/MyElectricalData/myelectricaldata_new/commit/ab07571a251a18a3bdec6553f628def4cf06c8fd))
+* **client:** MED-112 / choix des PDL partagés PDL par PDL ([04c6977](https://github.com/MyElectricalData/myelectricaldata_new/commit/04c6977c35bfc72e40b66d365912257f8f782d4e))
+* **client:** MED-112 / propriétaire distant des PDL partagés (modèle et migration) ([4bbc029](https://github.com/MyElectricalData/myelectricaldata_new/commit/4bbc029ee816959b1910d52bf77def17f1710edd))
+* **client:** MED-112 / synchro des PDL partagés choisis et purge au retrait du partage ([d780a31](https://github.com/MyElectricalData/myelectricaldata_new/commit/d780a31a275561c20ceadff6f7e0cc802b21b41b))
+
+### Bug Fixes
+
+* **api:** MED-112 / corrections de revue de la synchro des PDL partagés ([59a50b9](https://github.com/MyElectricalData/myelectricaldata_new/commit/59a50b9d620ce5e02d70fc669d3377b99b92ce92))
+* **auth:** MED-112 / l'impersonation accepte les admins d'ADMIN_EMAILS ([c42174a](https://github.com/MyElectricalData/myelectricaldata_new/commit/c42174a86801e7220fea200a01e00b74a0fc3c4d))
+* **client:** MED-112 / recopier la liaison conso/production des PDL ([292880f](https://github.com/MyElectricalData/myelectricaldata_new/commit/292880f2f061c8a771ef5cbc7ee1f4005e28c963))
+
 ## [2.14.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.14.1...2.14.2) (2026-11-03)
 
 ### Bug Fixes
