@@ -35,15 +35,32 @@ def conflict_target(db: AsyncSession, constraint: str, columns: tuple[str, ...],
     if not is_sqlite(db):
         return {"constraint": constraint}
     if daily:
-        return {
-            "index_elements": [column for column in columns if column != "interval_start"],
-            "index_where": text("interval_start IS NULL"),
-        }
+        return daily_index_target(columns)
     return {"index_elements": list(columns)}
+
+
+def daily_index_target(columns: tuple[str, ...]) -> dict[str, Any]:
+    """Cible ON CONFLICT de l'index partiel uq_<table>_daily (interval_start NULL).
+
+    SQLite l'a dès la création (MED-65) ; PostgreSQL < 15 le reçoit par la migration b8d1f3a5c7e9
+    (MED-103), faute de NULLS NOT DISTINCT. Même syntaxe dans les deux dialectes.
+    """
+    return {
+        "index_elements": [column for column in columns if column != "interval_start"],
+        "index_where": text("interval_start IS NULL"),
+    }
 
 
 async def sqlite_index_exists(db: AsyncSession, name: str) -> bool:
     result = await db.execute(
         text("SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = :name"), {"name": name}
     )
+    return bool(result.scalar())
+
+
+async def index_exists(db: AsyncSession, name: str) -> bool:
+    """Index `name` présent dans la base de la session (SQLite ou PostgreSQL)."""
+    if is_sqlite(db):
+        return await sqlite_index_exists(db, name)
+    result = await db.execute(text("SELECT count(*) FROM pg_indexes WHERE indexname = :name"), {"name": name})
     return bool(result.scalar())
