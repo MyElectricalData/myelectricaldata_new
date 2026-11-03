@@ -474,6 +474,21 @@ class SyncService:
         """Synchronise les signaux EcoWatt"""
 ```
 
+### PDL partagés avec l'admin
+
+Un compte admin de la passerelle peut copier dans son client local les PDL que des utilisateurs lui partagent (`admin_data_sharing`), pour tester le client avec des données réelles. Le choix est explicite, PDL par PDL (routes `GET|POST|DELETE /sync/shared-pdls[/{pdl}]`).
+
+| Étape | Comportement |
+|-------|--------------|
+| Liste | `GET /admin/shared-pdls` à la passerelle (chaque entrée porte `owner_id` et `owner_email`). Réservé aux admins : un compte ordinaire reçoit 403. Elle n'est lue que si un PDL a été coché ou que le panneau s'affiche |
+| Choix | La ligne locale du PDL porte `shared_owner_id` (migration Alembic `add_shared_owner_to_pdls`, SQLite et PostgreSQL). Un PDL du compte (déjà dans `GET /pdl`) ne peut pas être coché (409), un PDL absent de la liste non plus (404) |
+| Appels | Chaque appel `/enedis/…/<PDL>` d'un PDL partagé part avec `X-Impersonate-User-Id: <owner_id>`. Les PDL du compte, les contributions et toute autre route n'envoient jamais l'en-tête |
+| Quota | Les appels sont comptés sur le compte **admin** à la passerelle. Le quota atteint (HTTP 200 + `RATE_LIMIT_EXCEEDED`) bloque la synchro jusqu'à minuit UTC comme pour un PDL propre, sans appel admin ni purge |
+| Retrait du partage | Quand la passerelle ne liste plus un PDL coché, `sync_all` le **purge** (ligne PDL et mesures) : les données d'un tiers ne restent pas chez l'admin après le retrait de son consentement |
+| Garde-fous | Une liste illisible (`SharedPdlsUnreadableError`, réponse 200 sans `pdls`) ne purge jamais rien ; un PDL redevenu propre pendant la synchro est requalifié, pas purgé |
+
+Côté passerelle, `get_impersonation_context` accepte un admin par `is_admin`, rôle `admin` **ou** `ADMIN_EMAILS` (MED-112) : c'est `ADMIN_EMAILS` qui ouvre `/admin/shared-pdls`, il doit donc ouvrir aussi l'impersonation, sinon les appels retomberaient sur le compte de l'admin. Le consentement `admin_data_sharing` du propriétaire reste exigé.
+
 ---
 
 ## Scheduler

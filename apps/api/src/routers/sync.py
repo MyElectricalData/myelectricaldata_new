@@ -7,11 +7,13 @@ Only available when CLIENT_MODE is enabled.
 import logging
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.database import get_db, async_session_maker
-from ..services.sync import SyncService
+from ..adapters.myelectricaldata import RateLimitExceededError
+from ..services.sync import SharedPdlAlreadyOwnedError, SharedPdlNotFoundError, SyncService
 
 from ..services.client_auth import get_or_create_local_user
 
@@ -46,6 +48,77 @@ async def sync_pdl_list(
         "data": synced_pdls,
         "message": f"Synced {len(synced_pdls)} PDLs from remote gateway",
     }
+
+
+# =========================================================================
+# PDL partagés avec l'admin (MED-112)
+# =========================================================================
+
+
+def _gateway_error(e: Exception) -> HTTPException:
+    """Erreur lisible pour l'écran de choix (403 = compte non admin à la passerelle)."""
+    if isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (401, 403):
+        return HTTPException(status_code=403, detail="Le compte de la passerelle n'est pas administrateur")
+    if isinstance(e, RateLimitExceededError):
+        return HTTPException(status_code=429, detail="Quota de la passerelle atteint")
+    return HTTPException(status_code=502, detail=f"Passerelle injoignable : {e}")
+
+
+def _check_usage_point_id(usage_point_id: str) -> None:
+    if len(usage_point_id) != 14 or not usage_point_id.isdigit():
+        raise HTTPException(status_code=400, detail="Invalid usage_point_id. Must be 14 digits.")
+
+
+@router.get("/shared-pdls")
+async def list_shared_pdls(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """PDL partagés avec l'admin à la passerelle, avec leur état de choix dans ce client."""
+    try:
+        choices = await SyncService(db).list_shared_choices()
+    except Exception as e:
+        logger.warning(f"[API] Liste des PDL partagés illisible : {e}")
+        raise _gateway_error(e) from e
+    return {"success": True, "data": choices}
+
+
+@router.post("/shared-pdls/{usage_point_id}")
+async def select_shared_pdl(
+    usage_point_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Ajoute un PDL partagé à la synchro du client, puis lance sa synchro en arrière-plan.
+
+    Chaque appel de ce PDL à la passerelle se fait au nom de son propriétaire, mais compte sur le
+    quota de l'admin.
+    """
+    _check_usage_point_id(usage_point_id)
+    local_user = await get_or_create_local_user(db)
+    try:
+        await SyncService(db).select_shared_pdl(usage_point_id, local_user.id)
+    except SharedPdlNotFoundError:
+        raise HTTPException(status_code=404, detail="Ce PDL n'est pas partagé avec ce compte")
+    except SharedPdlAlreadyOwnedError:
+        raise HTTPException(status_code=409, detail="Ce PDL appartient déjà au compte")
+    except Exception as e:
+        raise _gateway_error(e) from e
+
+    async def run_sync() -> None:
+        async with async_session_maker() as background_db:
+            await SyncService(background_db).sync_pdl(usage_point_id)
+
+    background_tasks.add_task(run_sync)
+    logger.info(f"[API] PDL partagé {usage_point_id} ajouté à la synchro")
+    return {"success": True, "data": {"usage_point_id": usage_point_id, "selected": True}}
+
+
+@router.delete("/shared-pdls/{usage_point_id}")
+async def unselect_shared_pdl(usage_point_id: str, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Retire un PDL partagé de la synchro : sa ligne et ses mesures locales sont supprimées."""
+    _check_usage_point_id(usage_point_id)
+    if not await SyncService(db).unselect_shared_pdl(usage_point_id):
+        raise HTTPException(status_code=404, detail="Ce PDL n'est pas un PDL partagé synchronisé")
+    logger.info(f"[API] PDL partagé {usage_point_id} retiré de la synchro, données locales purgées")
+    return {"success": True, "data": {"usage_point_id": usage_point_id, "selected": False}}
 
 
 @router.post("/trigger")

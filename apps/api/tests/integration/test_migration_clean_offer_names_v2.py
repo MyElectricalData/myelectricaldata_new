@@ -57,7 +57,10 @@ def test_revision_chainee_apres_la_tete_precedente():
 
 def test_tete_alembic_unique():
     script = ScriptDirectory.from_config(Config(str(API_DIR / "alembic.ini")))
-    assert script.get_heads() == [REVISION]
+    # une seule tête, et cette révision dans la chaîne (des révisions plus récentes peuvent la suivre)
+    heads = script.get_heads()
+    assert len(heads) == 1
+    assert REVISION in {rev.revision for rev in script.iterate_revisions(heads[0], "base")}
 
 
 @pytest.fixture(scope="module", params=["postgresql", "sqlite"])

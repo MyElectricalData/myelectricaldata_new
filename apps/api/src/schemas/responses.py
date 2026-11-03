@@ -58,6 +58,7 @@ class PDLResponse(BaseModel):
     activation_date: Optional[date] = None  # Contract activation date (from Enedis)
     linked_production_pdl_id: Optional[str] = None  # Link to production PDL for combined graphs
     selected_offer_id: Optional[str] = None  # Selected energy offer ID
+    shared_owner_email: Optional[str] = None  # Client : propriétaire d'un PDL partagé avec l'admin (MED-112)
 
 
 class CacheDeleteResponse(BaseModel):

@@ -90,4 +90,4 @@ Endpoints admin :
 Sécurité :
 - Middleware `require_admin()` vérifie que l'email est dans `ADMIN_EMAILS`
 - Retourne 403 Forbidden si non-admin
-- Les admins ne peuvent pas accéder aux données Enedis des utilisateurs
+- Les admins ne peuvent pas accéder aux données Enedis des utilisateurs, sauf ceux qui ont activé le partage avec l'admin (`admin_data_sharing`) : l'admin les lit alors avec l'en-tête `X-Impersonate-User-Id`, accepté pour `is_admin`, le rôle `admin` ou `ADMIN_EMAILS`, et les appels sont comptés sur le quota de l'admin. Le client local s'en sert pour [synchroniser ces PDL partagés](../../local-client/architecture.md#pdl-partagés-avec-ladmin) (`GET /admin/shared-pdls`)

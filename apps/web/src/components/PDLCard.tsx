@@ -568,6 +568,14 @@ export default function PDLCard({ pdl, onViewDetails, onDelete, isDemo = false, 
                   Désactivé
                 </span>
               )}
+              {pdl.shared_owner_email && (
+                <span
+                  className="px-2 py-0.5 text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 rounded"
+                  title={`PDL partagé par ${pdl.shared_owner_email}`}
+                >
+                  Partagé
+                </span>
+              )}
               <button
                 onClick={() => setIsEditingName(true)}
                 className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"

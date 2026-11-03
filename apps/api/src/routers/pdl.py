@@ -105,6 +105,7 @@ async def list_pdls(
             oldest_available_data_date=pdl.oldest_available_data_date,
             activation_date=pdl.activation_date,
             linked_production_pdl_id=pdl.linked_production_pdl_id,
+            shared_owner_email=pdl.shared_owner_email,
             selected_offer_id=pdl.selected_offer_id,
         )
         for pdl in pdls
@@ -225,6 +226,7 @@ async def create_pdl(
         oldest_available_data_date=pdl.oldest_available_data_date,
         activation_date=pdl.activation_date,
         linked_production_pdl_id=pdl.linked_production_pdl_id,
+        shared_owner_email=pdl.shared_owner_email,
         selected_offer_id=pdl.selected_offer_id,
     )
 
@@ -265,6 +267,7 @@ async def get_pdl(
         oldest_available_data_date=pdl.oldest_available_data_date,
         activation_date=pdl.activation_date,
         linked_production_pdl_id=pdl.linked_production_pdl_id,
+        shared_owner_email=pdl.shared_owner_email,
         selected_offer_id=pdl.selected_offer_id,
     )
 
@@ -759,6 +762,7 @@ async def admin_add_pdl(
         oldest_available_data_date=pdl.oldest_available_data_date,
         activation_date=pdl.activation_date,
         linked_production_pdl_id=pdl.linked_production_pdl_id,
+        shared_owner_email=pdl.shared_owner_email,
         selected_offer_id=pdl.selected_offer_id,
     )
 

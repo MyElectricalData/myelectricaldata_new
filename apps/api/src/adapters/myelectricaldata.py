@@ -13,6 +13,7 @@ The API provides:
 """
 
 import asyncio
+import re
 import logging
 from datetime import datetime
 from typing import Any, Optional, cast
@@ -51,6 +52,17 @@ def _quota_refusal(body: Any) -> str | None:
     return str(error.get("message") or "RATE_LIMIT_EXCEEDED")
 
 
+
+# Appel Enedis d'un PDL : /enedis/<chemin>/<14 chiffres>[/...]
+_ENEDIS_PDL_PATH = re.compile(r"^/enedis/(?:[a-z_-]+/)+(\d{14})(?:/|$)")
+
+class SharedPdlsUnreadableError(RuntimeError):
+    """/admin/shared-pdls a répondu autre chose qu'une liste de PDL (MED-112).
+
+    Volontairement pas une ValueError : les routes mappent ValueError sur « déjà un PDL du compte ».
+    """
+
+
 class MyElectricalDataAdapter:
     """Adapter for MyElectricalData API (v2.myelectricaldata.fr)
 
@@ -66,6 +78,9 @@ class MyElectricalDataAdapter:
         self._access_token: Optional[str] = None
         self._token_expires_at: Optional[datetime] = None
         self._lock = asyncio.Lock()
+        # MED-112 : usage_point_id -> id du propriétaire (passerelle) des PDL partagés synchronisés.
+        # Chargée au démarrage et après chaque changement de sélection (SyncService.refresh_shared_owners).
+        self._shared_owners: dict[str, str] = {}
 
     async def get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client"""
@@ -90,6 +105,20 @@ class MyElectricalDataAdapter:
             raise ValueError("MED_CLIENT_SECRET is required for authentication")
         return self.client_secret
 
+    def set_shared_owners(self, owners: dict[str, str]) -> None:
+        """PDL partagés à appeler en impersonation : {usage_point_id: id du propriétaire distant}."""
+        self._shared_owners = dict(owners)
+
+    def _impersonation_headers(self, endpoint: str) -> dict[str, str]:
+        """En-tête X-Impersonate-User-Id pour un appel Enedis d'un PDL partagé, rien sinon.
+
+        Limité aux routes /enedis/ : une contribution ou toute autre écriture ne part jamais au nom
+        du propriétaire. Le quota de ces appels est compté sur le compte admin à la passerelle.
+        """
+        match = _ENEDIS_PDL_PATH.match(endpoint)
+        owner_id = self._shared_owners.get(match.group(1)) if match else None
+        return {"X-Impersonate-User-Id": owner_id} if owner_id else {}
+
     def _get_headers(self, access_token: str) -> dict[str, str]:
         """Get common headers for API requests"""
         return {
@@ -110,7 +139,7 @@ class MyElectricalDataAdapter:
     ) -> dict[str, Any]:
         """Make authenticated request to MyElectricalData API"""
         access_token = await self._ensure_authenticated()
-        headers = self._get_headers(access_token)
+        headers = {**self._get_headers(access_token), **self._impersonation_headers(endpoint)}
 
         url = f"{self.base_url}{endpoint}"
 
@@ -185,6 +214,21 @@ class MyElectricalDataAdapter:
         if response.get("success") and isinstance(response.get("data"), list):
             return {"usage_points": response["data"]}
         return {"usage_points": []}
+
+    async def get_shared_pdls(self) -> list[dict[str, Any]]:
+        """PDL que des utilisateurs partagent avec l'admin (GET /admin/shared-pdls, MED-112).
+
+        Chaque entrée porte owner_id et owner_email. Réservé aux comptes admin de la passerelle :
+        un compte ordinaire reçoit un 403, levé tel quel.
+        """
+        response = await self._make_request("GET", "/admin/shared-pdls")
+        data = response.get("data") if response.get("success") else None
+        pdls = data.get("pdls") if isinstance(data, dict) else None
+        if not isinstance(pdls, list):
+            # Jamais [] ici : une réponse illisible (200 success=false, maintenance) ne doit pas
+            # passer pour « plus aucun partage », sinon la synchro purgerait les données locales.
+            raise SharedPdlsUnreadableError("Réponse inattendue de /admin/shared-pdls")
+        return [p for p in pdls if isinstance(p, dict)]
 
     # =========================================================================
     # Consumption Data
