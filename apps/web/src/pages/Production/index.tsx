@@ -2,11 +2,8 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { Zap, BarChart3, Database, ArrowRight, Info, LineChart } from 'lucide-react'
 import { usePdlStore } from '@/stores/pdlStore'
 import { useDataFetchStore } from '@/stores/dataFetchStore'
-import type { PDL } from '@/types/api'
 import { logger } from '@/utils/logger'
 import { getReadings, hasReadings } from '@/utils/enedisMeasure'
-import { useQuery } from '@tanstack/react-query'
-import { pdlApi } from '@/api/pdl'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { LoadingPlaceholder } from '@/components/LoadingPlaceholder'
 import { AnimatedSection } from '@/components/AnimatedSection'
@@ -24,6 +21,7 @@ import { YearlyProductionCards } from './components/YearlyProductionCards'
 import { YearlyProduction } from './components/YearlyProduction'
 import { AnnualProductionCurve } from './components/AnnualProductionCurve'
 import { DetailedCurve } from '@/components/DetailedCurve'
+import { useAllPdls } from '@/hooks/useAllPdls'
 
 export default function Production() {
   const { selectedPdl: selectedPDL, setSelectedPdl: setSelectedPDL } = usePdlStore()
@@ -123,17 +121,9 @@ export default function Production() {
   }, [dateRange])
 
   // STEP 1: First fetch PDL list to determine actualProductionPDL
-  const { data: pdlsData } = useQuery({
-    queryKey: ['pdls'],
-    queryFn: async () => {
-      const response = await pdlApi.list()
-      if (response.success && Array.isArray(response.data)) {
-        return response.data as PDL[]
-      }
-      return []
-    },
-  })
-  const pdls: PDL[] = Array.isArray(pdlsData) ? pdlsData : []
+  // PDL du compte + PDL partagés (admin, MED-112) : en impersonation, les détails du PDL
+  // partagé (offre, liaison conso/production) doivent être trouvés comme ceux d'un PDL propre
+  const { allPdls: pdls } = useAllPdls()
   const activePdls = pdls.filter(p => p.is_active !== false && p.has_production === true)
   const selectedPDLDetails = pdls.find(p => p.usage_point_id === selectedPDL)
 

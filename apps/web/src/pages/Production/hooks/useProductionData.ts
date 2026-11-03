@@ -1,30 +1,20 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
-import { pdlApi } from '@/api/pdl'
 import { enedisApi } from '@/api/enedis'
 import { resolveHistoryStart } from '@/utils/localSyncStatus'
 import { splitYearlyChunks } from '@/utils/historyRange'
-import type { EnedisMeasure, MeasureReading, PDL } from '@/types/api'
+import type { EnedisMeasure, MeasureReading } from '@/types/api'
 import { buildMeasure, getReadings, getUnit } from '@/utils/enedisMeasure'
 import type { DateRange } from '../types/production.types'
+import { useAllPdls } from '@/hooks/useAllPdls'
 
 export function useProductionData(selectedPDL: string, dateRange: DateRange | null, _detailDateRange: DateRange | null) {
   const queryClient = useQueryClient()
 
   // Fetch PDLs - with short staleTime to ensure provider changes are reflected
-  const { data: pdlsData } = useQuery({
-    queryKey: ['pdls'],
-    queryFn: async () => {
-      const response = await pdlApi.list()
-      if (response.success && Array.isArray(response.data)) {
-        return response.data as PDL[]
-      }
-      return []
-    },
-    staleTime: 30 * 1000, // 30 seconds - same as Dashboard for consistency
-  })
-
-  const pdls = Array.isArray(pdlsData) ? pdlsData : []
+  // PDL du compte + PDL partagés (admin, MED-112) : en impersonation, les détails du PDL
+  // partagé (offre, liaison conso/production) doivent être trouvés comme ceux d'un PDL propre
+  const { allPdls: pdls } = useAllPdls()
 
   // Filter only active PDLs that have production enabled
   const activePdls = pdls.filter(p => p.is_active !== false && p.has_production === true)

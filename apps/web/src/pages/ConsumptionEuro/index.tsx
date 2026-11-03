@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { Euro, BarChart3, Database, ArrowRight, AlertCircle, Tag } from 'lucide-react'
 import { toast } from '@/stores/notificationStore'
 import { usePdlStore } from '@/stores/pdlStore'
@@ -13,7 +13,7 @@ import { useUnifiedDataFetch } from '@/hooks/useUnifiedDataFetch'
 import { logger } from '@/utils/logger'
 import { hasReadings } from '@/utils/enedisMeasure'
 import OfferSelector from '@/components/OfferSelector'
-import type { APIResponse, EnedisMeasure, PDL } from '@/types/api'
+import type { APIResponse, EnedisMeasure } from '@/types/api'
 
 // Import hooks and components
 import { useConsumptionEuroCalcs } from './hooks/useConsumptionEuroCalcs'
@@ -23,6 +23,7 @@ import { EuroYearlyChart } from './components/EuroYearlyChart'
 import { EuroMonthlyBreakdown } from './components/EuroMonthlyBreakdown'
 import { OfferPricingCard } from './components/OfferPricingCard'
 import { InfoBlock } from './components/InfoBlock'
+import { useAllPdls } from '@/hooks/useAllPdls'
 
 export default function ConsumptionEuro() {
   const { selectedPdl: selectedPDL } = usePdlStore()
@@ -69,19 +70,9 @@ export default function ConsumptionEuro() {
   }, [selectedPDL])
 
   // Fetch PDLs - with short staleTime to ensure provider changes are reflected
-  const { data: pdlsData } = useQuery({
-    queryKey: ['pdls'],
-    queryFn: async () => {
-      const response = await pdlApi.list()
-      if (response.success && Array.isArray(response.data)) {
-        return response.data as PDL[]
-      }
-      return []
-    },
-    staleTime: 30 * 1000, // 30 seconds - same as Dashboard for consistency
-  })
-
-  const pdls = Array.isArray(pdlsData) ? pdlsData : []
+  // PDL du compte + PDL partagés (admin, MED-112) : en impersonation, les détails du PDL
+  // partagé (offre, liaison conso/production) doivent être trouvés comme ceux d'un PDL propre
+  const { allPdls: pdls } = useAllPdls()
   const selectedPDLDetails = pdls.find(p => p.usage_point_id === selectedPDL)
 
   // Hook for demo auto-fetch - uses the same unified fetch as the header

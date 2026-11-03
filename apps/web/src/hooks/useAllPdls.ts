@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { pdlApi } from '@/api/pdl'
 import { adminApi } from '@/api/admin'
 import { usePermissions } from './usePermissions'
+import { useAppMode } from './useAppMode'
 import type { PDL } from '@/types/api'
 
 /**
@@ -50,6 +51,7 @@ interface UseAllPdlsReturn {
 export function useAllPdls(options: UseAllPdlsOptions = {}): UseAllPdlsReturn {
   const { staleTime = 30 * 1000 } = options // Default 30s like Dashboard
   const { isAdmin } = usePermissions()
+  const { isServerMode } = useAppMode()
 
   // Fetch user's own PDLs
   const {
@@ -78,7 +80,9 @@ export function useAllPdls(options: UseAllPdlsOptions = {}): UseAllPdlsReturn {
       }
       return []
     },
-    enabled: isAdmin(),
+    // Le routeur /admin n'existe qu'en mode serveur ; en mode client l'utilisateur local est
+    // is_admin et les PDL partages synchronises sont deja dans la liste locale (/pdl).
+    enabled: isServerMode && isAdmin(),
     staleTime: 60000, // Cache shared PDLs for 1 minute
   })
 
