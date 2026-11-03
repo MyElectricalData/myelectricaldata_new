@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import select, and_, delete, func, text, update
+from sqlalchemy import select, and_, delete, func, text, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..adapters.myelectricaldata import RateLimitExceededError, get_med_adapter
@@ -24,7 +24,7 @@ from ..models.tempo_day import TempoDay, TempoColor
 from ..models.zen_flex_day import ZenFlexDay, ZenFlexDayType
 from .edf_zen_flex import OFFER_START, paris_today
 from .custom_offers import CUSTOM_PROVIDER_ID, is_custom_provider
-from .upsert import ENERGY_KEY, conflict_target, dialect_insert, is_sqlite, sqlite_index_exists
+from .upsert import ENERGY_KEY, conflict_target, daily_index_target, dialect_insert, index_exists, is_sqlite
 from ..models.client_mode import (
     AddressData,
     ConsumptionData,
@@ -96,9 +96,14 @@ def _block_until_midnight_utc() -> None:
 # Verrous globaux pour éviter les syncs concurrentes
 _energy_sync_lock = asyncio.Lock()
 
-# Contrainte quotidienne en NULLS NOT DISTINCT (migration c3d4e5f6g7h8, ignorée sous PostgreSQL < 15),
-# lue une fois par process
-_daily_upsert_effective: bool | None = None
+# Unicité des lignes quotidiennes (interval_start NULL), lue une fois par process :
+# True = contrainte NULLS NOT DISTINCT (PostgreSQL 15+, migration c3d4e5f6g7h8) ou index partiel SQLite,
+# "index" = index partiel uq_<table>_daily sous PostgreSQL < 15 (migration b8d1f3a5c7e9, MED-103),
+# False = aucune (PostgreSQL < 15 non migré) : remplacement sous verrou, None = pas encore lu
+_daily_upsert_effective: bool | str | None = None
+
+# Verrou transactionnel PostgreSQL des remplacements quotidiens sans cible d'unicité (MED-103)
+DAILY_REPLACE_LOCK = "myelectricaldata:daily-replace:{table}"
 
 
 async def get_activation_date(db: AsyncSession, usage_point_id: str, data_type: str) -> date | None:
@@ -687,24 +692,33 @@ class SyncService:
     async def _daily_upsert_is_effective(self) -> bool:
         """True si ON CONFLICT joue pour les lignes quotidiennes (interval_start NULL).
 
-        Sans NULLS NOT DISTINCT, redemander un jour déjà en base l'insère une seconde fois :
-        le rafraîchissement forcé de J-2/J-1 multiplierait alors les totaux quotidiens.
+        Sans NULLS NOT DISTINCT ni index partiel, redemander un jour déjà en base l'insère une seconde
+        fois : le rafraîchissement forcé de J-2/J-1 multiplierait alors les totaux quotidiens.
         """
+        return bool(await self._daily_upsert_mode())
+
+    async def _daily_upsert_mode(self) -> bool | str:
+        """Cible d'unicité des lignes quotidiennes : voir `_daily_upsert_effective`."""
         global _daily_upsert_effective
         if _daily_upsert_effective is None:
             if is_sqlite(self.db):
                 # SQLite : index partiel des lignes quotidiennes, à la place de NULLS NOT DISTINCT
-                _daily_upsert_effective = await sqlite_index_exists(self.db, "uq_consumption_data_daily")
+                _daily_upsert_effective = await index_exists(self.db, "uq_consumption_data_daily")
             else:
                 result = await self.db.execute(
                     text("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'uq_consumption_data'")
                 )
                 definition = result.scalar() or ""
-                _daily_upsert_effective = "NULLS NOT DISTINCT" in definition
+                if "NULLS NOT DISTINCT" in definition:
+                    _daily_upsert_effective = True
+                elif await index_exists(self.db, "uq_consumption_data_daily"):
+                    _daily_upsert_effective = "index"
+                else:
+                    _daily_upsert_effective = False
             if not _daily_upsert_effective:
                 logger.warning(
-                    "[SYNC] Contrainte quotidienne sans NULLS NOT DISTINCT (PostgreSQL < 15, ou index SQLite absent) : "
-                    "pas de rafraîchissement forcé de J-2/J-1"
+                    "[SYNC] Lignes quotidiennes sans contrainte d'unicité (PostgreSQL < 15 non migré, ou index "
+                    "SQLite absent) : remplacement sous verrou, pas de rafraîchissement forcé de J-2/J-1"
                 )
         return _daily_upsert_effective
 
@@ -1256,12 +1270,18 @@ class SyncService:
             )
             records = [records[i] for i in sorted(seen.values())]
 
-        # INSERT ... ON CONFLICT UPDATE. PostgreSQL vise la contrainte uq_<table> (NULLS NOT DISTINCT) ;
-        # SQLite n'a pas de cible commune aux deux granularités : lignes quotidiennes (interval_start NULL,
-        # index partiel) et détaillées passent dans deux requêtes.
-        if is_sqlite(self.db):
-            daily = [record for record in records if record.get("interval_start") is None]
-            detailed = [record for record in records if record.get("interval_start") is not None]
+        # INSERT ... ON CONFLICT UPDATE. PostgreSQL 15+ vise la contrainte uq_<table> (NULLS NOT DISTINCT) ;
+        # l'index partiel uq_<table>_daily (SQLite, PostgreSQL < 15 migré) ne couvre que les lignes
+        # quotidiennes (interval_start NULL) : quotidiennes et détaillées passent alors dans deux requêtes.
+        # Sans aucune cible pour les quotidiennes, ON CONFLICT ne joue jamais : remplacement sous verrou.
+        mode = await self._daily_upsert_mode()
+        daily = [record for record in records if record.get("interval_start") is None]
+        detailed = [record for record in records if record.get("interval_start") is not None]
+        if not mode:
+            if daily:
+                await self._replace_daily_records(daily, model_class)
+            batches = [(detailed, False)] if detailed else []
+        elif is_sqlite(self.db) or mode == "index":
             batches = [(batch, batch is daily) for batch in (daily, detailed) if batch]
         else:
             batches = [(records, False)]
@@ -1271,8 +1291,11 @@ class SyncService:
             stmt = dialect_insert(self.db, model_class).values(batch)
 
             # On conflict, update value and raw_data
+            target = (
+                daily_index_target(ENERGY_KEY) if is_daily else conflict_target(self.db, constraint, ENERGY_KEY)
+            )
             stmt = stmt.on_conflict_do_update(
-                **conflict_target(self.db, constraint, ENERGY_KEY, daily=is_daily),
+                **target,
                 set_={
                     "value": stmt.excluded.value,
                     "raw_data": stmt.excluded.raw_data,
@@ -1282,6 +1305,34 @@ class SyncService:
             await self.db.execute(stmt)
 
         await self.db.commit()
+
+    async def _replace_daily_records(
+        self,
+        records: list[dict[str, Any]],
+        model_class: type[ConsumptionData | ProductionData],
+    ) -> None:
+        """Remplacer les lignes quotidiennes de `records` quand aucune contrainte ne les rend uniques (MED-103).
+
+        PostgreSQL < 15 sans la migration b8d1f3a5c7e9 : la contrainte uq_<table> laisse deux NULL
+        distincts, ON CONFLICT n'y joue jamais et chaque synchro ajoutait une copie de chaque jour
+        (issue #201). Supprimer puis insérer, sous un verrou transactionnel par table, garde une
+        seule ligne par jour, même entre deux synchros simultanées, et efface au passage les copies
+        déjà stockées pour ces jours. Le verrou tombe au commit de `_upsert_energy_records`.
+        """
+        table = model_class.__tablename__
+        if not is_sqlite(self.db):
+            await self.db.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": DAILY_REPLACE_LOCK.format(table=table)}
+            )
+        keys = sorted({(r["usage_point_id"], r["date"], r["granularity"]) for r in records})
+        await self.db.execute(
+            delete(model_class).where(
+                model_class.interval_start.is_(None),
+                tuple_(model_class.usage_point_id, model_class.date, model_class.granularity).in_(keys),
+            )
+        )
+        now = datetime.now(UTC)
+        await self.db.execute(dialect_insert(self.db, model_class).values([{**r, "updated_at": now} for r in records]))
 
     async def _get_or_create_sync_status(
         self,

@@ -379,10 +379,10 @@ async def test_sync_france_ignoree_au_demarrage_si_recente():
 # --- Corrections de la revue -------------------------------------------------------------------
 
 
-async def _forced_window(monkeypatch, constraint_def: str):
+async def _forced_window(monkeypatch, constraint_def: str, *index_probe: "FakeResult"):
     monkeypatch.setattr("src.services.sync._daily_upsert_effective", None)
     present = {TODAY - timedelta(days=i) for i in range(1, 31)}  # base complète sur 30 jours
-    db = db_with(FakeResult(scalar=constraint_def), FakeResult(rows=sorted(present)))
+    db = db_with(FakeResult(scalar=constraint_def), *index_probe, FakeResult(rows=sorted(present)))
     service = sync_service(db)
     service._get_or_create_sync_status = AsyncMock(
         return_value=SimpleNamespace(
@@ -409,9 +409,20 @@ async def test_rafraichissement_force_avec_nulls_not_distinct(monkeypatch):
 
 async def test_pas_de_rafraichissement_force_sous_postgresql_14(monkeypatch):
     """Sans NULLS NOT DISTINCT, redemander J-2/J-1 les insérerait une seconde fois (totaux doublés)."""
-    calls = await _forced_window(monkeypatch, "UNIQUE (usage_point_id, date, granularity, interval_start)")
+    calls = await _forced_window(
+        monkeypatch, "UNIQUE (usage_point_id, date, granularity, interval_start)", FakeResult(scalar=0)
+    )
 
     assert calls == []
+
+
+async def test_rafraichissement_force_sous_postgresql_14_migre(monkeypatch):
+    """MED-103 : l'index partiel uq_consumption_data_daily rend l'upsert quotidien sûr, J-2/J-1 redemandés."""
+    calls = await _forced_window(
+        monkeypatch, "UNIQUE (usage_point_id, date, granularity, interval_start)", FakeResult(scalar=1)
+    )
+
+    assert calls == [((TODAY - timedelta(days=2)).isoformat(), TODAY.isoformat())]
 
 
 async def test_une_seule_sync_a_la_fois():

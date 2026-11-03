@@ -13,6 +13,7 @@ This dramatically reduces API calls to the gateway.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -33,6 +34,33 @@ from ..models.client_mode import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _latest_per_key(records: Iterable[Any]) -> list[Any]:
+    """Une ligne par (date, interval_start), la dernière mise à jour (MED-103, issue #201).
+
+    Sous PostgreSQL < 15, la contrainte uq_<table> laisse passer deux lignes quotidiennes
+    (interval_start NULL) pour un même jour : les deux copies doubleraient le total. La plus récente
+    porte la dernière valeur envoyée par Enedis, corrections comprises. L'ordre d'entrée est conservé.
+    """
+    latest: dict[tuple[Any, Any], Any] = {}
+    for rec in records:
+        key = (rec.date, rec.interval_start)
+        kept = latest.get(key)
+        if kept is None or _freshness(rec) > _freshness(kept):
+            latest[key] = rec
+    return list(latest.values())
+
+
+def _freshness(rec: Any) -> tuple[datetime, datetime]:
+    oldest = datetime.min.replace(tzinfo=UTC)
+    return (_aware(rec.updated_at) or oldest, _aware(rec.created_at) or oldest)
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
 
 
 class LocalDataService:
@@ -268,7 +296,7 @@ class LocalDataService:
                 )
             ).order_by(model.date, model.interval_start)
         )
-        records = result.scalars().all()
+        records = _latest_per_key(result.scalars().all())
 
         # Format records for API response
         if granularity == DataGranularity.DAILY:
