@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.14.1...2.14.2) (2026-11-03)
+
+### Bug Fixes
+
+* **web:** MED-112 / bilan et pages conso/prod sur les PDL partagés ([895f01a](https://github.com/MyElectricalData/myelectricaldata_new/commit/895f01a993fd8294459915d6194e4ef902aba145))
+* **web:** MED-112 / useAllPdls n'appelle /admin/shared-pdls qu'en mode serveur ([fe9baca](https://github.com/MyElectricalData/myelectricaldata_new/commit/fe9baca37e058919dd25a8f2225010232f3e9680))
+
 ## [2.14.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.14.0...2.14.1) (2026-11-01)
 
 ### Bug Fixes
