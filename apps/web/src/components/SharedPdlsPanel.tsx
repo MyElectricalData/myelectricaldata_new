@@ -40,6 +40,19 @@ export default function SharedPdlsPanel() {
     },
   })
 
+  // Décocher purge le PDL et toutes ses mesures locales : on demande avant, cocher reste direct.
+  const onToggle = (choice: SharedPdlChoice) => {
+    if (
+      choice.selected &&
+      !window.confirm(
+        `Retirer le PDL ${choice.usage_point_id} ? Ses données locales (mesures comprises) seront supprimées.`
+      )
+    ) {
+      return
+    }
+    toggle.mutate(choice)
+  }
+
   if (isLoading) return null
   // Compte non admin à la passerelle : rien à proposer
   if (isAxiosError(error) && error.response?.status === 403) return null
@@ -68,7 +81,7 @@ export default function SharedPdlsPanel() {
                   type="checkbox"
                   checked={choice.selected}
                   disabled={toggle.isPending}
-                  onChange={() => toggle.mutate(choice)}
+                  onChange={() => onToggle(choice)}
                   aria-label={`Synchroniser le PDL ${choice.usage_point_id}`}
                 />
                 <span className="flex-1 min-w-0">

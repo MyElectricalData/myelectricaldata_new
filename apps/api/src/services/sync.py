@@ -120,6 +120,14 @@ async def get_activation_date(db: AsyncSession, usage_point_id: str, data_type: 
     return _parse_iso_date(result.scalar_one_or_none())
 
 
+class SharedPdlNotFoundError(LookupError):
+    """Le PDL n'est (plus) partagé avec le compte admin à la passerelle."""
+
+
+class SharedPdlAlreadyOwnedError(ValueError):
+    """Le PDL est déjà un PDL du compte : il ne doit jamais devenir purgeable."""
+
+
 class SyncService:
     """Service to sync data from MyElectricalData API to the local database (PostgreSQL or SQLite)"""
 
@@ -230,6 +238,8 @@ class SyncService:
             await self._sync_production_links(remote_pdls)
 
             await self.db.commit()
+            # Un PDL partagé devenu propre ne doit plus être impersoné par l'adaptateur
+            await self.refresh_shared_owners()
             logger.info(f"[SYNC] PDL list sync complete: {len(synced_pdls)} PDLs")
             return synced_pdls
 
@@ -243,8 +253,9 @@ class SyncService:
         `linked_production_pdl_id` porte l'UUID du PDL de production dans la base DISTANTE : on le
         traduit en UUID local par `usage_point_id`. Passe faite après la boucle de synchro, pour que
         la cible soit trouvée quel que soit l'ordre de la liste. Une cible absente de la liste laisse
-        la liaison vide (jamais d'UUID orphelin, `pdls.id` est une clé étrangère). Un PDL distant
-        sans la clé (passerelle plus ancienne) garde sa liaison locale.
+        la liaison inchangée (jamais d'UUID orphelin, `pdls.id` est une clé étrangère). Une clé absente
+        ou nulle ne défait la liaison locale que pour un PDL partagé (le propriétaire fait foi) ; un
+        PDL du compte la garde, la liaison se règle en local en mode client.
         """
         usage_point_by_remote_id = {
             remote_pdl["id"]: remote_pdl["usage_point_id"]
@@ -276,7 +287,13 @@ class SyncService:
                 logger.warning(
                     f"[SYNC] PDL {remote_pdl['usage_point_id']} : production liée absente de la liste, liaison ignorée"
                 )
-            local_pdl.linked_production_pdl_id = target.id if target else None
+            if target is not None:
+                local_pdl.linked_production_pdl_id = target.id
+            elif local_pdl.shared_owner_id is not None and not remote_pdl.get("linked_production_pdl_id"):
+                # Le propriétaire a délié : un PDL partagé suit la passerelle. Un PDL du compte garde
+                # sa liaison locale (PATCH /pdl/{id}/link-production n'écrit qu'en base locale en mode
+                # client, la passerelle répond toujours null).
+                local_pdl.linked_production_pdl_id = None
 
     # =========================================================================
     # PDL partagés avec l'admin (MED-112)
@@ -303,7 +320,7 @@ class SyncService:
             )
             await self.db.delete(pdl)
 
-    async def sync_shared_pdls(self) -> dict[str, Any]:
+    async def sync_shared_pdls(self, own_usage_points: set[str] | None = None) -> dict[str, Any]:
         """Met à jour les PDL partagés choisis, purge ceux dont le partage a été retiré.
 
         Ne fait rien (aucun appel) sans PDL partagé choisi : un compte non admin n'appelle jamais
@@ -316,9 +333,20 @@ class SyncService:
             return {"synced": [], "purged": []}
 
         remote = {p["usage_point_id"]: p for p in await self.adapter.get_shared_pdls() if p.get("usage_point_id")}
+        if own_usage_points is None:
+            own_usage_points = {
+                up["usage_point_id"]
+                for up in (await self.adapter.get_usage_points()).get("usage_points", [])
+                if up.get("usage_point_id")
+            }
 
         synced, purged = [], []
         for pdl in selected:
+            if pdl.usage_point_id in own_usage_points:
+                # Devenu un PDL du compte depuis le choix : plus un partage, donc jamais purgé
+                pdl.shared_owner_id = None
+                pdl.shared_owner_email = None
+                continue
             shared = remote.get(pdl.usage_point_id)
             if shared is None or not shared.get("owner_id"):
                 logger.info(f"[SYNC] Partage retiré pour le PDL {pdl.usage_point_id} : purge locale")
@@ -364,16 +392,16 @@ class SyncService:
     async def select_shared_pdl(self, usage_point_id: str, user_id: str) -> PDL:
         """Ajoute un PDL partagé à la synchro du client (crée sa ligne locale, sans mesures).
 
-        Lève LookupError si la passerelle ne le partage pas (ou plus), ValueError si c'est déjà
+        Lève SharedPdlNotFoundError si la passerelle ne le partage pas (ou plus), SharedPdlAlreadyOwnedError si c'est déjà
         un PDL du compte (il ne doit jamais devenir purgeable).
         """
         remote = {p["usage_point_id"]: p for p in await self.adapter.get_shared_pdls() if p.get("usage_point_id")}
         shared = remote.get(usage_point_id)
         if shared is None or not shared.get("owner_id"):
-            raise LookupError(usage_point_id)
+            raise SharedPdlNotFoundError(usage_point_id)
         pdl = (await self.db.execute(select(PDL).where(PDL.usage_point_id == usage_point_id))).scalar_one_or_none()
         if pdl is not None and pdl.shared_owner_id is None:
-            raise ValueError(usage_point_id)
+            raise SharedPdlAlreadyOwnedError(usage_point_id)
         if pdl is None:
             pdl = PDL(user_id=user_id, usage_point_id=usage_point_id)
             self.db.add(pdl)
@@ -427,10 +455,14 @@ class SyncService:
             results["pdls"][usage_point_id] = {"error": str(e)}
             results["errors"].append({"pdl": usage_point_id, "error": str(e)})
 
-    async def _sync_all_shared(self, results: dict[str, Any]) -> None:
+    async def _sync_all_shared(self, results: dict[str, Any], own_usage_points: set[str] | None = None) -> None:
         """Volet PDL partagés de sync_all : liste des partages, purge des retraits, puis données."""
+        if _quota_blocked():
+            # Le quota a pu être atteint pendant la boucle des PDL propres : aucun appel de plus
+            results["shared_purged"] = []
+            return
         try:
-            shared = await self.sync_shared_pdls()
+            shared = await self.sync_shared_pdls(own_usage_points)
         except RateLimitExceededError as e:
             results["errors"].append({"pdl": None, "error": f"PDL partagés : rate_limited: {e}"})
             _block_until_midnight_utc()
@@ -453,6 +485,7 @@ class SyncService:
         """
         logger.info("[SYNC] Starting full sync...")
         results: dict[str, Any] = {"pdls": {}, "errors": [], "started_at": datetime.now(UTC).isoformat()}
+        own_usage_points: set[str] | None = None  # None : liste du compte illisible, relue par le volet partagé
 
         if _quota_blocked():
             logger.info(f"[SYNC] Quota de la passerelle atteint, synchro suspendue jusqu'à {_quota_blocked_until}")
@@ -465,6 +498,7 @@ class SyncService:
             # Get all usage points from API
             usage_points_response = await self.adapter.get_usage_points()
             usage_points = usage_points_response.get("usage_points", [])
+            own_usage_points = {up["usage_point_id"] for up in usage_points if up.get("usage_point_id")}
 
             logger.info(f"[SYNC] Found {len(usage_points)} usage points to sync")
 
@@ -478,7 +512,7 @@ class SyncService:
             logger.error(f"[SYNC] Failed to get usage points: {e}")
             results["errors"].append({"pdl": None, "error": str(e)})
 
-        await self._sync_all_shared(results)
+        await self._sync_all_shared(results, own_usage_points)
 
         results["completed_at"] = datetime.now(UTC).isoformat()
         results["success"] = len(results["errors"]) == 0

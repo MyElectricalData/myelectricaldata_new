@@ -56,6 +56,13 @@ def _quota_refusal(body: Any) -> str | None:
 # Appel Enedis d'un PDL : /enedis/<chemin>/<14 chiffres>[/...]
 _ENEDIS_PDL_PATH = re.compile(r"^/enedis/(?:[a-z_-]+/)+(\d{14})(?:/|$)")
 
+class SharedPdlsUnreadableError(RuntimeError):
+    """/admin/shared-pdls a répondu autre chose qu'une liste de PDL (MED-112).
+
+    Volontairement pas une ValueError : les routes mappent ValueError sur « déjà un PDL du compte ».
+    """
+
+
 class MyElectricalDataAdapter:
     """Adapter for MyElectricalData API (v2.myelectricaldata.fr)
 
@@ -217,7 +224,11 @@ class MyElectricalDataAdapter:
         response = await self._make_request("GET", "/admin/shared-pdls")
         data = response.get("data") if response.get("success") else None
         pdls = data.get("pdls") if isinstance(data, dict) else None
-        return [p for p in pdls if isinstance(p, dict)] if isinstance(pdls, list) else []
+        if not isinstance(pdls, list):
+            # Jamais [] ici : une réponse illisible (200 success=false, maintenance) ne doit pas
+            # passer pour « plus aucun partage », sinon la synchro purgerait les données locales.
+            raise SharedPdlsUnreadableError("Réponse inattendue de /admin/shared-pdls")
+        return [p for p in pdls if isinstance(p, dict)]
 
     # =========================================================================
     # Consumption Data

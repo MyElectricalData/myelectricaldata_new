@@ -114,6 +114,45 @@ async def test_liste_illisible_ne_purge_rien(db: AsyncSession) -> None:
     assert any("PDL partagés" in e["error"] for e in result["errors"])
 
 
+async def test_pdl_devenu_propre_pendant_sync_all_n_est_pas_purge(db: AsyncSession) -> None:
+    """Le PDL est listé parmi ceux du compte ET le partage est retiré : propre, donc jamais purgé,
+    même quand sync_pdl_list n'a pas tourné avant (sync_all ne l'appelle pas)."""
+    service = make_service(db, [])
+    service.adapter.get_usage_points = AsyncMock(return_value={"usage_points": [{"usage_point_id": SHARED}]})
+
+    await service.sync_all()
+
+    pdl = (await db.execute(select(PDL).where(PDL.usage_point_id == SHARED))).scalar_one()
+    assert pdl.shared_owner_id is None
+    assert await count(db, ConsumptionData, SHARED) == 1
+
+
+async def test_liste_propre_illisible_ne_purge_rien(db: AsyncSession) -> None:
+    """Sans la liste des PDL du compte, impossible de savoir si le PDL est devenu propre : pas de purge."""
+    service = make_service(db, [])
+    service.adapter.get_usage_points = AsyncMock(side_effect=RuntimeError("passerelle en panne"))
+
+    await service.sync_all()
+
+    assert await count(db, ConsumptionData, SHARED) == 1
+
+
+async def test_quota_atteint_pendant_la_boucle_aucun_appel_admin(db: AsyncSession, monkeypatch) -> None:
+    service = make_service(db, [shared(SHARED, "r-1")])
+
+    async def blocking_sync(upid: str) -> dict[str, Any]:
+        monkeypatch.setattr(sync_module, "_quota_blocked_until", date(2999, 1, 1), raising=False)
+        return {"usage_point_id": upid}
+
+    service.sync_pdl = AsyncMock(side_effect=blocking_sync)
+    monkeypatch.setattr(sync_module, "_quota_blocked", lambda: sync_module._quota_blocked_until is not None)
+
+    await service.sync_all()
+
+    service.adapter.get_shared_pdls.assert_not_called()
+    assert await count(db, ConsumptionData, SHARED) == 1
+
+
 async def test_sans_partage_choisi_aucun_appel_admin(db: AsyncSession) -> None:
     await db.delete(await db.get(PDL, "p-shared"))
     await db.commit()

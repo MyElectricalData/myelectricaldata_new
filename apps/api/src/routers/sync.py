@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.database import get_db, async_session_maker
 from ..adapters.myelectricaldata import RateLimitExceededError
-from ..services.sync import SyncService
+from ..services.sync import SharedPdlAlreadyOwnedError, SharedPdlNotFoundError, SyncService
 
 from ..services.client_auth import get_or_create_local_user
 
@@ -95,9 +95,9 @@ async def select_shared_pdl(
     local_user = await get_or_create_local_user(db)
     try:
         await SyncService(db).select_shared_pdl(usage_point_id, local_user.id)
-    except LookupError:
+    except SharedPdlNotFoundError:
         raise HTTPException(status_code=404, detail="Ce PDL n'est pas partagé avec ce compte")
-    except ValueError:
+    except SharedPdlAlreadyOwnedError:
         raise HTTPException(status_code=409, detail="Ce PDL appartient déjà au compte")
     except Exception as e:
         raise _gateway_error(e) from e

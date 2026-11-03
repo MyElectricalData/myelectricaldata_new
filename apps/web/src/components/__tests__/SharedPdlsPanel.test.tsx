@@ -45,6 +45,7 @@ const httpError = (status: number) =>
   })
 
 beforeEach(() => {
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
   syncApi.listSharedPdls.mockResolvedValue({
     success: true,
     data: [
@@ -54,7 +55,10 @@ beforeEach(() => {
     ],
   })
 })
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  vi.clearAllMocks()
+  vi.restoreAllMocks()
+})
 
 describe('SharedPdlsPanel', () => {
   it('liste les PDL partagés avec leur état, sans les PDL du compte', async () => {
@@ -76,6 +80,16 @@ describe('SharedPdlsPanel', () => {
     fireEvent.click(screen.getByLabelText('Synchroniser le PDL 17167149025362'))
     await waitFor(() => expect(syncApi.unselectSharedPdl).toHaveBeenCalledWith('17167149025362'))
     expect(syncApi.selectSharedPdl).toHaveBeenCalledTimes(1)
+  })
+
+  it('décocher demande confirmation et ne purge rien si on refuse', async () => {
+    vi.mocked(window.confirm).mockReturnValue(false)
+    renderPanel()
+
+    fireEvent.click(await screen.findByLabelText('Synchroniser le PDL 17167149025362'))
+
+    expect(window.confirm).toHaveBeenCalledTimes(1)
+    expect(syncApi.unselectSharedPdl).not.toHaveBeenCalled()
   })
 
   it("ne s'affiche pas pour un compte non admin à la passerelle (403)", async () => {

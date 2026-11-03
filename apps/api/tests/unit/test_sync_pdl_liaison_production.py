@@ -117,27 +117,24 @@ async def test_liaison_ajoutee_sur_un_pdl_deja_present_localement(db: AsyncSessi
     assert (await local_pdl(db, CONSO)).linked_production_pdl_id == (await local_pdl(db, PROD)).id
 
 
-async def test_liaison_retiree_cote_passerelle_est_retiree_en_local(db: AsyncSession) -> None:
-    linked = make_service(
-        db,
-        [
-            remote(CONSO, REMOTE_CONSO_ID, linked_production_pdl_id=REMOTE_PROD_ID),
-            remote(PROD, REMOTE_PROD_ID, has_consumption=False, has_production=True),
-        ],
-    )
-    await linked.sync_pdl_list("local-user")
-    assert (await local_pdl(db, CONSO)).linked_production_pdl_id is not None
-
-    unlinked = make_service(
+async def test_liaison_locale_d_un_pdl_du_compte_survit_a_la_synchro(db: AsyncSession) -> None:
+    """PATCH /pdl/{id}/link-production n'écrit qu'en local en mode client : la passerelle répond
+    linked_production_pdl_id null, ce qui ne doit pas défaire la liaison choisie par l'utilisateur."""
+    first = make_service(
         db,
         [
             remote(CONSO, REMOTE_CONSO_ID, linked_production_pdl_id=None),
             remote(PROD, REMOTE_PROD_ID, has_consumption=False, has_production=True),
         ],
     )
-    await unlinked.sync_pdl_list("local-user")
+    await first.sync_pdl_list("local-user")
+    conso, prod = await local_pdl(db, CONSO), await local_pdl(db, PROD)
+    conso.linked_production_pdl_id = prod.id  # liaison posée en local
+    await db.commit()
 
-    assert (await local_pdl(db, CONSO)).linked_production_pdl_id is None
+    await first.sync_pdl_list("local-user")
+
+    assert (await local_pdl(db, CONSO)).linked_production_pdl_id == (await local_pdl(db, PROD)).id
 
 
 async def test_liaison_vers_un_pdl_absent_de_la_liste_reste_vide(db: AsyncSession) -> None:

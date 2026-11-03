@@ -9,7 +9,7 @@ import uuid
 from collections.abc import AsyncIterator
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -203,7 +203,7 @@ async def test_la_synchro_des_pdl_garde_l_option_d_une_offre_saisie(db):
         {"usage_point_id": "11111111111111", "pricing_option": "HC_HP"},
         {"usage_point_id": "22222222222222"},  # passerelle sans option
         {"usage_point_id": "33333333333333", "pricing_option": "HC_HP"},
-    ]}))
+    ]}), set_shared_owners=MagicMock())
 
     await service.sync_pdl_list("user-1")
 

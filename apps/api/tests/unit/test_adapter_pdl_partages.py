@@ -4,7 +4,7 @@ Enedis d'un PDL partagé, lecture de /admin/shared-pdls, quota reconnu en impers
 import httpx
 import pytest
 
-from src.adapters.myelectricaldata import MyElectricalDataAdapter, RateLimitExceededError
+from src.adapters.myelectricaldata import MyElectricalDataAdapter, RateLimitExceededError, SharedPdlsUnreadableError
 
 OWN = "11111111111111"
 SHARED = "17167149025362"
@@ -81,13 +81,6 @@ async def test_liste_des_pdl_partages(gateway):
 
 
 @pytest.mark.asyncio
-async def test_liste_vide_si_reponse_inattendue(gateway):
-    adapter, _, replies = gateway
-    replies["/api/admin/shared-pdls"] = {"success": False, "error": {"code": "X"}}
-    assert await adapter.get_shared_pdls() == []
-
-
-@pytest.mark.asyncio
 async def test_quota_reconnu_en_impersonation(gateway):
     adapter, seen, replies = gateway
     replies[f"/api/enedis/consumption/daily/{SHARED}"] = {
@@ -96,3 +89,30 @@ async def test_quota_reconnu_en_impersonation(gateway):
     with pytest.raises(RateLimitExceededError):
         await adapter.get_consumption_daily(SHARED, "2026-01-01", "2026-01-31")
     assert seen[-1].headers.get("X-Impersonate-User-Id") == OWNER
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"success": False, "error": {"code": "INTERNAL_ERROR"}},
+        {"success": True, "data": "maintenance"},
+        {"success": True, "data": {"pdls": None}},
+    ],
+)
+async def test_reponse_invalide_des_partages_n_est_pas_une_liste_vide(gateway, body):
+    """[] veut dire « plus aucun partage » et fait purger les données locales : une réponse
+    illisible (HTTP 200, success false, maintenance) doit lever, jamais passer pour une liste vide."""
+    adapter, _, replies = gateway
+    replies["/api/admin/shared-pdls"] = body
+
+    with pytest.raises(SharedPdlsUnreadableError):
+        await adapter.get_shared_pdls()
+
+
+@pytest.mark.asyncio
+async def test_liste_vide_valide_reste_une_liste_vide(gateway):
+    adapter, _, replies = gateway
+    replies["/api/admin/shared-pdls"] = {"success": True, "data": {"pdls": [], "total": 0, "users_count": 0}}
+
+    assert await adapter.get_shared_pdls() == []
