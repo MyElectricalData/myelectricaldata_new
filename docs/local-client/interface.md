@@ -71,6 +71,17 @@ Le mode client propose une navigation simplifiée par rapport au mode serveur.
 </Dashboard>
 ```
 
+#### PDL partagés avec l'admin
+
+Un compte admin de la passerelle voit, sous les cartes, le panneau **PDL partagés avec vous** : les PDL que des utilisateurs lui ont partagés (réglage « partage avec l'admin » de leur compte). Une case à cocher par PDL choisit ceux à copier dans le client local, pour tester l'interface avec leurs données.
+
+- Rien n'est synchronisé tant qu'un PDL n'est pas coché. Cocher lance la synchro de ce PDL, décocher le purge localement.
+- Un PDL coché garde sa carte, avec le badge **Partagé** (info-bulle : e-mail du propriétaire), et son éventuelle liaison consommation / production est recopiée.
+- Un compte non admin ne voit pas le panneau (la passerelle répond 403 à `GET /admin/shared-pdls`, il se masque).
+- Décocher demande une confirmation, car la purge supprime aussi les mesures du PDL.
+
+Détail du flux, du quota et de la purge : [Architecture, PDL partagés](architecture.md#pdl-partagés-avec-ladmin).
+
 ### Consommation (kWh)
 
 | Aspect | Mode Serveur | Mode Client |
