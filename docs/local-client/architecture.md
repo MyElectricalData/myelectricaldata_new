@@ -169,6 +169,14 @@ bases :
 - **upserts** (`services/upsert.py`) : contrainte nommée en PostgreSQL ; colonnes en SQLite, avec un
   index unique partiel `WHERE interval_start IS NULL` pour les lignes quotidiennes, à la place de
   `NULLS NOT DISTINCT` ;
+- **PostgreSQL antérieur à 15** (MED-103, issue #201) : `NULLS NOT DISTINCT` n'existe pas, la contrainte
+  `uq_<table>` reste un `UNIQUE` simple et ne bloque pas les lignes quotidiennes (`interval_start` NULL).
+  Deux synchronisations simultanées doublaient alors les journées, d'où des consommations annuelles x2.
+  La migration `b8d1f3a5c7e9` purge ces doublons (garde la ligne la plus récente) puis pose l'index unique
+  partiel `uq_<table>_daily`, comme en SQLite ; elle ne fait rien sous PostgreSQL 15+. Sans cible
+  d'upsert, la synchronisation remplace les journées sous un verrou transactionnel par table
+  (`pg_advisory_xact_lock`). En lecture, `_get_energy_data` ne rend qu'une ligne par `(date, interval_start)`,
+  la plus récente, ce qui protège aussi une base non encore migrée ;
 - **dates** : le type `TZDateTime` rend en SQLite des dates avec fuseau (UTC), comme PostgreSQL ;
 - **connexion** (`config/sqlite.py`) : journal WAL, `busy_timeout` de 30 s, clés étrangères actives.
 
