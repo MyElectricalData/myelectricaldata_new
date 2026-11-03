@@ -38,6 +38,8 @@ Page permettant de visualiser le **bilan énergétique** entre consommation et p
 
 - Au moins un PDL avec des données de **production** (directement ou via PDL lié)
 - Données de consommation et de production chargées en cache
+- Les PDL viennent de `useAllPdls` (PDL du compte **et** PDL partagés avec l'admin), pas de `pdlApi.list()` : un admin qui consulte le PDL partagé d'un utilisateur obtient donc le bilan, sans quoi la page annonçait « Aucun point de livraison avec production détecté » (MED-112). `useAllPdls` n'appelle `/admin/shared-pdls` qu'en mode serveur ; en mode client, les PDL partagés synchronisés sont déjà dans `/pdl`
+- Le Bilan ne charge aucune donnée lui-même : il relit le cache React Query rempli par les pages Consommation et Production (bouton « Récupérer »), y compris en impersonation. Le même correctif s'applique à Production, Consommation kWh et Euro
 
 ### Cartes de resume (FAIT)
 
