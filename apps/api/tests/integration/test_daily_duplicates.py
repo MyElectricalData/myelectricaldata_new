@@ -256,3 +256,61 @@ async def test_controle_sqlite_detaille_sans_doublon(session, monkeypatch, model
         for i in range(5)
         for slot, interval in enumerate(("00:00", "00:30"))
     ]
+
+
+
+def _bound_service(db: AsyncSession) -> SyncService:
+    """Service sur `db`, sans relire le mode quotidien déjà mis en cache par le process."""
+    service = SyncService.__new__(SyncService)
+    service.db = db
+    service.adapter = MagicMock()
+    return service
+
+
+@pytest.mark.parametrize("db_url", ["postgresql"], indirect=True)
+async def test_upserts_quotidiens_postgresql_index_partiel_sans_doublon(session, monkeypatch):
+    """PostgreSQL < 15 migré (b8d1f3a5c7e9) : ON CONFLICT vise l'index partiel uq_<table>_daily."""
+    await _use_postgres_plain_unique(session)
+    await session.execute(
+        text(
+            "CREATE UNIQUE INDEX uq_consumption_data_daily ON consumption_data "
+            "(usage_point_id, date, granularity) WHERE interval_start IS NULL"
+        )
+    )
+    await session.commit()
+    service = _sync_service(session, monkeypatch)
+    assert await service._daily_upsert_mode() == "index"
+
+    engine = session.bind
+    assert engine is not None
+    async with engine.connect() as first_conn, engine.connect() as second_conn:
+        async with AsyncSession(bind=first_conn) as first_db, AsyncSession(bind=second_conn) as second_db:
+            await asyncio.gather(
+                _bound_service(first_db)._upsert_energy_records(
+                    [_energy(START + timedelta(days=i), 12000 + i) for i in range(5)], ConsumptionData
+                ),
+                _bound_service(second_db)._upsert_energy_records(
+                    [_energy(START + timedelta(days=i), 12500 + i) for i in range(5)], ConsumptionData
+                ),
+            )
+    # Lot mixte : quotidiennes sur l'index partiel, détaillées sur la contrainte uq_consumption_data
+    await service._upsert_energy_records(
+        [_energy(START + timedelta(days=i), 13000 + i, interval) for i in range(5) for interval in (None, "00:00")],
+        ConsumptionData,
+    )
+
+    await _assert_five_daily_rows(session, ConsumptionData)
+    daily = (
+        await session.execute(
+            select(ConsumptionData.value)
+            .where(ConsumptionData.interval_start.is_(None))
+            .order_by(ConsumptionData.date)
+        )
+    ).scalars().all()
+    assert daily == [13000 + i for i in range(5)]
+    detailed = (
+        await session.execute(
+            select(func.count()).select_from(ConsumptionData).where(ConsumptionData.interval_start.is_not(None))
+        )
+    ).scalar_one()
+    assert detailed == 5

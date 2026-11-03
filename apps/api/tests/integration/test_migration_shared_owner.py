@@ -23,6 +23,17 @@ def _alembic(url: str, *args: str) -> subprocess.CompletedProcess:
     )
 
 
+
+def _head() -> str:
+    """Tête de la chaîne alembic : REVISION, ou une migration plus récente qui la suit."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(Config(str(API_DIR / "alembic.ini")))
+    head = script.get_current_head()
+    assert head is not None and REVISION in {rev.revision for rev in script.iterate_revisions(head, "base")}
+    return head
+
 def _columns(path: Path) -> set[str]:
     with sqlite3.connect(path) as conn:
         return {r[1] for r in conn.execute("PRAGMA table_info(pdls)")}
@@ -54,7 +65,7 @@ def test_upgrade_ajoute_les_colonnes_sans_perte(tmp_path):
     assert {"shared_owner_id", "shared_owner_email"} <= _columns(path)
     with sqlite3.connect(path) as conn:
         assert conn.execute("SELECT usage_point_id, shared_owner_id FROM pdls").fetchall() == [("11111111111111", None)]
-        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (REVISION,)
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (_head(),)
 
 
 def test_downgrade_puis_upgrade(tmp_path):
@@ -127,4 +138,4 @@ def test_postgresql_upgrade_downgrade(pg):
 
     assert _alembic(url, "upgrade", "head").returncode == 0
     assert sql(cols) == "shared_owner_email,shared_owner_id"
-    assert sql("SELECT version_num FROM alembic_version") == REVISION
+    assert sql("SELECT version_num FROM alembic_version") == _head()
