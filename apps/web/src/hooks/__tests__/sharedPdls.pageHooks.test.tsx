@@ -27,6 +27,8 @@ vi.mock('@/api/pdl', () => ({ pdlApi }))
 vi.mock('@/api/admin', () => ({ adminApi }))
 let isAdminMock = true
 vi.mock('@/hooks/usePermissions', () => ({ usePermissions: () => ({ isAdmin: () => isAdminMock }) }))
+let serverModeMock = true
+vi.mock('@/hooks/useAppMode', () => ({ useAppMode: () => ({ isServerMode: serverModeMock, isClientMode: !serverModeMock }) }))
 
 import { useProductionData } from '@/pages/Production/hooks/useProductionData'
 import { useConsumptionData } from '@/pages/ConsumptionKwh/hooks/useConsumptionData'
@@ -53,6 +55,7 @@ const wrapper = ({ children }: { children: ReactNode }) => {
 
 beforeEach(() => {
   isAdminMock = true
+  serverModeMock = true
   pdlApi.list.mockResolvedValue({ success: true, data: [pdl(OWN, 'uuid-own')] })
   adminApi.getAllSharedPdls.mockResolvedValue({
     success: true,

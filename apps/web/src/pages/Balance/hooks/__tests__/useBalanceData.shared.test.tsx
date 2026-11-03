@@ -11,6 +11,8 @@ import { useBalanceData } from '../useBalanceData'
 
 let isAdminMock = true
 vi.mock('@/hooks/usePermissions', () => ({ usePermissions: () => ({ isAdmin: () => isAdminMock }) }))
+let serverModeMock = true
+vi.mock('@/hooks/useAppMode', () => ({ useAppMode: () => ({ isServerMode: serverModeMock, isClientMode: !serverModeMock }) }))
 vi.mock('@/api/pdl', () => ({ pdlApi: { list: vi.fn() } }))
 vi.mock('@/api/admin', () => ({ adminApi: { getAllSharedPdls: vi.fn() } }))
 
@@ -46,6 +48,7 @@ const wrapper = ({ children }: { children: ReactNode }) => {
 
 beforeEach(() => {
   isAdminMock = true
+  serverModeMock = true
   vi.mocked(pdlApi.list).mockReset()
   vi.mocked(adminApi.getAllSharedPdls).mockReset()
   // Le compte admin n'a que son propre PDL de consommation, sans production
@@ -86,6 +89,19 @@ describe('useBalanceData : PDL partagés (admin)', () => {
 
   it('ne remonte que les PDL du compte pour un non-admin, sans appeler la route admin', async () => {
     isAdminMock = false
+    vi.mocked(pdlApi.list).mockResolvedValue({
+      success: true,
+      data: [pdl(OWN, 'uuid-own', { has_production: true })],
+    } as never)
+
+    const { result } = renderHook(() => useBalanceData(OWN, null), { wrapper })
+
+    await waitFor(() => expect(result.current.balancePdls.map((p) => p.usage_point_id)).toEqual([OWN]))
+    expect(adminApi.getAllSharedPdls).not.toHaveBeenCalled()
+  })
+
+  it("en mode client, l'admin local n'appelle pas /admin/shared-pdls (routeur absent) et lit sa liste locale", async () => {
+    serverModeMock = false
     vi.mocked(pdlApi.list).mockResolvedValue({
       success: true,
       data: [pdl(OWN, 'uuid-own', { has_production: true })],
