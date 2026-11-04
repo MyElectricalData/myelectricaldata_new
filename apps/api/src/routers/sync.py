@@ -75,7 +75,11 @@ async def list_shared_pdls(db: AsyncSession = Depends(get_db)) -> dict[str, Any]
     try:
         choices = await SyncService(db).list_shared_choices()
     except Exception as e:
-        logger.warning(f"[API] Liste des PDL partagés illisible : {e}")
+        if isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (401, 403):
+            # Cas normal d'un compte ordinaire : la passerelle ne partage des PDL qu'avec ses admins
+            logger.info("[API] PDL partagés : compte de la passerelle non administrateur, aucun PDL partagé à proposer")
+        else:
+            logger.warning(f"[API] Liste des PDL partagés illisible : {e}")
         raise _gateway_error(e) from e
     return {"success": True, "data": choices}
 
