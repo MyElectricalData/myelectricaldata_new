@@ -167,6 +167,7 @@ async def oauth_callback(
         logger.debug(f"[OAUTH CALLBACK] PDL(s) a creer: {pdl_ids} (total: {len(pdl_ids)})")
 
         created_count = 0
+        already_linked_count = 0
 
         # Create PDL only (token managed globally)
         logger.debug("[OAUTH CALLBACK] ===== TRAITEMENT DES PDL =====")
@@ -182,8 +183,16 @@ async def oauth_callback(
             result = await db.execute(select(PDL).where(PDL.usage_point_id == pdl_usage_point_id))
             existing_pdl = result.scalars().first()
 
+            if existing_pdl and existing_pdl.user_id == user_id:
+                # Déjà lié à ce compte : renouvellement du consentement, ou autorisation qui
+                # renvoie aussi les PDL déjà liés (#206). On le garde et on traite les autres :
+                # refuser ici faisait abandonner les nouveaux PDL de la même autorisation.
+                already_linked_count += 1
+                logger.info(f"[OAUTH CALLBACK] PDL {pdl_usage_point_id} deja lie a ce compte - conserve")
+                continue
+
             if existing_pdl:
-                # PDL already exists - reject via consent flow
+                # PDL d'un autre compte - refus via le consentement
                 # Admin must use the manual "Add PDL (admin)" button instead
                 logger.warning(f"[OAUTH CALLBACK] PDL {pdl_usage_point_id} existe deja (user_id: {existing_pdl.user_id}) - refuse")
                 return RedirectResponse(
@@ -226,6 +235,8 @@ async def oauth_callback(
         logger.info(
             f"[OAUTH CALLBACK] Redirection vers: {frontend_url}?consent_success=true&pdl_count={len(usage_points_list)}&created_count={created_count}"
         )
+        if already_linked_count:
+            logger.info(f"[OAUTH CALLBACK] {already_linked_count} PDL deja lie(s) a ce compte, conserve(s)")
         logger.info("=" * 60)
         return RedirectResponse(
             url=f"{frontend_url}?consent_success=true&pdl_count={len(usage_points_list)}&created_count={created_count}"
