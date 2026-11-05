@@ -338,6 +338,10 @@ export default function HomeAssistant() {
   const [entityPrefix, setEntityPrefix] = useState(runtimeDefaults.entityPrefix)
   const [discoveryPrefix, setDiscoveryPrefix] = useState(runtimeDefaults.discoveryPrefix)
   const [entityLanguage, setEntityLanguage] = useState<'fr' | 'en'>('fr')
+  // Groupes de capteurs facultatifs (issue #209) : décochés = entités non créées et retirées de Home Assistant
+  const [exportRteTempo, setExportRteTempo] = useState(true)
+  const [exportEdfTempo, setExportEdfTempo] = useState(true)
+  const [exportZenFlex, setExportZenFlex] = useState(true)
 
   // WebSocket API config
   const [haUrl, setHaUrl] = useState(runtimeDefaults.haUrl)
@@ -455,6 +459,9 @@ export default function HomeAssistant() {
         setEntityPrefix(cfg.entity_prefix || 'myelectricaldata')
         setDiscoveryPrefix(cfg.discovery_prefix || 'homeassistant')
         setEntityLanguage(cfg.entity_language === 'en' ? 'en' : 'fr')
+        setExportRteTempo(cfg.export_rte_tempo ?? true)
+        setExportEdfTempo(cfg.export_edf_tempo ?? true)
+        setExportZenFlex(cfg.export_zen_flex ?? true)
         setMqttExportEnabled(cfg.mqtt_enabled ?? true)
 
         // WebSocket config
@@ -488,6 +495,9 @@ export default function HomeAssistant() {
         entity_prefix: entityPrefix,
         discovery_prefix: discoveryPrefix,
         entity_language: entityLanguage,
+        export_rte_tempo: exportRteTempo,
+        export_edf_tempo: exportEdfTempo,
+        export_zen_flex: exportZenFlex,
         mqtt_enabled: mqttExportEnabled,
         // WebSocket API config
         ha_url: haUrl,
@@ -898,6 +908,61 @@ export default function HomeAssistant() {
                     </p>
                   </div>
               </div>
+
+                {/* Groupes de capteurs facultatifs (issue #209) */}
+                <div className="mt-6">
+                  <p className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Capteurs à créer
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                    Décochez les groupes qui ne servent pas à votre contrat (par exemple Tempo et Zen Flex en heures
+                    creuses / heures pleines). Au prochain export, leurs entités sont supprimées de Home Assistant et ne
+                    sont plus enregistrées dans son historique. Recochez pour les recréer.
+                  </p>
+                  <div className="space-y-3">
+                    {[
+                      {
+                        id: 'export-rte-tempo',
+                        checked: exportRteTempo,
+                        set: setExportRteTempo,
+                        label: 'RTE Tempo',
+                        help: `Couleur du jour et du lendemain : sensor.${entityPrefix || 'myelectricaldata'}_tempo_today, _tempo_tomorrow`,
+                      },
+                      {
+                        id: 'export-edf-tempo',
+                        checked: exportEdfTempo,
+                        set: setExportEdfTempo,
+                        label: 'EDF Tempo',
+                        help: `Jours restants par couleur et prix du kWh Tempo : sensor.${entityPrefix || 'myelectricaldata'}_tempo_info, _tempo_days_*, _tempo_price_*`,
+                      },
+                      {
+                        id: 'export-zen-flex',
+                        checked: exportZenFlex,
+                        set: setExportZenFlex,
+                        label: 'EDF Zen Flex',
+                        help: `Jour Éco, Sobriété ou Bonus : sensor.${entityPrefix || 'myelectricaldata'}_zen_flex_today, _zen_flex_tomorrow`,
+                      },
+                    ].map((group) => (
+                      <div key={group.id} className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          id={group.id}
+                          checked={group.checked}
+                          onChange={(e) => group.set(e.target.checked)}
+                          className="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                        />
+                        <label htmlFor={group.id} className="text-sm text-gray-700 dark:text-gray-300">
+                          {group.label}
+                          <span className="block text-xs text-gray-500 dark:text-gray-400 break-all">{group.help}</span>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
+                    Les cartes qui affichent la couleur ou les prix Tempo (Carte Enedis Linky, cartes Tempo…) peuvent
+                    avoir besoin de RTE Tempo et EDF Tempo : laissez-les cochés si vous les utilisez.
+                  </p>
+                </div>
             </div>
 
             {/* WebSocket API Configuration - Pour le tableau Énergie */}
