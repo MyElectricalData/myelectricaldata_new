@@ -62,8 +62,26 @@ Dans l'interface web : **Exporter** > **Home Assistant**.
 | `discovery_prefix` | `homeassistant` | Préfixe de discovery de **votre** intégration MQTT |
 | `entity_prefix` | `myelectricaldata` | Préfixe des topics, `unique_id` et `entity_id` suggérés (minuscules, chiffres et `_`). Permet à deux instances de publier sur le même Home Assistant ; le changer crée de nouvelles entités, sans l'historique des anciennes |
 | `entity_language` | `fr` | Langue des noms affichés des entités : `fr` (« Consommation », « Prix bleu HC », « Infos Tempo »…) ou `en` (noms historiques : « consumption », « Price Blue HC », « Tempo Info »…). Seuls les noms changent : `unique_id`, `entity_id` et états restent identiques, les cartes et automatisations continuent de fonctionner. Un nom renommé dans Home Assistant reste prioritaire |
+| `export_rte_tempo` | `true` | Capteurs **RTE Tempo** : couleur du jour et du lendemain (`tempo_today`, `tempo_tomorrow`). Case « RTE Tempo » de la page |
+| `export_edf_tempo` | `true` | Capteurs **EDF Tempo** : jours restants et prix du kWh (`tempo_info`, `tempo_days_*`, `tempo_price_*`). Case « EDF Tempo » |
+| `export_zen_flex` | `true` | Capteurs **EDF Zen Flex** : jour Éco, Sobriété ou Bonus (`zen_flex_today`, `zen_flex_tomorrow`). Case « EDF Zen Flex » |
 | `ha_url`, `ha_token` | | Home Assistant et token, pour les statistiques |
 | `statistic_id_prefix` | `myelectricaldata` | Préfixe des statistiques du panneau Énergie |
+
+### Capteurs à créer (Tempo, Zen Flex)
+
+Les groupes **RTE Tempo**, **EDF Tempo** et **EDF Zen Flex** se décochent dans **Exporter** >
+**Home Assistant** > **Capteurs à créer** (options `export_rte_tempo`, `export_edf_tempo`,
+`export_zen_flex`). Avec un contrat Base ou heures creuses / heures pleines, ils ne servent à rien.
+
+Au prochain export, l'export publie une configuration de découverte vide pour chaque capteur du groupe
+décoché : Home Assistant supprime les entités, qui ne sont plus enregistrées dans son historique (inutile
+de les exclure du `recorder`). Les topics d'état et d'attributs sont vidés aussi. Recocher un groupe
+recrée ses entités au prochain export, avec les mêmes `entity_id`.
+
+Les options sont activées par défaut : une installation existante continue de tout exporter. Les
+capteurs EcoWatt et Linky ne sont pas concernés. Les cartes qui affichent la couleur ou les prix Tempo
+peuvent avoir besoin des groupes Tempo.
 
 ### Préfixe de discovery personnalisé
 
