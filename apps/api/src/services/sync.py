@@ -51,6 +51,13 @@ METADATA_REFRESH_HOURS = 24
 DAILY_REFRESH_WINDOW_DAYS = 2
 DAILY_REFRESH_INTERVAL = timedelta(hours=6)
 
+# Courbe de charge non souscrite chez Enedis pour une période (ADAM-ERR0191) : par exemple la
+# production d'un contrat en revente totale, où Enedis ne collecte que l'index quotidien. Les
+# semaines antérieures ne sont plus redemandées pendant NO_SERVICE_RETRY (quota de la passerelle).
+NO_SERVICE_CODE = "ADAM-ERR0191"
+NO_SERVICE_MARKER = "Courbe de charge non souscrite chez Enedis avant le "
+NO_SERVICE_RETRY = timedelta(days=7)
+
 
 def _parse_iso_date(value: Any) -> date | None:
     """Date ISO de la passerelle ("2026-01-10" ou "2026-01-10T00:00:00+01:00"), None si illisible"""
@@ -70,6 +77,22 @@ def _normalize_utc(ts: datetime | None) -> datetime | None:
     if ts.tzinfo is None:
         return ts.replace(tzinfo=UTC)
     return ts.astimezone(UTC)
+
+
+def _is_no_service(response: Any) -> bool:
+    """Réponse de la passerelle « aucun service souscrit ACCES à la donnée » (ADAM-ERR0191)"""
+    return isinstance(response, dict) and NO_SERVICE_CODE in str(response.get("error") or "")
+
+
+def _no_service_before(sync_status: Any, now: datetime) -> date | None:
+    """Date avant laquelle la courbe de charge n'est pas souscrite, mémorisée depuis moins de NO_SERVICE_RETRY"""
+    message = sync_status.error_message or ""
+    if not message.startswith(NO_SERVICE_MARKER):
+        return None
+    seen = _normalize_utc(sync_status.last_error_at)
+    if seen is None or now - seen >= NO_SERVICE_RETRY:
+        return None
+    return _parse_iso_date(message[len(NO_SERVICE_MARKER):])
 
 
 def _next_midnight_utc() -> datetime:
@@ -1036,6 +1059,13 @@ class SyncService:
         end_date = date.today()
         start_date = await self._sync_start(usage_point_id, data_type, end_date - timedelta(days=max_days), end_date)
 
+        # Courbe de charge non souscrite avant une date (ADAM-ERR0191, mémorisé) : ne pas redemander avant
+        no_service_before = (
+            _no_service_before(sync_status, datetime.now(UTC)) if granularity == DataGranularity.DETAILED else None
+        )
+        if no_service_before and no_service_before > start_date:
+            start_date = min(no_service_before, end_date)
+
         # Détecter les trous dans la base locale (et redemander J-2/J-1 en quotidien, corrigés par Enedis)
         force_refresh_from = (
             self._force_refresh_from(sync_status, start_date, end_date)
@@ -1070,58 +1100,71 @@ class SyncService:
         try:
             chunk_size = 7 if granularity == DataGranularity.DETAILED else 365
 
+            # Découper chaque plage manquante en chunks compatibles API
+            chunks: list[tuple[date, date]] = []
             for range_start, range_end in missing_ranges:
-                if rate_limit_error:
-                    break
-                # Découper chaque plage manquante en chunks compatibles API
                 current_start = range_start
                 while current_start < range_end:
-                    current_end = min(
-                        current_start + timedelta(days=chunk_size),
-                        range_end,
+                    current_end = min(current_start + timedelta(days=chunk_size), range_end)
+                    chunks.append((current_start, current_end))
+                    current_start = current_end
+            if granularity == DataGranularity.DETAILED:
+                # Du plus récent au plus ancien : une courbe souscrite récemment arrive d'abord, et la
+                # première semaine sans service (ADAM-ERR0191) arrête la remontée vers le passé
+                chunks.reverse()
+
+            for current_start, current_end in chunks:
+                try:
+                    response = await fetch_func(
+                        usage_point_id,
+                        current_start.isoformat(),
+                        current_end.isoformat(),
                     )
 
-                    try:
-                        response = await fetch_func(
-                            usage_point_id,
-                            current_start.isoformat(),
-                            current_end.isoformat(),
-                        )
-
-                        if isinstance(response, dict) and (
-                            response.get("success") is False or response.get("data") is None
-                        ):
-                            logger.warning(
-                                f"[SYNC] Passerelle sans données pour {usage_point_id} "
-                                f"({current_start} - {current_end}): error={response.get('error')}"
-                            )
-
-                        # Parse and store data
-                        records = self._parse_meter_reading(
-                            response, usage_point_id, granularity
-                        )
-                        if records:
-                            await self._upsert_energy_records(records, model_class)
-                            total_synced += len(records)
-
-                    except RateLimitExceededError as e:
-                        await self.db.rollback()
-                        rate_limit_error = e
+                    if isinstance(response, dict) and (
+                        response.get("success") is False or response.get("data") is None
+                    ):
                         logger.warning(
-                            f"[SYNC] Quota Enedis/passerelle atteint pour {usage_point_id} "
-                            f"({data_type}/{granularity.value}) : {e}. Reprise programmée après minuit UTC."
+                            f"[SYNC] Passerelle sans données pour {usage_point_id} "
+                            f"({current_start} - {current_end}): error={response.get('error')}"
                         )
-                        errors.append(str(e))
+
+                    if granularity == DataGranularity.DETAILED and _is_no_service(response):
+                        # Aucune courbe de charge souscrite jusqu'à cette semaine : les semaines plus
+                        # anciennes ne le sont pas non plus, inutile de les demander
+                        no_service_before = current_end
+                        sync_status.last_error_at = datetime.now(UTC)
+                        logger.warning(
+                            f"[SYNC] {data_type}/{granularity.value} pour {usage_point_id} : courbe de charge "
+                            f"non souscrite chez Enedis avant le {current_end} ({NO_SERVICE_CODE}). "
+                            f"Semaines antérieures ignorées pendant {NO_SERVICE_RETRY.days} jours."
+                        )
                         break
-                    except Exception as e:
-                        await self.db.rollback()
-                        logger.warning(
-                            f"[SYNC] Erreur fetch {data_type}/{granularity.value} "
-                            f"pour {usage_point_id} ({current_start} - {current_end}): {e}"
-                        )
-                        errors.append(str(e))
 
-                    current_start = current_end
+                    # Parse and store data
+                    records = self._parse_meter_reading(
+                        response, usage_point_id, granularity
+                    )
+                    if records:
+                        await self._upsert_energy_records(records, model_class)
+                        total_synced += len(records)
+
+                except RateLimitExceededError as e:
+                    await self.db.rollback()
+                    rate_limit_error = e
+                    logger.warning(
+                        f"[SYNC] Quota Enedis/passerelle atteint pour {usage_point_id} "
+                        f"({data_type}/{granularity.value}) : {e}. Reprise programmée après minuit UTC."
+                    )
+                    errors.append(str(e))
+                    break
+                except Exception as e:
+                    await self.db.rollback()
+                    logger.warning(
+                        f"[SYNC] Erreur fetch {data_type}/{granularity.value} "
+                        f"pour {usage_point_id} ({current_start} - {current_end}): {e}"
+                    )
+                    errors.append(str(e))
 
             # Update sync status
             if rate_limit_error:
@@ -1136,6 +1179,11 @@ class SyncService:
                 sync_status.status = SyncStatusType.SUCCESS
                 sync_status.error_message = None
                 sync_status.next_sync_at = datetime.now(UTC) + timedelta(minutes=30)
+            if no_service_before:
+                # Mémorisé dans le message (pas de migration) ; last_error_at date la constatation
+                sync_status.error_message = f"{NO_SERVICE_MARKER}{no_service_before.isoformat()}" + (
+                    f" ; {sync_status.error_message}" if sync_status.error_message else ""
+                )
 
             sync_status.error_count = (sync_status.error_count or 0) + len(errors)
             sync_status.records_synced_last_run = total_synced
