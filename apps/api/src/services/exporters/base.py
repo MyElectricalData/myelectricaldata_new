@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .tariff import (
+    DEFAULT_OFFPEAK_RANGES,
     ZEN_FLEX_OFFPEAK_RANGES,
     TariffProfile,
     hp_hc_window_start,
@@ -114,6 +115,10 @@ class BaseExporter(ABC):
         - Offre choisie EDF Zen Flex : plages HC de la grille fournisseur (hc_schedules de l'offre,
           sinon 13h-18h et 20h-8h), pas celles du contrat Enedis, et profil HC/HP quelle que soit
           l'option du PDL (le week-end Zen Flex a aussi ses heures pleines).
+        - PDL sans option fournisseur (la passerelle n'en donne pas) : le type de l'offre choisie
+          dans le client (TEMPO, HC_HP…) passe avant le code d'acheminement du contrat, sinon le PDL
+          serait exporté en BASE (HC, HP et coûts à -1).
+        - Tempo sans plage HC connue : 22h-6h, les heures creuses de l'option Tempo.
 
         Returns:
             Tuple (profil tarifaire, plages HC en minutes, subscribed_power_kva)
@@ -150,6 +155,8 @@ class BaseExporter(ABC):
                 )
             )
             offer = result.first()
+            if offer and offer.offer_type and not (pdl_data and pdl_data.pricing_option):
+                profile = tariff_profile(offer.offer_type)
             if offer and is_zen_flex_offer(offer.offer_type, offer.name):
                 offpeak_ranges = parse_offpeak_ranges(offer.hc_schedules)
                 if not offpeak_ranges:
@@ -157,6 +164,9 @@ class BaseExporter(ABC):
                         logger.warning(f"[EXPORT] PDL {pdl} : hc_schedules illisible ({offer.hc_schedules!r}), grille Zen Flex EDF")
                     offpeak_ranges = ZEN_FLEX_OFFPEAK_RANGES
                 profile = tariff_profile("ZEN_FLEX")
+
+        if profile.family == "TEMPO" and not offpeak_ranges:
+            offpeak_ranges = list(DEFAULT_OFFPEAK_RANGES)
 
         return profile, offpeak_ranges, subscribed_power
 
