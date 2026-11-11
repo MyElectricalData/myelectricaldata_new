@@ -342,3 +342,23 @@ def test_summarize_hp_hc_kwh_odd_ranges() -> None:
 )
 def test_infer_interval_minutes(starts: list, expected: int) -> None:
     assert infer_interval_minutes(starts) == expected
+
+
+def test_slot_wh_selon_le_pas_de_la_courbe():
+    """Puissance moyenne (W) × durée du créneau : 1 000 W pendant 30 / 15 / 10 min"""
+    from src.services.exporters.tariff import slot_wh
+
+    assert slot_wh(1000, 30) == 500
+    assert slot_wh(1000, 15) == 250
+    assert slot_wh(1000, 10) == pytest.approx(166.667, rel=1e-3)
+    assert slot_wh(1000, 0) == 500  # pas inconnu : 30 min
+
+
+def test_journee_au_pas_de_15_min_non_doublee():
+    """Courbe au pas de 15 min, 1 000 W toute la journée : 24 kWh, pas 48 (#13 content-card-linky-new)"""
+    from src.services.exporters.tariff import infer_interval_minutes, slot_wh
+
+    starts = [f"{m // 60:02d}:{m % 60:02d}" for m in range(0, 1440, 15)]
+    slot = infer_interval_minutes(starts)
+    assert slot == 15
+    assert sum(slot_wh(1000, slot) for _ in starts) == 24000

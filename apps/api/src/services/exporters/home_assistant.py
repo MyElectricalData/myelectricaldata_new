@@ -55,6 +55,7 @@ from .tariff import (
     is_zen_flex_offer,
     offpeak_fraction,
     offpeak_slot_fraction,
+    slot_wh,
     tariff_profile,
 )
 
@@ -1492,7 +1493,15 @@ class HomeAssistantExporter(BaseExporter):
 
         # Grouper les données détaillées par jour
         detailed_by_day: dict[date, list[tuple[str | None, int]]] = defaultdict(list)
+        seen_slots: set[tuple[date, str]] = set()
         for d, interval_start, value in detailed_records:
+            # Un même créneau enregistré sous deux écritures ("08:00" et "08:00:00", relevés v5 puis
+            # Data Connect 2026) n'est compté qu'une fois : sinon HC + HP valent le double du total
+            if interval_start:
+                slot = ":".join(part.zfill(2) for part in interval_start.split(":")[:2])
+                if (d, slot) in seen_slots:
+                    continue
+                seen_slots.add((d, slot))
             detailed_by_day[d].append((interval_start, value))
 
         has_detailed = len(detailed_records) > 0
@@ -1515,9 +1524,9 @@ class HomeAssistantExporter(BaseExporter):
             max_time: str | None = None
 
             for interval_start, value in intervals:
-                # Les valeurs DETAILED sont en W (puissance moyenne sur 30min)
-                # Énergie sur 30min = W / 2 pour obtenir des Wh
-                wh = value / 2
+                # Les valeurs DETAILED sont en W (puissance moyenne sur le créneau) :
+                # énergie = W × durée du créneau (30 min : W / 2, 15 min : W / 4, 10 min : W / 6)
+                wh = slot_wh(value, slot_minutes)
 
                 # HP/HC, au prorata des minutes si une plage HC commence ou finit dans le créneau
                 fraction = (
