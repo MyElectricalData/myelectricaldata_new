@@ -34,6 +34,8 @@ export function EuroCostCards({ yearlyCosts, selectedOffer, isLoading }: EuroCos
         year: year.year,
         periodLabel: year.periodLabel,
         totalCost: year.totalCost,
+        days: year.days,
+        avgDailyCost: year.avgDailyCost,
         avgMonthlyCost: year.avgMonthlyCost,
         consumptionCost: year.consumptionCost,
         subscriptionCost: year.subscriptionCost,
@@ -131,11 +133,16 @@ export function EuroCostCards({ yearlyCosts, selectedOffer, isLoading }: EuroCos
             {formatCurrency(currentYear.avgMonthlyCost)}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Sur {currentYear.months.length} mois
+            Sur {currentYear.days} jours ({(currentYear.days / (365.25 / 12)).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} mois)
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            ≈ {formatCurrency(currentYear.avgMonthlyCost / 30)}/jour
+            ≈ {formatCurrency(currentYear.avgDailyCost)}/jour
           </div>
+          {currentYear.days >= 300 && (
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Mensualisé en 11 prélèvements : ≈ {formatCurrency((currentYear.avgDailyCost * 365.25) / 11)}
+            </div>
+          )}
         </div>
 
         {/* Consumption Cost Breakdown */}
