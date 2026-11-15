@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.15.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.15.1...2.15.2) (2026-11-15)
+
+### Bug Fixes
+
+* **api:** MED-115 / arrêt du batch de courbe de charge sur un refus Enedis 401, 403 ou 429 ([6f0b583](https://github.com/MyElectricalData/myelectricaldata_new/commit/6f0b58349f3a6ab64fb6546aa2a5095476b011d6))
+* **api:** MED-115 / pas de repli v5 sur un refus d'accès ou de quota Enedis ([351cd5c](https://github.com/MyElectricalData/myelectricaldata_new/commit/351cd5cdecadb9c8232f9fa7d9448254f6d4845d))
+* **api:** MED-115 / pool PostgreSQL dimensionné et transaction du jeton libérée ([fd158f1](https://github.com/MyElectricalData/myelectricaldata_new/commit/fd158f139f6ff36fa0e5e75aef852af3ac4dfba9))
+
 ## [2.15.1](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.15.0...2.15.1) (2026-11-03)
 
 ### Bug Fixes
