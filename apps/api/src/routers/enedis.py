@@ -288,6 +288,41 @@ def enedis_error_code(error: BaseException) -> str | None:
     return None
 
 
+# Refus d'accès ou de quota d'Enedis (MED-115) : ils visent le PDL ou le client_id partagé de la passerelle,
+# pas une date. Insister semaine après semaine ne fait que consommer le quota commun.
+ENEDIS_REFUSAL_STATUSES = frozenset({401, 403, 429})
+
+
+def enedis_refusal_status(error: BaseException) -> int | None:
+    """Statut 401, 403 ou 429 du refus Enedis levé tel quel ou en cause du ValueError de l'adaptateur, None sinon."""
+    current: BaseException | None = error
+    while current is not None:
+        if isinstance(current, httpx.HTTPStatusError):
+            status = current.response.status_code
+            return status if status in ENEDIS_REFUSAL_STATUSES else None
+        current = current.__cause__
+    return None
+
+
+def enedis_refusal_error(status: int, cached_count: int = 0) -> ErrorDetail:
+    """Erreur rendue au client quand un batch s'arrête sur un refus Enedis (MED-115).
+
+    Sans aucune mesure : ENEDIS_RATE_LIMITED (429) ou ENEDIS_ACCESS_DENIED (401, 403), distincts de
+    NO_DATA (rien avant la mise en service) et de RATE_LIMIT_EXCEEDED (quota de la passerelle). Avec des
+    mesures en cache : PARTIAL_DATA, comme les autres réponses partielles.
+    """
+    if cached_count:
+        return ErrorDetail(
+            code="PARTIAL_DATA",
+            message=f"Enedis refused the request (HTTP {status}). Returning {cached_count} cached readings only.",
+        )
+    if status == 429:
+        return ErrorDetail(code="ENEDIS_RATE_LIMITED", message="Enedis rate limit reached (HTTP 429). Try again later.")
+    return ErrorDetail(
+        code="ENEDIS_ACCESS_DENIED", message=f"Enedis denied access to this usage point (HTTP {status})."
+    )
+
+
 def range_error_key(key_prefix: str, usage_point_id: str, start: str, end: str) -> str:
     """Cache négatif d'une plage rejetée par Enedis (ADAM-ERR0123, refus 400), valable pour cette plage EXACTE.
 
@@ -566,7 +601,27 @@ def make_token_error_response(error: TokenError) -> APIResponse:
 
 
 async def get_valid_token(usage_point_id: str, user: User, db: AsyncSession) -> str | TokenError:
-    """Get valid Client Credentials token for Enedis API. Returns access_token string or TokenError."""
+    """Get valid Client Credentials token for Enedis API. Returns access_token string or TokenError.
+
+    Termine la transaction de lecture avant de rendre la main (MED-115) : les appelants enchaînent
+    ensuite des appels Enedis de plusieurs minutes, pendant lesquels la connexion restait
+    « idle in transaction » et immobilisait une place du pool PostgreSQL.
+    """
+    try:
+        token = await _resolve_valid_token(usage_point_id, user, db)
+    except Exception:
+        if db.in_transaction():
+            await db.rollback()
+        raise
+    if db.in_transaction():
+        # Rien d'écrit à ce stade (le renouvellement a déjà commité) : commit plutôt que rollback,
+        # qui expirerait les objets chargés (user) et forcerait un rechargement paresseux en async.
+        await db.commit()
+    return token
+
+
+async def _resolve_valid_token(usage_point_id: str, user: User, db: AsyncSession) -> str | TokenError:
+    """Vérifier le PDL puis lire, ou renouveler, le jeton client credentials global."""
     # Skip token validation for demo users
     if await demo_adapter.is_demo_user(user.email):
         logger.info(f"[DEMO MODE] Skipping token validation for demo user {user.email}")
@@ -1372,6 +1427,7 @@ async def get_consumption_detail_batch(
     all_readings = []
     fetched_count = 0
     error_encountered = False
+    enedis_refusal: int | None = None  # MED-115 : statut du refus Enedis qui arrête tout le batch
 
     for chunk_idx, (chunk_start, chunk_end) in enumerate(week_chunks):
         try:
@@ -1466,6 +1522,13 @@ async def get_consumption_detail_batch(
                     error_msg = str(e)
                     log_with_pdl("error", usage_point_id, f"[BATCH ERROR] Failed to fetch {current_start_str} to {fetch_end}: {e}")
 
+                    # Refus d'accès ou de quota (MED-115) : il vaut pour toutes les semaines restantes,
+                    # sans rapport avec la date demandée, donc ni compteur d'échec ni blacklist.
+                    refusal = enedis_refusal_status(e)
+                    if refusal is not None:
+                        enedis_refusal = refusal
+                        break
+
                     # Check if this is a no_data_found error - blacklist entire period immediately
                     if "no_data_found" in error_msg:
                         log_with_pdl("warning", usage_point_id, f"[BATCH BLACKLIST] no_data_found for {current_start_str} to {fetch_end}, blacklisting entire period")
@@ -1492,6 +1555,16 @@ async def get_consumption_detail_batch(
                     # Try next day
                     current_start += timedelta(days=1)
                     retry_count += 1
+
+            if enedis_refusal is not None:
+                log_with_pdl(
+                    "warning",
+                    usage_point_id,
+                    f"[BATCH STOP] Enedis refused (HTTP {enedis_refusal}): batch stopped, "
+                    f"{len(week_chunks) - chunk_idx - 1} remaining chunk(s) not requested",
+                )
+                error_encountered = True
+                break
 
             # If we exhausted all retries, log and continue to next chunk
             if retry_count >= max_retries:
@@ -1560,6 +1633,15 @@ async def get_consumption_detail_batch(
     all_readings.sort(key=lambda x: x.get("d", ""))
 
     log_if_debug(effective_user, "info", f"[BATCH COMPLETE] Total readings: {len(all_readings)}, Fetched chunks: {fetched_count}/{len(week_chunks)}", pdl=usage_point_id)
+
+    if enedis_refusal is not None:
+        if not all_readings:
+            return APIResponse(success=False, error=enedis_refusal_error(enedis_refusal))
+        return APIResponse(
+            success=True,
+            data=_load_curve(usage_point_id, start, end, all_readings, "CONS"),
+            error=enedis_refusal_error(enedis_refusal, len(all_readings)),
+        )
 
     if not all_readings:
         return APIResponse(
@@ -2120,6 +2202,7 @@ async def get_production_detail_batch(
     all_readings = []
     fetched_count = 0
     error_encountered = False
+    enedis_refusal: int | None = None  # MED-115 : statut du refus Enedis qui arrête tout le batch
 
     for chunk_idx, (chunk_start, chunk_end) in enumerate(week_chunks):
         try:
@@ -2214,6 +2297,13 @@ async def get_production_detail_batch(
                     error_msg = str(e)
                     log_with_pdl("error", usage_point_id, f"[BATCH PRODUCTION ERROR] Failed to fetch {current_start_str} to {fetch_end}: {e}")
 
+                    # Refus d'accès ou de quota (MED-115) : il vaut pour toutes les semaines restantes,
+                    # sans rapport avec la date demandée, donc ni compteur d'échec ni blacklist.
+                    refusal = enedis_refusal_status(e)
+                    if refusal is not None:
+                        enedis_refusal = refusal
+                        break
+
                     # Check if this is a no_data_found error - blacklist entire period immediately
                     if "no_data_found" in error_msg:
                         log_with_pdl("warning", usage_point_id, f"[BATCH PRODUCTION BLACKLIST] no_data_found for {current_start_str} to {fetch_end}, blacklisting entire period")
@@ -2240,6 +2330,16 @@ async def get_production_detail_batch(
                     # Try next day
                     current_start += timedelta(days=1)
                     retry_count += 1
+
+            if enedis_refusal is not None:
+                log_with_pdl(
+                    "warning",
+                    usage_point_id,
+                    f"[BATCH STOP] Enedis refused (HTTP {enedis_refusal}): batch stopped, "
+                    f"{len(week_chunks) - chunk_idx - 1} remaining chunk(s) not requested",
+                )
+                error_encountered = True
+                break
 
             # If we exhausted all retries, log and continue to next chunk
             if retry_count >= max_retries:
@@ -2309,6 +2409,15 @@ async def get_production_detail_batch(
     all_readings.sort(key=lambda x: x.get("d", ""))
 
     log_if_debug(effective_user, "info", f"[BATCH PRODUCTION COMPLETE] Total readings: {len(all_readings)}, Fetched chunks: {fetched_count}/{len(week_chunks)}", pdl=usage_point_id)
+
+    if enedis_refusal is not None:
+        if not all_readings:
+            return APIResponse(success=False, error=enedis_refusal_error(enedis_refusal))
+        return APIResponse(
+            success=True,
+            data=_load_curve(usage_point_id, start, end, all_readings, "PROD"),
+            error=enedis_refusal_error(enedis_refusal, len(all_readings)),
+        )
 
     if not all_readings:
         return APIResponse(

@@ -9,7 +9,17 @@ from ..config.sqlite import BUSY_TIMEOUT_MS, apply_sqlite_pragmas, is_sqlite_url
 def make_engine(url: str) -> AsyncEngine:
     """Moteur de la base : PostgreSQL tel quel, SQLite avec son dossier et ses PRAGMA (MED-65)."""
     if not is_sqlite_url(url):
-        return create_async_engine(url, echo=settings.DEBUG_SQL)
+        # Pool dimensionné explicitement (MED-115) : une attente de connexion courte échoue vite
+        # au lieu de bloquer 30 s, pre_ping écarte les connexions coupées par PostgreSQL.
+        return create_async_engine(
+            url,
+            echo=settings.DEBUG_SQL,
+            pool_size=settings.DB_POOL_SIZE,
+            max_overflow=settings.DB_MAX_OVERFLOW,
+            pool_timeout=settings.DB_POOL_TIMEOUT,
+            pool_recycle=settings.DB_POOL_RECYCLE,
+            pool_pre_ping=True,
+        )
     sqlite_engine = create_async_engine(
         url, echo=settings.DEBUG_SQL, connect_args={"timeout": BUSY_TIMEOUT_MS / 1000}
     )
