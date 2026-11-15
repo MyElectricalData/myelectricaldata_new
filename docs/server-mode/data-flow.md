@@ -150,8 +150,14 @@ GLOBAL CLIENT CREDENTIALS FLOW
    ├─ Query: pointId, dateDebut, dateFin (fin exclue)
    ├─ Header: Authorization: Bearer {access_token}
    └─ Returns: {idPrm, periode, grandeur: [{grandeurMetier, unite, points: [{v, d, p}]}]}
-   Mode auto : repli sur la v5 (metering_data_*) en cas d'erreur HTTP,
-   réponse convertie au format 2026 (adapters/enedis_format.py)
+   Mode auto : repli sur la v5 (metering_data_*) sur une erreur 5xx ou réseau seulement,
+   réponse convertie au format 2026 (adapters/enedis_format.py). Pas de repli sur 401,
+   403, 404 ni 429 : la v5 partage le client_id et le quota, la rejouer doublerait les
+   appels refusés (MED-115).
+   Batch /consumption/detail/batch et /production/detail/batch : le premier refus 401,
+   403 ou 429 arrête la boucle (ni compteur d'échec ni plage blacklistée). Réponse
+   PARTIAL_DATA avec les jours déjà en cache, sinon ENEDIS_RATE_LIMITED (429) ou
+   ENEDIS_ACCESS_DENIED (401/403).
 
 RATE LIMITING
 ├─ 5 requests/second (adapter level)
