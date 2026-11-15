@@ -63,6 +63,11 @@ def _without_identity(situations: Any) -> Any:
     ]
 
 
+
+# Statuts HTTP de l'API 2026 qui ne justifient pas de repli sur la v5 en mode auto (MED-115)
+_NO_FALLBACK_STATUSES = frozenset({401, 403, 404, 429})
+
+
 class EnedisAdapter:
     """Adapter for Enedis API with rate limiting"""
 
@@ -269,8 +274,9 @@ class EnedisAdapter:
         """Appelle l'API 2026 (`new`) ou la v5 (`legacy`) selon le mode.
 
         En mode auto, un échec HTTP de l'API 2026 retombe sur la v5, sauf 404 (pas de
-        mesure). Les erreurs métier rendues en dict (ADAM-ERR0123) ne déclenchent pas
-        de repli : la v5 répondrait la même chose.
+        mesure) et les refus d'accès ou de quota (401, 403, 429, MED-115) : même client_id,
+        même quota, la v5 répondrait pareil et doublerait les appels refusés. Les erreurs
+        métier rendues en dict (ADAM-ERR0123) ne déclenchent pas de repli non plus.
         """
         if self.api_mode == "legacy":
             return await legacy()
@@ -279,8 +285,9 @@ class EnedisAdapter:
         try:
             return await new()
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                # « Pas de mesure trouvée pour ce point » : la v5 n'en aurait pas davantage (quota)
+            if e.response.status_code in _NO_FALLBACK_STATUSES:
+                # 404 « pas de mesure » : la v5 n'en aurait pas davantage. 401/403/429 : refus
+                # d'accès ou de quota partagés par les deux API, le repli ne ferait que l'aggraver.
                 raise
             logger.warning(f"[ENEDIS] {label} : API 2026 en échec ({e}), repli sur la v5")
             return await legacy()
