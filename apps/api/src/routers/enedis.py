@@ -566,7 +566,27 @@ def make_token_error_response(error: TokenError) -> APIResponse:
 
 
 async def get_valid_token(usage_point_id: str, user: User, db: AsyncSession) -> str | TokenError:
-    """Get valid Client Credentials token for Enedis API. Returns access_token string or TokenError."""
+    """Get valid Client Credentials token for Enedis API. Returns access_token string or TokenError.
+
+    Termine la transaction de lecture avant de rendre la main (MED-115) : les appelants enchaînent
+    ensuite des appels Enedis de plusieurs minutes, pendant lesquels la connexion restait
+    « idle in transaction » et immobilisait une place du pool PostgreSQL.
+    """
+    try:
+        token = await _resolve_valid_token(usage_point_id, user, db)
+    except Exception:
+        if db.in_transaction():
+            await db.rollback()
+        raise
+    if db.in_transaction():
+        # Rien d'écrit à ce stade (le renouvellement a déjà commité) : commit plutôt que rollback,
+        # qui expirerait les objets chargés (user) et forcerait un rechargement paresseux en async.
+        await db.commit()
+    return token
+
+
+async def _resolve_valid_token(usage_point_id: str, user: User, db: AsyncSession) -> str | TokenError:
+    """Vérifier le PDL puis lire, ou renouveler, le jeton client credentials global."""
     # Skip token validation for demo users
     if await demo_adapter.is_demo_user(user.email):
         logger.info(f"[DEMO MODE] Skipping token validation for demo user {user.email}")

@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/myelectricaldata.db"
     POSTGRES_PASSWORD: str = "changeme"
+    # Pool PostgreSQL (MED-115) : les défauts SQLAlchemy (5 + 10, attente 30 s) saturaient en prod
+    # pendant les rattrapages d'historique et faisaient attendre les routes légères jusqu'au timeout.
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_TIMEOUT: float = 10.0
+    DB_POOL_RECYCLE: int = 1800
 
     @property
     def database_type(self) -> str:
