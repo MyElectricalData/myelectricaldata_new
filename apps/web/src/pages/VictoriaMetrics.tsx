@@ -61,6 +61,8 @@ export default function VictoriaMetrics() {
   const { data: configsResponse, isLoading } = useQuery({
     queryKey: ['export-configs'],
     queryFn: () => exportApi.listConfigs(),
+    // Toujours relue à l'ouverture de la page : la configuration peut avoir changé côté serveur
+    staleTime: 0,
   })
 
   // Find existing VictoriaMetrics config
