@@ -1856,7 +1856,8 @@ class HomeAssistantExporter(BaseExporter):
 
         logger.info(
             f"[HA-MQTT] Exported linky-card {direction} for {pdl}: "
-            f"yesterday={yesterday_kwh}kWh, {nb_days} days history"
+            f"yesterday={yesterday_kwh}kWh, {nb_days} days history, tarif={tariff_info.family}, "
+            f"plages HC={len(offpeak_ranges)}, courbe 30 min={'oui' if has_detailed else 'non'}"
         )
         return 1
 
