@@ -1455,6 +1455,14 @@ class HomeAssistantExporter(BaseExporter):
         tariff_info, offpeak_ranges, subscribed_power_kva = await self._get_pdl_contract_info(db, pdl)
         weekend_offpeak = tariff_info.weekend_offpeak
 
+        # Tempo : l'offre n'a ni hc_price ni hp_price mais 6 prix (couleur × HC/HP). Chaque demi-heure
+        # est comptée au prix de la couleur de son jour Tempo (6 h → 6 h), sinon les coûts restent à -1
+        tempo_prices: dict[str, float] = {}
+        if direction == "consumption" and tariff_info.family == "TEMPO":
+            prices = await self._get_pdl_prices(db, pdl)
+            if all(prices.get(f"{c}_{p}") for c in ("blue", "white", "red") for p in ("hc", "hp")):
+                tempo_prices = prices
+
         # =====================================================================
         # BATCH QUERIES (minimiser les allers-retours DB)
         # =====================================================================
@@ -1473,7 +1481,8 @@ class HomeAssistantExporter(BaseExporter):
         tempo_colors: dict[str, str] = {}
         result = await db.execute(
             select(TempoDay.id, TempoDay.color)
-            .where(TempoDay.id >= oldest_date.isoformat())
+            # La veille du premier jour aussi : de 0 h à 6 h, c'est sa couleur qui compte
+            .where(TempoDay.id >= (oldest_date - timedelta(days=1)).isoformat())
             .where(TempoDay.id <= max_date.isoformat())
         )
         for row in result.all():
@@ -1506,6 +1515,8 @@ class HomeAssistantExporter(BaseExporter):
         daily_mp: dict[date, float] = {}  # kW
         daily_mp_time: dict[date, str | None] = {}
         daily_mp_over: dict[date, bool] = {}
+        # Tempo : coûts HC et HP du jour (EUR), absents si une couleur Tempo du jour manque
+        daily_tempo_cost: dict[date, tuple[float, float]] = {}
 
         for day_date, intervals in detailed_by_day.items():
             hp_wh = 0
@@ -1513,6 +1524,9 @@ class HomeAssistantExporter(BaseExporter):
             slot_minutes = infer_interval_minutes(start for start, _ in intervals)
             max_power_kw = 0.0
             max_time: str | None = None
+            cost_hc_eur = 0.0
+            cost_hp_eur = 0.0
+            tempo_known = bool(tempo_prices) and has_offpeak
 
             for interval_start, value in intervals:
                 # Les valeurs DETAILED sont en W (puissance moyenne sur 30min)
@@ -1528,6 +1542,17 @@ class HomeAssistantExporter(BaseExporter):
                 hc_wh += wh * fraction
                 hp_wh += wh * (1 - fraction)
 
+                if tempo_known:
+                    # Jour Tempo de 6 h à 6 h : avant 6 h, la couleur est celle de la veille
+                    hour = int(interval_start[:2]) if interval_start and interval_start[:2].isdigit() else None
+                    tempo_day = day_date - timedelta(days=1) if hour is not None and hour < 6 else day_date
+                    color = tempo_colors.get(tempo_day.isoformat())
+                    if hour is None or not color:
+                        tempo_known = False
+                    else:
+                        cost_hc_eur += wh * fraction / 1000 * tempo_prices[f"{color.lower()}_hc"]
+                        cost_hp_eur += wh * (1 - fraction) / 1000 * tempo_prices[f"{color.lower()}_hp"]
+
                 # Puissance max (W → kW)
                 power_kw = value / 1000
                 if power_kw > max_power_kw:
@@ -1536,6 +1561,8 @@ class HomeAssistantExporter(BaseExporter):
 
             daily_hp[day_date] = int(hp_wh)
             daily_hc[day_date] = int(hc_wh)
+            if tempo_known:
+                daily_tempo_cost[day_date] = (cost_hc_eur, cost_hp_eur)
             daily_mp[day_date] = round(max_power_kw, 2)
             daily_mp_time[day_date] = max_time
             daily_mp_over[day_date] = (
@@ -1563,7 +1590,9 @@ class HomeAssistantExporter(BaseExporter):
             yesterday_hc_kwh = -1
 
         # Coût journalier (HC*prix_HC + HP*prix_HP si dispo, sinon total*prix_base)
-        if yesterday_hc_kwh != -1 and yesterday_hp_kwh != -1 and (kwh_price_hc > 0 or kwh_price_hp > 0):
+        if yesterday in daily_tempo_cost:
+            daily_cost = round(sum(daily_tempo_cost[yesterday]), 2)
+        elif yesterday_hc_kwh != -1 and yesterday_hp_kwh != -1 and (kwh_price_hc > 0 or kwh_price_hp > 0):
             daily_cost = round(yesterday_hc_kwh * kwh_price_hc + yesterday_hp_kwh * kwh_price_hp, 2)
         elif kwh_price > 0:
             daily_cost = round(yesterday_kwh * kwh_price, 2)
@@ -1720,23 +1749,26 @@ class HomeAssistantExporter(BaseExporter):
                 hc_kwh = round(daily_hc[day] / 1000, 2)
                 hc_newest.append(str(hc_kwh))
                 hp_newest.append(str(hp_kwh))
-                # Coûts HP/HC
-                if kwh_price_hc > 0:
-                    cost_hc_newest.append(str(round(hc_kwh * kwh_price_hc, 2)))
+                # Coûts HP/HC (-1 : prix inconnu)
+                cost_hc: float | None = None
+                cost_hp: float | None = None
+                day_cost: float | None = None
+                if day in daily_tempo_cost:
+                    # Tempo : prix de la couleur de chaque demi-heure
+                    cost_hc, cost_hp = daily_tempo_cost[day]
+                    day_cost = cost_hc + cost_hp
                 else:
-                    cost_hc_newest.append("-1")
-                if kwh_price_hp > 0:
-                    cost_hp_newest.append(str(round(hp_kwh * kwh_price_hp, 2)))
-                else:
-                    cost_hp_newest.append("-1")
-                # Coût total du jour (HC*prix_HC + HP*prix_HP)
-                if kwh_price_hc > 0 or kwh_price_hp > 0:
-                    day_cost = round(hc_kwh * kwh_price_hc + hp_kwh * kwh_price_hp, 2)
-                    costs_newest.append(str(day_cost))
-                elif kwh_price > 0:
-                    costs_newest.append(str(round(day_kwh * kwh_price, 2)))
-                else:
-                    costs_newest.append("-1")
+                    if kwh_price_hc > 0:
+                        cost_hc = hc_kwh * kwh_price_hc
+                    if kwh_price_hp > 0:
+                        cost_hp = hp_kwh * kwh_price_hp
+                    # Coût total du jour (HC*prix_HC + HP*prix_HP)
+                    if kwh_price_hc > 0 or kwh_price_hp > 0:
+                        day_cost = hc_kwh * kwh_price_hc + hp_kwh * kwh_price_hp
+                    elif kwh_price > 0:
+                        day_cost = day_kwh * kwh_price
+                for target, value in ((cost_hc_newest, cost_hc), (cost_hp_newest, cost_hp), (costs_newest, day_cost)):
+                    target.append(str(round(value, 2)) if value is not None else "-1")
             else:
                 hc_newest.append("-1")
                 hp_newest.append("-1")
