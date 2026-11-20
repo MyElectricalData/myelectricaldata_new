@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.15.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.15.2...2.15.3) (2026-11-20)
+
+### Bug Fixes
+
+* **api:** consentement accepté quand un PDL est déjà lié au même compte ([24e0f3a](https://github.com/MyElectricalData/myelectricaldata_new/commit/24e0f3a5b161df2c4bb107b99fb6c8f88d92b976)), closes [#206](https://github.com/MyElectricalData/myelectricaldata_new/issues/206)
+
 ## [2.15.2](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.15.1...2.15.2) (2026-11-15)
 
 ### Bug Fixes
