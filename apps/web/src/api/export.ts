@@ -25,6 +25,10 @@ export interface HomeAssistantConfig {
   discovery_prefix?: string
   // Langue des noms affichés des entités : 'fr' (défaut) ou 'en' (noms historiques)
   entity_language?: 'fr' | 'en'
+  // Groupes de capteurs facultatifs (issue #209) : false = entités non créées et retirées de Home Assistant
+  export_rte_tempo?: boolean
+  export_edf_tempo?: boolean
+  export_zen_flex?: boolean
   // WebSocket API mode (Energy Dashboard statistics)
   ha_url?: string
   ha_token?: string
