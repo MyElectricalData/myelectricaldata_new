@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.15.4](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.15.3...2.15.4) (2026-11-22)
+
+### Bug Fixes
+
+* **api:** 403 attendu sur /admin/shared-pdls journalisé en INFO ([a2eaab7](https://github.com/MyElectricalData/myelectricaldata_new/commit/a2eaab7695081bf8275cd3803df522834eefd2bc))
+* **api:** MED-120 / seul le 403 de /admin/shared-pdls reste attendu, un 401 reste en ERROR ([fe5f673](https://github.com/MyElectricalData/myelectricaldata_new/commit/fe5f673d10381c986a5b702f4438111fc05c4817)), closes [#207](https://github.com/MyElectricalData/myelectricaldata_new/issues/207)
+
 ## [2.15.3](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.15.2...2.15.3) (2026-11-20)
 
 ### Bug Fixes
