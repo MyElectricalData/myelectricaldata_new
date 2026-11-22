@@ -28,8 +28,8 @@ def _adapter(status: int) -> MyElectricalDataAdapter:
     return adapter
 
 
-@pytest.mark.parametrize("status", [401, 403])
-async def test_refus_des_partages_leve_sans_erreur_journalisee(caplog, status):
+async def test_refus_des_partages_leve_sans_erreur_journalisee(caplog):
+    status = 403
     adapter = _adapter(status)
     with caplog.at_level(logging.INFO, logger="src.adapters.myelectricaldata"):
         with pytest.raises(httpx.HTTPStatusError):
@@ -37,6 +37,17 @@ async def test_refus_des_partages_leve_sans_erreur_journalisee(caplog, status):
 
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
     assert any(f"HTTP {status}" in r.getMessage() for r in caplog.records)
+
+
+async def test_jeton_refuse_401_reste_en_error(caplog):
+    """Un 401 n'est pas « compte non admin » mais un jeton refusé : il reste une ERROR (MED-120)."""
+    adapter = _adapter(401)
+    with caplog.at_level(logging.INFO, logger="src.adapters.myelectricaldata"):
+        with pytest.raises(httpx.HTTPStatusError):
+            await adapter.get_shared_pdls()
+
+    assert any(r.levelno == logging.ERROR and "401" in r.getMessage() for r in caplog.records)
+    assert not any("réponse attendue" in r.getMessage() for r in caplog.records)
 
 
 async def test_autre_erreur_toujours_en_error(caplog):
@@ -63,6 +74,18 @@ async def test_route_compte_non_admin_en_info(caplog):
     assert exc.value.status_code == 403
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
     assert any("non administrateur" in r.getMessage() for r in caplog.records)
+
+
+async def test_route_jeton_refuse_401_toujours_signale(caplog):
+    """Le 401 garde sa réponse 403 (_gateway_error), mais n'est pas présenté comme un compte non admin."""
+    with patch.object(sync_router.SyncService, "list_shared_choices", AsyncMock(side_effect=_status_error(401))):
+        with caplog.at_level(logging.INFO, logger="src.routers.sync"):
+            with pytest.raises(HTTPException) as exc:
+                await sync_router.list_shared_pdls(db=None)  # type: ignore[arg-type]
+
+    assert exc.value.status_code == 403
+    assert any(r.levelno == logging.WARNING for r in caplog.records)
+    assert not any("non administrateur" in r.getMessage() for r in caplog.records)
 
 
 async def test_route_passerelle_injoignable_toujours_signalee(caplog):

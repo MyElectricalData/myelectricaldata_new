@@ -229,7 +229,7 @@ class MyElectricalDataAdapter:
         Chaque entrée porte owner_id et owner_email. Réservé aux comptes admin de la passerelle :
         un compte ordinaire reçoit un 403, levé tel quel (noté en INFO : c'est le cas normal).
         """
-        response = await self._make_request("GET", "/admin/shared-pdls", expected_statuses=frozenset({401, 403}))
+        response = await self._make_request("GET", "/admin/shared-pdls", expected_statuses=frozenset({403}))
         data = response.get("data") if response.get("success") else None
         pdls = data.get("pdls") if isinstance(data, dict) else None
         if not isinstance(pdls, list):
