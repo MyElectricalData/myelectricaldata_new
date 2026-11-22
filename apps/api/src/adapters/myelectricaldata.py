@@ -136,8 +136,13 @@ class MyElectricalDataAdapter:
         endpoint: str,
         params: Optional[dict[str, Any]] = None,
         json_data: Optional[dict[str, Any]] = None,
+        expected_statuses: frozenset[int] = frozenset(),
     ) -> dict[str, Any]:
-        """Make authenticated request to MyElectricalData API"""
+        """Make authenticated request to MyElectricalData API
+
+        expected_statuses : codes HTTP attendus pour cet appel (ex. 403 d'un compte non admin sur
+        /admin/shared-pdls). L'erreur est toujours levée, mais notée en INFO au lieu d'ERROR.
+        """
         access_token = await self._ensure_authenticated()
         headers = {**self._get_headers(access_token), **self._impersonation_headers(endpoint)}
 
@@ -177,6 +182,9 @@ class MyElectricalDataAdapter:
                     msg = e.response.text
                 raise RateLimitExceededError(message=f"Rate limit exceeded (HTTP 429): {msg}", retry_after=retry_after) from e
 
+            if e.response.status_code in expected_statuses:
+                logger.info(f"[MED] {method} {endpoint} : HTTP {e.response.status_code} (réponse attendue)")
+                raise
             logger.error(f"[MED] API error: {e.response.status_code}")
             logger.error(f"[MED] Response: {e.response.text}")
 
@@ -219,9 +227,9 @@ class MyElectricalDataAdapter:
         """PDL que des utilisateurs partagent avec l'admin (GET /admin/shared-pdls, MED-112).
 
         Chaque entrée porte owner_id et owner_email. Réservé aux comptes admin de la passerelle :
-        un compte ordinaire reçoit un 403, levé tel quel.
+        un compte ordinaire reçoit un 403, levé tel quel (noté en INFO : c'est le cas normal).
         """
-        response = await self._make_request("GET", "/admin/shared-pdls")
+        response = await self._make_request("GET", "/admin/shared-pdls", expected_statuses=frozenset({401, 403}))
         data = response.get("data") if response.get("success") else None
         pdls = data.get("pdls") if isinstance(data, dict) else None
         if not isinstance(pdls, list):
