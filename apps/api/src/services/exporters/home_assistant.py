@@ -1519,8 +1519,9 @@ class HomeAssistantExporter(BaseExporter):
         for day_date, intervals in detailed_by_day.items():
             hp_wh = 0
             hc_wh = 0
-            # Pas déduit des horaires du jour : repli pour les relevés qui ne déclarent pas le leur
-            day_minutes = infer_interval_minutes(start for start, _, _ in intervals)
+            # Pas déduit des horaires du jour, sur les seuls relevés qui ne déclarent pas le leur : repli
+            # pour ceux-là (le matin à 30 min sans pas déclaré ne doit pas prendre le 10 min de l'après-midi)
+            day_minutes = infer_interval_minutes(start for start, _, step in intervals if not step)
             max_power_kw = 0.0
             max_time: str | None = None
 

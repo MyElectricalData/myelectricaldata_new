@@ -162,3 +162,15 @@ async def test_releve_isole_au_pas_de_15_min(session: AsyncSession) -> None:
 
     assert (hc, hp) == (pytest.approx(0.25), pytest.approx(0.0))
 
+
+
+async def test_pas_mixte_matin_sans_pas_declare(session: AsyncSession) -> None:
+    """Matin à 30 min sans pas déclaré (raw_data sans p), après-midi à 10 min déclaré (revue Codex rv-96g50wtc)
+
+    Le repli ne se déduit que des relevés sans pas : 30 min pour le matin, pas 10 min.
+    """
+    records = curve(0, 720, 30, 1000, {}) + curve(720, 1440, 10, 1000, PT10M)
+
+    hc, hp = await export_hc_hp(session, records, 24000)
+
+    assert (hc, hp) == (pytest.approx(8.0), pytest.approx(16.0))
