@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..adapters.enedis_format import iso_duration_to_minutes
 from ..models.client_mode import ConsumptionData, DataGranularity, MaxPowerData, ProductionData
 from ..models.tempo_day import TempoDay
-from .exporters.tariff import interval_minutes, offpeak_slot_fraction
+from .exporters.tariff import declared_interval_minutes, interval_minutes, offpeak_slot_fraction
 from .local_data import _interval_of
 
 logger = logging.getLogger(__name__)
@@ -702,24 +702,27 @@ class StatisticsService:
         start_date: date,
         end_date: date,
         direction: str = "consumption",
-    ) -> list[tuple[date, str | None, int]]:
-        """Toutes les données DETAILED (30min) pour une plage de dates
+    ) -> list[tuple[date, str | None, int, int | None]]:
+        """Toutes les données DETAILED (courbe de charge) pour une plage de dates
 
         Permet de calculer HP/HC et puissance max par jour en mémoire.
 
         Returns:
-            Liste de (date, interval_start, value_Wh).
+            Liste de (date, interval_start, value_W, pas en minutes déclaré par le relevé ou None).
+            value est une puissance moyenne (W) sur le créneau, pas une énergie.
         """
         model = self._get_model(direction)
 
         result = await self.db.execute(
-            select(model.date, model.interval_start, model.value)
+            select(model.date, model.interval_start, model.value, model.raw_data)
             .where(model.usage_point_id == usage_point_id)
             .where(model.granularity == DataGranularity.DETAILED)
             .where(model.date >= start_date)
             .where(model.date <= end_date)
         )
-        return [(row[0], row[1], int(row[2])) for row in result.all()]
+        return [
+            (row[0], row[1], int(row[2]), declared_interval_minutes(row[3])) for row in result.all()
+        ]
 
     async def get_hp_hc_day_total(
         self,

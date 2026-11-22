@@ -1492,9 +1492,9 @@ class HomeAssistantExporter(BaseExporter):
         # =====================================================================
 
         # Grouper les données détaillées par jour
-        detailed_by_day: dict[date, list[tuple[str | None, int]]] = defaultdict(list)
+        detailed_by_day: dict[date, list[tuple[str | None, int, int | None]]] = defaultdict(list)
         seen_slots: set[tuple[date, str]] = set()
-        for d, interval_start, value in detailed_records:
+        for d, interval_start, value, step_minutes in detailed_records:
             # Un même créneau enregistré sous deux écritures ("08:00" et "08:00:00", relevés v5 puis
             # Data Connect 2026) n'est compté qu'une fois : sinon HC + HP valent le double du total
             if interval_start:
@@ -1502,7 +1502,7 @@ class HomeAssistantExporter(BaseExporter):
                 if (d, slot) in seen_slots:
                     continue
                 seen_slots.add((d, slot))
-            detailed_by_day[d].append((interval_start, value))
+            detailed_by_day[d].append((interval_start, value, step_minutes))
 
         has_detailed = len(detailed_records) > 0
         # HP/HC seulement pour un contrat à heures creuses : des plages Enedis peuvent rester
@@ -1519,13 +1519,16 @@ class HomeAssistantExporter(BaseExporter):
         for day_date, intervals in detailed_by_day.items():
             hp_wh = 0
             hc_wh = 0
-            slot_minutes = infer_interval_minutes(start for start, _ in intervals)
+            # Pas déduit des horaires du jour : repli pour les relevés qui ne déclarent pas le leur
+            day_minutes = infer_interval_minutes(start for start, _, _ in intervals)
             max_power_kw = 0.0
             max_time: str | None = None
 
-            for interval_start, value in intervals:
+            for interval_start, value, step_minutes in intervals:
                 # Les valeurs DETAILED sont en W (puissance moyenne sur le créneau) :
-                # énergie = W × durée du créneau (30 min : W / 2, 15 min : W / 4, 10 min : W / 6)
+                # énergie = W × durée du créneau (30 min : W / 2, 15 min : W / 4, 10 min : W / 6).
+                # Pas de CHAQUE relevé : un jour de bascule mélange 30 min et 10 min (MED-58)
+                slot_minutes = step_minutes or day_minutes
                 wh = slot_wh(value, slot_minutes)
 
                 # HP/HC, au prorata des minutes si une plage HC commence ou finit dans le créneau

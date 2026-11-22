@@ -8,6 +8,8 @@ import pytest
 from src.services.exporters.tariff import (
     DEFAULT_OFFPEAK_RANGES,
     TariffProfile,
+    declared_interval_minutes,
+    interval_minutes,
     interval_wh,
     is_offpeak,
     is_offpeak_slot,
@@ -362,3 +364,21 @@ def test_journee_au_pas_de_15_min_non_doublee():
     slot = infer_interval_minutes(starts)
     assert slot == 15
     assert sum(slot_wh(1000, slot) for _ in starts) == 24000
+
+
+@pytest.mark.parametrize(
+    ("raw_data", "declared", "effective"),
+    [
+        ({"p": "PT15M"}, 15, 15),
+        ({"interval_length": "PT10M"}, 10, 10),
+        ({"p": "PT1H"}, 60, 60),
+        ({}, None, 30),
+        (None, None, 30),
+        ({"p": "PT0M"}, None, 30),
+        ({"p": "n/a"}, None, 30),
+    ],
+)
+def test_declared_interval_minutes(raw_data: dict | None, declared: int | None, effective: int) -> None:
+    """Pas déclaré par le relevé (None s'il manque, pour laisser le pas déduit de la journée prendre le relais)"""
+    assert declared_interval_minutes(raw_data) == declared
+    assert interval_minutes(raw_data) == effective

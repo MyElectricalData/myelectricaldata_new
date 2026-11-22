@@ -195,8 +195,8 @@ def offpeak_fraction(
     return min(1.0, covered / duration)
 
 
-def interval_minutes(raw_data: dict[str, Any] | None) -> int:
-    """Pas du relevé en minutes (PT30M par défaut)
+def declared_interval_minutes(raw_data: dict[str, Any] | None) -> int | None:
+    """Pas du relevé en minutes tel qu'il est déclaré, None s'il ne l'est pas (ou illisible)
 
     Pas lu dans raw_data["p"] (format Data Connect 2026), sinon raw_data["interval_length"] (v5).
     """
@@ -204,7 +204,12 @@ def interval_minutes(raw_data: dict[str, Any] | None) -> int:
         match = _INTERVAL_RE.fullmatch(str(raw_data.get("p") or raw_data.get("interval_length") or ""))
         if match and int(match.group(1)) > 0:
             return int(match.group(1)) * (60 if match.group(2) == "H" else 1)
-    return _DEFAULT_INTERVAL_MINUTES
+    return None
+
+
+def interval_minutes(raw_data: dict[str, Any] | None) -> int:
+    """Pas du relevé en minutes (PT30M par défaut), cf. declared_interval_minutes"""
+    return declared_interval_minutes(raw_data) or _DEFAULT_INTERVAL_MINUTES
 
 
 def infer_interval_minutes(interval_starts: Iterable[str | None]) -> int:
