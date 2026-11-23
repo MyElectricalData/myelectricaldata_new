@@ -224,6 +224,11 @@ def infer_interval_minutes(interval_starts: Iterable[str | None]) -> int:
     return min(gaps) if gaps else _DEFAULT_INTERVAL_MINUTES
 
 
+def slot_wh(value_w: int | float, slot_minutes: int) -> float:
+    """Énergie (Wh) d'un créneau de courbe de charge : puissance moyenne (W) × durée du créneau"""
+    return value_w * (slot_minutes if slot_minutes > 0 else _DEFAULT_INTERVAL_MINUTES) / 60
+
+
 def interval_wh(value_w: int | float, raw_data: dict[str, Any] | None) -> float:
     """Convertit une puissance moyenne (W) en énergie (Wh) selon le pas du relevé (PT30M par défaut)"""
     return value_w * interval_minutes(raw_data) / 60
