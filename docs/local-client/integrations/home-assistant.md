@@ -134,7 +134,7 @@ Les attributs annuels du capteur `consumption` suivent le vocabulaire de la cart
 ### Heures pleines / heures creuses
 
 Pour un contrat à heures creuses, l'export publie en plus 8 capteurs (`kWh`, classe `energy`, `total`),
-calculés à partir des données détaillées (30 min) :
+calculés à partir des données détaillées (courbe de charge, 30 min ou 15 min selon le compteur) :
 
 | Entity ID | Description |
 |-----------|-------------|
@@ -153,6 +153,10 @@ Quand une plage d'heures creuses commence ou finit au milieu d'un créneau de 30
 23h32-5h32), ce créneau est réparti au prorata des minutes : 23h30-0h00 compte pour 28/30 en heures
 creuses et 2/30 en heures pleines. Les plages calées sur la demi-heure (22h00-6h00, 22h30-6h30) ne
 changent pas.
+
+Le pas de la courbe est lu relevé par relevé (champ `interval_length` d'Enedis) : une journée qui
+mélange des créneaux de 30 min et de 15 min, ou un relevé isolé à 15 min, est comptée au pas réel
+de chaque relevé. Un relevé sans pas déclaré prend le pas déduit des seuls relevés dans ce cas.
 
 Exception : avec l'offre EDF Zen Flex sélectionnée sur le PDL, les heures creuses suivent la grille
 du fournisseur, 17 h par jour, tous les jours (13h-18h et 20h-8h), et non les plages du contrat
