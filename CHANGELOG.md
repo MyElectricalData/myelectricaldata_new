@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.15.5](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.15.4...2.15.5) (2026-11-23)
+
+### Bug Fixes
+
+* **api:** HC et HP de l'export Home Assistant selon le pas de la courbe ([959032d](https://github.com/MyElectricalData/myelectricaldata_new/commit/959032d6b7ac611f637a9876eb278de90a47be2f)), closes [Marlboro62/content-card-linky-new#13](https://github.com/Marlboro62/content-card-linky-new/issues/13)
+* **api:** MED-126 / HC et HP de la carte Linky selon le pas de chaque relevé ([94050c2](https://github.com/MyElectricalData/myelectricaldata_new/commit/94050c2d88da73e606deb16f025a45154971340d))
+* **api:** MED-126 / pas de repli déduit des seuls relevés sans pas déclaré ([39b11a5](https://github.com/MyElectricalData/myelectricaldata_new/commit/39b11a5fb75f7bb7c1853a11775e56d737424e28))
+
 ## [2.15.4](https://github.com/MyElectricalData/myelectricaldata_new/compare/2.15.3...2.15.4) (2026-11-22)
 
 ### Bug Fixes
