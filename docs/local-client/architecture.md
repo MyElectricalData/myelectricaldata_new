@@ -357,6 +357,24 @@ Le mode client utilise une stratégie **local-first** pour minimiser les appels 
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+#### Courbe de charge non souscrite (ADAM-ERR0191)
+
+Certains PDL n'ont pas de courbe de charge (pas de 30 minutes) chez Enedis : par exemple la production d'un
+contrat en revente totale (CRAE), où Enedis ne collecte que l'index quotidien. Enedis répond alors
+`ADAM-ERR0191` (« aucun service souscrit ACCES à la donnée pour la période demandée »).
+
+- La courbe de charge (consommation et production) est demandée **de la semaine la plus récente à la plus
+  ancienne**.
+- À la première semaine en `ADAM-ERR0191`, la synchro s'arrête : les semaines plus anciennes ne sont pas
+  demandées.
+- La date est mémorisée dans le statut de synchro (`error_message`, constatée à `last_error_at`). Pendant
+  **7 jours**, la synchro ne demande que les semaines postérieures, puis elle réessaie, au cas où la collecte
+  aurait été activée chez Enedis.
+- Les données quotidiennes ne sont pas concernées.
+
+Sans ce mécanisme, les ~104 semaines des deux dernières années étaient redemandées à chaque synchro et
+épuisaient le quota journalier de la passerelle, ce qui bloquait aussi les autres PDL du compte.
+
 ### Export des données
 
 ```
