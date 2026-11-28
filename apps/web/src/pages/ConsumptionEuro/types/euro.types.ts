@@ -61,6 +61,11 @@ export interface YearlyCost {
   hcCost: number
   hpCost: number
   // Comparison data
+  /** Jours couverts par des données (une année complète = 365 ou 366) */
+  days: number
+  /** Coût moyen par jour couvert */
+  avgDailyCost: number
+  /** Coût moyen d'un mois de 30,44 jours (365,25 / 12), calculé sur les jours couverts */
   avgMonthlyCost: number
   avgMonthlyKwh: number
 }
